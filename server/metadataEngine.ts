@@ -37,6 +37,22 @@ const GENERIC_TITLES = new Set([
 /**
  * Enriches metadata across multiple engines (TVMaze, Jikan MAL, Kitsu, Internet Archive, Wikipedia)
  */
+
+  const createAnimeResponse = (title: string, poster: string, cover: string, status: string, attr: any) => {
+    return {
+      title: attr.canonicalTitle || attr.titles?.en_jp || attr.titles?.en || title,
+      original_title: attr.titles?.ja_jp || undefined,
+      description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
+      poster_url: poster,
+      banner_url: cover,
+      rating: attr.averageRating ? Math.round((parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+      year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+      status: status === "current" ? "En emisión" : "Finalizado",
+      genres: ["Anime"],
+      content_type: "anime" as ContentKind,
+    };
+  };
+
 export async function enrichUniversalMetadata(
   rawQuery: string,
   hintKind?: ContentKind

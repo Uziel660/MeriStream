@@ -4,7 +4,6 @@ import { cleanQueryTitle, enrichUniversalMetadata } from "./metadataEngine";
 import { PageClassifier } from "./pageClassifier";
 import { EmbedResolvers } from "./resolvers";
 import { MediaValidator } from "./validator";
-import { StrategyRouter } from "./router";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -341,14 +340,7 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
       }
 
       let cardTitle = "";
-      const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
-      if (heading.length > 0 && heading.text().trim().length > 1) {
-        cardTitle = heading.text().trim();
-      }
-
-      if (!cardTitle && img.length > 0 && img.attr("alt")) {
-        cardTitle = img.attr("alt")!.trim();
-      }
+      cardTitle = UniversalScraper.extractCardTitle($(card), img);
 
       if (!cardTitle) {
         anchors.each((_, a) => {
@@ -390,7 +382,10 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
     if (isCatalog) {
       const catalogTitle = ogTitle || `Catálogo de Medios (${domain})`;
       const firstImage = catalogItems.find((c) => c.image_url)?.image_url || null;
-      const catalogPoster = ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : firstImage;
+      let catalogPoster = firstImage;
+      if (ogImage) {
+        catalogPoster = ogImage.startsWith("//") ? `https:${ogImage}` : ogImage;
+      }
 
       return {
         page_type: "catalog",
@@ -815,13 +810,7 @@ async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult>
         }
 
         let cardTitle = "";
-        const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
-        if (heading.length > 0 && heading.text().trim().length > 1) {
-          cardTitle = heading.text().trim();
-        }
-        if (!cardTitle && img.length > 0 && img.attr("alt")) {
-          cardTitle = img.attr("alt")!.trim();
-        }
+        cardTitle = UniversalScraper.extractCardTitle($(card), img);
         if (!cardTitle) {
           cardTitle = anchor.text().trim() || anchor.attr("title") || "";
         }

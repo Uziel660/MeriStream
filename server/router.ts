@@ -36,7 +36,7 @@ export class StrategyRouter {
     if (!url || url.length < 15) return false;
     try {
       const parsed = new URL(url);
-      return Boolean(parsed.hostname && parsed.hostname.includes("."));
+      return Boolean(parsed.hostname?.includes("."));
     } catch {
       return false;
     }
@@ -84,10 +84,8 @@ export class StrategyRouter {
         const lowered = srcClean.toLowerCase();
         if (this.KNOWN_HOSTS.some((host) => lowered.includes(host))) {
           knownTargets.push(srcClean);
-        } else {
-          if (!["recaptcha", "google", "analytics", "adservice"].some((bad) => lowered.includes(bad))) {
-            genericTargets.push(srcClean);
-          }
+        } else if (!["recaptcha", "google", "analytics", "adservice"].some((bad) => lowered.includes(bad))) {
+          genericTargets.push(srcClean);
         }
       }
 

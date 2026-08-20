@@ -31,6 +31,7 @@
         "@vitejs/plugin-react": "^4.3.3",
         "autoprefixer": "^10.4.20",
         "esbuild": "^0.28.2",
+        "jscpd": "^5.0.16",
         "postcss": "^8.4.49",
         "tailwindcss": "^3.4.14",
         "tsx": "^4.23.12",
@@ -479,6 +480,20 @@
     "js-base64": ["js-base64@3.9.3", "", {}, "sha512-uwYQp+VJ38FVvtim6qNbit6e9uT6dwWQ4Y1+H9TxhW5hcHjpHwoxlR0nMpqUmIFOmu4VqMxwdJA88gIVuZJQ/g=="],
 
     "js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
+
+    "jscpd": ["jscpd@5.0.16", "", { "optionalDependencies": { "jscpd-darwin-arm64": "5.0.16", "jscpd-darwin-x64": "5.0.16", "jscpd-linux-arm64-gnu": "5.0.16", "jscpd-linux-x64-gnu": "5.0.16", "jscpd-linux-x64-musl": "5.0.16", "jscpd-windows-x64-msvc": "5.0.16" }, "bin": { "jscpd": "run-jscpd.js" } }, "sha512-TiQ4zKtKeldep6UswXFHjVCDhVdLBaJyQcZjhCSzVOmKpT6HBj0jUZiphP1vK1X3VSSuzwcfifJVNpsOIiwRCg=="],
+
+    "jscpd-darwin-arm64": ["jscpd-darwin-arm64@5.0.16", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Tu6OAg3Rp6m7LCZqOtPViJxYGTKXTLrI/xMyjEKe79N9L7GpbI3XhgotGDpoE+PjLRbgJgGhRKbkKK18FPySmQ=="],
+
+    "jscpd-darwin-x64": ["jscpd-darwin-x64@5.0.16", "", { "os": "darwin", "cpu": "x64" }, "sha512-3btQ1aG8K7+9rvJjyaRJRcSBD0DvHgZOUVlecjnyO99FYzMvdFREq67UIl5CAXFeYf5EY8TSorCMZQxL6TBD0w=="],
+
+    "jscpd-linux-arm64-gnu": ["jscpd-linux-arm64-gnu@5.0.16", "", { "os": "linux", "cpu": "arm64" }, "sha512-L1F9CNHxRPqGJCKgGRA4gtZcESACFkS2lgfPgWn9fG+4CkiewLcYyy/oxrafJJL1/PPTQ24sbLuzPaKUxJuvuw=="],
+
+    "jscpd-linux-x64-gnu": ["jscpd-linux-x64-gnu@5.0.16", "", { "os": "linux", "cpu": "x64" }, "sha512-BruP+sAr0+6QsEQZvOkgcS+xR23y4s1hLA0xfkcO1zFFXdnmQdJ4w23/U8VlPwqO2dFRaAEseYEXjHs5oQQGFw=="],
+
+    "jscpd-linux-x64-musl": ["jscpd-linux-x64-musl@5.0.16", "", { "os": "linux", "cpu": "x64" }, "sha512-T36RtMnF695Y1/T3cLEhgvspHdKoiF+oxK/lklGJWriLieImZolSOjGXsecW2bp7MNMMGlqLLRzr2RNgnwy+Hg=="],
+
+    "jscpd-windows-x64-msvc": ["jscpd-windows-x64-msvc@5.0.16", "", { "os": "win32", "cpu": "x64" }, "sha512-BcrY18r6uje+TjgBKdFZJz6qfAAh9QT24KZYZk+jk6tuIKOYIm6oRMeQEu3Tzr/len9ZethN2h1bKmv+EfHcGw=="],
 
     "jsesc": ["jsesc@3.1.0", "", { "bin": { "jsesc": "bin/jsesc" } }, "sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA=="],
 

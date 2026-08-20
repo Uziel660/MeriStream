@@ -41,7 +41,7 @@ export class EmbedResolvers {
 
       if (!res.ok) return "";
       const text = await res.text();
-      const match = text.match(pattern);
+      const match = pattern.exec(text);
       return match ? match[1] : "";
     } catch {
       return "";
@@ -59,7 +59,7 @@ export class EmbedResolvers {
       if (!res.ok) return "";
       const html = await res.text();
 
-      const matchA = html.match(this.REGEX_TYPE_A);
+      const matchA = this.REGEX_TYPE_A.exec(html);
       if (matchA) {
         return matchA[1].trim() + matchA[2].trim();
       }

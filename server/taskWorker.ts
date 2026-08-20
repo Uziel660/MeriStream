@@ -45,8 +45,11 @@ class BackgroundCrawlerWorker {
   private settings: WorkerSettings = { ...DEFAULT_SETTINGS };
 
   constructor() {
-    this.initSettings();
     setInterval(() => this.processNextInQueue(), 1000);
+  }
+
+  public init() {
+    this.initSettings();
   }
 
   private async initSettings() {
@@ -97,25 +100,7 @@ class BackgroundCrawlerWorker {
         orderBy: { created_at: "desc" },
       });
 
-      return tasks.map((t) => ({
-        id: t.id,
-        name: t.name,
-        target_url: t.target_url,
-        status: t.status as CrawlJob["status"],
-        scope: t.scope as CrawlJob["scope"],
-        max_pages: t.max_pages,
-        current_page: t.current_page,
-        total_discovered: t.total_discovered,
-        shows_imported: t.shows_imported,
-        episodes_imported: t.episodes_imported,
-        rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: (t.items_queue as any) || [],
-        current_item_title: t.current_item_title || undefined,
-        error_message: t.error_message,
-        created_at: t.created_at.toISOString(),
-        updated_at: t.updated_at.toISOString(),
-        logs: (t.logs as any) || [],
-      }));
+      return tasks.map((t) => this.mapPrismaJobToCrawlJob(t));
     } catch (e) {
       console.error("Error buscando jobs en DB:", e);
       return [];
@@ -126,25 +111,7 @@ class BackgroundCrawlerWorker {
     try {
       const t = await prisma.crawlTask.findUnique({ where: { id } });
       if (!t) return null;
-      return {
-        id: t.id,
-        name: t.name,
-        target_url: t.target_url,
-        status: t.status as CrawlJob["status"],
-        scope: t.scope as CrawlJob["scope"],
-        max_pages: t.max_pages,
-        current_page: t.current_page,
-        total_discovered: t.total_discovered,
-        shows_imported: t.shows_imported,
-        episodes_imported: t.episodes_imported,
-        rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: (t.items_queue as any) || [],
-        current_item_title: t.current_item_title || undefined,
-        error_message: t.error_message,
-        created_at: t.created_at.toISOString(),
-        updated_at: t.updated_at.toISOString(),
-        logs: (t.logs as any) || [],
-      };
+      return this.mapPrismaJobToCrawlJob(t);
     } catch {
       return null;
     }
@@ -363,7 +330,7 @@ class BackgroundCrawlerWorker {
       await this.applyPoliteRateLimit(job);
 
       const checkJob = await this.getJob(job.id);
-      if (!checkJob || checkJob.status !== "running") return;
+      if (checkJob?.status !== "running") return;
 
       const analysis = await analyzeUniversalUrl(job.target_url);
 
@@ -479,7 +446,7 @@ class BackgroundCrawlerWorker {
       await this.applyPoliteRateLimit(job);
 
       const checkActive = await this.getJob(job.id);
-      if (!checkActive || checkActive.status !== "running") return;
+      if (checkActive?.status !== "running") return;
 
       try {
         const itemAnalysis = await analyzeUniversalUrl(item.url || item.title);

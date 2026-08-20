@@ -189,7 +189,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   }
 
   // 4. If show is NEW: Create in DB
-  console.log(`[Deduplication] Nueva obra verificada sin duplicados: '${showData.title}'. Guardando en PostgreSQL...`);
+  console.log(`[Deduplication] Nueva obra verificada sin duplicados. Guardando en PostgreSQL...`);
 
   const createdShow = await prisma.show.create({
     data: {

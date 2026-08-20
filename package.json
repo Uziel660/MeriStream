@@ -25,7 +25,8 @@
     "motion": "^13.1.0",
     "prisma": "^5.22.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "sanitize-html": "^2.17.7"
   },
   "devDependencies": {
     "@types/colorthief": "^2.6.1",
@@ -33,6 +34,7 @@
     "@types/express": "^5.0.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/sanitize-html": "^2.16.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.28.2",

@@ -1,3 +1,4 @@
+import sanitizeHtml from 'sanitize-html';
 import { ContentKind } from "./types";
 
 export interface EnrichedMetadata {
@@ -22,7 +23,7 @@ export function cleanQueryTitle(raw: string): string {
   title = title.replace(/^(?:Ver|Ver\s+Online|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
-  title = title.replace(/[(\[{][^()\[\]{}]+[)\]}]/g, "");
+  title = title.replace(/[(\[{][^(\[{)\]}]+[)\]}]/g, '');
   title = title.split(/\s+[-|—]\s+/)[0].trim();
   return title.trim();
 }
@@ -115,7 +116,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
   // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
   const simplifiedQuery = query
     .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|[I|V|X]+)\b/gi, "")
-    .replace(/[(\[{][^()\[\]{}]+[)\]}]/g, "")
+    .replace(/[(\[{][^(\[{)\]}]+[)\]}]/g, '')
     .replace(/[-_]/g, " ")
     .trim();
 
@@ -166,7 +167,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
         const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
         const banner = media.bannerImage || poster;
         const cleanDesc = (media.description || "")
-          .replace(/<[^>]+>/g, "")
+
           .replace(/\n\s*\n/g, "\n")
           .trim();
 
@@ -215,7 +216,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           original_title: attr.titles?.ja_jp,
           japanese_title: attr.titles?.ja_jp || undefined,
           english_title: attr.titles?.en || undefined,
-          description: attr.synopsis ? attr.synopsis.replace(/<[^>]+>/g, "").trim() : "Sin descripción disponible.",
+          description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: cover,
           rating: attr.averageRating ? Math.round((parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
@@ -252,7 +253,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           original_title: item.title_japanese || item.title,
           japanese_title: item.title_japanese || undefined,
           english_title: item.title_english || undefined,
-          description: item.synopsis ? item.synopsis.replace(/<[^>]+>/g, "").trim() : "Sin descripción disponible.",
+          description: item.synopsis ? sanitizeHtml(item.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
@@ -286,7 +287,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
       const show: any = await res.json();
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
-        const cleanSummary = (show.summary || "").replace(/<[^>]+>/g, "").trim();
+        const cleanSummary = sanitizeHtml((show.summary || ""), { allowedTags: [] }).trim();
         const year = show.premiered ? parseInt(show.premiered.slice(0, 4), 10) : 2023;
         const isAnime = (show.type || "").toLowerCase() === "animation" && (show.genres || []).includes("Anime");
 
@@ -337,7 +338,7 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
         return {
           title: doc.title || query,
           original_title: doc.title,
-          description: doc.description ? doc.description.replace(/<[^>]+>/g, "").slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
+          description: doc.description ? sanitizeHtml(doc.description, { allowedTags: [] }).slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
           poster_url: poster,
           banner_url: poster,
           rating: 8.5,

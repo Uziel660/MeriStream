@@ -24,8 +24,8 @@ export function cleanQueryTitle(raw: string): string {
   title = title.replace(/[\(\[\{].*?[\)\]\}]/g, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
   // Clean up any trailing hyphens or pipes that might have been left behind when suffixes were removed
-  title = title.replace(/\s+(?:-|\||—)\s*$/, "");
-  title = title.split(/\s+(?:-|\||—)\s+/)[0].trim();
+  title = title.replace(/\s+[-—|]\s*$/, "");
+  title = title.split(/\s+[-—|]\s+/)[0].trim();
   return title.trim();
 }
 

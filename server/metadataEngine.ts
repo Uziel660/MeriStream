@@ -22,7 +22,7 @@ export function cleanQueryTitle(raw: string): string {
   title = title.replace(/^(?:Ver|Ver\s+Online|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
-  title = title.replace(/[\(\[\{].*?[\)\]\}]/g, "");
+  title = title.replace(/[(\[{][^()\[\]{}]+[)\]}]/g, "");
   title = title.split(/\s+[-|—]\s+/)[0].trim();
   return title.trim();
 }
@@ -115,7 +115,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
   // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
   const simplifiedQuery = query
     .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|[I|V|X]+)\b/gi, "")
-    .replace(/[\(\[\{].*?[\)\]\}]/g, "")
+    .replace(/[(\[{][^()\[\]{}]+[)\]}]/g, "")
     .replace(/[-_]/g, " ")
     .trim();
 

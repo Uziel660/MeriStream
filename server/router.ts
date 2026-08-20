@@ -12,7 +12,8 @@ export interface ExtractionPlan {
 }
 
 export class StrategyRouter {
-  public static KNOWN_HOSTS: string[] = [
+  private constructor() {}
+  public static readonly KNOWN_HOSTS: string[] = [
     "zilla-networks.com",
     "voe.sx",
     "byselapuix.com",

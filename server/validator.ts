@@ -1,4 +1,5 @@
 export class MediaValidator {
+  private constructor() {}
   private static DEFAULT_TIMEOUT = 5000;
   private static VALID_CONTENT_TYPES = [
     "video/",

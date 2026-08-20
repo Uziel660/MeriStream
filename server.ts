@@ -2,7 +2,7 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { analyzeUniversalUrl, PRESET_SOURCES } from "./server/universalScraper";
+import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
 import { taskWorker, CrawlJob } from "./server/taskWorker";
 
@@ -491,8 +491,8 @@ async function startServer() {
     res.json(mapped);
   });
 
-  // GET /api/v1/play/:episode_id
-  app.get("/api/v1/play/:episode_id", (req: Request, res: Response) => {
+  // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver
+  app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
     const episodeId = req.params.episode_id;
     let foundEpisode: Episode | null = null;
     let foundShow: Show | null = null;
@@ -507,52 +507,72 @@ async function startServer() {
     }
 
     if (!foundEpisode) {
-      // Fallback: Generate demo stream if not found
-      const demoStreams = [
-        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      ];
-      return res.json({
-        episode_id: episodeId,
-        stream_url: demoStreams[0],
-        title: "Episodio Reproducible",
-        all_available_streams: demoStreams,
-      });
+      return res.status(404).json({ detail: "Episodio no encontrado en la base de datos." });
     }
 
-    const streams = [
-      foundEpisode.source_url,
-      "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    ].filter(Boolean);
+    try {
+      // Just-in-time extraction: if the source_url is a web page, resolve actual video servers in real time
+      const extracted = await extractStreamFromUrl(foundEpisode.source_url);
+      const allStreams = Array.from(
+        new Set([extracted.stream_url, ...(extracted.all_available_streams || []), foundEpisode.source_url].filter(Boolean))
+      );
 
-    res.json({
-      episode_id: foundEpisode.id,
-      stream_url: foundEpisode.source_url,
-      title: `${foundShow?.title || ""} - ${foundEpisode.title}`,
-      all_available_streams: Array.from(new Set(streams)),
-    });
+      res.json({
+        episode_id: foundEpisode.id,
+        stream_url: allStreams[0] || foundEpisode.source_url,
+        title: `${foundShow?.title || ""} - ${foundEpisode.title}`,
+        all_available_streams: allStreams,
+      });
+    } catch {
+      res.json({
+        episode_id: foundEpisode.id,
+        stream_url: foundEpisode.source_url,
+        title: `${foundShow?.title || ""} - ${foundEpisode.title}`,
+        all_available_streams: [foundEpisode.source_url],
+      });
+    }
   });
 
   // GET /api/v1/media/:media_id/stream
-  app.get("/api/v1/media/:media_id/stream", (req: Request, res: Response) => {
+  app.get("/api/v1/media/:media_id/stream", async (req: Request, res: Response) => {
     const mediaId = req.params.media_id;
     const show = showsStore.get(mediaId);
-    const primaryUrl = show?.episodes[0]?.source_url || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+    if (!show || !show.episodes.length) {
+      return res.status(404).json({ detail: "Contenido no encontrado." });
+    }
 
-    res.json({
-      master_m3u8: primaryUrl,
-      fallback_mp4: primaryUrl.endsWith(".mp4") ? primaryUrl : "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-      qualities: [
-        { label: "1080p Full HD", resolution: "1080p", bitrate: "Auto", url: primaryUrl },
-        { label: "720p HD", resolution: "720p", bitrate: "Auto", url: primaryUrl },
-      ],
-      subtitles: [
-        { id: "sub-es", label: "Español", language: "es", src: "", is_default: true },
-        { id: "sub-en", label: "English", language: "en", src: "", is_default: false },
-      ],
-    });
+    const firstEp = show.episodes[0];
+    try {
+      const extracted = await extractStreamFromUrl(firstEp.source_url);
+      const primaryUrl = extracted.stream_url || firstEp.source_url;
+
+      res.json({
+        master_m3u8: primaryUrl,
+        fallback_mp4: primaryUrl.endsWith(".mp4") ? primaryUrl : null,
+        qualities: [
+          { label: "1080p Full HD", resolution: "1080p", bitrate: "Auto", url: primaryUrl },
+          { label: "720p HD", resolution: "720p", bitrate: "Auto", url: primaryUrl },
+        ],
+        subtitles: [
+          { id: "sub-es", label: "Español", language: "es", src: "", is_default: true },
+          { id: "sub-en", label: "English", language: "en", src: "", is_default: false },
+        ],
+      });
+    } catch {
+      const primaryUrl = firstEp.source_url;
+      res.json({
+        master_m3u8: primaryUrl,
+        fallback_mp4: primaryUrl.endsWith(".mp4") ? primaryUrl : null,
+        qualities: [
+          { label: "1080p Full HD", resolution: "1080p", bitrate: "Auto", url: primaryUrl },
+          { label: "720p HD", resolution: "720p", bitrate: "Auto", url: primaryUrl },
+        ],
+        subtitles: [
+          { id: "sub-es", label: "Español", language: "es", src: "", is_default: true },
+          { id: "sub-en", label: "English", language: "en", src: "", is_default: false },
+        ],
+      });
+    }
   });
 
   // GET /api/v1/proxy/stream - Anti-CORS Proxy
@@ -634,7 +654,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
     episode_number: parseFloat(ep.number) || idx + 1,
-    source_url: ep.url || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
   }));
 
   if (episodes.length === 0) {
@@ -643,7 +663,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
       show_id: showId,
       title: showData.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
       episode_number: 1,
-      source_url: (showData.detected_streams && showData.detected_streams[0]) || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      source_url: (showData.detected_streams && showData.detected_streams[0]) || "",
     });
   }
 
@@ -695,7 +715,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
         show_id: showId,
         title: ep.title || `Episodio ${idx + 1}`,
         episode_number: ep.number || idx + 1,
-        source_url: ep.url || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        source_url: ep.url || cleanUrl,
       }));
 
       const newShow: Show = {
@@ -850,23 +870,28 @@ app.post("/api/v1/extract", async (req: Request, res: Response) => {
   }
 
   try {
-    const analysis = await analyzeUniversalUrl(url);
-    const streams = [
-      ...(analysis.detected_streams || []),
-      ...(analysis.episodes || []).map((e) => e.url),
-      "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    ].filter(Boolean);
+    const extracted = await extractStreamFromUrl(url);
+    const analysis = await analyzeUniversalUrl(url).catch(() => null);
 
-    const uniqueStreams = Array.from(new Set(streams));
+    const streams = Array.from(
+      new Set(
+        [
+          extracted.stream_url,
+          ...(extracted.all_available_streams || []),
+          ...(analysis?.detected_streams || []),
+          ...(analysis?.episodes || []).map((e) => e.url),
+          url,
+        ].filter(Boolean)
+      )
+    );
 
     res.json({
-      title: analysis.title || "Stream Extraído",
-      description: `Estrategia: Universal Scraper (${analysis.content_type.toUpperCase()})`,
-      detected_type: analysis.content_type,
-      stream_url: uniqueStreams[0],
-      all_streams: uniqueStreams,
-      poster_url: analysis.poster_url,
+      title: extracted.title || analysis?.title || "Stream Extraído",
+      description: `Estrategia: Universal Live Extractor (${(analysis?.content_type || "video").toUpperCase()})`,
+      detected_type: analysis?.content_type || "video",
+      stream_url: streams[0] || url,
+      all_streams: streams,
+      poster_url: analysis?.poster_url || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800",
       subtitles: [],
     });
   } catch (e: any) {

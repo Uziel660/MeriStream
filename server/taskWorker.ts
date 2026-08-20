@@ -349,7 +349,7 @@ class BackgroundCrawlerWorker {
           show_id: showId,
           title: ep.title || `Episodio ${idx + 1}`,
           episode_number: ep.number || idx + 1,
-          source_url: ep.url || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+          source_url: ep.url || item.url,
         }));
 
         if (episodes.length === 0) {
@@ -360,7 +360,7 @@ class BackgroundCrawlerWorker {
             episode_number: 1,
             source_url:
               (itemAnalysis.detected_streams && itemAnalysis.detected_streams[0]) ||
-              "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+              item.url,
           });
         }
 

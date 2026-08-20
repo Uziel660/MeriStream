@@ -1,13 +1,13 @@
 export class EmbedResolvers {
   private constructor() {}
-  private static DEFAULT_TIMEOUT = 12000;
-  private static DEFAULT_HEADERS = {
+  private static readonly DEFAULT_TIMEOUT = 12000;
+  private static readonly DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   };
 
-  private static REGEX_TYPE_A = /["'](https?:\/\/[^"']+)["']\s*\+\s*["']([^"']+)["']/i;
-  private static REGEX_TYPE_B = /data-[\w-]+\s*=\s*(?:'({[^']+})'|"({[^"]+})")/gi;
+  private static readonly REGEX_TYPE_A = /["'](https?:\/\/[^"']+)["']\s*\+\s*["']([^"']+)["']/i;
+  private static readonly REGEX_TYPE_B = /data-[\w-]+\s*=\s*(?:'({[^']+})'|"({[^"]+})")/gi;
 
   /**
    * Resuelve la URL real de stream (.m3u8 / .mp4) a partir de una URL de iframe/embed

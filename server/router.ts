@@ -49,69 +49,57 @@ export class StrategyRouter {
    * 3. Parseo de snippets JSON locales en memoria.
    * 4. Fallback desconocido.
    */
-  public static determinePlan(obs: PageObservation): ExtractionPlan {
-    // --- PRIORIDAD 1: Streams directos capturados ---
-    if (obs.media_sources && obs.media_sources.length > 0) {
-      const validDirectVideos = obs.media_sources
-        .filter(
-          (m) =>
-            this.isValidMediaUrl(m.url) &&
-            (m.mime_type.toLowerCase().includes("video") ||
-              m.mime_type.toLowerCase().includes("mpegurl") ||
-              m.url.toLowerCase().includes(".m3u8") ||
-              m.url.toLowerCase().includes(".mp4"))
-        )
-        .map((m) => m.url);
 
-      const uniqueDirect = Array.from(new Set(validDirectVideos));
-      if (uniqueDirect.length > 0) {
-        return {
-          strategy_name: "direct_media",
-          target_urls: uniqueDirect,
-        };
-      }
-    }
+  private static extractDirectStreams(obs: PageObservation): string[] {
+    if (!obs.media_sources || obs.media_sources.length === 0) return [];
 
-    // --- PRIORIDAD 2: Iframes decodificados (Servidores conocidos) ---
-    if (obs.iframe_embeds && obs.iframe_embeds.length > 0) {
-      const knownTargets: string[] = [];
-      const genericTargets: string[] = [];
-
-      for (const iframe of obs.iframe_embeds) {
-        const srcClean = iframe.src.trim();
-        if (!srcClean.startsWith("http")) continue;
-
-        const lowered = srcClean.toLowerCase();
-        if (this.KNOWN_HOSTS.some((host) => lowered.includes(host))) {
-          knownTargets.push(srcClean);
-        } else if (!["recaptcha", "google", "analytics", "adservice"].some((bad) => lowered.includes(bad))) {
-          genericTargets.push(srcClean);
-        }
-      }
-
-      const selectedIframes = knownTargets.length > 0 ? knownTargets : genericTargets;
-      const uniqueIframes = Array.from(new Set(selectedIframes));
-
-      if (uniqueIframes.length > 0) {
-        return {
-          strategy_name: "resolve_iframes",
-          target_urls: uniqueIframes,
-        };
-      }
-    }
-
-    // --- PRIORIDAD 3: Fragmentos JSON en el DOM ---
-    if (obs.inline_json_snippets && obs.inline_json_snippets.length > 0) {
-      return {
-        strategy_name: "parse_inline_json",
-        target_urls: [],
-      };
-    }
-
-    // --- PRIORIDAD 4: Fallback ---
-    return {
-      strategy_name: "unknown_fallback",
-      target_urls: [],
-    };
+    return obs.media_sources.filter(m =>
+      this.isValidMediaUrl(m.url) &&
+      (m.mime_type.toLowerCase().includes("video") || m.mime_type.toLowerCase().includes("mpegurl") || m.url.toLowerCase().includes(".m3u8") || m.url.toLowerCase().includes(".mp4"))
+    ).map(m => m.url);
   }
+
+  private static extractIframeTargets(obs: PageObservation): string[] {
+    if (!obs.iframe_embeds || obs.iframe_embeds.length === 0) return [];
+
+    const knownTargets: string[] = [];
+    const genericTargets: string[] = [];
+
+    for (const iframe of obs.iframe_embeds) {
+      const srcClean = iframe.src.trim();
+      if (!srcClean.startsWith("http")) continue;
+
+      const lowered = srcClean.toLowerCase();
+      if (this.KNOWN_HOSTS.some((host) => lowered.includes(host))) {
+        knownTargets.push(srcClean);
+      } else if (!["recaptcha", "google", "analytics", "adservice"].some((bad) => lowered.includes(bad))) {
+        genericTargets.push(srcClean);
+      }
+    }
+
+    return knownTargets.length > 0 ? knownTargets : genericTargets;
+  }
+
+  public static determinePlan(obs: PageObservation): ExtractionPlan {
+    const validDirectVideos = this.extractDirectStreams(obs);
+    const uniqueDirect = Array.from(new Set(validDirectVideos));
+
+    if (uniqueDirect.length > 0) {
+      return { strategy_name: "direct_media", target_urls: uniqueDirect };
+    }
+
+    const selectedIframes = this.extractIframeTargets(obs);
+    const uniqueIframes = Array.from(new Set(selectedIframes));
+
+    if (uniqueIframes.length > 0) {
+      return { strategy_name: "resolve_iframes", target_urls: uniqueIframes };
+    }
+
+    if (obs.inline_json_snippets && obs.inline_json_snippets.length > 0) {
+      return { strategy_name: "parse_inline_json", target_urls: [] };
+    }
+
+    return { strategy_name: "unknown_fallback", target_urls: [] };
+  }
+
 }

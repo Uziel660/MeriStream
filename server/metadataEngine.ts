@@ -23,7 +23,7 @@ export function cleanQueryTitle(raw: string): string {
   title = title.replace(/^(?:Ver|Ver\s+Online|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
-  title = title.replace(/[(\[{][^(\[{)\]}]+[)\]}]/g, '');
+  title = title.replace(/[(\[{][^)\]}]+[)\]}]/g, '');
   title = title.split(/\s+[-|—]\s+/)[0].trim();
   return title.trim();
 }
@@ -45,8 +45,8 @@ const GENERIC_TITLES = new Set([
       description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
       poster_url: poster,
       banner_url: cover,
-      rating: attr.averageRating ? Math.round((parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
-      year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+      rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+      year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
       status: status === "current" ? "En emisión" : "Finalizado",
       genres: ["Anime"],
       content_type: "anime" as ContentKind,
@@ -132,7 +132,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
   // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
   const simplifiedQuery = query
     .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|[I|V|X]+)\b/gi, "")
-    .replace(/[(\[{][^(\[{)\]}]+[)\]}]/g, '')
+    .replace(/[(\[{][^)\]}]+[)\]}]/g, '')
     .replace(/[-_]/g, " ")
     .trim();
 
@@ -235,8 +235,8 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: cover,
-          rating: attr.averageRating ? Math.round((parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
-          year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+          rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+          year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
           status: attr.status === "current" ? "En emisión" : "Finalizado",
           genres: ["Anime"],
           content_type: "anime",
@@ -304,7 +304,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
         const cleanSummary = sanitizeHtml((show.summary || ""), { allowedTags: [] }).trim();
-        const year = show.premiered ? parseInt(show.premiered.slice(0, 4), 10) : 2023;
+        const year = show.premiered ? Number.parseInt(show.premiered.slice(0, 4), 10) : 2023;
         const isAnime = (show.type || "").toLowerCase() === "animation" && (show.genres || []).includes("Anime");
 
         const suggested_episodes = (show._embedded?.episodes || []).map((ep: any) => ({
@@ -358,7 +358,7 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
           poster_url: poster,
           banner_url: poster,
           rating: 8.5,
-          year: doc.year ? parseInt(doc.year, 10) : 1970,
+          year: doc.year ? Number.parseInt(doc.year, 10) : 1970,
           status: "Dominio Público",
           genres: ["Clásico", "Dominio Público", "Cine de Culto"],
           content_type: "open_archive",

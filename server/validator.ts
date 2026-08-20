@@ -1,7 +1,7 @@
 export class MediaValidator {
   private constructor() {}
-  private static DEFAULT_TIMEOUT = 5000;
-  private static VALID_CONTENT_TYPES = [
+  private static readonly DEFAULT_TIMEOUT = 5000;
+  private static readonly VALID_CONTENT_TYPES = [
     "video/",
     "application/vnd.apple.mpegurl",
     "application/x-mpegurl",
@@ -9,7 +9,7 @@ export class MediaValidator {
     "text/html",
   ];
 
-  private static KNOWN_EMBED_HOSTS = [
+  private static readonly KNOWN_EMBED_HOSTS = [
     "zilla-networks.com",
     "voe.sx",
     "byselapuix.com",

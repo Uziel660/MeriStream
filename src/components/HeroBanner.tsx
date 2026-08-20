@@ -62,7 +62,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
       {/* HERO MAIN CONTENT */}
       <div className="relative z-10 max-w-7xl mx-auto h-full flex flex-col justify-end px-4 sm:px-8 pb-16 sm:pb-24">
         <div className="max-w-2xl space-y-4">
-          
+
           {/* METADATA CHIPS */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="inline-flex items-center rounded-md bg-zinc-900/90 border border-zinc-800 px-2.5 py-1 text-zinc-300 text-xs font-medium backdrop-blur-md uppercase tracking-wider text-[11px]">

@@ -87,10 +87,10 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-8 space-y-2.5">
-        
+
         {/* ROW 1: BRAND LOGO + INTEGRATED COMPACT SEARCH + ADMIN PANEL */}
         <div className="flex items-center justify-between gap-3 sm:gap-6">
-          
+
           {/* LOGO & BRAND */}
           <a
             href="/"
@@ -162,7 +162,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
 
         {/* ROW 2: CATEGORY & GENRES PILL BAR (INTEGRADA DIRECTAMENTE EN LA BARRA SUPERIOR) */}
         <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-900/70">
-          
+
           <div
             ref={scrollContainerRef}
             className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5"

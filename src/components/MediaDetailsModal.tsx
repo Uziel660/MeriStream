@@ -126,7 +126,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
             {!isLoading && !error && show && (
               <div className="flex flex-1 flex-col overflow-y-auto">
-                
+
                 {/* HERO HEADER OF THE SIDE PANEL */}
                 <div className="relative h-72 sm:h-80 w-full shrink-0 overflow-hidden bg-zinc-900">
                   {headerImage && (
@@ -181,7 +181,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
                 {/* CONTENT: SINOPSIS, GÉNEROS Y EPISODIOS */}
                 <div className="p-6 space-y-6 flex-1">
-                  
+
                   {/* GÉNEROS EN CHIPS CON FONDO SEMI-TRANSPARENTE */}
                   {genresList.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">

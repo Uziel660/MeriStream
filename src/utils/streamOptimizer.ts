@@ -128,7 +128,7 @@ function hashString(str: string): number {
  */
 export function rankAndSortServers(urls: string[]): ScoredServer[] {
   const uniqueUrls = Array.from(new Set(urls.filter((u) => Boolean(u && typeof u === 'string'))));
-  
+
   const scored = uniqueUrls.map((url, idx) => scoreServer(url, idx));
 
   // Ordenar descendentemente por puntuación (máxima calidad + salud primero)

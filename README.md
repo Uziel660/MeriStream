@@ -1,189 +1,179 @@
 # 🎬 NITIFLIX / VOIDSTREAM — FULL-STACK TYPESCRIPT MEDIA PLATFORM
 
-> **Versión del Sistema:** 3.0.0 (Arquitectura Unificada TypeScript Full-Stack + Extracción Universal Just-In-Time)  
-> **Estado:** 100% Funcional de Extremo a Extremo (Scraping nativo, Enriquecimiento Multifuente, Catálogo Semántico, Reproductor Híbrido HLS/Embed con Proxy Anti-CORS y Worker de Tareas en Segundo Plano).  
-> **Stack:** Node.js (Express + TypeScript + Cheerio + Axios) + React 18 (TypeScript + Vite) + Tailwind CSS + Lucide Icons + Hls.js.
+> **Versión del Sistema:** 4.0.0 (Persistencia PostgreSQL + Prisma ORM + Sistema Anti-Duplicados Multi-API + Enriquecimiento GraphQL AniList 4K + Clasificación Semántica + Extracción Just-In-Time)
+> **Estado:** 100% Funcional de Extremo a Extremo (Base de datos PostgreSQL 17, Prisma ORM, Sistema Anti-Duplicados por MAL ID y Títulos Normalizados, Scraping Nativo, Clasificación Semántica de Páginas, Resolutores Embebidos, Validador de Streams, Enriquecimiento Multifuente con AniList/Kitsu/MAL, Catálogo Interactivo con Estado Reactivo de Importación, Reproductor Híbrido HLS/Embed con Proxy Anti-CORS y Worker de Tareas Persistente).
+> **Stack:** Node.js (Express + TypeScript + Cheerio + Prisma ORM + PostgreSQL 17) + React 18 (TypeScript + Vite) + Tailwind CSS + Lucide Icons + Hls.js.
 
 ---
 
 ## 📋 Índice de Contenidos
 
 1. [Visión y Filosofía](#1-visión-y-filosofía-del-proyecto)
-2. [Arquitectura Unificada (TypeScript Full-Stack)](#2-arquitectura-unificada-typescript-full-stack)
-3. [Estructura del Repositorio](#3-estructura-del-repositorio)
-4. [Módulos del Backend (`server/`)](#4-módulos-del-backend-server)
-5. [Frontend y Componentes Clave (`src/`)](#5-frontend-y-componentes-clave-src)
-6. [API REST Endpoints](#6-api-rest-endpoints)
-7. [Guía de Instalación y Ejecución](#7-guía-de-instalación-y-ejecución)
-8. [Configuraciones Avanzadas](#8-configuraciones-avanzadas)
+2. [Arquitectura Unificada (TypeScript + PostgreSQL + Prisma)](#2-arquitectura-unificada-typescript--postgresql--prisma)
+3. [Sistema Inteligente Anti-Duplicados](#3-sistema-inteligente-anti-duplicados)
+4. [Estructura del Repositorio](#4-estructura-del-repositorio)
+5. [Módulos del Backend (`server/`)](#5-módulos-del-backend-server)
+6. [Frontend y Componentes Clave (`src/`)](#6-frontend-y-componentes-clave-src)
+7. [API REST Endpoints](#7-api-rest-endpoints)
+8. [Guía de Instalación y Configuración](#8-guía-de-instalación-y-configuración)
 
 ---
 
 ## 1. Visión y Filosofía del Proyecto
 
-Nitiflix es una plataforma de streaming personal, catálogo multimedia interactivo y motor de ingesta universal con estética de alta gama estilo Netflix / Stremio.
+Nitiflix es una plataforma de streaming personal, catálogo multimedia interactivo y motor de ingesta universal con estética cinematográfica de alta gama estilo Netflix / Stremio.
 
-### Principio Fundamental: "Modelo Just-In-Time + Catálogo Desacoplado"
+### Principios Fundamentales
 
-En lugar de almacenar enlaces de video que expiran rápidamente por tokens temporales (TTL) de los CDN, el sistema opera con dos motores coordinados en **TypeScript**:
+1. **Persistencia PostgreSQL y Cero Contenido Demo:**
+   La aplicación funciona sobre una base de datos relacional PostgreSQL en vivo a través de Prisma ORM. Se inicia con una videoteca limpia lista para ser alimentada mediante ingesta universal o rastreo en segundo plano.
 
-1. **Indexador y Catálogo Semántico (Batch & On-Demand):**  
-   Extrae metadatos, sinopsis, pósteres en alta resolución, banners, géneros, temporadas y episodios. Enriquece la información consultando automáticamente APIs de metadatos (Jikan / MyAnimeList, Kitsu, AniList y TMDB).
+2. **Deduplicación Estricta Multi-API:**
+   Incluso si se importan animes o series desde diferentes sitios web (AnimeFLV, JKanime, Cuevana, etc.), el sistema verifica la obra contra **AniList GraphQL** y **Jikan / MyAnimeList (MAL)** antes de guardar. Identifica si el título o su `mal_id` ya existen en la base de datos y **fusiona los episodios** en la misma ficha en lugar de crear registros duplicados.
 
-2. **Extractor de Video Just-In-Time:**  
+3. **Modelo Just-In-Time (JIT) + Catálogo Desacoplado:**
    En el instante en que el usuario reproduce un episodio o película, el motor analiza la fuente en tiempo real, decodifica streams ocultos en Base64/scripts empaquetados, resuelve servidores de video (Zilla, Mega, Voe, MP4Upload, StreamTape, etc.) y genera una lista ordenada de calidades y servidores listos para reproducción nativa HLS (.m3u8), MP4 directo o iframe sandbox seguro.
 
 ---
 
-## 2. Arquitectura Unificada (TypeScript Full-Stack)
+## 2. Arquitectura Unificada (TypeScript + PostgreSQL + Prisma)
 
-Todo el ecosistema corre bajo un **único runtime Node.js/TypeScript**, eliminando la necesidad de dependencias externas de Python, entornos virtuales o puertos desincronizados:
+Todo el ecosistema corre bajo un **único runtime Node.js/TypeScript** conectado a **PostgreSQL**:
 
 ```
-                              [ ENTRADA DE USUARIO ]
-             (Búsqueda, Navegación de Catálogo o URL en Smart Ingest)
-                                       │
-                                       ▼
-                       [ POST /api/v1/catalog/analyze ]
-                                       │
-                                       ▼
-                     ┌────────────────────────────────────┐
-                     │     Universal Scraper Engine       │
-                     │  (server/universalScraper.ts)      │
-                     └─────────────────┬──────────────────┘
-                                       │
-                      ┌────────────────┴────────────────┐
-                      ▼                                 ▼
-             [ ES UNA COLECCIÓN ]             [ ES UNA FICHA DE SERIE ]
-          (Directorio / Resultados)           (Serie / Película con episodios)
-                      │                                 │
-                      ▼                                 ▼
-             parseCollectionPage()              parseDetailPage()
-             - Extrae tarjetas y enlaces        - Extrae lista de episodios
-             - Resuelve paginación              - Enriquece metadatos (MAL/Kitsu)
-                      │                                 │
-                      ▼                                 ▼
-             POST /api/v1/catalog/crawl       POST /api/v1/catalog/import-show
-             (Worker en background)           (Persiste en base de datos local)
-                      │                                 │
-                      └────────────────┬────────────────┘
-                                       │
-                                       ▼
-                          [ BASE DE DATOS JSON/PERSIST ]
-                            (Shows, Episodes, Tasks)
-                                       │
-                                       ▼
-                      [ FRONTEND REACT (Catálogo / Home) ]
-                      - UnifiedHeader (Búsqueda + Filtros + Tags)
-                      - HeroBanner con AmbientGlow dinámico
-                      - BentoCollection & MediaRow interactivos
-                      - Continuar viendo con progreso persistido
-                                       │
-                                       ▼ (Usuario: "Play Episodio X")
-                        [ GET /api/v1/play/:episode_id ]
-                                       │
-                                       ▼
-                     ┌────────────────────────────────────┐
-                     │   Extractor Just-In-Time (JIT)     │
-                     │ - Decodificación Base64 / DomPack  │
-                     │ - Resolvers HLS / MP4 / Embeds     │
-                     │ - Ordenamiento por calidad/estabilidad │
-                     └─────────────────┬──────────────────┘
-                                       │
-                                       ▼
-                      [ Reproductor Híbrido HLSPlayerModal ]
-                      - Motor Hls.js optimizado (StreamOptimizer)
-                      - Fallback instantáneo multiserver
-                      - Proxy Anti-CORS integrado (/api/v1/proxy/stream)
-                      - Atajos de teclado, Picture-in-Picture y Mini-Player
+                               [ ENTRADA DE USUARIO ]
+              (Búsqueda, Navegación de Catálogo o URL en Smart Ingest)
+                                        │
+                                        ▼
+                        [ POST /api/v1/catalog/import-show ]
+                                        │
+                                        ▼
+                      ┌────────────────────────────────────┐
+                      │    saveShowWithDeduplication()     │
+                      │       (server/showService.ts)      │
+                      └─────────────────┬──────────────────┘
+                                        │
+                                        ▼ (Consulta APIs Oficiales)
+                      ┌────────────────────────────────────┐
+                      │   enrichUniversalMetadata()        │
+                      │ (AniList 4K / Jikan MAL / Kitsu)   │
+                      └─────────────────┬──────────────────┘
+                                        │
+                                        ▼ (Extracción de MAL ID + Títulos Canónicos)
+                      ┌────────────────────────────────────┐
+                      │     Verificación Anti-Duplicados   │
+                      │  1. Match por mal_id               │
+                      │  2. Match por normalized_title     │
+                      └─────────┬────────────────┬─────────┘
+                                │                │
+                       ┌────────┘                └────────┐
+                       ▼                                  ▼
+             [ YA EXISTE EN POSTGRES ]             [ ES OTRA OBRA NUEVA ]
+            (Fusiona nuevos episodios)            (Inserta Show + Episodes)
+                       │                                  │
+                       └────────────────┬─────────────────┘
+                                        │
+                                        ▼
+                         ┌──────────────────────────────┐
+                         │   BASE DE DATOS POSTGRESQL   │
+                         │    (Prisma ORM - nitiflix)   │
+                         │ - Show                       │
+                         │ - Episode                    │
+                         │ - CrawlTask                  │
+                         │ - WorkerSettingsStore        │
+                         └──────────────┬───────────────┘
+                                        │
+                                        ▼
+                       [ FRONTEND REACT (Catálogo / Home) ]
+                       - UnifiedHeader (Búsqueda + Filtros)
+                       - HeroBanner con AmbientGlow dinámico
+                       - BentoCollection & MediaRow interactivos
+                       - Continuar viendo con progreso persistido
+                       - AdminPanel (Smart Ingest + Monitor Worker)
+                                        │
+                                        ▼ (Usuario: "Play Episodio X")
+                         [ GET /api/v1/play/:episode_id ]
+                                        │
+                                        ▼
+                      ┌────────────────────────────────────┐
+                      │    Extractor Just-In-Time (JIT)    │
+                      │ - StrategyRouter (Prioridades)     │
+                      │ - EmbedResolvers (Voe/Zilla/Mega)  │
+                      │ - MediaValidator (HEAD / Range 0-1)│
+                      └─────────────────┬──────────────────┘
+                                        │
+                                        ▼
+                       [ Reproductor Híbrido HLSPlayerModal ]
+                       - Motor Hls.js optimizado
+                       - Proxy Anti-CORS (/api/v1/proxy/stream)
 ```
 
 ---
 
-## 3. Estructura del Repositorio
+## 3. Sistema Inteligente Anti-Duplicados
+
+El motor de guardado (`server/showService.ts`) implementa una canalización de cuatro capas:
+
+1. **Enriquecimiento Pre-Guardado**:
+   Antes de escribir en la base de datos, el backend consulta AniList GraphQL / Jikan API para obtener el `mal_id`, título canónico, títulos en inglés/japonés, póster 4K, banner y sinopsis completa.
+
+2. **Deduplicación por `mal_id` (Precisión 100%)**:
+   Si el anime resultante posee un `mal_id` asignado por MyAnimeList/AniList, se consulta si ya existe en PostgreSQL (`prisma.show.findUnique({ where: { mal_id } })`).
+
+3. **Deduplicación por Título Normalizado**:
+   Si no se obtiene `mal_id`, se calcula una huella limpia del título (`normalizeTitle()`: minúsculas, sin tildes ni caracteres especiales). Se comprueba contra `normalized_title`, `japanese_title` y `english_title`.
+
+4. **Fusión de Episodios**:
+   Si se detecta un duplicado, **no se crea un nuevo registro**. La serie existente se actualiza con los episodios nuevos traídos del nuevo servidor/página que aún no estuvieran registrados.
+
+---
+
+## 4. Estructura del Repositorio
 
 ```
+├── prisma/
+│   └── schema.prisma          # Esquema relacional PostgreSQL (Show, Episode, CrawlTask, WorkerSettingsStore)
 ├── server/
-│   ├── metadataEngine.ts      # Enriquecedor de metadatos (Jikan MAL, Kitsu, TMDB, AniList)
-│   ├── taskWorker.ts          # Worker de tareas asíncronas de crawling e importación masiva
-│   ├── types.ts               # Tipos e interfaces de datos del backend
-│   └── universalScraper.ts    # Scraper universal con parsers de colecciones y fichas de video
+│   ├── db.ts                  # Cliente de Prisma ORM y normalizador de títulos
+│   ├── metadataEngine.ts      # Enriquecedor multi-motor (AniList GraphQL 4K, Kitsu, Jikan MAL, TVMaze)
+│   ├── pageClassifier.ts      # Clasificador semántico por scoring de señales de URL y DOM
+│   ├── resolvers.ts           # Resolutor de reproductores embebidos (Zilla Networks, MP4Upload, Voe.sx, Mega, etc.)
+│   ├── router.ts              # Enrutador jerárquico de estrategias de extracción
+│   ├── showService.ts         # Servicio CRUD con deduplicación por MAL ID y títulos normalizados
+│   ├── taskWorker.ts          # Worker de tareas asíncronas persistido en PostgreSQL
+│   ├── types.ts               # Tipos e interfaces del backend
+│   ├── universalScraper.ts    # Scraper universal integrando búsqueda, tarjetas e imágenes de AnimeFLV
+│   └── validator.ts           # Validador de salud de streams mediante HEAD/GET Range check
 ├── src/
-│   ├── api/
-│   │   └── client.ts          # Cliente API tipado con axios para consumo del backend
 │   ├── components/
-│   │   ├── AdminPanel.tsx     # Centro de control: Smart Ingest, Crawler, Jobs y Monitor
-│   │   ├── AllCategoriesModal.tsx # Explorador completo de géneros y taxonomías
-│   │   ├── AmbientGlow.tsx    # Fondo dinámico ambiental con color extraction del póster
-│   │   ├── BentoCollection.tsx # Cuadrícula bento interactiva para colecciones destacadas
-│   │   ├── ContinueWatching.tsx # Fila de reanudación con progreso en tiempo real
-│   │   ├── HeroBanner.tsx     # Billboard cinematográfico con reproducción rápida
-│   │   ├── HLSPlayerModal.tsx # Reproductor de video avanzado (HLS.js, Multiserver, MiniPlayer)
-│   │   ├── MediaCard.tsx      # Tarjeta con zoom, metadatos enriquecidos y quick actions
-│   │   ├── MediaDetailsModal.tsx # Ficha técnica estilo Netflix con selector de temporadas
-│   │   ├── MediaRow.tsx       # Carrusel horizontal adaptable
-│   │   └── UnifiedHeader.tsx  # Barra de navegación unificada con búsqueda, filtros y tags
-│   ├── hooks/
-│   │   ├── useDebouncedValue.ts # Hook de debounce para búsquedas en tiempo real
-│   │   └── useTaskPolling.ts    # Hook de sondeo reactivo de tareas en segundo plano
-│   ├── utils/
-│   │   ├── colorExtractor.ts  # Extractor de paletas de color dominantes desde pósteres
-│   │   └── streamOptimizer.ts # Optimizador y configurador de buffers y niveles para HLS.js
-│   ├── App.tsx                # Orquestador principal de vistas, modales y estado global
-│   ├── index.css              # Configuración Tailwind CSS y animaciones
-│   ├── main.tsx               # Punto de entrada de React 18
-│   └── types.ts               # Tipos TypeScript compartidos en todo el frontend
+│   │   ├── AdminPanel.tsx     # Smart Ingest, Crawler, tareas de Worker y gestión de catálogo
+│   │   ├── HLSPlayerModal.tsx # Reproductor HLS.js con proxy anti-CORS y multiserver
+│   │   └── ...                # Demás componentes UI
+│   └── App.tsx                # Orquestador principal de React 18
 ├── server.ts                  # Servidor Express, API REST, Proxy de Video y middleware Vite
-├── vite.config.ts             # Configuración del empaquetador Vite y Tailwind
-├── package.json               # Dependencias unificadas (Express, React, HLS, Lucide, Tailwind)
-└── metadata.json              # Metadatos del applet y configuración de entorno
+├── .env                       # Configuración local (DATABASE_URL, PORT)
+└── package.json               # Dependencias (Express, React, Prisma, Tailwind)
 ```
 
 ---
 
-## 4. Módulos del Backend (`server/`)
+## 5. Módulos del Backend (`server/`)
 
-### A. Scraper Universal (`server/universalScraper.ts`)
-- **Detección Semántica**: Clasifica páginas de streaming entre colecciones/directorios y fichas de detalle.
-- **Extracción de Streams Ocultos**: Desofusca scripts JavaScript, decodifica atributos Base64 (`data-src`, `data-player`, etc.) y extrae reproductores de Zilla, MP4Upload, Voe, Mega, StreamTape, YourUpload y más.
-- **Generación de Servidores Alternativos**: Retorna `all_available_streams` para permitir conmutación transparente en el reproductor.
+### A. Servicio de Datos y Deduplicación (`server/showService.ts`)
+- Orquesta las lecturas y escrituras en la base de datos PostgreSQL.
+- Implementa `saveShowWithDeduplication()`, `getShowsFromDb()`, `getShowByIdFromDb()`, `deleteShowFromDb()` y `clearAllShowsFromDb()`.
 
-### B. Motor de Metadatos (`server/metadataEngine.ts`)
-- Normaliza nombres eliminando prefijos/sufijos ("Ver", "Sub Español", "HD", etc.).
-- Consulta APIs públicas de anime y cine (Jikan / MyAnimeList v4, Kitsu API, etc.).
-- Enriquece con pósteres 4K, sinopsis completas, puntuaciones, estado de emisión y banners.
+### B. Motor de Metadatos Multi-API (`server/metadataEngine.ts`)
+- **AniList 4K GraphQL (Principal)**: Obtiene imágenes en ultra alta resolución (WebP/JPG 4K), sinopsis completas limpias de tags HTML, puntuaciones, estado de emisión y título oficial en japonés.
+- **Kitsu & Jikan MAL v4 (Fallbacks)**: Respaldo automático para animes clásicos o títulos no indexados en AniList.
 
-### C. Worker de Tareas en Segundo Plano (`server/taskWorker.ts`)
-- Cola de ejecución para crawling de catálogos masivos.
-- Control de concurrencia y reintentos automáticos.
-- Métricas en tiempo real de páginas rastreadas, series añadidas y episodios indexados.
+### C. Scraper Universal (`server/universalScraper.ts`)
+- Soporta búsquedas directas en AnimeFLV extrayendo las imágenes originales del catálogo para previsualización en el AdminPanel.
+- Extracción de episodios embebidos `.animeflv-episodes-data` y selectores DOM genéricos.
 
-### D. Servidor Principal & Proxy Anti-CORS (`server.ts`)
-- Servidor Express con persistencia de base de datos local en JSON (`data/db.json`).
-- Proxy de streaming con retransmisión de encabezados (`Referer`, `Origin`, `User-Agent`) para saltar restricciones CORS de CDNs protegidos.
-
----
-
-## 5. Frontend y Componentes Clave (`src/`)
-
-- **`HLSPlayerModal.tsx`**:
-  - Reproductor con soporte para streams nativos `.m3u8` (HLS.js) e iframes con sandbox seguro.
-  - Selector de servidores en vivo con detección automática de fallos y cambio inteligente de fuente.
-  - Selector de calidad/resolución (1080p, 720p, 480p, Auto), velocidad de reproducción y atajos de teclado (Espacio, Flechas, F para pantalla completa, M para mute).
-  - Modo Mini-Player flotante y Picture-in-Picture.
-  - Almacenamiento y sincronización de progreso de reproducción (`currentTime` y porcentaje visto).
-
-- **`UnifiedHeader.tsx`**:
-  - Barra de navegación moderna con buscador en tiempo real, selector de categorías y chips de géneros con conteos dinámicos.
-
-- **`ContinueWatching.tsx`**:
-  - Fila interactiva de reanudación rápida con barra de progreso visual y botón de reanudar al instante.
-
-- **`AdminPanel.tsx`**:
-  - Herramienta **Smart Ingest**: pega una URL para analizarla, previsualizar su contenido e importarla con un solo clic.
-  - Crawler masivo con selector de profundidad de páginas.
-  - Monitor en vivo de tareas activas, completadas o fallidas.
-  - Gestor de catálogo con búsqueda y eliminación de series.
+### D. Worker de Tareas en Segundo Plano (`server/taskWorker.ts`)
+- Guardado y recuperación de tareas de crawl en la tabla `CrawlTask` de PostgreSQL.
+- Procesa cada ítem descubierto ejecutando deduplicación automática y enriquecimiento AniList.
 
 ---
 
@@ -191,73 +181,72 @@ Todo el ecosistema corre bajo un **único runtime Node.js/TypeScript**, eliminan
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| `GET` | `/api/v1/shows` | Obtiene el catálogo de series/películas con filtros de búsqueda, categoría y género |
-| `GET` | `/api/v1/shows/:id` | Obtiene los detalles de una serie y su lista completa de episodios |
-| `DELETE` | `/api/v1/shows/:id` | Elimina una serie y sus episodios de la base de datos |
-| `GET` | `/api/v1/genres` | Lista todos los géneros disponibles y conteo de series asociadas |
-| `GET` | `/api/v1/play/:episode_id` | Ejecuta el extractor Just-In-Time y devuelve la lista de streams y servidores |
+| `GET` | `/api/v1/shows` | Obtiene el catálogo desde PostgreSQL con filtros de búsqueda y categoría |
+| `GET` | `/api/v1/shows/:id` | Obtiene los detalles de una serie y su lista de episodios |
+| `DELETE` | `/api/v1/shows/:id` | Elimina una serie y sus episodios de PostgreSQL |
+| `GET` | `/api/v1/genres` | Lista todos los géneros disponibles |
+| `GET` | `/api/v1/play/:episode_id` | Extractor Just-In-Time: resuelve streams en tiempo real para reproducción |
 | `GET` | `/api/v1/proxy/stream` | Proxy de streaming con headers personalizados para evadir bloqueos CORS |
-| `POST` | `/api/v1/catalog/analyze` | Analiza una URL fuente y devuelve la previsualización de la serie o colección |
-| `POST` | `/api/v1/catalog/import-show` | Importa y persiste una serie analizada en la base de datos |
-| `POST` | `/api/v1/catalog/batch-import` | Importación masiva de múltiples series |
-| `POST` | `/api/v1/catalog/crawl` | Inicia una tarea de rastreo y crawling en segundo plano |
-| `GET` | `/api/v1/worker/jobs` | Consulta la lista de trabajos y estado del worker |
-| `POST` | `/api/v1/worker/jobs/:id/cancel`| Cancela un trabajo en ejecución |
-| `GET` / `POST` | `/api/v1/worker/settings` | Consulta o actualiza los ajustes de concurrencia y límites del worker |
+| `POST` | `/api/v1/catalog/analyze` | Analiza una URL fuente y devuelve la previsualización |
+| `POST` | `/api/v1/catalog/import-show` | Importa una serie en PostgreSQL con sistema deduplicado |
+| `POST` | `/api/v1/catalog/batch-import` | Importación masiva de múltiples series con deduplicación |
+| `POST` | `/api/v1/catalog/crawl` | Inicia una tarea de rastreo en segundo plano persistida en DB |
+| `GET` | `/api/v1/tasks/:id` | Consulta el estado y progreso en vivo de una tarea |
+| `GET` | `/api/v1/worker/jobs` | Lista todos los trabajos del worker desde PostgreSQL |
+| `POST` | `/api/v1/catalog/reset-sample` | Vacía la base de datos PostgreSQL por completo |
 
 ---
 
-## 7. Guía de Instalación y Ejecución
+## 7. Guía de Instalación y Configuración
 
 ### Prerrequisitos
-- Node.js 18+ (o superior)
-- npm 9+ (o superior)
+- **Node.js**: v18+ (recomendado Node.js 20 o 24)
+- **PostgreSQL**: v14+ (recomendado PostgreSQL 17 corriendo en `localhost:5432`)
 
-### Instalación en un solo paso
+### 1. Variables de Entorno (`.env`)
+
+Asegúrate de tener un archivo `.env` en la raíz con la cadena de conexión a PostgreSQL:
+
+```env
+DATABASE_URL="postgresql://postgres:nitiflix123@localhost:5432/nitiflix?schema=public"
+PORT=3000
+NODE_ENV=development
+```
+
+### 2. Sincronizar Base de Datos con Prisma
 
 ```bash
-# 1. Clonar el repositorio y acceder al directorio
-cd /workspaces/NEWNETIFY
+# Crear las tablas en PostgreSQL e implementar la estructura relacional
+npx prisma db push
 
-# 2. Instalar todas las dependencias
-npm install
+# Generar el cliente de Prisma
+npx prisma generate
+```
 
-# 3. Iniciar el servidor en modo desarrollo (Backend Express + Frontend Vite)
+### 3. Iniciar el Servidor en Desarrollo
+
+```bash
 npm run dev
 ```
 
-El sistema iniciará automáticamente el backend y el frontend en:
+El servidor unificado estará disponible en:
 👉 **`http://localhost:3000`**
 
-### Compilación para Producción
+### 4. Compilación para Producción
 
 ```bash
-# Compilar frontend y empaquetar backend
+# Verificar tipos de TypeScript
+npm run lint
+
+# Compilar frontend (Vite) y backend (esbuild)
 npm run build
 
-# Iniciar servidor de producción
+# Iniciar servidor compilado
 npm start
 ```
 
 ---
 
-## 8. Configuraciones Avanzadas
-
-### Variables de Entorno (Opcional)
-Puedes crear un archivo `.env` en la raíz del proyecto para personalizar parámetros del servidor:
-
-```env
-# Puerto del servidor (Por defecto: 3000)
-PORT=3000
-
-# Clave de API de TMDB (Opcional, para enriquecimiento adicional de películas/series occidentales)
-TMDB_API_KEY=
-
-# User Agent personalizado para el Scraper
-SCRAPER_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-```
-
----
-
-**Última actualización:** 2026-08-20  
+**Última actualización:** 2026-08-20
+**Versión de Producción:** 4.0.0
 **Mantenedor:** Uziel660

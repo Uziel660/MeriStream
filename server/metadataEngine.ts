@@ -27,6 +27,12 @@ export function cleanQueryTitle(raw: string): string {
   return title.trim();
 }
 
+const GENERIC_TITLES = new Set([
+  "anime", "anime online", "ver anime", "ver anime online", "contenido", "catalogo", "catálogo",
+  "directorio", "pagina", "página", "movies", "series", "inicio", "home",
+  "lista", "list", "animes", "pelicula", "películas", "movie", "tv", "show", "watch", "online",
+]);
+
 /**
  * Enriches metadata across multiple engines (TVMaze, Jikan MAL, Kitsu, Internet Archive, Wikipedia)
  */
@@ -36,6 +42,28 @@ export async function enrichUniversalMetadata(
 ): Promise<EnrichedMetadata> {
   const cleaned = cleanQueryTitle(rawQuery);
   const lower = cleaned.toLowerCase();
+
+  // If query is a generic placeholder or page number, do NOT query external APIs to prevent false matches (e.g. Little Witch Academia)
+  const isGeneric =
+    GENERIC_TITLES.has(lower) ||
+    lower.length < 3 ||
+    /^page\s*\d+$/i.test(lower) ||
+    lower.startsWith("page ") ||
+    lower.includes("pagina ");
+
+  if (isGeneric) {
+    return {
+      title: cleaned || rawQuery || "Contenido Multimedia",
+      description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
+      poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+      banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
+      rating: 8.0,
+      year: new Date().getFullYear(),
+      status: "Finalizado",
+      genres: ["Multimedia"],
+      content_type: hintKind || "anime",
+    };
+  }
 
   // If hint is archive or query mentions archive/classic/dominio publico
   if (hintKind === "open_archive" || lower.includes("archive.org") || lower.includes("dominio publico")) {
@@ -82,13 +110,131 @@ export async function enrichUniversalMetadata(
   };
 }
 
-// --- Jikan MAL & Kitsu Anime Enricher ---
+// --- AniList, Kitsu & Jikan MAL Anime Enricher ---
 async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | null> {
-  // 1. Jikan API
+  // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
+  const simplifiedQuery = query
+    .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|[I|V|X]+)\b/gi, "")
+    .replace(/[\(\[\{].*?[\)\]\}]/g, "")
+    .replace(/[-_]/g, " ")
+    .trim();
+
+  const searchQuery = simplifiedQuery.length >= 3 ? simplifiedQuery : query;
+
+  // 1. AniList GraphQL API (Primary & Fast <200ms)
+  try {
+    const graphqlQuery = `
+      query ($search: String) {
+        Media(search: $search, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          description(asHtml: false)
+          coverImage {
+            extraLarge
+            large
+          }
+          bannerImage
+          averageScore
+          startDate {
+            year
+          }
+          status
+          genres
+          episodes
+        }
+      }
+    `;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: graphqlQuery, variables: { search: searchQuery } }),
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data: any = await res.json();
+      const media = data?.data?.Media;
+      if (media) {
+        const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
+        const banner = media.bannerImage || poster;
+        const cleanDesc = (media.description || "")
+          .replace(/<[^>]+>/g, "")
+          .replace(/\n\s*\n/g, "\n")
+          .trim();
+
+        return {
+          title: media.title?.romaji || media.title?.english || query,
+          original_title: media.title?.native || media.title?.romaji,
+          japanese_title: media.title?.native || undefined,
+          english_title: media.title?.english || undefined,
+          description: cleanDesc || "Sin descripción disponible.",
+          poster_url: poster,
+          banner_url: banner,
+          rating: media.averageScore ? Math.round((media.averageScore / 10) * 10) / 10 : 8.2,
+          year: media.startDate?.year || 2024,
+          status: media.status === "RELEASING" ? "En emisión" : "Finalizado",
+          genres: Array.isArray(media.genres) && media.genres.length > 0 ? media.genres : ["Anime"],
+          content_type: "anime",
+        };
+      }
+    }
+  } catch {
+    // ignore, try fallbacks
+  }
+
+  // 2. Kitsu API fallback
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, {
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(searchQuery)}&page[limit]=1`, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "VoidStream-Universal-Scraper/2.5",
+        Accept: "application/vnd.api+json",
+      },
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const json: any = await res.json();
+      if (json?.data && json.data.length > 0) {
+        const attr = json.data[0].attributes || {};
+        const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
+        const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
+
+        return {
+          title: attr.canonicalTitle || query,
+          original_title: attr.titles?.ja_jp,
+          japanese_title: attr.titles?.ja_jp || undefined,
+          english_title: attr.titles?.en || undefined,
+          description: attr.synopsis ? attr.synopsis.replace(/<[^>]+>/g, "").trim() : "Sin descripción disponible.",
+          poster_url: poster,
+          banner_url: cover,
+          rating: attr.averageRating ? Math.round((parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+          year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+          status: attr.status === "current" ? "En emisión" : "Finalizado",
+          genres: ["Anime"],
+          content_type: "anime",
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Jikan MAL API fallback
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchQuery)}&limit=1`, {
       signal: controller.signal,
       headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
     });
@@ -100,76 +246,21 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
         const item = json.data[0];
         const poster = item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || item.images?.jpg?.image_url;
         const genres = Array.isArray(item.genres) ? item.genres.map((g: any) => g.name) : ["Anime"];
-        const epCount = item.episodes || 12;
-        const suggested_episodes = [];
-        for (let i = 1; i <= Math.min(epCount, 24); i++) {
-          suggested_episodes.push({
-            number: i,
-            title: `Episodio ${i}`,
-          });
-        }
 
         return {
           title: item.title || query,
           original_title: item.title_japanese || item.title,
-          japanese_title: item.title_japanese,
-          english_title: item.title_english,
-          description: item.synopsis || "Sin descripción disponible.",
+          japanese_title: item.title_japanese || undefined,
+          english_title: item.title_english || undefined,
+          description: item.synopsis ? item.synopsis.replace(/<[^>]+>/g, "").trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
-          year: item.year || item.aired?.prop?.from?.year || 2023,
+          year: item.year || item.aired?.prop?.from?.year || 2024,
           status: item.status === "Currently Airing" ? "En emisión" : "Finalizado",
           genres,
           content_type: "anime",
-          suggested_episodes,
           mal_id: item.mal_id,
-        };
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // 2. Kitsu API fallback
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(query)}&page[limit]=1`, {
-      signal: controller.signal,
-      headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
-    });
-    clearTimeout(timer);
-
-    if (res.ok) {
-      const json: any = await res.json();
-      if (json?.data && json.data.length > 0) {
-        const attr = json.data[0].attributes || {};
-        const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
-        const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
-        const epCount = attr.episodeCount || 12;
-        const suggested_episodes = [];
-        for (let i = 1; i <= Math.min(epCount, 24); i++) {
-          suggested_episodes.push({
-            number: i,
-            title: `Episodio ${i}`,
-          });
-        }
-
-        return {
-          title: attr.canonicalTitle || query,
-          original_title: attr.titles?.ja_jp,
-          japanese_title: attr.titles?.ja_jp,
-          english_title: attr.titles?.en,
-          description: attr.synopsis || "Sin descripción disponible.",
-          poster_url: poster,
-          banner_url: cover,
-          rating: attr.averageRating ? parseFloat(attr.averageRating) / 10 : 8.0,
-          year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
-          status: attr.status === "current" ? "En emisión" : "Finalizado",
-          genres: ["Anime"],
-          content_type: "anime",
-          suggested_episodes,
         };
       }
     }

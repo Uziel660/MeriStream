@@ -11,3 +11,10 @@ coverage/
 .env*
 !.env.example
 *.db
+
+/src/generated/prisma
+.windsurf/
+.claude/
+.agents/
+.codebase-memory/
+node_modules/

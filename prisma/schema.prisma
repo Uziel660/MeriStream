@@ -1,0 +1,73 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Show {
+  id               String    @id @default(cuid())
+  mal_id           Int?      @unique
+  anilist_id       Int?
+  title            String
+  japanese_title   String?
+  english_title    String?
+  normalized_title String
+  description      String
+  poster_url       String?
+  banner_url       String?
+  category         String    @default("anime")
+  rating           Float     @default(8.0)
+  year             Int       @default(2024)
+  status           String    @default("Finalizado")
+  genres           String    @default("Multimedia")
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+  episodes         Episode[]
+
+  @@index([normalized_title])
+}
+
+model Episode {
+  id             String   @id @default(cuid())
+  show_id        String
+  show           Show     @relation(fields: [show_id], references: [id], onDelete: Cascade)
+  title          String
+  episode_number Float
+  source_url     String
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([show_id])
+}
+
+model CrawlTask {
+  id                  String   @id
+  name                String
+  target_url          String
+  status              String
+  scope               String   @default("catalog_pages")
+  max_pages           Int      @default(1)
+  current_page        Int      @default(0)
+  total_discovered    Int      @default(0)
+  shows_imported      Int      @default(0)
+  episodes_imported   Int      @default(0)
+  rate_limit_delay_ms Int      @default(1500)
+  items_queue         String     @default("[]")
+  current_item_title  String?
+  error_message       String?
+  logs                String     @default("[]")
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+model WorkerSettingsStore {
+  id                  String   @id @default("default")
+  default_delay_ms     Int      @default(1500)
+  jitter_enabled       Boolean  @default(true)
+  max_concurrent_jobs  Int      @default(1)
+  user_agent_rotation Boolean  @default(true)
+  updated_at           DateTime @updatedAt
+}

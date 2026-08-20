@@ -25,7 +25,7 @@ export function App() {
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
-  
+
   // Ambient Glow State
   const [ambientRgb, setAmbientRgb] = useState<[number, number, number]>([245, 158, 11]);
 
@@ -69,7 +69,7 @@ export function App() {
       const url = searchQuery
         ? `/api/v1/shows?search=${encodeURIComponent(searchQuery)}`
         : '/api/v1/shows';
-      
+
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -257,7 +257,7 @@ export function App() {
             )}
 
             <div className={`max-w-7xl mx-auto px-4 sm:px-8 space-y-12 ${featuredShow && !searchQuery && activeFilter === 'all' ? '-mt-12 sm:-mt-16' : 'pt-8'}`}>
-              
+
               {/* CASO A: SI HAY UN FILTRO ESPECÍFICO O BÚSQUEDA ACTIVA, MOSTRAR GRID DINÁMICO */}
               {searchQuery || activeFilter !== 'all' ? (
                 <section className="space-y-4">

@@ -34,7 +34,7 @@ export const BentoCollection: React.FC<BentoCollectionProps> = ({
 
       {/* ASYMMETRIC BENTO GRID: 1 LARGE ON THE LEFT, 4 SMALL ON THE RIGHT */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-        
+
         {/* LARGE FEATURED POSTER (Spans 2 columns on desktop) */}
         {mainItem && (
           <div className="md:col-span-2 lg:col-span-2">

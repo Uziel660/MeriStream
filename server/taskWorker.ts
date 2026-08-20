@@ -1,7 +1,9 @@
 // server/taskWorker.ts
-// Background Worker with Rate Limiting, Anti-Blocking Jitter, Queue & Persistent Execution
+// Background Worker with Rate Limiting, Anti-Blocking Jitter, Queue & Persistent PostgreSQL Execution
 
 import { analyzeUniversalUrl, extractCatalogListing } from "./universalScraper";
+import { saveShowWithDeduplication } from "./showService";
+import { prisma } from "./db";
 
 export interface CrawlJob {
   id: string;
@@ -14,7 +16,7 @@ export interface CrawlJob {
   total_discovered: number;
   shows_imported: number;
   episodes_imported: number;
-  rate_limit_delay_ms: number; // Configurable polite delay per request
+  rate_limit_delay_ms: number;
   items_queue: Array<{ title: string; url: string; status: "pending" | "processing" | "done" | "error"; error?: string }>;
   current_item_title?: string;
   error_message: string | null;
@@ -24,9 +26,9 @@ export interface CrawlJob {
 }
 
 export interface WorkerSettings {
-  default_delay_ms: number; // e.g. 1500ms
-  jitter_enabled: boolean; // add 300-800ms random delay
-  max_concurrent_jobs: number; // usually 1 or 2 for rate safety
+  default_delay_ms: number;
+  jitter_enabled: boolean;
+  max_concurrent_jobs: number;
   user_agent_rotation: boolean;
 }
 
@@ -38,46 +40,123 @@ const DEFAULT_SETTINGS: WorkerSettings = {
 };
 
 class BackgroundCrawlerWorker {
-  private jobs = new Map<string, CrawlJob>();
   private activeJobId: string | null = null;
   private isProcessing = false;
   private settings: WorkerSettings = { ...DEFAULT_SETTINGS };
-  private onShowImportedCallback?: (show: any) => void;
 
   constructor() {
-    // Start background tick loop
+    this.initSettings();
     setInterval(() => this.processNextInQueue(), 1000);
   }
 
-  public setImportCallback(cb: (show: any) => void) {
-    this.onShowImportedCallback = cb;
+  private async initSettings() {
+    try {
+      const stored = await prisma.workerSettingsStore.findUnique({ where: { id: "default" } });
+      if (stored) {
+        this.settings = {
+          default_delay_ms: stored.default_delay_ms,
+          jitter_enabled: stored.jitter_enabled,
+          max_concurrent_jobs: stored.max_concurrent_jobs,
+          user_agent_rotation: stored.user_agent_rotation,
+        };
+      } else {
+        await prisma.workerSettingsStore.create({
+          data: {
+            id: "default",
+            ...DEFAULT_SETTINGS,
+          },
+        });
+      }
+    } catch {}
+  }
+
+  public setImportCallback(_cb: (show: any) => void) {
+    // Deprecated legacy callback - taskWorker now saves directly to PostgreSQL via saveShowWithDeduplication
   }
 
   public getSettings(): WorkerSettings {
     return { ...this.settings };
   }
 
-  public updateSettings(newSettings: Partial<WorkerSettings>) {
+  public async updateSettings(newSettings: Partial<WorkerSettings>) {
     this.settings = { ...this.settings, ...newSettings };
+    try {
+      await prisma.workerSettingsStore.upsert({
+        where: { id: "default" },
+        update: { ...newSettings },
+        create: { id: "default", ...DEFAULT_SETTINGS, ...newSettings },
+      });
+    } catch (e) {
+      console.error("Error guardando settings de worker:", e);
+    }
   }
 
-  public getAllJobs(): CrawlJob[] {
-    return Array.from(this.jobs.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+  public async getAllJobs(): Promise<CrawlJob[]> {
+    try {
+      const tasks = await prisma.crawlTask.findMany({
+        orderBy: { created_at: "desc" },
+      });
+
+      return tasks.map((t) => ({
+        id: t.id,
+        name: t.name,
+        target_url: t.target_url,
+        status: t.status as CrawlJob["status"],
+        scope: t.scope as CrawlJob["scope"],
+        max_pages: t.max_pages,
+        current_page: t.current_page,
+        total_discovered: t.total_discovered,
+        shows_imported: t.shows_imported,
+        episodes_imported: t.episodes_imported,
+        rate_limit_delay_ms: t.rate_limit_delay_ms,
+        items_queue: (t.items_queue as any) || [],
+        current_item_title: t.current_item_title || undefined,
+        error_message: t.error_message,
+        created_at: t.created_at.toISOString(),
+        updated_at: t.updated_at.toISOString(),
+        logs: (t.logs as any) || [],
+      }));
+    } catch (e) {
+      console.error("Error buscando jobs en DB:", e);
+      return [];
+    }
   }
 
-  public getJob(id: string): CrawlJob | undefined {
-    return this.jobs.get(id);
+  public async getJob(id: string): Promise<CrawlJob | null> {
+    try {
+      const t = await prisma.crawlTask.findUnique({ where: { id } });
+      if (!t) return null;
+      return {
+        id: t.id,
+        name: t.name,
+        target_url: t.target_url,
+        status: t.status as CrawlJob["status"],
+        scope: t.scope as CrawlJob["scope"],
+        max_pages: t.max_pages,
+        current_page: t.current_page,
+        total_discovered: t.total_discovered,
+        shows_imported: t.shows_imported,
+        episodes_imported: t.episodes_imported,
+        rate_limit_delay_ms: t.rate_limit_delay_ms,
+        items_queue: (t.items_queue as any) || [],
+        current_item_title: t.current_item_title || undefined,
+        error_message: t.error_message,
+        created_at: t.created_at.toISOString(),
+        updated_at: t.updated_at.toISOString(),
+        logs: (t.logs as any) || [],
+      };
+    } catch {
+      return null;
+    }
   }
 
-  public createJob(options: {
+  public async createJob(options: {
     target_url: string;
     scope?: "single" | "catalog_pages" | "full_catalog";
     max_pages?: number;
     delay_ms?: number;
     name?: string;
-  }): CrawlJob {
+  }): Promise<CrawlJob> {
     const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const targetUrl = options.target_url.trim();
     const scope = options.scope || (options.max_pages && options.max_pages > 1 ? "catalog_pages" : "catalog_pages");
@@ -96,13 +175,38 @@ class BackgroundCrawlerWorker {
 
     const jobName = options.name || `Importación de ${domainName} (${scope === "full_catalog" ? "Catálogo Completo" : `${options.max_pages || 1} pág`})`;
 
-    const job: CrawlJob = {
-      id,
-      name: jobName,
-      target_url: targetUrl,
+    const initialLog = {
+      timestamp: new Date().toISOString(),
+      level: "info" as const,
+      message: `Tarea creada para ${targetUrl}. En cola de ejecución del worker con delay cortés de ${delay}ms.`,
+    };
+
+    const taskRecord = await prisma.crawlTask.create({
+      data: {
+        id,
+        name: jobName,
+        target_url: targetUrl,
+        status: "pending",
+        scope,
+        max_pages: options.max_pages || 1,
+        current_page: 0,
+        total_discovered: 0,
+        shows_imported: 0,
+        episodes_imported: 0,
+        rate_limit_delay_ms: delay,
+        items_queue: [],
+        error_message: null,
+        logs: [initialLog],
+      },
+    });
+
+    return {
+      id: taskRecord.id,
+      name: taskRecord.name,
+      target_url: taskRecord.target_url,
       status: "pending",
-      scope,
-      max_pages: options.max_pages || 1,
+      scope: taskRecord.scope as CrawlJob["scope"],
+      max_pages: taskRecord.max_pages,
       current_page: 0,
       total_discovered: 0,
       shows_imported: 0,
@@ -110,84 +214,104 @@ class BackgroundCrawlerWorker {
       rate_limit_delay_ms: delay,
       items_queue: [],
       error_message: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      logs: [
-        {
-          timestamp: new Date().toISOString(),
-          level: "info",
-          message: `Tarea creada para ${targetUrl}. En cola de ejecución del worker con delay cortés de ${delay}ms.`,
-        },
-      ],
+      created_at: taskRecord.created_at.toISOString(),
+      updated_at: taskRecord.updated_at.toISOString(),
+      logs: [initialLog],
     };
-
-    this.jobs.set(id, job);
-    this.addLog(job, "info", `Protección de IP activa: Rate limit ${delay}ms + jitter anti-baneo.`);
-    return job;
   }
 
-  public pauseJob(id: string): boolean {
-    const job = this.jobs.get(id);
+  public async pauseJob(id: string): Promise<boolean> {
+    const job = await this.getJob(id);
     if (!job) return false;
     if (job.status === "running" || job.status === "pending") {
-      job.status = "paused";
-      this.addLog(job, "warn", "Tarea pausada por el usuario.");
-      if (this.activeJobId === id) {
-        this.activeJobId = null;
-      }
+      await this.updateJobState(id, { status: "paused" });
+      await this.addLog(id, "warn", "Tarea pausada por el usuario.");
+      if (this.activeJobId === id) this.activeJobId = null;
       return true;
     }
     return false;
   }
 
-  public resumeJob(id: string): boolean {
-    const job = this.jobs.get(id);
+  public async resumeJob(id: string): Promise<boolean> {
+    const job = await this.getJob(id);
     if (!job) return false;
     if (job.status === "paused") {
-      job.status = "pending";
-      this.addLog(job, "info", "Tarea reanudada y puesta en cola.");
+      await this.updateJobState(id, { status: "pending" });
+      await this.addLog(id, "info", "Tarea reanudada y puesta en cola.");
       return true;
     }
     return false;
   }
 
-  public cancelJob(id: string): boolean {
-    const job = this.jobs.get(id);
+  public async cancelJob(id: string): Promise<boolean> {
+    const job = await this.getJob(id);
     if (!job) return false;
-    job.status = "cancelled";
-    this.addLog(job, "warn", "Tarea cancelada.");
-    if (this.activeJobId === id) {
-      this.activeJobId = null;
-    }
+    await this.updateJobState(id, { status: "cancelled" });
+    await this.addLog(id, "warn", "Tarea cancelada.");
+    if (this.activeJobId === id) this.activeJobId = null;
     return true;
   }
 
-  public deleteJob(id: string): boolean {
-    if (this.activeJobId === id) {
-      this.activeJobId = null;
-    }
-    return this.jobs.delete(id);
-  }
-
-  public clearFinishedJobs() {
-    for (const [id, job] of this.jobs.entries()) {
-      if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
-        this.jobs.delete(id);
-      }
+  public async deleteJob(id: string): Promise<boolean> {
+    if (this.activeJobId === id) this.activeJobId = null;
+    try {
+      await prisma.crawlTask.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  private addLog(job: CrawlJob, level: "info" | "success" | "warn" | "error", message: string) {
-    job.logs.push({
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-    });
-    // Keep max 150 logs per job
-    if (job.logs.length > 150) {
-      job.logs.shift();
+  public async clearFinishedJobs() {
+    try {
+      await prisma.crawlTask.deleteMany({
+        where: {
+          status: { in: ["completed", "failed", "cancelled"] },
+        },
+      });
+    } catch (e) {
+      console.error("Error limpiando tareas terminadas:", e);
     }
-    job.updated_at = new Date().toISOString();
+  }
+
+  private async addLog(id: string, level: "info" | "success" | "warn" | "error", message: string) {
+    try {
+      const task = await prisma.crawlTask.findUnique({ where: { id } });
+      if (!task) return;
+      const logs = (task.logs as any[]) || [];
+      logs.push({
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+      });
+      if (logs.length > 150) logs.shift();
+
+      await prisma.crawlTask.update({
+        where: { id },
+        data: { logs },
+      });
+    } catch {}
+  }
+
+  private async updateJobState(id: string, data: Partial<CrawlJob>) {
+    try {
+      const payload: any = {};
+      if (data.status) payload.status = data.status;
+      if (typeof data.current_page === "number") payload.current_page = data.current_page;
+      if (typeof data.total_discovered === "number") payload.total_discovered = data.total_discovered;
+      if (typeof data.shows_imported === "number") payload.shows_imported = data.shows_imported;
+      if (typeof data.episodes_imported === "number") payload.episodes_imported = data.episodes_imported;
+      if (data.items_queue) payload.items_queue = data.items_queue;
+      if (data.current_item_title !== undefined) payload.current_item_title = data.current_item_title;
+      if (data.error_message !== undefined) payload.error_message = data.error_message;
+
+      await prisma.crawlTask.update({
+        where: { id },
+        data: payload,
+      });
+    } catch (e) {
+      console.error("Error actualizando job state:", e);
+    }
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -197,7 +321,6 @@ class BackgroundCrawlerWorker {
   private async applyPoliteRateLimit(job: CrawlJob) {
     let delay = job.rate_limit_delay_ms || this.settings.default_delay_ms;
     if (this.settings.jitter_enabled) {
-      // Add random jitter (200-700ms) to prevent robotic pattern detection
       const jitter = Math.floor(Math.random() * 500) + 200;
       delay += jitter;
     }
@@ -207,20 +330,24 @@ class BackgroundCrawlerWorker {
   private async processNextInQueue() {
     if (this.isProcessing) return;
 
-    // Find first pending job
-    const pendingJob = Array.from(this.jobs.values()).find((j) => j.status === "pending");
-    if (!pendingJob) return;
-
-    this.isProcessing = true;
-    this.activeJobId = pendingJob.id;
-    pendingJob.status = "running";
-
     try {
-      await this.executeJob(pendingJob);
+      const pendingTask = await prisma.crawlTask.findFirst({
+        where: { status: "pending" },
+        orderBy: { created_at: "asc" },
+      });
+
+      if (!pendingTask) return;
+
+      this.isProcessing = true;
+      this.activeJobId = pendingTask.id;
+      await this.updateJobState(pendingTask.id, { status: "running" });
+
+      const currentJob = await this.getJob(pendingTask.id);
+      if (currentJob) {
+        await this.executeJob(currentJob);
+      }
     } catch (err: any) {
-      pendingJob.status = "failed";
-      pendingJob.error_message = err.message || "Error fatal en worker";
-      this.addLog(pendingJob, "error", `Fallo en tarea: ${err.message}`);
+      console.error("Error en processNextInQueue:", err);
     } finally {
       this.isProcessing = false;
       this.activeJobId = null;
@@ -228,26 +355,25 @@ class BackgroundCrawlerWorker {
   }
 
   private async executeJob(job: CrawlJob) {
-    this.addLog(job, "info", `Iniciando rastreador en segundo plano para: ${job.target_url}`);
+    await this.addLog(job.id, "info", `Iniciando rastreador en segundo plano para: ${job.target_url}`);
 
     // Step 1: Discovered items check
     if (job.items_queue.length === 0) {
-      this.addLog(job, "info", `Analizando estructura inicial y paginación...`);
+      await this.addLog(job.id, "info", `Analizando estructura inicial y paginación...`);
       await this.applyPoliteRateLimit(job);
 
-      if (job.status !== "running") return;
+      const checkJob = await this.getJob(job.id);
+      if (!checkJob || checkJob.status !== "running") return;
 
-      // Extract listing or single detail
       const analysis = await analyzeUniversalUrl(job.target_url);
 
       if (analysis.page_type === "catalog" && analysis.catalog_items.length > 0) {
-        this.addLog(
-          job,
+        await this.addLog(
+          job.id,
           "info",
           `Página 1: Encontradas ${analysis.catalog_items.length} obras en el catálogo inicial.`
         );
 
-        // Add discovered items
         analysis.catalog_items.forEach((item) => {
           job.items_queue.push({
             title: item.title,
@@ -257,18 +383,22 @@ class BackgroundCrawlerWorker {
         });
         job.total_discovered = job.items_queue.length;
         job.current_page = 1;
+        await this.updateJobState(job.id, {
+          items_queue: job.items_queue,
+          total_discovered: job.total_discovered,
+          current_page: job.current_page,
+        });
 
-        // If multi-page requested (e.g. 2 to N pages)
         const pagesToFetch = job.scope === "full_catalog" ? Math.min(job.max_pages, 20) : job.max_pages;
         if (pagesToFetch > 1) {
           for (let page = 2; page <= pagesToFetch; page++) {
-            if (job.status !== "running") break;
+            const liveJob = await this.getJob(job.id);
+            if (!liveJob || liveJob.status !== "running") break;
 
-            this.addLog(job, "info", `Paginando: Solicitando página ${page}/${pagesToFetch} con delay cortés...`);
+            await this.addLog(job.id, "info", `Paginando: Solicitando página ${page}/${pagesToFetch} con delay cortés...`);
             await this.applyPoliteRateLimit(job);
 
             try {
-              // Guess pagination URL
               const pageUrl = this.buildPageUrl(job.target_url, page);
               const pageItems = await extractCatalogListing(pageUrl);
 
@@ -286,19 +416,23 @@ class BackgroundCrawlerWorker {
                 });
                 job.current_page = page;
                 job.total_discovered = job.items_queue.length;
-                this.addLog(job, "info", `Página ${page}: +${newAdded} obras agregadas a la cola.`);
+                await this.updateJobState(job.id, {
+                  items_queue: job.items_queue,
+                  current_page: page,
+                  total_discovered: job.total_discovered,
+                });
+                await this.addLog(job.id, "info", `Página ${page}: +${newAdded} obras agregadas a la cola.`);
               } else {
-                this.addLog(job, "warn", `No se detectaron más elementos en la página ${page}. Finalizando descubrimiento.`);
+                await this.addLog(job.id, "warn", `No se detectaron más elementos en la página ${page}. Finalizando descubrimiento.`);
                 break;
               }
             } catch (err: any) {
-              this.addLog(job, "warn", `Aviso en página ${page}: ${err.message}. Continuando con las obras ya descubiertas.`);
+              await this.addLog(job.id, "warn", `Aviso en página ${page}: ${err.message}. Continuando con las obras ya descubiertas.`);
             }
           }
         }
       } else {
-        // Single item
-        this.addLog(job, "info", `Ficha individual detectada: '${analysis.title}'.`);
+        await this.addLog(job.id, "info", `Ficha individual detectada: '${analysis.title}'.`);
         job.items_queue.push({
           title: analysis.title,
           url: job.target_url,
@@ -306,109 +440,107 @@ class BackgroundCrawlerWorker {
         });
         job.total_discovered = 1;
         job.current_page = 1;
+        await this.updateJobState(job.id, {
+          items_queue: job.items_queue,
+          total_discovered: 1,
+          current_page: 1,
+        });
       }
     }
 
-    // Step 2: Ingest items from queue one by one with rate limiting & anti-ban protection
-    this.addLog(
-      job,
+    await this.addLog(
+      job.id,
       "info",
-      `Iniciando descarga e indexación por lotes de ${job.items_queue.length} obras con protección anti-bloqueo...`
+      `Iniciando descarga e indexación por lotes de ${job.items_queue.length} obras con deduplicación y verificación AniList...`
     );
 
     for (let i = 0; i < job.items_queue.length; i++) {
-      if (job.status !== "running") {
-        this.addLog(job, "warn", `Procesamiento pausado o detenido en el elemento ${i + 1}/${job.items_queue.length}.`);
+      const liveJob = await this.getJob(job.id);
+      if (!liveJob || liveJob.status !== "running") {
+        await this.addLog(job.id, "warn", `Procesamiento pausado o detenido en el elemento ${i + 1}/${job.items_queue.length}.`);
         return;
       }
 
       const item = job.items_queue[i];
-      if (item.status === "done") continue; // already finished if resumed
+      if (item.status === "done") continue;
 
       item.status = "processing";
-      job.current_item_title = item.title;
-      job.updated_at = new Date().toISOString();
+      await this.updateJobState(job.id, {
+        items_queue: job.items_queue,
+        current_item_title: item.title,
+      });
 
-      this.addLog(
-        job,
+      await this.addLog(
+        job.id,
         "info",
-        `[${i + 1}/${job.items_queue.length}] Extrayendo metadata & streams para '${item.title}'...`
+        `[${i + 1}/${job.items_queue.length}] Extrayendo metadata & deduplicando '${item.title}'...`
       );
 
-      // Polite delay between individual show extractions
       await this.applyPoliteRateLimit(job);
 
-      if (job.status !== "running") return;
+      const checkActive = await this.getJob(job.id);
+      if (!checkActive || checkActive.status !== "running") return;
 
       try {
         const itemAnalysis = await analyzeUniversalUrl(item.url || item.title);
-        const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-        const episodes = (itemAnalysis.episodes || []).map((ep, idx) => ({
-          id: `ep-${showId}-${idx + 1}`,
-          show_id: showId,
-          title: ep.title || `Episodio ${idx + 1}`,
-          episode_number: ep.number || idx + 1,
-          source_url: ep.url || item.url,
-        }));
-
-        if (episodes.length === 0) {
-          episodes.push({
-            id: `ep-${showId}-1`,
-            show_id: showId,
-            title: itemAnalysis.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
-            episode_number: 1,
-            source_url:
-              (itemAnalysis.detected_streams && itemAnalysis.detected_streams[0]) ||
-              item.url,
-          });
-        }
-
-        const showObject = {
-          id: showId,
-          mal_id: (itemAnalysis as any).mal_id || undefined,
+        // Deduplicated save via saveShowWithDeduplication
+        const result = await saveShowWithDeduplication({
           title: itemAnalysis.title || item.title,
-          japanese_title: itemAnalysis.japanese_title || undefined,
-          english_title: itemAnalysis.english_title || undefined,
-          description: itemAnalysis.description || "Obra multimedia importada automáticamente por worker.",
-          poster_url: itemAnalysis.poster_url || "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800",
-          banner_url: itemAnalysis.banner_url || itemAnalysis.poster_url || "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600",
-          category: itemAnalysis.content_type || "anime",
-          rating: itemAnalysis.rating || 8.0,
-          year: itemAnalysis.year || 2024,
-          status: itemAnalysis.status || "Finalizado",
-          genres: Array.isArray(itemAnalysis.genres) ? itemAnalysis.genres.join(", ") : (itemAnalysis.genres || "Multimedia"),
-          episodes,
-        };
-
-        if (this.onShowImportedCallback) {
-          this.onShowImportedCallback(showObject);
-        }
+          japanese_title: itemAnalysis.japanese_title,
+          english_title: itemAnalysis.english_title,
+          description: itemAnalysis.description,
+          poster_url: itemAnalysis.poster_url,
+          banner_url: itemAnalysis.banner_url,
+          content_type: itemAnalysis.content_type,
+          rating: itemAnalysis.rating,
+          year: itemAnalysis.year,
+          status: itemAnalysis.status,
+          genres: itemAnalysis.genres,
+          episodes: itemAnalysis.episodes,
+          detected_streams: itemAnalysis.detected_streams,
+        });
 
         item.status = "done";
         job.shows_imported++;
-        job.episodes_imported += episodes.length;
+        job.episodes_imported += result.episodesAdded;
 
-        this.addLog(
-          job,
-          "success",
-          `✓ Guardado: '${showObject.title}' (${episodes.length} ep/fuentes).`
-        );
+        await this.updateJobState(job.id, {
+          items_queue: job.items_queue,
+          shows_imported: job.shows_imported,
+          episodes_imported: job.episodes_imported,
+        });
+
+        if (result.isDuplicate) {
+          await this.addLog(
+            job.id,
+            "info",
+            `ℹ Duplicado detectado para '${result.show.title}'. Se fusionaron ${result.episodesAdded} episodio(s) nuevos.`
+          );
+        } else {
+          await this.addLog(
+            job.id,
+            "success",
+            `✓ Guardada nueva obra: '${result.show.title}' (${result.episodesAdded} ep/fuentes).`
+          );
+        }
       } catch (err: any) {
         item.status = "error";
         item.error = err.message;
-        this.addLog(job, "warn", `Error en '${item.title}': ${err.message}. Continuando con el siguiente...`);
+        await this.updateJobState(job.id, { items_queue: job.items_queue });
+        await this.addLog(job.id, "warn", `Error en '${item.title}': ${err.message}. Continuando con el siguiente...`);
       }
-
-      job.updated_at = new Date().toISOString();
     }
 
-    job.current_item_title = undefined;
-    job.status = "completed";
-    this.addLog(
-      job,
+    await this.updateJobState(job.id, {
+      status: "completed",
+      current_item_title: undefined,
+    });
+
+    await this.addLog(
+      job.id,
       "success",
-      `¡Tarea completada con éxito! Total: ${job.shows_imported} obras guardadas y ${job.episodes_imported} episodios/streams indexados.`
+      `¡Tarea completada con éxito! Total: ${job.shows_imported} obras procesadas y ${job.episodes_imported} episodios/streams guardados en PostgreSQL.`
     );
   }
 
@@ -427,7 +559,6 @@ class BackgroundCrawlerWorker {
         url.pathname = url.pathname.replace(/\/page\/\d+/, `/page/${pageNumber}`);
         return url.toString();
       }
-      // Otherwise append ?page=N
       url.searchParams.set("page", String(pageNumber));
       return url.toString();
     } catch {

@@ -32,9 +32,24 @@ import {
   type ScoredServer,
 } from '../utils/streamOptimizer';
 
+
+export interface HLSPlayerMedia {
+  id?: string;
+  title?: string;
+  stream_url?: string;
+  all_streams?: string[];
+  all_available_streams?: string[];
+  sources?: {
+    master_m3u8?: string;
+    fallback_mp4?: string;
+    qualities?: { url: string }[];
+  };
+}
+
 interface HLSPlayerModalProps {
+
   isOpen?: boolean;
-  media?: any;
+  media?: HLSPlayerMedia;
   onClose: () => void;
   directSource?: { url: string; protocol: any } | null;
   title?: string;
@@ -134,7 +149,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           ...(media?.all_available_streams || []),
           media?.sources?.master_m3u8,
           media?.sources?.fallback_mp4,
-          ...(media?.sources?.qualities?.map((q: any) => q.url) || []),
+          ...(media?.sources?.qualities?.map((q: { url: string }) => q.url) || []),
         ].filter(Boolean)
       )
     );

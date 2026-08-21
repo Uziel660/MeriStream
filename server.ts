@@ -13,6 +13,8 @@ import {
   clearAllShowsFromDb,
 } from "./server/showService";
 import { prisma } from "./server/db";
+import { isIP } from "net";
+import dns from "node:dns/promises";
 
 async function startServer() {
   const app = express();
@@ -260,16 +262,44 @@ async function startServer() {
       }
 
       const hostname = parsedUrl.hostname.toLowerCase();
-      const isPrivate =
-        hostname === "localhost" ||
-        hostname.endsWith(".local") ||
-        hostname.includes("::") ||
-        hostname.startsWith("127.") ||
-        hostname.startsWith("10.") ||
-        hostname.startsWith("192.168.") ||
-        hostname.startsWith("169.254.") ||
-        hostname.startsWith("0.") ||
-        (hostname.startsWith("172.") && (() => { const p = parseInt(hostname.split(".")[1], 10); return p >= 16 && p <= 31; })());
+      let isPrivate = hostname === "localhost" || hostname.endsWith(".local");
+
+      if (!isPrivate) {
+        let resolvedIps: string[] = [];
+        let cleanHostname = hostname;
+        if (cleanHostname.startsWith("[") && cleanHostname.endsWith("]")) {
+          cleanHostname = cleanHostname.slice(1, -1);
+        }
+
+        if (isIP(cleanHostname)) {
+          resolvedIps = [cleanHostname];
+        } else {
+          try {
+            const lookup = await dns.lookup(cleanHostname, { all: true });
+            resolvedIps = lookup.map(res => res.address);
+          } catch (e) {
+            return res.status(400).json({ detail: "Host no resuelto o invalido" });
+          }
+        }
+
+        for (const ip of resolvedIps) {
+          if (
+            ip === "::1" ||
+            ip.startsWith("fe80:") ||
+            ip.startsWith("fc00:") ||
+            ip.startsWith("fd00:") ||
+            ip.startsWith("127.") ||
+            ip.startsWith("10.") ||
+            ip.startsWith("192.168.") ||
+            ip.startsWith("169.254.") ||
+            ip.startsWith("0.") ||
+            (ip.startsWith("172.") && (() => { const p = parseInt(ip.split(".")[1], 10); return p >= 16 && p <= 31; })())
+          ) {
+            isPrivate = true;
+            break;
+          }
+        }
+      }
 
       if (isPrivate) {
         return res.status(400).json({ detail: "Host no permitido" });

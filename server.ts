@@ -1,3 +1,4 @@
+import dns from "dns/promises";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
@@ -259,22 +260,42 @@ async function startServer() {
         return res.status(400).json({ detail: "Protocolo no permitido" });
       }
 
-      const hostname = parsedUrl.hostname.toLowerCase();
+      let hostnameToResolve = parsedUrl.hostname;
+      if (hostnameToResolve.startsWith("[") && hostnameToResolve.endsWith("]")) {
+        hostnameToResolve = hostnameToResolve.slice(1, -1);
+      }
+
+      let resolvedIp = hostnameToResolve;
+      try {
+        const lookup = await dns.lookup(hostnameToResolve);
+        resolvedIp = lookup.address;
+      } catch (err) {
+        return res.status(400).json({ detail: "Host no resoluble" });
+      }
+
       const isPrivate =
-        hostname === "localhost" ||
-        hostname.endsWith(".local") ||
-        hostname.includes("::") ||
-        hostname.startsWith("127.") ||
-        hostname.startsWith("10.") ||
-        hostname.startsWith("192.168.") ||
-        hostname.startsWith("169.254.") ||
-        hostname.startsWith("0.") ||
-        (hostname.startsWith("172.") && (() => { const p = parseInt(hostname.split(".")[1], 10); return p >= 16 && p <= 31; })());
+        resolvedIp === "localhost" ||
+        resolvedIp === "::1" ||
+        resolvedIp === "::" ||
+        resolvedIp.startsWith("::ffff:") ||
+        resolvedIp.startsWith("fc00:") ||
+        resolvedIp.startsWith("fd") ||
+        resolvedIp.startsWith("fe80:") ||
+        resolvedIp.startsWith("127.") ||
+        resolvedIp.startsWith("10.") ||
+        resolvedIp.startsWith("192.168.") ||
+        resolvedIp.startsWith("169.254.") ||
+        resolvedIp.startsWith("0.") ||
+        (resolvedIp.startsWith("172.") && (() => { const p = parseInt(resolvedIp.split(".")[1], 10); return p >= 16 && p <= 31; })());
 
       if (isPrivate) {
         return res.status(400).json({ detail: "Host no permitido" });
       }
 
+      // We use the original targetUrl to maintain TLS/SNI integrity.
+      // While this technically allows a narrow TOCTOU (DNS Rebinding) window,
+      // preventing DNS rebinding in Node fetch without breaking TLS requires custom Agents
+      // which is out of scope for a basic < 20 loc fix.
       const response = await fetch(targetUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

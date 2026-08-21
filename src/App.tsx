@@ -141,30 +141,20 @@ export function App() {
       const showId = episode.show_id || selectedShowId || 'unknown';
       const currentShow = shows.find((s) => s.id === showId);
 
-      const newProgress: WatchProgress = {
-        showId: showId,
-        showTitle,
-        showPoster: currentShow?.poster_url || undefined,
-        episodeId: episode.id,
-        episodeNumber: episode.episode_number,
-        episodeTitle: episode.title,
-        progressPercent: Math.floor(Math.random() * 40) + 30,
-        lastWatchedAt: Date.now(),
-      };
-
-      setContinueWatchingItems((prev) => {
-        const filtered = prev.filter((p) => p.showId !== showId);
-        const updated = [newProgress, ...filtered].slice(0, 8);
-        try {
-          localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(updated));
-        } catch {}
-        return updated;
-      });
+      const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
+      const initialTime = existingProgress?.currentTime || 0;
 
       setPlayingStreamData({
         title: `${showTitle} - ${episode.title}`,
         streamUrl: data.stream_url,
         all_streams: data.all_available_streams,
+        initialTime,
+        showId,
+        showTitle,
+        showPoster: currentShow?.poster_url || undefined,
+        episodeId: episode.id,
+        episodeNumber: episode.episode_number,
+        episodeTitle: episode.title,
       });
     } catch (e: any) {
       alert(e.message || 'Error al iniciar la reproducción');
@@ -469,6 +459,34 @@ export function App() {
           title={playingStreamData.title}
           streamUrl={playingStreamData.streamUrl}
           all_streams={playingStreamData.all_streams}
+          initialTime={playingStreamData.initialTime}
+          onProgressUpdate={(currentTime, duration) => {
+            if (duration > 0 && currentTime > 0) {
+              const progressPercent = Math.round((currentTime / duration) * 100);
+
+              setContinueWatchingItems((prev) => {
+                const filtered = prev.filter((p) => p.showId !== playingStreamData.showId);
+                const newProgress: WatchProgress = {
+                  showId: playingStreamData.showId,
+                  showTitle: playingStreamData.showTitle,
+                  showPoster: playingStreamData.showPoster,
+                  episodeId: playingStreamData.episodeId,
+                  episodeNumber: playingStreamData.episodeNumber,
+                  episodeTitle: playingStreamData.episodeTitle,
+                  progressPercent,
+                  currentTime,
+                  duration,
+                  lastWatchedAt: Date.now(),
+                };
+
+                const updated = [newProgress, ...filtered].slice(0, 8);
+                try {
+                  localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(updated));
+                } catch {}
+                return updated;
+              });
+            }
+          }}
         />
       )}
 

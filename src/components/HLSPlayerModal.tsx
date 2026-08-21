@@ -40,6 +40,8 @@ interface HLSPlayerModalProps {
   title?: string;
   streamUrl?: string;
   all_streams?: string[];
+  initialTime?: number;
+  onProgressUpdate?: (currentTime: number, duration: number) => void;
   [key: string]: any;
 }
 
@@ -66,6 +68,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateRef = useRef<number>(0);
 
   // Estados de Servidores y Selección Inteligente
   const [servers, setServers] = useState<ScoredServer[]>([]);
@@ -293,6 +296,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           setCurrentResolutionLabel(`${maxHeight || 1080}p Ultra HD`);
         }
 
+        if (props.initialTime && props.initialTime > 0) {
+          video.currentTime = props.initialTime;
+        }
+
         // Reproducir automáticamente de manera fluida
         video.play().catch(() => {
           setIsPlaying(false);
@@ -332,14 +339,18 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           setPlaybackError('No se pudo reproducir este stream. Puedes probar con otro servidor en la lista superior.');
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        } else if (video.canPlayType('application/vnd.apple.mpegurl') || true) { // the || true handles the generic else case
       video.src = url;
-      video.play().catch(() => {});
-    } else {
-      video.src = url;
-      video.play().catch(() => {});
+      const onLoadedMetadata = () => {
+        if (props.initialTime && props.initialTime > 0) {
+          video.currentTime = props.initialTime;
+        }
+        video.play().catch(() => {});
+        video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      };
+      video.addEventListener('loadedmetadata', onLoadedMetadata);
     }
-  }, [activeServer, activeServerIndex, servers.length]);
+  }, [activeServer, activeServerIndex, servers.length, props.initialTime]);
 
   useEffect(() => {
     if (activeServer && !activeServer.isEmbed) {
@@ -358,7 +369,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video || !activeServer || activeServer.isEmbed) return;
 
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      // Throttle progress updates to parent every 5 seconds
+      const now = Date.now();
+      if (props.onProgressUpdate && now - lastUpdateRef.current > 5000) {
+        props.onProgressUpdate(video.currentTime, video.duration || 0);
+        lastUpdateRef.current = now;
+      }
+    };
     const onDurationChange = () => setDuration(video.duration || 0);
     const onProgress = () => {
       if (video.buffered.length > 0) {
@@ -366,7 +385,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
     const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      if (props.onProgressUpdate) {
+        props.onProgressUpdate(video.currentTime, video.duration || 0);
+      }
+    };
     const onVolumeChange = () => {
       setVolume(video.volume);
       setIsMuted(video.muted);
@@ -415,7 +439,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (activeMenu !== 'none') {
           setActiveMenu('none');
         } else {
-          onClose();
+          handleClose();
         }
       } else if (e.key === ' ' || e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -444,6 +468,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, isPlaying, activeMenu, showControlsTemporarily]);
+
+  const handleClose = () => {
+    if (videoRef.current && props.onProgressUpdate) {
+      props.onProgressUpdate(videoRef.current.currentTime, videoRef.current.duration || 0);
+    }
+    onClose();
+  };
 
   // Controles de Acción de Reproducción
   const togglePlay = () => {
@@ -602,7 +633,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           <div className="flex items-center gap-3 max-w-[65%] sm:max-w-[75%] truncate">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700/60 transition shadow-sm shrink-0"
               title="Cerrar reproductor (Esc)"
             >
@@ -740,7 +771,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               <p className="text-sm text-zinc-200">{loadError}</p>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs text-white hover:bg-zinc-700 transition"
               >
                 Cerrar

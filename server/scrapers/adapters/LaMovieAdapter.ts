@@ -138,19 +138,19 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         const iframeStreams = await this.resolveIframeStream(embedUrl, cleanUrl);
         if (iframeStreams.length > 0) {
           iframeStreams.forEach((st) => {
-            if (!resolvedStreams.includes(st)) resolvedStreams.push(st);
+            if ((st.includes(".m3u8") || st.endsWith(".mp4")) && !resolvedStreams.includes(st)) {
+              resolvedStreams.push(st);
+            }
           });
         } else {
           // Intentar con EmbedResolvers estándar
           const resolved = await EmbedResolvers.resolve(embedUrl);
-          if (resolved && !resolvedStreams.includes(resolved)) {
+          if (resolved && (resolved.includes(".m3u8") || resolved.endsWith(".mp4")) && !resolvedStreams.includes(resolved)) {
             resolvedStreams.push(resolved);
           }
         }
       }
-      if (!resolvedStreams.includes(embedUrl)) {
-        resolvedStreams.push(embedUrl);
-      }
+      // NO HAREMOS PUSH DEL IFRAME ORIGINAL: queremos que devolver crudos .m3u8 / .mp4
     }
 
     const validStreams = await MediaValidator.validateUrls(resolvedStreams);

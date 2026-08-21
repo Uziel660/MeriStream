@@ -100,6 +100,13 @@ class BackgroundCrawlerWorker {
         update: { ...newSettings },
         create: { id: "default", ...DEFAULT_SETTINGS, ...newSettings },
       });
+
+      if (newSettings.default_delay_ms !== undefined) {
+        await prisma.crawlTask.updateMany({
+          where: { status: { in: ["pending", "running"] } },
+          data: { rate_limit_delay_ms: newSettings.default_delay_ms },
+        });
+      }
     } catch (e) {
       console.error("Error guardando settings de worker:", e);
     }
@@ -338,7 +345,8 @@ class BackgroundCrawlerWorker {
   }
 
   private async applyPoliteRateLimit(job: CrawlJob) {
-    let delay = job.rate_limit_delay_ms || this.settings.default_delay_ms;
+    let delay = this.settings.default_delay_ms ?? job.rate_limit_delay_ms;
+
     if (this.settings.jitter_enabled) {
       const jitter = Math.floor(Math.random() * 500) + 200;
       delay += jitter;

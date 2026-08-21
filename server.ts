@@ -1,10 +1,11 @@
+import crypto from "node:crypto";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
-import { taskWorker, CrawlJob } from "./server/taskWorker";
+import { taskWorker } from "./server/taskWorker";
 
 interface Episode {
   id: string;
@@ -647,7 +648,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`;
 
   const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
@@ -707,7 +708,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
   const importPromises = processedUrls.map(async (cleanUrl) => {
     try {
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,

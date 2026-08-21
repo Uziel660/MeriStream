@@ -329,7 +329,7 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
         embeds: detectedStreams,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return handleSearchTerm(urlOrQuery);
   }
 }

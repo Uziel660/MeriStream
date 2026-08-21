@@ -167,6 +167,23 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     };
   }
 
+  async extractStream(url: string): Promise<{ stream_url: string; all_available_streams: string[] }> {
+    const html = await this.fetchHtml(url);
+    if (!html) throw new Error("No se pudo obtener el contenido del episodio de AnimeFLV");
+
+    const $ = cheerio.load(html);
+    const streams = this.extractAnimeflvStreams($, html, url);
+
+    if (streams.length === 0) {
+      throw new Error("No se encontraron servidores de video en este episodio.");
+    }
+
+    return {
+      stream_url: streams[0],
+      all_available_streams: streams,
+    };
+  }
+
   private extractAnimeflvStreams($: cheerio.CheerioAPI, html: string, baseUrl: string): string[] {
     const streams: string[] = [];
     const videoObjectMatch = html.match(/var\s+videos\s*=\s*(\{.+?\});/s);

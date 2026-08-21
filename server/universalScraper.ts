@@ -340,7 +340,14 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
       }
 
       let cardTitle = "";
-      cardTitle = UniversalScraper.extractCardTitle($(card), img);
+      const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
+      if (heading.length > 0 && heading.text().trim().length > 1) {
+        cardTitle = heading.text().trim();
+      }
+
+      if (!cardTitle && img.length > 0 && img.attr("alt")) {
+        cardTitle = img.attr("alt")!.trim();
+      }
 
       if (!cardTitle) {
         anchors.each((_, a) => {
@@ -810,7 +817,13 @@ async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult>
         }
 
         let cardTitle = "";
-        cardTitle = UniversalScraper.extractCardTitle($(card), img);
+        const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
+        if (heading.length > 0 && heading.text().trim().length > 1) {
+          cardTitle = heading.text().trim();
+        }
+        if (!cardTitle && img.length > 0 && img.attr("alt")) {
+          cardTitle = img.attr("alt")!.trim();
+        }
         if (!cardTitle) {
           cardTitle = anchor.text().trim() || anchor.attr("title") || "";
         }

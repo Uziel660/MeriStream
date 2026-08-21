@@ -100,7 +100,25 @@ class BackgroundCrawlerWorker {
         orderBy: { created_at: "desc" },
       });
 
-      return tasks.map((t) => this.mapPrismaJobToCrawlJob(t));
+      return tasks.map((t) => ({
+        id: t.id,
+        name: t.name,
+        target_url: t.target_url,
+        status: t.status as CrawlJob["status"],
+        scope: t.scope as CrawlJob["scope"],
+        max_pages: t.max_pages,
+        current_page: t.current_page,
+        total_discovered: t.total_discovered,
+        shows_imported: t.shows_imported,
+        episodes_imported: t.episodes_imported,
+        rate_limit_delay_ms: t.rate_limit_delay_ms,
+        items_queue: (t.items_queue as any) || [],
+        current_item_title: t.current_item_title || undefined,
+        error_message: t.error_message,
+        created_at: t.created_at.toISOString(),
+        updated_at: t.updated_at.toISOString(),
+        logs: (t.logs as any) || [],
+      }));
     } catch (e) {
       console.error("Error buscando jobs en DB:", e);
       return [];
@@ -111,7 +129,25 @@ class BackgroundCrawlerWorker {
     try {
       const t = await prisma.crawlTask.findUnique({ where: { id } });
       if (!t) return null;
-      return this.mapPrismaJobToCrawlJob(t);
+      return {
+        id: t.id,
+        name: t.name,
+        target_url: t.target_url,
+        status: t.status as CrawlJob["status"],
+        scope: t.scope as CrawlJob["scope"],
+        max_pages: t.max_pages,
+        current_page: t.current_page,
+        total_discovered: t.total_discovered,
+        shows_imported: t.shows_imported,
+        episodes_imported: t.episodes_imported,
+        rate_limit_delay_ms: t.rate_limit_delay_ms,
+        items_queue: (t.items_queue as any) || [],
+        current_item_title: t.current_item_title || undefined,
+        error_message: t.error_message,
+        created_at: t.created_at.toISOString(),
+        updated_at: t.updated_at.toISOString(),
+        logs: (t.logs as any) || [],
+      };
     } catch {
       return null;
     }

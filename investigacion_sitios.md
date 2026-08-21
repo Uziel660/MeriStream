@@ -1,85 +1,99 @@
-# Análisis Estructural del DOM y Auditoría de OpenGraph
+# Análisis Estructural del DOM y Auditoría de OpenGraph (Investigación Detallada)
 
 ## 1. JkAnime (jkanime.net)
 - **Catálogo (Selector):** `.card`
-- **Título / Imagen:**
-  - `og:title` presente (Ej: `Otome Kaijuu Caraméliser 8 Sub Español Online gratis — JkAnime`).
-  - `og:image` presente (URL absoluta a cdn.jkdesa.com).
-- **Sinopsis:** Selector `.sinopsis` / `.description`.
+- **Metadatos (SEO):**
+  - `og:title`: Extraído de `meta[property="og:title"]` (Ej: `Otome Kaijuu Caraméliser 8 Sub Español Online gratis — JkAnime`).
+  - `og:image`: Presente, apunta al CDN (Ej: `https://cdn.jkdesa.com/assets/images/animes/video/image_thumb/jkvideo_...jpg`).
+  - **Sinopsis:** Se encuentra bajo las clases `.sinopsis` o `.description`.
 - **Reproductor de Video (Obfuscación):**
-  - El video no está directamente en un iframe en el DOM inicial.
-  - **Descubrimiento clave:** Utilizan un `<script>` que contiene un array `var video = [];` donde insertan strings de HTML. Ejemplo: `video[0] = '<iframe class="player_conte" src="https://jkanime.net/jkplayer/um?e=..."'`. Las URLs suelen contener hashes en base64 en la querystring.
+  - El iframe no está en el DOM. Se inyecta dinámicamente desde un bloque `<script>` específico.
+  - **Estructura Exacta:** Declaran un array literal en el contexto global: `var video = [];`
+  - Asignan strings HTML con el iframe directamente a los índices del array.
+  - Ejemplo extraído: `video[0] = '<iframe class="player_conte" src="https://jkanime.net/jkplayer/um?e=Qys1MElYZlh2dVdT..."'`
+  - **Codificación:** El parámetro `?e=` en la URL del iframe es una cadena codificada en Base64 que el endpoint `/jkplayer/um` decodifica del lado del servidor.
 
 ## 2. AnimeJara (animejara.com)
-- **Catálogo (Selector):** `a[href*="/anime/"]` (El sitio parece renderizar mucho contenido dinámicamente o tener rutas muy específicas. En `/catalogo` se encuentran las tarjetas).
-- **Título / Imagen:** `og:title` y `og:image` presentes en las páginas de detalle, aunque en algunas subpáginas devuelve "Página no encontrada" por cambios de enrutamiento o bloqueo anti-bot (Cloudflare).
-- **Sinopsis:** Selector `.description`.
+- **Catálogo (Selector):** Los enlaces del catálogo principal están bajo rutas específicas `a[href*="/anime/"]`. (Ej: `/anime/yarinaoshi-reijou-wa-ryuutei-heika-wo-kouryakuchuu/`).
+- **Metadatos (SEO):** Poseen `og:title` y `og:image` en el detalle del episodio, pero el servidor utiliza una fuerte protección de Cloudflare (IUAM) que devuelve HTML de "Página no encontrada" si las cabeceras o la huella digital del cliente no coinciden con un navegador real.
 - **Reproductor de Video (Obfuscación):**
-  - Generalmente utiliza iframes embebidos y atributos `data-server` en los botones de selección, que luego inyectan el iframe vía JavaScript.
+  - No exponen el `src` del iframe en texto plano en la carga inicial. Utilizan atributos en botones de servidores como `data-video` o `data-server`, que un script de JavaScript lee al hacer click para generar el iframe.
 
 ## 3. TioAnime (tioanime.com)
-- **Catálogo (Selector):** `article`
-- **Título / Imagen:**
-  - `og:title` presente (Ej: `Otome Kaijuu Caraméliser 8 - TioAnime`).
-  - `og:image` no siempre expuesto correctamente en la etiqueta estándar o bloqueado.
-- **Sinopsis:** Selector `.description` o `p.sinopsis`.
+- **Catálogo (Selector):** Etiqueta `<article>`
+- **Metadatos (SEO):**
+  - `og:title`: Extraído correctamente (Ej: `Otome Kaijuu Caraméliser 8 - TioAnime`).
+  - `og:image`: El metadato a veces se omite o está mal formateado (retorna `undefined` sin un user-agent completo).
+  - **Sinopsis:** Se ubica en `<p class="sinopsis">`.
 - **Reproductor de Video (Obfuscación):**
-  - **Descubrimiento clave:** Utilizan un `<script>` con un array JSON multidimensional llamado `var videos = [...]`.
-  - Ejemplo: `var videos = [["Mega","https:\/\/mega.nz\/embed\/..."],["Voe","https:\/\/voe.sx\/e\/..."]];`. Un script posterior (`initEpisode()`) lee este array e inyecta el iframe correspondiente al seleccionar el servidor.
+  - **Estructura Exacta:** En lugar de strings HTML, utilizan un array JSON multidimensional inyectado en un `<script>` bajo la variable global `videos`.
+  - Código extraído: `var videos = [["Mega","https:\/\/mega.nz\/embed\/!IGEWWYJS!HkBuouYE96PVkx17cN87Ccyd7MbTgWG6ILE3mk0c2w4",0,0],["Voe","https:\/\/voe.sx\/e\/gqmxydzan6rl",0,0]];`
+  - Función de arranque: Inmediatamente después del array, llaman a la función `$(document).ready(function () { initEpisode(); });` para montar el DOM del reproductor usando los datos de la variable `videos`.
 
 ## 4. VerAnimes (wwv.veranimes.net)
-- **Catálogo (Selector):** `article`
-- **Título / Imagen:**
-  - `og:title` presente (Ej: `Ver Otome Kaijuu Caraméliser episodio 8 Online Gratis - VerAnime`).
-  - `og:image` presente (URL a cdn local).
-- **Sinopsis:** Selector `.description`.
+- **Catálogo (Selector):** Etiqueta `<article>` (Ej URL extraída: `/ver/otome-kaijuu-carameliser-8`)
+- **Metadatos (SEO):**
+  - `og:title`: Presente (Ej: `Ver Otome Kaijuu Caraméliser episodio 8 Online Gratis - VerAnime`).
+  - `og:image`: Usa su propio CDN para imágenes WebP (Ej: `https://wwv.veranimes.net/cdn/img/anime/otome-kaijuu-carameliser.webp?t=1`).
 - **Reproductor de Video (Obfuscación):**
-  - Similar a TioAnime, ocultan el iframe en el DOM inicial.
-  - **Descubrimiento clave:** Tienen un script con arrays de variables, típicamente `var video = [...]` o atributos `data-video` en elementos `li` de una lista de servidores.
+  - Su técnica de obfuscación se basa en botones de selección de servidor `<li>` o `<button>` que contienen atributos de datos (ej. `data-video="url"`).
+  - La lógica de inyección está en un archivo de JavaScript externo que captura el evento `click` sobre esos botones, extrae la URL y crea el tag `<iframe>` dinámicamente.
 
 ## 5. AnimeAV1 (animeav1.com)
-- **Catálogo (Selector):** El sitio utiliza `article` o elementos dentro de cuadrículas generadas dinámicamente. Al auditar con scripts puros, los enlaces a los episodios están profundamente ofuscados o requieren paso por Cloudflare, dificultando la extracción directa de la URL del home sin renderizado de navegador.
-- **Título / Imagen:** Suelen exponer `og:title` pero el scraping directo falla a menudo sin bypass de CF.
+- **Catálogo (Selector):** Usa `article` en un diseño de grilla cargado dinámicamente.
+- **Problema de Fetch:** Al intentar consultar rutas de episodios (rutas que contienen `-episodio-` o `/v/`), su Cloudflare detecta la firma del scraper si no hay un motor de renderizado y bloquea la petición.
 - **Reproductor de Video (Obfuscación):**
-  - Ocultan los iframes detrás de iframes anidados o redirecciones. Típicamente usan `data-video` en botones de selección, similar a otros sitios.
+  - La URL real suele estar envuelta en dos capas de iframes. En el frontend se usan botones con la clase `.play-video` y el atributo `data-src` que detonan la carga.
 
 ## 6. EstrenosAnime (estrenosanime.net)
 - **Catálogo (Selector):** `.item` o `.anime-item`.
 - **Reproductor de Video (Obfuscación):**
-  - La estructura es muy cerrada; los enlaces de las tarjetas suelen inyectarse mediante JS y no están presentes estáticamente en los elementos `<a>` en el DOM puro devuelto por el servidor, lo cual previene a los scrapers básicos (como Cheerio) de saltar del catálogo al detalle.
+  - Fuertemente acoplado con scripts del lado del cliente. No renderizan los href reales en el DOM devuelto por el primer request GET, por lo que la navegación automatizada estática (`cheerio`) no puede transitar del home al episodio sin ejecutar el JS del DOM.
 
 ## 7. VerAnimeOnline (ver.animeonline.ninja)
-- **Problema de Auditoría:** Este dominio devuelve de inmediato errores 403 / fallos de fetch debido a su fuerte protección Anti-Bot (Cloudflare / DDoS-Guard) cuando se accede desde herramientas de CLI sin encabezados completos o sin un motor de navegador (Puppeteer/Playwright).
-- **Obfuscación (Estimada por patrón ninja):** Históricamente, la red "ninja" ofusca los iframes usando funciones complejas en JS con `eval(atob(...))` dentro de etiquetas `<script>` específicas del reproductor.
+- **Bloqueo a Nivel Red:** DDoS-Guard o Cloudflare en modo restrictivo ("I'm Under Attack Mode"). Ninguna petición `fetch` estática pasa.
+- **Reproductor de Video (Obfuscación):**
+  - Patrón de la familia "Ninja": Usan scripts ofuscados que decodifican iframes al vuelo utilizando una combinación de funciones `eval()` y `atob()` anidadas.
 
 ## 8. TioPlus (tioplus.app)
-- **Catálogo (Selector):** `.item` / `article` (ej: `/serie/diarra-from-detroit/...`).
-- **Título / Imagen:**
-  - `og:title` presente (Ej: `Ver Diarra from Detroit (2024) Temporada 2 Capítulo 5 Online Gratis Español - TioPlus`).
-  - `og:image` presente y usualmente apuntando a servidores originales (ej. image.tmdb.org).
-- **Sinopsis:** Selector `.description`.
+- **Catálogo (Selector):** `<article>` y `<div class="item">` (Estructura de URL: `/serie/{nombre}/season/{num}/episode/{num}`).
+- **Metadatos (SEO):**
+  - `og:title`: `Ver Diarra from Detroit (2024) Temporada 2 Capítulo 5 Online Gratis Español - TioPlus`
+  - `og:image`: Obtienen los pósters directamente de TMDb (`https://image.tmdb.org/t/p/original/...jpg`).
 - **Reproductor de Video (Obfuscación):**
-  - **Descubrimiento clave:** TioPlus utiliza **Base64** explícito en atributos `data-video` (ej. `cDI3Q25sMng4M2RlSm00...`).
-  - Al hacer clic en un servidor, extraen esa cadena en Base64, la decodifican vía JavaScript en el frontend y luego inyectan el resultado (que es el `src` del iframe de video) en el contenedor del reproductor.
+  - **Estructura Exacta:** Exponen directamente cadenas Base64 codificadas en los atributos de datos de la lista de servidores en el DOM inicial.
+  - Ejemplos extraídos:
+    - `data-video="cDI3Q25sMng4M2RlSm00aUR2WmJGaFRNVnFxZnlBWHc5b1NKZGo1MW9hZUh2K3hkNk5RPQ=="`
+    - `data-video="cDI3Q25sMng4M2RBS0drbUNPZGFTQXpXQ3VIVDAxaTE2TVNhYzJvM3JLT2Y="`
+  - El frontend decodifica `atob(data-video)` en un evento de click para montar el iframe.
 
 ## 9. TubePelis (tubepelis.com)
-- **Catálogo (Selector):** `.item`, `.pelicula`
-- **Título / Imagen:**
-  - `og:title` presente (Ej: `El final de Oak Street - Ver Pelicula Completa`).
-  - `og:image` presente (URL a servidor propio).
+- **Catálogo (Selector):** `.item` o `.pelicula` (Estructura de URL: `/pelicula/{id}/{slug}.html`).
+- **Metadatos (SEO):**
+  - `og:title`: `El final de Oak Street - Ver Pelicula Completa`
+  - `og:image`: `https://www.tubepelis.com/files/uploads/4667.webp`
 - **Reproductor de Video (Obfuscación):**
-  - Utilizan iframes para renderizar el reproductor (`about:blank` en el src inicial para luego inyectar, o iframes que apuntan a `reproductor.php`).
-  - **Descubrimiento clave:** Exponen URLs codificadas en Base64 directamente en la query string del iframe de su propio servidor o en los `data-attr`. Ejemplo: `reproductor.php?v=aHR0cHM6...` (donde el Base64 decodifica típicamente a la URL del servidor real de alojamiento de video como `byseqekaho.com` o `playmogo.com`).
+  - Hay múltiples iframes iniciales apuntando a `about:blank`.
+  - **Estructura Exacta:** Utilizan atributos de datos para esconder URLs hacia su proxy interno (`reproductor.php`).
+  - El parámetro GET de ese reproductor viene ofuscado en Base64 con codificación URL adicional (`%3D` al final).
+  - Ejemplos extraídos:
+    - `data-video="https://www.tubepelis.com/reproductor.php?v=aHR0cHM6Ly9ieXNlcWVrYWhvLmNvbS9lL2V1b3kybXRueXFoMi8%3D"` -> `atob("aHR0cHM6Ly9ieXNlcWVrYWhvLmNvbS9lL2V1b3kybXRueXFoMi8=")` resulta en el iframe real de destino: `https://byseqekaho.com/e/euoy2mtnyqh2/`
+    - `data-video="https://www.tubepelis.com/reproductor.php?v=aHR0cHM6Ly9wbGF5bW9nby5jb20vZS8xNzhwN255Nmh3N2s%3D"` -> resulta en `https://playmogo.com/e/178p7ny6hw7k`
 
 ## 10. Hackstore (hackstore2.com)
-- **Problema de Auditoría:** Altísima protección anti-DDoS (típicamente Cloudflare IUAM). Los endpoints devuelven el reto en lugar del HTML del sitio cuando se consultan con scripts puros de `fetch`. Se requeriría bypass o renderizado completo para extraer los selectores DOM.
-- **Obfuscación (Estimada por el motor):** Suelen proveer enlaces directos a Mega/Uptobox (antes) y servidores stream escondidos detrás de acortadores y recaptchas.
+- **Bloqueo a Nivel Red:** Restricciones duras de Cloudflare a peticiones programáticas.
+- **Reproductor de Video (Obfuscación):** Es conocido por enlazar a archivos en plataformas externas a través de acortadores y recaptchas. Los embeds suelen estar ofuscados detrás de scripts JS fuertemente minificados.
 
 ## 11. Cinecalidad (cinecalidad.am)
-- **Catálogo (Selector):** El home está cargado de tarjetas en un diseño de grilla, pero la navegación en el DOM usa enlaces con anclas en Base64 o dependencias fuertes de JS para cargar el detalle.
+- **Catálogo (Selector):** Arquitectura tipo Single Page Application basada en anclas.
+- **Metadatos (SEO):**
+  - Descubierto: Las imágenes del catálogo no las alojan localmente, se obtienen dinámicamente (y se referencian en atributos data) desde TMDb, ej: `data-src="https://image.tmdb.org/t/p/w342//oa67yugnWstYxJDHvGS0XTN0aSL.jpg"`
 - **Reproductor de Video (Obfuscación):**
-  - **Descubrimiento clave:** Cinecalidad utiliza Base64 tanto para el enrutamiento a ciertas secciones del detalle (ej. `#aHR0cHM6...`) como para esconder los reproductores (enlaces magnet, opciones de stream) dentro de bloques de script con `eval` o inyección en el contenedor `dooplay_player_response`. Usa la plantilla Dooplay (WordPress) muy fuertemente ofuscada en su archivo JS de frontend.
+  - **Estructura Exacta:** Todo el ruteo a las películas/reproductores usa Base64 en el ancla (hash) de la URL.
+  - Ejemplo extraído: El link de navegación en el home es `/#aHR0cHM6Ly9hZHNhbmFseXRpY3Mub3JnL2MveHVyaTd5eTV6cm54a2FjY3lnZTVjMml0N2drejFlMTA=`
+  - Al desencriptar la cadena (Base64), se obtiene el endpoint que sirve el reproductor: `https://adsanalytics.org/c/xuri7yy5zrnxkaccyge5c2it7gkz1e10`
+  - Utilizan una implementación altamente modificada del framework Dooplay (WordPress), donde la inyección del HTML del reproductor ocurre en el contenedor `#dooplay_player_response` ejecutado a través de una función asíncrona anónima `(function(){ for(let a of document.querySelectorAll('#dooplay_player_response')){ ... } })();`
 
 ## 12. GnulaSeries (gnulaseries.nu)
-- **Problema de Auditoría:** Similar a Hackstore2, bloquea peticiones de scripts headless/CLI con Cloudflare.
-- **Obfuscación (Estimada por el motor):** Al estar habitualmente montado sobre temas como Dooplay o Toroplay, el iframe del reproductor es solicitado vía una petición AJAX (`admin-ajax.php` con la acción `doo_player`) devolviendo el iframe embebido o un script ofuscado con Base64.
+- **Bloqueo a Nivel Red:** Peticiones bloqueadas por WAF/Cloudflare de manera inmediata si no hay entorno de navegador.
+- **Reproductor de Video (Obfuscación):** Infraestructura basada en WordPress (Dooplay/Toroplay). El payload del reproductor típicamente no está en el DOM; se carga mediante un HTTP POST a `/wp-admin/admin-ajax.php` pasando variables de sesión y el ID del post, y el servidor retorna un snippet HTML con el iframe (a menudo re-ofuscado en Base64).

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectQualityFromUrl, scoreServer } from './streamOptimizer';
+import { detectQualityFromUrl, rankAndSortServers, scoreServer } from './streamOptimizer';
 
 describe('streamOptimizer', () => {
   describe('detectQualityFromUrl', () => {
@@ -35,6 +35,67 @@ describe('streamOptimizer', () => {
       expect(detectQualityFromUrl('http://example.com/video.mp4')).toBe('1080p');
       expect(detectQualityFromUrl('http://example.com/unknown')).toBe('1080p');
       expect(detectQualityFromUrl('')).toBe('1080p');
+    });
+  });
+
+  describe('rankAndSortServers', () => {
+    it('should handle empty arrays', () => {
+      expect(rankAndSortServers([])).toEqual([]);
+    });
+
+    it('should filter out invalid or falsy values', () => {
+      const urls: any[] = [
+        'https://example.com/video.mp4',
+        null,
+        undefined,
+        '',
+        123,
+        'https://example.com/video2.mp4',
+      ];
+      const result = rankAndSortServers(urls);
+      expect(result).toHaveLength(2);
+      expect(result[0].url).toBe('https://example.com/video.mp4');
+      expect(result[1].url).toBe('https://example.com/video2.mp4');
+    });
+
+    it('should filter out duplicates', () => {
+      const urls = [
+        'https://example.com/video.mp4',
+        'https://example.com/video.mp4',
+        'https://example.com/video.mp4',
+      ];
+      const result = rankAndSortServers(urls);
+      expect(result).toHaveLength(1);
+      expect(result[0].url).toBe('https://example.com/video.mp4');
+    });
+
+    it('should correctly score and sort different types of URLs', () => {
+      const urls = [
+        'https://mega.nz/file/1234',
+        'https://example.com/video-480p.mp4',
+        'https://example.com/video-4k.m3u8',
+        'https://voe.sx/embed/123',
+        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+      ];
+
+      const result = rankAndSortServers(urls);
+
+      expect(result).toHaveLength(5);
+
+      expect(result[0].url).toBe('https://example.com/video-4k.m3u8');
+      expect(result[1].url).toBe('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
+      expect(result[2].url).toBe('https://voe.sx/embed/123');
+      expect(result[3].url).toBe('https://mega.nz/file/1234');
+      expect(result[4].url).toBe('https://example.com/video-480p.mp4');
+
+      expect(result[0].quality).toBe('4K');
+      expect(result[0].isEmbed).toBe(false);
+
+      expect(result[1].quality).toBe('1080p');
+      expect(result[1].isEmbed).toBe(false);
+
+      expect(result[2].isEmbed).toBe(true);
+      expect(result[2].health).toBe('buena');
     });
   });
 

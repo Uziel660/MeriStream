@@ -401,6 +401,43 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, [activeServer, attachSource]);
 
+  // 3.1 INTENTO DE RESOLUCIÓN ON-DEMAND PARA SERVIDORES EMBED
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeServer || !activeServer.isEmbed) return;
+    if (activeServer.url.includes("mega.nz/embed")) return;
+
+    api.resolveEmbed(activeServer.url)
+      .then((res) => {
+        if (cancelled || !res || !res.resolved || !res.url) return;
+        
+        // ¡El servidor logró extraer el .m3u8 o .mp4 nativo! Actualizamos el servidor a modo nativo
+        setServers((prev) => {
+          const copy = [...prev];
+          if (copy[activeServerIndex]) {
+            copy[activeServerIndex] = {
+              ...copy[activeServerIndex],
+              url: res.url,
+              isEmbed: false,
+              streamType: 'direct',
+              label: `[Direct HD] ${copy[activeServerIndex].provider}`,
+            };
+          }
+          return copy;
+        });
+
+        setFailoverNotice(`Stream nativo optimizado con éxito (${res.provider || 'Servidor'})`);
+        setTimeout(() => setFailoverNotice(null), 3000);
+      })
+      .catch(() => {
+        // Fallback silencioso: se mantiene como iframe embed normal
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed]);
+
   // 4. EVENT LISTENERS DEL ELEMENTO VIDEO
   useEffect(() => {
     const video = videoRef.current;

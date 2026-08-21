@@ -13,6 +13,8 @@ import {
   clearAllShowsFromDb,
 } from "./server/showService";
 import { prisma } from "./server/db";
+import { EmbedResolvers } from "./server/resolvers";
+import { playwrightResolver } from "./server/playwrightResolver";
 
 async function startServer() {
   const app = express();
@@ -211,6 +213,54 @@ async function startServer() {
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/v1/resolve-embed - Resolución híbrida (Regex rápido -> Playwright Fallback con caché)
+  app.post(["/api/v1/resolve-embed", "/api/resolve-embed"], async (req: Request, res: Response) => {
+    const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!rawUrl) {
+      return res.status(400).json({ error: "URL requerida" });
+    }
+
+    try {
+      // 1. Capa Rápida: EmbedResolvers (Regex & Desempaquetador JS)
+      const meta = await EmbedResolvers.resolveWithMeta(rawUrl);
+      if (meta.resolved) {
+        return res.json({
+          url: meta.url,
+          original_url: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: meta.provider,
+          strategy: "regex_fast",
+        });
+      }
+
+      // 2. Capa Avanzada: Playwright Headless Sniffer (Solo para embeds difíciles como VOE, Filemoon, etc.)
+      const playwrightUrl = await playwrightResolver.resolve(rawUrl);
+      if (playwrightUrl && EmbedResolvers.isDirectMediaUrl(playwrightUrl)) {
+        return res.json({
+          url: playwrightUrl,
+          original_url: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: meta.provider,
+          strategy: "playwright_sniffer",
+        });
+      }
+
+      // 3. Fallback: Mantener URL original en modo embed
+      return res.json({
+        url: meta.url || rawUrl,
+        original_url: rawUrl,
+        resolved: false,
+        type: "embed",
+        provider: meta.provider,
+        strategy: "unresolved_embed",
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message || "Error al resolver embed" });
     }
   });
 

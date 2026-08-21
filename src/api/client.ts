@@ -308,4 +308,18 @@ export const api = {
       result_media_ids: [],
     };
   },
+
+  async resolveEmbed(url: string): Promise<{
+    url: string;
+    original_url: string;
+    resolved: boolean;
+    type: "direct" | "embed";
+    provider?: string;
+    strategy?: string;
+  }> {
+    return request<any>(`/resolve-embed`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  },
 };

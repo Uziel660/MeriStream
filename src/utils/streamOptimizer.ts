@@ -7,6 +7,7 @@ export interface ScoredServer {
   provider: string;
   quality: '4K' | '1080p' | '720p' | '480p' | 'Auto HD';
   isEmbed: boolean;
+  streamType: 'direct' | 'embed';
   score: number;
   health: 'excelente' | 'buena' | 'estable' | 'desconocida';
   latencyMs?: number;
@@ -37,6 +38,7 @@ export function isEmbedUrl(url: string): boolean {
     u.includes('/embed') ||
     u.includes('/e/') ||
     u.includes('voe.') ||
+    u.includes('voe.sx') ||
     u.includes('mega.nz') ||
     u.includes('mp4upload.com') ||
     u.includes('streamtape.com') ||
@@ -109,6 +111,7 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
   }
 
   const isEmbed = isEmbedUrl(url);
+  const streamType = isEmbed ? 'embed' : 'direct';
   const quality = detectQualityFromUrl(url);
   const provider = getProviderName(url, index);
   const u = url.toLowerCase();
@@ -150,6 +153,7 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
     provider,
     quality,
     isEmbed,
+    streamType,
     score,
     health,
   };
@@ -172,29 +176,27 @@ export function rankAndSortServers(urls: string[]): ScoredServer[] {
 
   const deduplicatedUrlsMap = new Map<string, string>();
   for (const raw of uniqueUrls) {
-      let u = raw;
-      if (u.includes('mega.nz/file/')) {
-        u = u.replace('mega.nz/file/', 'mega.nz/embed/');
-      }
+    let u = raw;
+    if (u.includes('mega.nz/file/')) {
+      u = u.replace('mega.nz/file/', 'mega.nz/embed/');
+    }
 
-      try {
-          const urlObj = new URL(u);
-          // Extract base URL without query parameters and trailing slashes to prevent duplicates
-          const normalized = urlObj.origin + urlObj.pathname.replace(/\/$/, '');
-          if (!deduplicatedUrlsMap.has(normalized)) {
-              deduplicatedUrlsMap.set(normalized, u);
-          }
-      } catch {
-          // If it's an invalid URL, fallback to just stripping trailing slashes and queries
-          const normalized = u.replace(/\/$/, '').split('?')[0];
-          if (!deduplicatedUrlsMap.has(normalized)) {
-              deduplicatedUrlsMap.set(normalized, u);
-          }
+    try {
+      const urlObj = new URL(u);
+      // Extraer base URL sin query parameters y trailing slashes para prevenir duplicados
+      const normalized = urlObj.origin + urlObj.pathname.replace(/\/$/, '');
+      if (!deduplicatedUrlsMap.has(normalized)) {
+        deduplicatedUrlsMap.set(normalized, u);
       }
+    } catch {
+      const normalized = u.replace(/\/$/, '').split('?')[0];
+      if (!deduplicatedUrlsMap.has(normalized)) {
+        deduplicatedUrlsMap.set(normalized, u);
+      }
+    }
   }
 
   const deduplicatedUrls = Array.from(deduplicatedUrlsMap.values());
-
   const scored = deduplicatedUrls.map((url, idx) => scoreServer(url, idx));
 
   // Ordenar descendentemente por puntuación (máxima calidad + salud primero)

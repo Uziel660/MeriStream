@@ -283,18 +283,19 @@ async function startServer() {
         }
 
         for (const ip of resolvedIps) {
-          if (
-            ip === "::1" ||
-            ip.startsWith("fe80:") ||
-            ip.startsWith("fc00:") ||
-            ip.startsWith("fd00:") ||
-            ip.startsWith("127.") ||
-            ip.startsWith("10.") ||
-            ip.startsWith("192.168.") ||
-            ip.startsWith("169.254.") ||
-            ip.startsWith("0.") ||
-            (ip.startsWith("172.") && (() => { const p = parseInt(ip.split(".")[1], 10); return p >= 16 && p <= 31; })())
-          ) {
+          const isLocalIPv6 = ip === "::1" || ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd00:");
+          const isLocalIPv4 = ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || ip.startsWith("0.");
+
+          let isLocal172 = false;
+          if (ip.startsWith("172.")) {
+            const parts = ip.split(".");
+            if (parts.length > 1) {
+              const p = parseInt(parts[1], 10);
+              isLocal172 = p >= 16 && p <= 31;
+            }
+          }
+
+          if (isLocalIPv6 || isLocalIPv4 || isLocal172) {
             isPrivate = true;
             break;
           }

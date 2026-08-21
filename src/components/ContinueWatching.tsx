@@ -1,6 +1,6 @@
 // src/components/ContinueWatching.tsx
-import React, { useState, useEffect } from 'react';
-import { Play } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import type { Episode } from '../types';
 
@@ -28,6 +28,20 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
   onPlayEpisode,
   onSelectShow,
 }) => {
+
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    if (rowRef.current) {
+      const { scrollLeft, clientWidth } = rowRef.current;
+      const scrollAmount = clientWidth * 0.75;
+      rowRef.current.scrollTo({
+        left: direction === 'left' ? scrollLeft - scrollAmount : scrollLeft + scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
+
   if (!items || items.length === 0) return null;
 
   return (
@@ -41,24 +55,51 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {items.map((item) => (
-          <ContinueWatchingCard
-            key={`${item.showId}-${item.episodeId}`}
-            item={item}
-            onPlay={() => {
-              const ep: Episode = {
-                id: item.episodeId,
-                show_id: item.showId,
-                title: item.episodeTitle,
-                episode_number: item.episodeNumber,
-                created_at: new Date().toISOString(),
-              };
-              onPlayEpisode(item.showId, ep, item.showTitle);
-            }}
-            onOpenDetails={() => onSelectShow && onSelectShow(item.showId)}
-          />
-        ))}
+      <div className="group/row relative">
+        {/* BOTÓN SCROLL IZQUIERDA */}
+        <button
+          type="button"
+          onClick={() => handleScroll('left')}
+          aria-label="Desplazar a la izquierda"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-r-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-r border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+        >
+          <ChevronLeft size={22} />
+        </button>
+
+        {/* CONTENEDOR CARRUSEL */}
+        <div
+          ref={rowRef}
+          className="flex gap-4 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none scroll-smooth items-stretch"
+        >
+          {items.map((item) => (
+            <div key={`${item.showId}-${item.episodeId}`} className="w-64 sm:w-72 shrink-0">
+              <ContinueWatchingCard
+                item={item}
+                onPlay={() => {
+                  const ep: Episode = {
+                    id: item.episodeId,
+                    show_id: item.showId,
+                    title: item.episodeTitle,
+                    episode_number: item.episodeNumber,
+                    created_at: new Date().toISOString(),
+                  };
+                  onPlayEpisode(item.showId, ep, item.showTitle);
+                }}
+                onOpenDetails={() => onSelectShow && onSelectShow(item.showId)}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* BOTÓN SCROLL DERECHA */}
+        <button
+          type="button"
+          onClick={() => handleScroll('right')}
+          aria-label="Desplazar a la derecha"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-l-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-l border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+        >
+          <ChevronRight size={22} />
+        </button>
       </div>
     </section>
   );

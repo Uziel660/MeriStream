@@ -4,6 +4,8 @@ import { ArchiveOrgAdapter } from "./adapters/ArchiveOrgAdapter";
 import { TvMazeAdapter } from "./adapters/TvMazeAdapter";
 import { AnimeFlvAdapter } from "./adapters/AnimeFlvAdapter";
 import { GenericAdapter } from "./adapters/GenericAdapter";
+import { LaMovieAdapter } from "./adapters/LaMovieAdapter";
+
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
 
 export class ScraperManager {
@@ -19,6 +21,8 @@ export class ScraperManager {
     this.registerAdapter(new ArchiveOrgAdapter());
     this.registerAdapter(new TvMazeAdapter());
     this.registerAdapter(new AnimeFlvAdapter());
+    this.registerAdapter(new LaMovieAdapter());
+
   }
 
   public static getInstance(): ScraperManager {

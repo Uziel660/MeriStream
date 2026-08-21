@@ -35,6 +35,15 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
     expect(adapter2.id).toBe("animeflv");
   });
 
+
+  it("resolves LaMovieAdapter for lamovie.org URLs", () => {
+    const adapter1 = manager.getAdapter("https://lamovie.org/peliculas?page=2");
+    expect(adapter1.id).toBe("lamovie");
+
+    const adapter2 = manager.getAdapter("https://lamovie.org/series/ally-mcbeal-1997/");
+    expect(adapter2.id).toBe("lamovie");
+  });
+
   it("resolves GenericAdapter for unhandled / generic websites", () => {
     const adapter = manager.getAdapter("https://cuevana.biz/pelicula/oppenheimer");
     expect(adapter.id).toBe("generic");
@@ -47,11 +56,12 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
 
   it("lists all available adapters", () => {
     const adapters = manager.getAvailableAdapters();
-    expect(adapters.length).toBeGreaterThanOrEqual(5);
+    expect(adapters.length).toBeGreaterThanOrEqual(6);
     expect(adapters.some((a) => a.id === "direct_stream")).toBe(true);
     expect(adapters.some((a) => a.id === "archive_org")).toBe(true);
     expect(adapters.some((a) => a.id === "tvmaze")).toBe(true);
     expect(adapters.some((a) => a.id === "animeflv")).toBe(true);
+    expect(adapters.some((a) => a.id === "lamovie")).toBe(true);
     expect(adapters.some((a) => a.id === "generic")).toBe(true);
   });
 

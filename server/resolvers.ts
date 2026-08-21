@@ -24,7 +24,7 @@ export class EmbedResolvers {
     if (lowered.includes("mp4upload.com")) {
       return await this.extractPattern(url, /src:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i);
     } else if (lowered.includes("voe.sx") || lowered.includes("byselapuix.com")) {
-      return await this.extractPattern(url, /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)(?:[^"']*)?)["']/i);
+      return await this.extractPattern(url, /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
     } else {
       const generic = await this.resolveGeneric(url);
       return generic || url;

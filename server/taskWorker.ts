@@ -396,7 +396,7 @@ class BackgroundCrawlerWorker {
         if (pagesToFetch > 1) {
           for (let page = 2; page <= pagesToFetch; page++) {
             const liveJob = await this.getJob(job.id);
-            if (!liveJob || liveJob.status !== "running") break;
+            if (liveJob?.status !== "running") break;
 
             await this.addLog(job.id, "info", `Paginando: Solicitando página ${page}/${pagesToFetch} con delay cortés...`);
             await this.applyPoliteRateLimit(job);
@@ -459,7 +459,7 @@ class BackgroundCrawlerWorker {
 
     for (let i = 0; i < job.items_queue.length; i++) {
       const liveJob = await this.getJob(job.id);
-      if (!liveJob || liveJob.status !== "running") {
+      if (liveJob?.status !== "running") {
         await this.addLog(job.id, "warn", `Procesamiento pausado o detenido en el elemento ${i + 1}/${job.items_queue.length}.`);
         return;
       }

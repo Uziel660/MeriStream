@@ -291,78 +291,11 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
       const anchors = $(card).find("a[href]");
       if (anchors.length === 0) return;
 
-      let showUrl: string | null = null;
-      anchors.each((_, a) => {
-        const href = ($(a).attr("href") || "").trim();
-        if (!href) return;
-
-        let fullUrl = href;
-        if (!fullUrl.startsWith("http")) {
-          try {
-            fullUrl = new URL(href, urlOrQuery).toString();
-          } catch {
-            return;
-          }
-        }
-
-        try {
-          const parsed = new URL(fullUrl);
-          if (parsed.hostname.toLowerCase() === domain) {
-            const pathLower = parsed.pathname.toLowerCase();
-            if (
-              pathLower !== "" &&
-              pathLower !== "/" &&
-              pathLower !== "/home" &&
-              pathLower !== "/inicio" &&
-              !["/category/", "/genre/", "/tag/", "/page/", "/browse", "#", "javascript:"].some((b) => pathLower.includes(b))
-            ) {
-              showUrl = fullUrl;
-              return false;
-            }
-          }
-        } catch {}
-      });
-
+      const showUrl = extractShowUrlFromAnchors($, anchors, urlOrQuery, domain);
       if (!showUrl || seenCatalogUrls.has(showUrl)) return;
 
-      const img = $(card).find("img").first();
-      let imgUrl: string | null = null;
-      if (img.length > 0) {
-        const imgSrc = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("data-original") || img.attr("srcset") || img.attr("src") || "";
-        if (imgSrc) {
-          const firstSrc = imgSrc.split(/\s+/)[0];
-          try {
-            imgUrl = new URL(firstSrc, urlOrQuery).toString();
-          } catch {
-            imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
-          }
-        }
-      }
-
-      let cardTitle = "";
-      const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
-      if (heading.length > 0 && heading.text().trim().length > 1) {
-        cardTitle = heading.text().trim();
-      }
-
-      if (!cardTitle && img.length > 0 && img.attr("alt")) {
-        cardTitle = img.attr("alt")!.trim();
-      }
-
-      if (!cardTitle) {
-        anchors.each((_, a) => {
-          const t = $(a).text().trim() || $(a).attr("title") || "";
-          if (t.length > 1 && !["ver", "anime", "leer"].some((b) => t.toLowerCase().includes(b))) {
-            cardTitle = t;
-            return false;
-          }
-        });
-      }
-
-      if (!cardTitle && showUrl) {
-        const parts = showUrl.replace(/\/$/, "").split("/");
-        cardTitle = parts[parts.length - 1].replace(/[-_]/g, " ");
-      }
+      const imgUrl = extractCardImgUrl($, card, urlOrQuery);
+      const cardTitle = extractCatalogCardTitle($, card, anchors, showUrl);
 
       if (["inicio", "home", "directorio anime", "dmca", "contacto", "login"].some((b) => cardTitle.toLowerCase().includes(b))) {
         return;
@@ -629,7 +562,10 @@ export async function extractStreamFromUrl(targetUrl: string): Promise<{ stream_
 
     // Validate URLs with MediaValidator
     const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-    const finalStreams = validStreams.length > 0 ? validStreams : (resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl]);
+    let finalStreams = validStreams;
+    if (finalStreams.length === 0) {
+      finalStreams = resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl];
+    }
 
     return {
       stream_url: finalStreams[0],
@@ -778,63 +714,9 @@ async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult>
       }
 
       cards.each((_, card) => {
-        const anchor = $(card).find("a[href*='/anime/']").first().length > 0
-          ? $(card).find("a[href*='/anime/']").first()
-          : $(card).find("a[href]").first();
-
-        if (anchor.length === 0) return;
-        const href = (anchor.attr("href") || "").trim();
-        if (!href) return;
-
-        let fullUrl = href;
-        if (!fullUrl.startsWith("http")) {
-          try {
-            fullUrl = new URL(href, "https://www3.animeflv.net").toString();
-          } catch {
-            return;
-          }
-        }
-
-        const img = $(card).find("img").first();
-        let imgUrl: string | null = null;
-        if (img.length > 0) {
-          const imgSrc =
-            img.attr("data-src") ||
-            img.attr("data-cfsrc") ||
-            img.attr("data-lazy-src") ||
-            img.attr("data-original") ||
-            img.attr("srcset") ||
-            img.attr("src") ||
-            "";
-          if (imgSrc) {
-            const firstSrc = imgSrc.split(/\s+/)[0];
-            try {
-              imgUrl = new URL(firstSrc, "https://www3.animeflv.net").toString();
-            } catch {
-              imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
-            }
-          }
-        }
-
-        let cardTitle = "";
-        const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
-        if (heading.length > 0 && heading.text().trim().length > 1) {
-          cardTitle = heading.text().trim();
-        }
-        if (!cardTitle && img.length > 0 && img.attr("alt")) {
-          cardTitle = img.attr("alt")!.trim();
-        }
-        if (!cardTitle) {
-          cardTitle = anchor.text().trim() || anchor.attr("title") || "";
-        }
-
-        if (cardTitle && fullUrl && !animeflvItems.some((i) => i.url === fullUrl)) {
-          animeflvItems.push({
-            title: cleanQueryTitle(cardTitle),
-            url: fullUrl,
-            image_url: imgUrl,
-            kind: "anime",
-          });
+        const item = extractAnimeflvCard($, card);
+        if (item && !animeflvItems.some((i) => i.url === item.url)) {
+          animeflvItems.push(item);
         }
       });
     }
@@ -888,3 +770,141 @@ export async function extractCatalogListing(catalogUrl: string): Promise<Extract
   const result = await analyzeUniversalUrl(catalogUrl);
   return result.catalog_items || [];
 }
+
+function extractShowUrlFromAnchors($: cheerio.CheerioAPI, anchors: cheerio.Cheerio<cheerio.Element>, urlOrQuery: string, domain: string): string | null {
+  let showUrl: string | null = null;
+  anchors.each((_, a) => {
+    const href = ($(a).attr("href") || "").trim();
+    if (!href) return;
+
+    let fullUrl = href;
+    if (!fullUrl.startsWith("http")) {
+      try {
+        fullUrl = new URL(href, urlOrQuery).toString();
+      } catch {
+        return;
+      }
+    }
+
+    try {
+      const parsed = new URL(fullUrl);
+      if (parsed.hostname.toLowerCase() === domain) {
+        const pathLower = parsed.pathname.toLowerCase();
+        if (
+          pathLower !== "" &&
+          pathLower !== "/" &&
+          pathLower !== "/home" &&
+          pathLower !== "/inicio" &&
+          !["/category/", "/genre/", "/tag/", "/page/", "/browse", "#", "javascript:"].some((b) => pathLower.includes(b))
+        ) {
+          showUrl = fullUrl;
+          return false;
+        }
+      }
+    } catch {}
+  });
+  return showUrl;
+}
+
+function extractCardImgUrl($: cheerio.CheerioAPI, card: cheerio.Element, urlOrQuery: string): string | null {
+  const img = $(card).find("img").first();
+  if (img.length === 0) return null;
+  const imgSrc = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("data-original") || img.attr("srcset") || img.attr("src") || "";
+  if (!imgSrc) return null;
+  const firstSrc = imgSrc.split(/\s+/)[0];
+  try {
+    return new URL(firstSrc, urlOrQuery).toString();
+  } catch {
+    return firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
+  }
+}
+
+function extractCatalogCardTitle($: cheerio.CheerioAPI, card: cheerio.Element, anchors: cheerio.Cheerio<cheerio.Element>, showUrl: string): string {
+  const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
+  if (heading.length > 0 && heading.text().trim().length > 1) {
+    return heading.text().trim();
+  }
+
+  const img = $(card).find("img").first();
+  if (img.length > 0 && img.attr("alt")) {
+    return img.attr("alt")!.trim();
+  }
+
+  let anchorTitle = "";
+  anchors.each((_, a) => {
+    const t = $(a).text().trim() || $(a).attr("title") || "";
+    if (t.length > 1 && !["ver", "anime", "leer"].some((b) => t.toLowerCase().includes(b))) {
+      anchorTitle = t;
+      return false;
+    }
+  });
+  if (anchorTitle) return anchorTitle;
+
+  if (showUrl) {
+    const parts = showUrl.replace(/\/$/, "").split("/");
+    return parts[parts.length - 1].replace(/[-_]/g, " ");
+  }
+
+  return "";
+}
+
+function extractAnimeflvCard($: cheerio.CheerioAPI, card: cheerio.Element): ExtractedCatalogItem | null {
+  const animeAnchor = $(card).find("a[href*='/anime/']").first();
+  const anchor = animeAnchor.length > 0 ? animeAnchor : $(card).find("a[href]").first();
+
+  if (anchor.length === 0) return null;
+  const href = (anchor.attr("href") || "").trim();
+  if (!href) return null;
+
+  let fullUrl = href;
+  if (!fullUrl.startsWith("http")) {
+    try {
+      fullUrl = new URL(href, "https://www3.animeflv.net").toString();
+    } catch {
+      return null;
+    }
+  }
+
+  const img = $(card).find("img").first();
+  let imgUrl: string | null = null;
+  if (img.length > 0) {
+    const imgSrc =
+      img.attr("data-src") ||
+      img.attr("data-cfsrc") ||
+      img.attr("data-lazy-src") ||
+      img.attr("data-original") ||
+      img.attr("srcset") ||
+      img.attr("src") ||
+      "";
+    if (imgSrc) {
+      const firstSrc = imgSrc.split(/\s+/)[0];
+      try {
+        imgUrl = new URL(firstSrc, "https://www3.animeflv.net").toString();
+      } catch {
+        imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
+      }
+    }
+  }
+
+  let cardTitle = "";
+  const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
+  if (heading.length > 0 && heading.text().trim().length > 1) {
+    cardTitle = heading.text().trim();
+  }
+  if (!cardTitle && img.length > 0 && img.attr("alt")) {
+    cardTitle = img.attr("alt")!.trim();
+  }
+  if (!cardTitle) {
+    cardTitle = anchor.text().trim() || anchor.attr("title") || "";
+  }
+
+  if (!cardTitle || !fullUrl) return null;
+
+  return {
+    title: cleanQueryTitle(cardTitle),
+    url: fullUrl,
+    image_url: imgUrl,
+    kind: "anime",
+  };
+}
+

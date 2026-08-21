@@ -23,7 +23,7 @@ export function cleanQueryTitle(raw: string): string {
   title = title.replace(/^(?:Ver|Ver\s+Online|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
-  title = title.replace(/[(\[{][^)\]}]+[)\]}]/g, '');
+  title = title.replace(/\s*\([^)]*\)|\s*\[[^\]]*\]|\s*\{[^}]*\}/g, "");
   title = title.split(/\s+[-|—]\s+/)[0].trim();
   return title.trim();
 }
@@ -33,6 +33,30 @@ const GENERIC_TITLES = new Set([
   "directorio", "pagina", "página", "movies", "series", "inicio", "home",
   "lista", "list", "animes", "pelicula", "películas", "movie", "tv", "show", "watch", "online",
 ]);
+
+function isGenericQuery(lower: string): boolean {
+  return (
+    GENERIC_TITLES.has(lower) ||
+    lower.length < 3 ||
+    /^page\s*\d+$/i.test(lower) ||
+    lower.startsWith("page ") ||
+    lower.includes("pagina ")
+  );
+}
+
+function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: ContentKind, genres: string[] = ["Multimedia"]): EnrichedMetadata {
+  return {
+    title: cleaned || rawQuery || "Contenido Multimedia",
+    description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
+    poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+    banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
+    rating: 8.0,
+    year: new Date().getFullYear(),
+    status: "Finalizado",
+    genres,
+    content_type: hintKind || "anime",
+  };
+}
 
 /**
  * Enriches metadata across multiple engines (TVMaze, Jikan MAL, Kitsu, Internet Archive, Wikipedia)
@@ -61,25 +85,8 @@ export async function enrichUniversalMetadata(
   const lower = cleaned.toLowerCase();
 
   // If query is a generic placeholder or page number, do NOT query external APIs to prevent false matches (e.g. Little Witch Academia)
-  const isGeneric =
-    GENERIC_TITLES.has(lower) ||
-    lower.length < 3 ||
-    /^page\s*\d+$/i.test(lower) ||
-    lower.startsWith("page ") ||
-    lower.includes("pagina ");
-
-  if (isGeneric) {
-    return {
-      title: cleaned || rawQuery || "Contenido Multimedia",
-      description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
-      poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
-      banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
-      rating: 8.0,
-      year: new Date().getFullYear(),
-      status: "Finalizado",
-      genres: ["Multimedia"],
-      content_type: hintKind || "anime",
-    };
+  if (isGenericQuery(lower)) {
+    return buildDefaultMetadata(cleaned, rawQuery, hintKind, ["Multimedia"]);
   }
 
   // If hint is archive or query mentions archive/classic/dominio publico
@@ -114,25 +121,15 @@ export async function enrichUniversalMetadata(
   if (wikiMeta) return wikiMeta;
 
   // Fallback defaults
-  return {
-    title: cleaned || rawQuery || "Contenido Multimedia",
-    description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
-    poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
-    banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
-    rating: 8.0,
-    year: new Date().getFullYear(),
-    status: "Finalizado",
-    genres: ["Acción", "Aventura"],
-    content_type: hintKind || "anime",
-  };
+  return buildDefaultMetadata(cleaned, rawQuery, hintKind, ["Acción", "Aventura"]);
 }
 
 // --- AniList, Kitsu & Jikan MAL Anime Enricher ---
 async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | null> {
   // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
   const simplifiedQuery = query
-    .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|[I|V|X]+)\b/gi, "")
-    .replace(/[(\[{][^)\]}]+[)\]}]/g, '')
+    .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|\b[IVXLCDM]+\b)/gi, "")
+    .replace(/\s*\([^)]*\)|\s*\[[^\]]*\]|\s*\{[^}]*\}/g, "")
     .replace(/[-_]/g, " ")
     .trim();
 

@@ -28,12 +28,6 @@ export interface SaveShowInput {
   detected_streams?: string[];
 }
 
-/**
- * Ensures show passes through AniList / MAL metadata enrichment first,
- * then performs anti-duplication lookup by mal_id and normalized titles,
- * and saves or merges into PostgreSQL.
- */
-
 function applyEnrichedMetadata(target: any, enriched: any) {
   if (!enriched) return;
   if (enriched.mal_id) target.malId = enriched.mal_id;
@@ -50,11 +44,120 @@ function applyEnrichedMetadata(target: any, enriched: any) {
   if (enriched.genres && enriched.genres.length > 0) target.genresStr = enriched.genres.join(", ");
 }
 
-export async function saveShowWithDeduplication(input: SaveShowInput) {
-  let rawTitle = cleanQueryTitle(input.title);
-  let kind: ContentKind = (input.content_type || input.category || "anime") as ContentKind;
+function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
+  const inputEpisodes = input.episodes || [];
+  const normalizedEpisodes = inputEpisodes.map((ep, idx) => ({
+    number: ep.number ?? ep.episode_number ?? idx + 1,
+    title: ep.title || `Episodio ${ep.number ?? ep.episode_number ?? idx + 1}`,
+    url: ep.url || ep.source_url || input.detected_streams?.[0] || "",
+  }));
 
-  let showData = {
+  if (normalizedEpisodes.length === 0 && input.detected_streams && input.detected_streams.length > 0) {
+    normalizedEpisodes.push({
+      number: 1,
+      title: kind === "movie" ? "Película Completa" : "Episodio 1",
+      url: input.detected_streams[0],
+    });
+  }
+
+  return normalizedEpisodes;
+}
+
+async function findExistingShow(malId: number | null, normTitle: string, normEng: string, normJap: string) {
+  if (malId && malId > 0) {
+    const byMal = await prisma.show.findUnique({
+      where: { mal_id: malId },
+      include: { episodes: true },
+    });
+    if (byMal) return byMal;
+  }
+
+  if (!normTitle) return null;
+
+  const candidates = await prisma.show.findMany({
+    take: 20,
+    include: { episodes: true },
+  });
+
+  return candidates.find((s) => {
+    const dbNormTitle = normalizeTitle(s.title);
+    const dbNormJap = s.japanese_title ? normalizeTitle(s.japanese_title) : "";
+    const dbNormEng = s.english_title ? normalizeTitle(s.english_title) : "";
+
+    return (
+      (dbNormTitle && dbNormTitle === normTitle) ||
+      (dbNormEng && dbNormEng === normTitle) ||
+      (dbNormJap && dbNormJap === normTitle) ||
+      (normEng && dbNormEng && dbNormEng === normEng) ||
+      (normEng && dbNormTitle && dbNormTitle === normEng) ||
+      (normJap && dbNormJap && dbNormJap === normJap)
+    );
+  }) || null;
+}
+
+async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpisodes: Array<{ number: number; title: string; url: string }>) {
+  console.log(`[Deduplication] Obra existente detectada: '${existingShow.title}' (ID: ${existingShow.id}). Fusionando datos...`);
+
+  const updatePayload: any = {};
+  if (!existingShow.mal_id && showData.malId) updatePayload.mal_id = showData.malId;
+  if (!existingShow.anilist_id && showData.anilistId) updatePayload.anilist_id = showData.anilistId;
+  if (!existingShow.japanese_title && showData.japaneseTitle) updatePayload.japanese_title = showData.japaneseTitle;
+  if (!existingShow.english_title && showData.englishTitle) updatePayload.english_title = showData.englishTitle;
+  if ((!existingShow.poster_url || existingShow.poster_url === "") && showData.posterUrl) updatePayload.poster_url = showData.posterUrl;
+  if ((!existingShow.banner_url || existingShow.banner_url === "") && showData.bannerUrl) updatePayload.banner_url = showData.bannerUrl;
+
+  if (Object.keys(updatePayload).length > 0) {
+    await prisma.show.update({
+      where: { id: existingShow.id },
+      data: updatePayload,
+    });
+  }
+
+  let addedCount = 0;
+  for (const ep of normalizedEpisodes) {
+    const alreadyHas = existingShow.episodes.some(
+      (existingEp: any) => existingEp.episode_number === ep.number || (ep.url && existingEp.source_url === ep.url)
+    );
+
+    if (!alreadyHas) {
+      await prisma.episode.create({
+        data: {
+          show_id: existingShow.id,
+          episode_number: ep.number,
+          title: ep.title,
+          source_url: ep.url,
+        },
+      });
+      addedCount++;
+    }
+  }
+
+  const updatedShow = await prisma.show.findUnique({
+    where: { id: existingShow.id },
+    include: {
+      episodes: {
+        orderBy: { episode_number: "asc" },
+      },
+    },
+  });
+
+  return {
+    show: updatedShow!,
+    isDuplicate: true,
+    episodesAdded: addedCount,
+  };
+}
+
+/**
+ * Ensures show passes through AniList / MAL metadata enrichment first,
+ * then performs anti-duplication lookup by mal_id and normalized titles,
+ * and saves or merges into PostgreSQL.
+ */
+export async function saveShowWithDeduplication(input: SaveShowInput) {
+  const rawTitle = cleanQueryTitle(input.title);
+  const kind: ContentKind = (input.content_type || input.category || "anime") as ContentKind;
+
+  const showData = {
     malId: input.mal_id || null,
     anilistId: input.anilist_id || null,
     title: input.title,
@@ -80,128 +183,26 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   const normJap = showData.japaneseTitle ? normalizeTitle(showData.japaneseTitle) : "";
   const normEng = showData.englishTitle ? normalizeTitle(showData.englishTitle) : "";
 
+  const existingShow = await findExistingShow(showData.malId, normTitle, normEng, normJap);
+  const normalizedEpisodes = buildNormalizedEpisodes(input, kind);
 
-  // 2. Search DB for duplicate show
-  let existingShow = null;
-
-  // Check A: Match by MAL ID
-  if (showData.malId && showData.malId > 0) {
-    existingShow = await prisma.show.findUnique({
-      where: { mal_id: showData.malId },
-      include: { episodes: true },
-    });
-  }
-
-  // Check B: Match by Normalized Title or English/Japanese titles
-  if (!existingShow && normTitle) {
-    const candidates = await prisma.show.findMany({
-      take: 20,
-      include: { episodes: true },
-    });
-
-    existingShow = candidates.find((s) => {
-      const dbNormTitle = normalizeTitle(s.title);
-      const dbNormJap = s.japanese_title ? normalizeTitle(s.japanese_title) : "";
-      const dbNormEng = s.english_title ? normalizeTitle(s.english_title) : "";
-
-      return (
-        (dbNormTitle && dbNormTitle === normTitle) ||
-        (dbNormEng && dbNormEng === normTitle) ||
-        (dbNormJap && dbNormJap === normTitle) ||
-        (normEng && dbNormEng && dbNormEng === normEng) ||
-        (normEng && dbNormTitle && dbNormTitle === normEng) ||
-        (normJap && dbNormJap && dbNormJap === normJap)
-      );
-    });
-  }
-
-  // Build normalized episodes list
-  const inputEpisodes = input.episodes || [];
-  const normalizedEpisodes = inputEpisodes.map((ep, idx) => ({
-    number: ep.number ?? ep.episode_number ?? idx + 1,
-    title: ep.title || `Episodio ${ep.number ?? ep.episode_number ?? idx + 1}`,
-    url: ep.url || ep.source_url || (input.detected_streams && input.detected_streams[0]) || "",
-  }));
-
-  if (normalizedEpisodes.length === 0 && input.detected_streams && input.detected_streams.length > 0) {
-    normalizedEpisodes.push({
-      number: 1,
-      title: kind === "movie" ? "Película Completa" : "Episodio 1",
-      url: input.detected_streams[0],
-    });
-  }
-
-  // 3. If show exists: MERGE new episodes into existing show
   if (existingShow) {
-    console.log(`[Deduplication] Obra existente detectada: '${existingShow.title}' (ID: ${existingShow.id}). Fusionando datos...`);
-
-    // Update missing fields if new data has better info
-    const updatePayload: any = {};
-    if (!existingShow.mal_id && showData.malId) updatePayload.mal_id = showData.malId;
-    if (!existingShow.anilist_id && showData.anilistId) updatePayload.anilist_id = showData.anilistId;
-    if (!existingShow.japanese_title && japaneseTitle) updatePayload.japanese_title = japaneseTitle;
-    if (!existingShow.english_title && englishTitle) updatePayload.english_title = englishTitle;
-    if ((!existingShow.poster_url || existingShow.poster_url === "") && posterUrl) updatePayload.poster_url = posterUrl;
-    if ((!existingShow.banner_url || existingShow.banner_url === "") && bannerUrl) updatePayload.banner_url = bannerUrl;
-
-    if (Object.keys(updatePayload).length > 0) {
-      await prisma.show.update({
-        where: { id: existingShow.id },
-        data: updatePayload,
-      });
-    }
-
-    // Merge episodes
-    let addedCount = 0;
-    for (const ep of normalizedEpisodes) {
-      const alreadyHas = existingShow.episodes.some(
-        (existingEp) => existingEp.episode_number === ep.number || (ep.url && existingEp.source_url === ep.url)
-      );
-
-      if (!alreadyHas) {
-        await prisma.episode.create({
-          data: {
-            show_id: existingShow.id,
-            episode_number: ep.number,
-            title: ep.title,
-            source_url: ep.url,
-          },
-        });
-        addedCount++;
-      }
-    }
-
-    // Return refreshed show with all episodes
-    const updatedShow = await prisma.show.findUnique({
-      where: { id: existingShow.id },
-      include: {
-        episodes: {
-          orderBy: { episode_number: "asc" },
-        },
-      },
-    });
-
-    return {
-      show: updatedShow!,
-      isDuplicate: true,
-      episodesAdded: addedCount,
-    };
+    return await mergeShowEpisodes(existingShow, showData, normalizedEpisodes);
   }
 
-  // 4. If show is NEW: Create in DB
   console.log(`[Deduplication] Nueva obra verificada sin duplicados. Guardando en PostgreSQL...`);
 
   const createdShow = await prisma.show.create({
     data: {
-      mal_id: showData.showData.malId,
-      anilist_id: showData.showData.anilistId,
+      mal_id: showData.malId,
+      anilist_id: showData.anilistId,
       title: showData.title,
       japanese_title: showData.japaneseTitle,
       english_title: showData.englishTitle,
       normalized_title: normTitle,
-      description: description || "Obra multimedia indexada.",
+      description: showData.description || "Obra multimedia indexada.",
       poster_url: showData.posterUrl,
-      banner_url: bannerUrl || posterUrl,
+      banner_url: showData.bannerUrl || showData.posterUrl,
       category: kind,
       rating: showData.rating,
       year: showData.year,

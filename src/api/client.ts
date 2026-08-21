@@ -16,6 +16,8 @@ import type {
   ShowDetail,
   PlayStreamResponse,
   CrawlTaskResponse,
+  ScraperPreset,
+  UniversalAnalysisResult,
 } from "../types";
 
 const BASE_URL = "/api/v1";
@@ -122,12 +124,12 @@ export const api = {
     };
   },
 
-  async getPresets(): Promise<any[]> {
-    return request<any[]>(`/scraper/presets`);
+  async getPresets(): Promise<ScraperPreset[]> {
+    return request<ScraperPreset[]>(`/scraper/presets`);
   },
 
-  async analyzeUniversal(url: string): Promise<any> {
-    return request<any>(`/catalog/analyze`, {
+  async analyzeUniversal(url: string): Promise<UniversalAnalysisResult> {
+    return request<UniversalAnalysisResult>(`/catalog/analyze`, {
       method: "POST",
       body: JSON.stringify({ url }),
     });

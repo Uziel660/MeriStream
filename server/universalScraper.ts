@@ -635,3 +635,7 @@ async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult>
     catalog_items: [],
   };
 }
+
+export async function extractCatalogListing(url: string): Promise<any[]> {
+  return [];
+}

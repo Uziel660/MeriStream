@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import crypto from "crypto";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
 import { taskWorker, CrawlJob } from "./server/taskWorker";
@@ -662,7 +663,7 @@ app.post("/api/v1/catalog/import-show", requireAdminAuth, (req: Request, res: Re
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const showId = `show-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
 
   const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
@@ -723,7 +724,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
       if (!cleanUrl) continue;
 
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const showId = `show-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,

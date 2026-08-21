@@ -1,5 +1,0 @@
-🔒 [Security Fix] Add admin authentication to import-show endpoint
-
-🎯 What: Added a missing authentication check to the admin import-show endpoint.
-⚠️ Risk: Without this check, anyone could hit the import endpoint and inject unwanted/malicious shows into the catalog.
-🛡️ Solution: Implemented an Express middleware that checks the 'x-api-key' header against an 'ADMIN_API_KEY' environment variable. The middleware fails securely if the environment variable is not configured. The middleware was applied to the POST /api/v1/catalog/import-show route.

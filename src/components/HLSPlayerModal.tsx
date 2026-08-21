@@ -1149,13 +1149,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {/* CONTROLES PARA MODO EMBED (IFRAME) */}
           {activeServer && activeServer.isEmbed && (
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>
-                  Transmitiendo vía <strong>{activeServer.label}</strong> (Ajusta la calidad desde el reproductor web o cambia de servidor arriba)
-                </span>
-              </div>
+            <div className="flex items-center justify-end text-xs text-zinc-400">
               <button
                 type="button"
                 onClick={toggleFullscreen}

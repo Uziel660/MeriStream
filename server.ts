@@ -247,71 +247,80 @@ async function startServer() {
   });
 
   // GET /api/v1/proxy/stream - Anti-CORS Proxy
-  app.get("/api/v1/proxy/stream", async (req: Request, res: Response) => {
-    const targetUrl = typeof req.query.url === "string" ? req.query.url : "";
-    const referer = typeof req.query.referer === "string" ? req.query.referer : "https://animeflv.net/";
+  app.get("/api/v1/proxy/stream", handleProxyStream);
 
-    if (!targetUrl) {
-      return res.status(400).json({ detail: "URL requerida" });
+async function isPrivateIP(hostname: string): Promise<{ isPrivate: boolean, error?: string }> {
+  let isPrivate = hostname === "localhost" || hostname.endsWith(".local");
+  if (isPrivate) return { isPrivate: true };
+
+  let resolvedIps: string[] = [];
+  let cleanHostname = hostname;
+  if (cleanHostname.startsWith("[") && cleanHostname.endsWith("]")) {
+    cleanHostname = cleanHostname.slice(1, -1);
+  }
+
+  if (isIP(cleanHostname)) {
+    resolvedIps = [cleanHostname];
+  } else {
+    try {
+      const lookup = await dns.lookup(cleanHostname, { all: true });
+      resolvedIps = lookup.map(res => res.address);
+    } catch (e: any) {
+      return { isPrivate: true, error: "Host no resuelto o invalido" };
+    }
+  }
+
+  for (const ip of resolvedIps) {
+    const isLocalIPv6 = ip === "::1" || ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd00:");
+    const isLocalIPv4 = ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || ip.startsWith("0.");
+
+    let isLocal172 = false;
+    if (ip.startsWith("172.")) {
+      const parts = ip.split(".");
+      if (parts.length > 1) {
+        const p = parseInt(parts[1], 10);
+        isLocal172 = p >= 16 && p <= 31;
+      }
     }
 
-    try {
-      const parsedUrl = new URL(targetUrl);
-      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-        return res.status(400).json({ detail: "Protocolo no permitido" });
-      }
+    if (isLocalIPv6 || isLocalIPv4 || isLocal172) {
+      isPrivate = true;
+      break;
+    }
+  }
+  return { isPrivate };
+}
 
-      const hostname = parsedUrl.hostname.toLowerCase();
-      let isPrivate = hostname === "localhost" || hostname.endsWith(".local");
+async function handleProxyStream(req: Request, res: Response) {
+  const targetUrl = typeof req.query.url === "string" ? req.query.url : "";
+  const referer = typeof req.query.referer === "string" ? req.query.referer : "https://animeflv.net/";
 
-      if (!isPrivate) {
-        let resolvedIps: string[] = [];
-        let cleanHostname = hostname;
-        if (cleanHostname.startsWith("[") && cleanHostname.endsWith("]")) {
-          cleanHostname = cleanHostname.slice(1, -1);
-        }
+  if (!targetUrl) {
+    return res.status(400).json({ detail: "URL requerida" });
+  }
 
-        if (isIP(cleanHostname)) {
-          resolvedIps = [cleanHostname];
-        } else {
-          try {
-            const lookup = await dns.lookup(cleanHostname, { all: true });
-            resolvedIps = lookup.map(res => res.address);
-          } catch (e) {
-            return res.status(400).json({ detail: "Host no resuelto o invalido" });
-          }
-        }
+  try {
+    const parsedUrl = new URL(targetUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ detail: "Protocolo no permitido" });
+    }
 
-        for (const ip of resolvedIps) {
-          const isLocalIPv6 = ip === "::1" || ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd00:");
-          const isLocalIPv4 = ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || ip.startsWith("0.");
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const { isPrivate, error } = await isPrivateIP(hostname);
+    if (error) {
+      return res.status(400).json({ detail: error });
+    }
 
-          let isLocal172 = false;
-          if (ip.startsWith("172.")) {
-            const parts = ip.split(".");
-            if (parts.length > 1) {
-              const p = parseInt(parts[1], 10);
-              isLocal172 = p >= 16 && p <= 31;
-            }
-          }
+    if (isPrivate) {
+      return res.status(400).json({ detail: "Host no permitido" });
+    }
 
-          if (isLocalIPv6 || isLocalIPv4 || isLocal172) {
-            isPrivate = true;
-            break;
-          }
-        }
-      }
-
-      if (isPrivate) {
-        return res.status(400).json({ detail: "Host no permitido" });
-      }
-
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Referer: referer,
-        },
-      });
+    const response = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Referer: referer,
+      },
+    });
 
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");

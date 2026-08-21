@@ -328,7 +328,19 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o: string) => o.trim()) || [];
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (process.env.NODE_ENV !== "production") {
+        return callback(null, true);
+      }
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    }
+  }));
   app.use(express.json({ limit: "10mb" }));
 
   // ==========================================

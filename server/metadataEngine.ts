@@ -19,11 +19,13 @@ export interface EnrichedMetadata {
 
 export function cleanQueryTitle(raw: string): string {
   let title = raw.trim();
-  title = title.replace(/^(?:Ver|Ver\s+Online|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
-  title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
+  title = title.replace(/^(?:Ver\s+Online|Ver|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
   title = title.replace(/[\(\[\{].*?[\)\]\}]/g, "");
-  title = title.split(/\s+[-|—]\s+/)[0].trim();
+  title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
+  // Clean up any trailing hyphens or pipes that might have been left behind when suffixes were removed
+  title = title.replace(/\s+[-\x7C—]\s*$/, "");
+  title = title.split(/\s+[-\x7C—]\s+/)[0].trim();
   return title.trim();
 }
 

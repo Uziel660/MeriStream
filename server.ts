@@ -2,9 +2,9 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import crypto from "crypto";
+import { randomBytes } from "crypto";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
-import { taskWorker, CrawlJob } from "./server/taskWorker";
+import { taskWorker } from "./server/taskWorker";
 
 interface Episode {
   id: string;
@@ -662,13 +662,13 @@ app.post("/api/v1/catalog/import-show", requireAdminAuth, (req: Request, res: Re
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const showId = `show-${Date.now()}-${randomBytes(3).toString("hex")}`;
 
   const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
-    episode_number: parseFloat(ep.number) || idx + 1,
+    episode_number: (!isNaN(Number(ep.number)) && Number(ep.number) !== 0) ? Number(ep.number) : (idx + 1),
     source_url: ep.url || showData.detected_streams?.[0] || "",
   }));
 
@@ -723,7 +723,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
       if (!cleanUrl) continue;
 
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const showId = `show-${Date.now()}-${randomBytes(3).toString("hex")}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,

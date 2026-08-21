@@ -269,11 +269,12 @@ async function startServer() {
       try {
         const lookup = await dns.lookup(hostnameToResolve);
         resolvedIp = lookup.address;
-      } catch (err) {
+      } catch {
         return res.status(400).json({ detail: "Host no resoluble" });
       }
 
-      const isPrivate =
+      let isPrivate = false;
+      if (
         resolvedIp === "localhost" ||
         resolvedIp === "::1" ||
         resolvedIp === "::" ||
@@ -285,8 +286,15 @@ async function startServer() {
         resolvedIp.startsWith("10.") ||
         resolvedIp.startsWith("192.168.") ||
         resolvedIp.startsWith("169.254.") ||
-        resolvedIp.startsWith("0.") ||
-        (resolvedIp.startsWith("172.") && (() => { const p = parseInt(resolvedIp.split(".")[1], 10); return p >= 16 && p <= 31; })());
+        resolvedIp.startsWith("0.")
+      ) {
+        isPrivate = true;
+      } else if (resolvedIp.startsWith("172.")) {
+        const p = parseInt(resolvedIp.split(".")[1], 10);
+        if (p >= 16 && p <= 31) {
+          isPrivate = true;
+        }
+      }
 
       if (isPrivate) {
         return res.status(400).json({ detail: "Host no permitido" });

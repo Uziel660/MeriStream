@@ -83,6 +83,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
+  const lastFailoverTimeRef = useRef<number>(0);
+  const autoFailoverCountRef = useRef<number>(0);
 
   // Estados de Servidores y Selección Inteligente
   const [servers, setServers] = useState<ScoredServer[]>([]);
@@ -251,6 +253,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const handleServerChange = (index: number, isAutoFailover = false) => {
     if (index === activeServerIndex && !isAutoFailover) return;
     if (index >= servers.length || index < 0) return;
+
+    if (isAutoFailover) {
+      const now = Date.now();
+      // Prevenir bucles rápidos de failover en menos de 2000ms o más de 2 fallos consecutivos
+      if (now - lastFailoverTimeRef.current < 2000 || autoFailoverCountRef.current >= 2) {
+        setPlaybackError('No se pudo reproducir automáticamente este video. Por favor selecciona un servidor en la lista superior.');
+        return;
+      }
+      lastFailoverTimeRef.current = now;
+      autoFailoverCountRef.current += 1;
+    } else {
+      // Selección manual del usuario: resetear contador
+      autoFailoverCountRef.current = 0;
+    }
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -480,10 +496,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       setIsMuted(video.muted);
     };
     const onError = () => {
-      if (activeServerIndex < servers.length - 1) {
-        handleServerChange(activeServerIndex + 1, true);
-      } else {
-        setPlaybackError('Error al decodificar video en este servidor.');
+      // Solo actuar si no hay instancia Hls activa para no colisionar con Hls.Events.ERROR
+      if (!hlsRef.current && activeServer && !activeServer.isEmbed) {
+        if (activeServerIndex < servers.length - 1 && autoFailoverCountRef.current < 2) {
+          handleServerChange(activeServerIndex + 1, true);
+        } else {
+          setPlaybackError('Error al reproducir este video. Puedes elegir otro servidor en la lista superior.');
+        }
       }
     };
 

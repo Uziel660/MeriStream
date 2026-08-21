@@ -169,50 +169,90 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
   }
 
   async extractStream(url: string): Promise<{ stream_url: string; all_available_streams: string[] }> {
-    const html = await this.fetchHtml(url);
-    if (!html) throw new Error("No se pudo obtener el contenido del episodio de AnimeFLV");
+    const cleanUrl = url.trim();
+    const html = await this.fetchHtml(cleanUrl);
+    if (!html) return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
 
     const $ = cheerio.load(html);
-    const rawStreams = this.extractAnimeflvStreams($, html, url);
+    const rawStreams = this.extractAnimeflvStreams($, html, cleanUrl);
 
     if (rawStreams.length === 0) {
-      throw new Error("No se encontraron servidores de video en este episodio.");
+      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
     }
 
-    const resolvedStreams: string[] = [];
+    const directStreams: string[] = [];
+    const embedStreams: string[] = [];
+
     for (const st of rawStreams) {
-      const resolved = await EmbedResolvers.resolve(st);
-      if (resolved && !resolvedStreams.includes(resolved)) {
-        resolvedStreams.push(resolved);
-      }
-      if (!resolvedStreams.includes(st)) {
-        resolvedStreams.push(st);
+      try {
+        const meta = await EmbedResolvers.resolveWithMeta(st);
+        if (meta.resolved && meta.type === "direct") {
+          if (!directStreams.includes(meta.url)) directStreams.push(meta.url);
+        } else {
+          const finalEmbed = meta.url || st;
+          if (!embedStreams.includes(finalEmbed)) embedStreams.push(finalEmbed);
+        }
+      } catch {
+        if (!embedStreams.includes(st)) embedStreams.push(st);
       }
     }
 
-    const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-    const finalStreams = validStreams.length > 0 ? validStreams : resolvedStreams;
+    const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
 
     return {
-      stream_url: finalStreams[0],
-      all_available_streams: finalStreams,
+      stream_url: finalStreams[0] || cleanUrl,
+      all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
     };
   }
 
   private extractAnimeflvStreams($: cheerio.CheerioAPI, html: string, baseUrl: string): string[] {
     const streams: string[] = [];
-    const videoObjectMatch = html.match(/var\s+videos\s*=\s*(\{.+?\});/s);
+
+    // Helper para normalizar URLs de servidores de AnimeFLV
+    const normalizeUrl = (raw: string): string => {
+      let u = (raw || "").trim().replace(/\\/g, "");
+      if (u.includes("mega.nz/#!")) {
+        u = u.replace("mega.nz/#!", "mega.nz/embed/#!");
+      } else if (u.includes("mega.nz/file/")) {
+        u = u.replace("mega.nz/file/", "mega.nz/embed/");
+      } else if (u.includes("yourupload.com/watch/")) {
+        u = u.replace("yourupload.com/watch/", "yourupload.com/embed/");
+      } else if (u.includes("streamtape.com/v/")) {
+        u = u.replace("streamtape.com/v/", "streamtape.com/e/");
+      }
+      return u;
+    };
+
+    // 1. var videos = { "SUB": [ ... ] }
+    const videoObjectMatch = html.match(/var\s+videos\s*=\s*(\{.+?\});/s) || html.match(/videos\s*=\s*(\{.+?\});/s);
     if (videoObjectMatch) {
       try {
         const parsed = JSON.parse(videoObjectMatch[1]);
-        const servers = parsed.SUB || parsed.LAT || parsed.ENG || Object.values(parsed)[0] || [];
-        if (Array.isArray(servers)) {
-          servers.forEach((srv: any) => {
-            if (srv.code && typeof srv.code === "string") {
-              const cleanCode = srv.code.replace(/\\/g, "");
-              if (!streams.includes(cleanCode)) streams.push(cleanCode);
-            } else if (srv.url && typeof srv.url === "string") {
-              if (!streams.includes(srv.url)) streams.push(srv.url);
+        const serverGroups = [parsed.SUB, parsed.LAT, parsed.ENG, ...Object.values(parsed)].filter(Boolean);
+        for (const grp of serverGroups) {
+          if (Array.isArray(grp)) {
+            grp.forEach((srv: any) => {
+              const link = srv.code || srv.url;
+              if (link && typeof link === "string") {
+                const clean = normalizeUrl(link);
+                if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
+              }
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 2. var videos = [ ["Server", "https://..."], ... ]
+    const videoArrayMatch = html.match(/var\s+videos\s*=\s*(\[.+?\]);/s);
+    if (videoArrayMatch) {
+      try {
+        const parsed = JSON.parse(videoArrayMatch[1].replace(/'/g, '"'));
+        if (Array.isArray(parsed)) {
+          parsed.forEach((entry: any) => {
+            if (Array.isArray(entry) && entry[1] && typeof entry[1] === "string") {
+              const clean = normalizeUrl(entry[1]);
+              if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
             }
           });
         }
@@ -221,7 +261,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
 
     const standardStreams = this.extractEmbedsAndStreamsFromHtml($, html, baseUrl);
     standardStreams.forEach((st) => {
-      if (!streams.includes(st)) streams.push(st);
+      const clean = normalizeUrl(st);
+      if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
     });
 
     return streams;

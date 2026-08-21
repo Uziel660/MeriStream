@@ -42,20 +42,22 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
     $("loc").each((_, el) => {
       const url = $(el).text().trim();
-      if (!url || !url.includes("/peliculas/") && !url.includes("/series/") && !url.includes("/animes/")) {
+      if (!url || (!url.includes("/peliculas/") && !url.includes("/series/") && !url.includes("/animes/"))) {
         return;
       }
 
-      // Extraer título de la URL: /peliculas/nombre-de-la-pelicula-2024/
-      const slugMatch = url.match(/\/(?:peliculas|series|animes)\/([^/]+)\/$/);
+      // Extraer slug de la URL
+      const slugMatch = url.match(/\/(?:peliculas|series|animes)\/([^/]+)\/?$/);
       if (!slugMatch) return;
 
       const slug = slugMatch[1];
+      if (["peliculas", "series", "animes"].includes(slug)) return;
+
       // Limpiar título: quitar guiones y año final
       const cleanTitle = slug
-        .replace(/-\d{4}$/, "") // Quitar año final
-        .replace(/-/g, " ") // Reemplazar guiones por espacios
-        .replace(/\b\w/, (l) => l.toUpperCase()) // Capitalizar primera letra
+        .replace(/-\d{4}$/, "")
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (l) => l.toUpperCase())
         .trim();
 
       items.push({
@@ -309,26 +311,42 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   public async analyze(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
     const cleanUrl = input.trim();
     const urlObj = new URL(cleanUrl);
-    const path = urlObj.pathname.toLowerCase();
+    const path = urlObj.pathname.toLowerCase().replace(/\/$/, "");
 
     // Determinar tipo de contenido
-    const contentType = path.includes("/series/") ? "series" :
-      path.includes("/animes/") ? "anime" : "movie";
+    const isSeries = path.includes("/series") || path.includes("/tvshows");
+    const isAnime = path.includes("/animes") || path.includes("/anime");
+    const contentType: ContentKind = isSeries ? "series" : isAnime ? "anime" : "movie";
 
-    // 1. Si es una URL de catálogo (ej: /peliculas, /series, /animes)
-    if (path.match(/^\/(?:peliculas|series|animes)\/$/) || explicitType === "catalog") {
-      const catalogItems = await this.extractCatalogFromSitemap(contentType as ContentKind);
+    // Extraer número de página si existe (ej. ?page=2 o /page/2)
+    const pageParam = urlObj.searchParams.get("page") || cleanUrl.match(/\/page\/(\d+)/)?.[1] || "1";
+    const pageNum = Math.max(1, parseInt(pageParam, 10) || 1);
+
+    // 1. Si es una URL de catálogo (ej: /peliculas, /series, /animes, /, ?page=...) o explicitType === "catalog"
+    const isCatalog =
+      explicitType === "catalog" ||
+      path === "" ||
+      path === "/" ||
+      path === "/peliculas" ||
+      path === "/series" ||
+      path === "/animes" ||
+      path.match(/^\/(?:peliculas|series|animes)\/page\/\d+/i) !== null ||
+      urlObj.searchParams.has("page");
+
+    if (isCatalog) {
+      const catalogItems = await this.extractCatalogFromSitemap(contentType, pageNum);
+      const titleType = contentType === "movie" ? "Películas" : contentType === "series" ? "Series" : "Animes";
       return {
         page_type: "catalog",
-        content_type: contentType as ContentKind,
-        title: `Catálogo de ${contentType === "movie" ? "Películas" : contentType === "series" ? "Series" : "Animes"} - LaMovie`,
-        description: `Catálogo completo de ${contentType} en LaMovie`,
+        content_type: contentType,
+        title: `Catálogo de ${titleType} - LaMovie (Pág ${pageNum})`,
+        description: `Catálogo de ${titleType} en LaMovie (${catalogItems.length} títulos disponibles)`,
         poster_url: null,
         banner_url: null,
-        rating: 0,
+        rating: 8.0,
         year: new Date().getFullYear(),
         status: "Publicado",
-        genres: [],
+        genres: [titleType, "Directorio"],
         source_domain: "lamovie.org",
         episodes: [],
         catalog_items: catalogItems,

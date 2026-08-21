@@ -1,5 +1,5 @@
 // server/taskWorker.ts
-// Background Worker with Rate Limiting, Anti-Blocking Jitter, Queue & Persistent PostgreSQL Execution
+// Background Worker with Rate Limiting, Anti-Blocking Jitter, Queue & Persistent Database Execution
 
 import { analyzeUniversalUrl, extractCatalogListing } from "./universalScraper";
 import { saveShowWithDeduplication } from "./showService";
@@ -39,6 +39,17 @@ const DEFAULT_SETTINGS: WorkerSettings = {
   user_agent_rotation: true,
 };
 
+function parseJsonArray<T = any>(val: any): T[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 class BackgroundCrawlerWorker {
   private activeJobId: string | null = null;
   private isProcessing = false;
@@ -74,7 +85,7 @@ class BackgroundCrawlerWorker {
   }
 
   public setImportCallback(_cb: (show: any) => void) {
-    // Deprecated legacy callback - taskWorker now saves directly to PostgreSQL via saveShowWithDeduplication
+    // Deprecated legacy callback - taskWorker now saves directly to DB via saveShowWithDeduplication
   }
 
   public getSettings(): WorkerSettings {
@@ -112,12 +123,12 @@ class BackgroundCrawlerWorker {
         shows_imported: t.shows_imported,
         episodes_imported: t.episodes_imported,
         rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: (t.items_queue as any) || [],
+        items_queue: parseJsonArray(t.items_queue),
         current_item_title: t.current_item_title || undefined,
         error_message: t.error_message,
         created_at: t.created_at.toISOString(),
         updated_at: t.updated_at.toISOString(),
-        logs: (t.logs as any) || [],
+        logs: parseJsonArray(t.logs),
       }));
     } catch (e) {
       console.error("Error buscando jobs en DB:", e);
@@ -141,12 +152,12 @@ class BackgroundCrawlerWorker {
         shows_imported: t.shows_imported,
         episodes_imported: t.episodes_imported,
         rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: (t.items_queue as any) || [],
+        items_queue: parseJsonArray(t.items_queue),
         current_item_title: t.current_item_title || undefined,
         error_message: t.error_message,
         created_at: t.created_at.toISOString(),
         updated_at: t.updated_at.toISOString(),
-        logs: (t.logs as any) || [],
+        logs: parseJsonArray(t.logs),
       };
     } catch {
       return null;
@@ -197,9 +208,9 @@ class BackgroundCrawlerWorker {
         shows_imported: 0,
         episodes_imported: 0,
         rate_limit_delay_ms: delay,
-        items_queue: [],
+        items_queue: "[]",
         error_message: null,
-        logs: [initialLog],
+        logs: JSON.stringify([initialLog]),
       },
     });
 
@@ -281,7 +292,7 @@ class BackgroundCrawlerWorker {
     try {
       const task = await prisma.crawlTask.findUnique({ where: { id } });
       if (!task) return;
-      const logs = (task.logs as any[]) || [];
+      const logs = parseJsonArray(task.logs);
       logs.push({
         timestamp: new Date().toISOString(),
         level,
@@ -291,7 +302,7 @@ class BackgroundCrawlerWorker {
 
       await prisma.crawlTask.update({
         where: { id },
-        data: { logs },
+        data: { logs: JSON.stringify(logs) },
       });
     } catch {}
   }
@@ -304,9 +315,14 @@ class BackgroundCrawlerWorker {
       if (typeof data.total_discovered === "number") payload.total_discovered = data.total_discovered;
       if (typeof data.shows_imported === "number") payload.shows_imported = data.shows_imported;
       if (typeof data.episodes_imported === "number") payload.episodes_imported = data.episodes_imported;
-      if (data.items_queue) payload.items_queue = data.items_queue;
+      if (data.items_queue !== undefined) {
+        payload.items_queue = typeof data.items_queue === "string" ? data.items_queue : JSON.stringify(data.items_queue);
+      }
       if (data.current_item_title !== undefined) payload.current_item_title = data.current_item_title;
       if (data.error_message !== undefined) payload.error_message = data.error_message;
+      if (data.logs !== undefined) {
+        payload.logs = typeof data.logs === "string" ? data.logs : JSON.stringify(data.logs);
+      }
 
       await prisma.crawlTask.update({
         where: { id },
@@ -543,7 +559,7 @@ class BackgroundCrawlerWorker {
     await this.addLog(
       job.id,
       "success",
-      `¡Tarea completada con éxito! Total: ${job.shows_imported} obras procesadas y ${job.episodes_imported} episodios/streams guardados en PostgreSQL.`
+      `¡Tarea completada con éxito! Total: ${job.shows_imported} obras procesadas y ${job.episodes_imported} episodios/streams guardados en base de datos.`
     );
   }
 

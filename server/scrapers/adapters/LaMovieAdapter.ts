@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { unpackGeneric, extractMediaUrlsFromCode } from "../utils/jsUnpacker";
+import { EmbedResolvers } from "../../resolvers";
 
 /**
  * Adaptador para lamovie.org - Extrae catálogo de sitemaps XML, detalles de páginas estáticas,
@@ -272,11 +273,19 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         }
       } else {
         const iframeStreams = await this.resolveIframeStream(embedUrl, cleanUrl);
-        iframeStreams.forEach(st => {
-          if (!resolvedStreams.includes(st)) {
-            resolvedStreams.push(st);
+        if (iframeStreams.length > 0) {
+          iframeStreams.forEach((st) => {
+            if ((st.includes(".m3u8") || st.endsWith(".mp4")) && !resolvedStreams.includes(st)) {
+              resolvedStreams.push(st);
+            }
+          });
+        } else {
+          // Intentar con EmbedResolvers estándar
+          const resolved = await EmbedResolvers.resolve(embedUrl);
+          if (resolved && (resolved.includes(".m3u8") || resolved.endsWith(".mp4")) && !resolvedStreams.includes(resolved)) {
+            resolvedStreams.push(resolved);
           }
-        });
+        }
       }
     }
 

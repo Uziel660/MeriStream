@@ -22,6 +22,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [episodeSearch, setEpisodeSearch] = useState('');
+  const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
 
   useEffect(() => {
@@ -58,15 +59,53 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
   const episodes = show?.episodes || [];
 
+  // Extract seasons
+  const seasonData = useMemo(() => {
+    const seasonsMap = new Map<number, Episode[]>();
+
+    episodes.forEach(ep => {
+      let season = 1;
+
+      // Try to extract season from title (e.g. "T1E1", "S1 E2", "Season 1", "Temporada 2")
+      const sMatch = ep.title.match(/\b(?:T|S|Season\s*|Temporada\s*)(\d+)\b/i);
+      if (sMatch) {
+        season = parseInt(sMatch[1], 10);
+      }
+
+      if (!seasonsMap.has(season)) {
+        seasonsMap.set(season, []);
+      }
+      seasonsMap.get(season)!.push(ep);
+    });
+
+    // Sort seasons
+    const availableSeasons = Array.from(seasonsMap.keys()).sort((a, b) => a - b);
+
+    return { seasonsMap, availableSeasons };
+  }, [episodes]);
+
+  const { availableSeasons } = seasonData;
+
+  // Auto-select first available season if current selectedSeason is not valid
+  useEffect(() => {
+    if (availableSeasons.length > 0 && !availableSeasons.includes(selectedSeason)) {
+      setSelectedSeason(availableSeasons[0]);
+    }
+  }, [availableSeasons, selectedSeason]);
+
   const filteredEpisodes = useMemo(() => {
-    if (!episodeSearch) return episodes;
+    // First filter by season
+    const seasonEps = seasonData.seasonsMap.get(selectedSeason) || [];
+
+    if (!episodeSearch) return seasonEps;
+
     const q = episodeSearch.toLowerCase().trim();
-    return episodes.filter(
+    return seasonEps.filter(
       (ep) =>
         ep.title.toLowerCase().includes(q) ||
         String(ep.episode_number).includes(q)
     );
-  }, [episodes, episodeSearch]);
+  }, [seasonData, selectedSeason, episodeSearch]);
 
   const genresList: string[] = useMemo(() => {
     if (!show?.genres) return [show?.category || 'Anime'];
@@ -206,13 +245,44 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     </p>
                   </div>
 
-                  {/* LISTA VERTICAL DE EPISODIOS */}
+                  {/* BOTÓN DE REPRODUCIR PARA PELÍCULAS O LISTA DE EPISODIOS */}
+                  {show.kind === 'movie' || show.category?.toLowerCase() === 'película' ? (
+                    <div className="pt-4 flex justify-center pb-8">
+                      <button
+                        type="button"
+                        onClick={() => onSelectEpisode(episodes[0] || { id: '1', title: 'Película Completa', episode_number: 1, source_url: show.sources?.master_m3u8 }, show.title)}
+                        className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)]"
+                      >
+                        <Play size={20} className="fill-black" />
+                        REPRODUCIR
+                      </button>
+                    </div>
+                  ) : (
                   <div className="space-y-4 pt-2">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-display text-sm font-bold text-white">
-                          Episodios ({episodes.length})
-                        </h4>
+                        <div className="flex flex-col gap-2">
+                          <h4 className="font-display text-sm font-bold text-white">
+                            Episodios ({episodes.length})
+                          </h4>
+                          {availableSeasons.length > 1 && (
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {availableSeasons.map((season) => (
+                                <button
+                                  key={season}
+                                  onClick={() => setSelectedSeason(season)}
+                                  className={`px-3 py-1 text-xs rounded-full transition-colors border ${
+                                    selectedSeason === season
+                                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold'
+                                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                                  }`}
+                                >
+                                  Temporada {season}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {episodes.length > 6 && (
@@ -264,6 +334,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             )}

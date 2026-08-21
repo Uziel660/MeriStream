@@ -76,7 +76,16 @@ export abstract class BaseScraperAdapter {
       });
       clearTimeout(timer);
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        // Sitios como WordPress/LaMovie a veces devuelven status 404 pero sirven el HTML completo del catálogo
+        if (response.status === 404) {
+          const text = await response.text();
+          if (text && text.length > 500 && (text.includes("<html") || text.includes("<body") || text.includes("<div"))) {
+            return text;
+          }
+        }
+        return null;
+      }
       return await response.text();
     } catch {
       return null;

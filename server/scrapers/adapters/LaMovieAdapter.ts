@@ -206,14 +206,63 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
     // Check if the current page is catalog
     const classifiedType = PageClassifier.classify(cleanUrl, $);
-    const isCatalog = explicitType === "catalog" || urlObj.pathname === "/peliculas" || urlObj.pathname === "/series" || urlObj.pathname === "/animes" || urlObj.pathname === "/" || (catalogItems.length >= 3 && explicitType !== "detail");
+    const isCatalog =
+      explicitType === "catalog" ||
+      urlObj.pathname.startsWith("/peliculas") ||
+      urlObj.pathname.startsWith("/series") ||
+      urlObj.pathname.startsWith("/animes") ||
+      urlObj.pathname === "/" ||
+      urlObj.search.includes("page=") ||
+      classifiedType === "catalog" ||
+      (catalogItems.length >= 3 && explicitType !== "detail");
 
     if (isCatalog) {
+      // Si la página HTML es una SPA con 0 tarjetas en el HTML estático, consultar el sitemap correspondiente
+      if (catalogItems.length === 0) {
+        const pageParam = urlObj.searchParams.get("page") || "1";
+        const isSeries = urlObj.pathname.includes("/series");
+        const isAnime = urlObj.pathname.includes("/animes");
+
+        let sitemapUrl = `https://lamovie.org/wp-sitemap-posts-movies-${pageParam}.xml`;
+        if (isSeries) {
+          sitemapUrl = `https://lamovie.org/wp-sitemap-posts-tvshows-${pageParam}.xml`;
+        } else if (isAnime) {
+          sitemapUrl = `https://lamovie.org/wp-sitemap-posts-animes-${pageParam}.xml`;
+        }
+
+        try {
+          let sitemapXml = await this.fetchHtml(sitemapUrl, 6000);
+          if (!sitemapXml && !isSeries && !isAnime) {
+            sitemapXml = await this.fetchHtml("https://lamovie.org/movies-sitemap.xml", 6000);
+          }
+
+          if (sitemapXml) {
+            const xml$ = cheerio.load(sitemapXml, { xmlMode: true });
+            xml$("url, sitemap").each((_, el) => {
+              const loc = xml$(el).find("loc").text().trim();
+              if (loc && (loc.includes("/peliculas/") || loc.includes("/series/") || loc.includes("/animes/"))) {
+                const parts = loc.split("/").filter(Boolean);
+                const slug = parts[parts.length - 1] || "";
+                if (slug && slug !== "peliculas" && slug !== "series" && slug !== "animes") {
+                  const rawTitle = slug.replace(/-/g, " ").replace(/\b\d{4}\b$/, "").trim();
+                  const cleanTitle = cleanQueryTitle(rawTitle);
+                  catalogItems.push({
+                    title: cleanTitle,
+                    url: loc,
+                    kind: isAnime ? "anime" : (isSeries ? "series" : "movie"),
+                  });
+                }
+              }
+            });
+          }
+        } catch {}
+      }
+
       return {
         page_type: "catalog",
         content_type: "mixed",
         title: $("title").text().trim() || "LaMovie Catálogo",
-        description: "Catálogo de películas, series y animes de LaMovie.",
+        description: "Catálogo completo de películas, series y animes de LaMovie.",
         poster_url: catalogItems[0]?.image_url || null,
         banner_url: catalogItems[0]?.image_url || null,
         rating: 8.0,

@@ -129,7 +129,27 @@ function hashString(str: string): number {
 export function rankAndSortServers(urls: string[]): ScoredServer[] {
   const uniqueUrls = Array.from(new Set(urls.filter((u) => Boolean(u && typeof u === 'string'))));
 
-  const scored = uniqueUrls.map((url, idx) => scoreServer(url, idx));
+  const deduplicatedUrlsMap = new Map<string, string>();
+  for (const u of uniqueUrls) {
+      try {
+          const urlObj = new URL(u);
+          // Extract base URL without query parameters and trailing slashes to prevent duplicates
+          const normalized = urlObj.origin + urlObj.pathname.replace(/\/$/, '');
+          if (!deduplicatedUrlsMap.has(normalized)) {
+              deduplicatedUrlsMap.set(normalized, u);
+          }
+      } catch {
+          // If it's an invalid URL, fallback to just stripping trailing slashes and queries
+          const normalized = u.replace(/\/$/, '').split('?')[0];
+          if (!deduplicatedUrlsMap.has(normalized)) {
+              deduplicatedUrlsMap.set(normalized, u);
+          }
+      }
+  }
+
+  const deduplicatedUrls = Array.from(deduplicatedUrlsMap.values());
+
+  const scored = deduplicatedUrls.map((url, idx) => scoreServer(url, idx));
 
   // Ordenar descendentemente por puntuación (máxima calidad + salud primero)
   return scored.sort((a, b) => b.score - a.score);

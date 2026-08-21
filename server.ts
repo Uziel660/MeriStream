@@ -315,11 +315,41 @@ const initialShows: Show[] = [
 
 // In-Memory Database Store
 const showsStore = new Map<string, Show>();
-initialShows.forEach((show) => showsStore.set(show.id, show));
+const episodesStore = new Map<string, { show: Show; episode: Episode }>();
+
+function addShow(show: Show) {
+  // If show already exists, clean up old episodes to prevent leaks
+  const existingShow = showsStore.get(show.id);
+  if (existingShow && existingShow.episodes) {
+    existingShow.episodes.forEach(ep => episodesStore.delete(ep.id));
+  }
+
+  showsStore.set(show.id, show);
+  if (show.episodes) {
+    show.episodes.forEach(ep => {
+      episodesStore.set(ep.id, { show, episode: ep });
+    });
+  }
+}
+
+function deleteShow(showId: string) {
+  const show = showsStore.get(showId);
+  if (show && show.episodes) {
+    show.episodes.forEach(ep => episodesStore.delete(ep.id));
+  }
+  showsStore.delete(showId);
+}
+
+function clearShows() {
+  showsStore.clear();
+  episodesStore.clear();
+}
+
+initialShows.forEach(addShow);
 
 // Hook task worker auto-importer to store shows safely
 taskWorker.setImportCallback((showObj: Show) => {
-  showsStore.set(showObj.id, showObj);
+  addShow(showObj);
 });
 
 const tasksStore = new Map<string, CrawlTask>();
@@ -464,7 +494,7 @@ async function startServer() {
     if (!show) {
       return res.status(404).json({ detail: "Serie no encontrada" });
     }
-    showsStore.delete(showId);
+    deleteShow(showId);
     res.json({ status: "ok", message: `Serie '${show.title}' eliminada exitosamente.` });
   });
 
@@ -494,17 +524,10 @@ async function startServer() {
   // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver
   app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
     const episodeId = req.params.episode_id;
-    let foundEpisode: Episode | null = null;
-    let foundShow: Show | null = null;
 
-    for (const show of showsStore.values()) {
-      const ep = show.episodes.find((e) => e.id === episodeId);
-      if (ep) {
-        foundEpisode = ep;
-        foundShow = show;
-        break;
-      }
-    }
+    const lookup = episodesStore.get(episodeId);
+    const foundEpisode = lookup ? lookup.episode : null;
+    const foundShow = lookup ? lookup.show : null;
 
     if (!foundEpisode) {
       return res.status(404).json({ detail: "Episodio no encontrado en la base de datos." });
@@ -684,7 +707,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
     episodes,
   };
 
-  showsStore.set(showId, newShow);
+  addShow(newShow);
 
   res.json({
     status: "ok",
@@ -735,7 +758,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
         episodes,
       };
 
-      showsStore.set(showId, newShow);
+      addShow(newShow);
       results.push({ url: cleanUrl, status: "success", title: newShow.title, show_id: showId });
     } catch (e: any) {
       results.push({ url: itemUrl, status: "failed", error: e.message });
@@ -901,8 +924,8 @@ app.post("/api/v1/extract", async (req: Request, res: Response) => {
 
 // POST /api/v1/catalog/reset-sample - Reset to initial seed catalog
 app.post("/api/v1/catalog/reset-sample", (req: Request, res: Response) => {
-  showsStore.clear();
-  initialShows.forEach((s) => showsStore.set(s.id, s));
+  clearShows();
+  initialShows.forEach(addShow);
   res.json({ status: "ok", message: "Catálogo restaurado a las series iniciales." });
 });
 

@@ -174,8 +174,29 @@ function hashString(str: string): number {
 export function rankAndSortServers(urls: string[]): ScoredServer[] {
   const uniqueUrls = Array.from(new Set(urls.filter((u) => Boolean(u && typeof u === 'string'))));
 
+  const isRawWebpage = (u: string) => {
+    const lower = u.toLowerCase();
+    return (
+      (lower.includes('lamovie.org/peliculas/') ||
+        lower.includes('lamovie.org/series/') ||
+        lower.includes('lamovie.org/animes/') ||
+        lower.includes('animeflv.net/ver/') ||
+        lower.includes('animeflv.to/ver/') ||
+        lower.includes('jkanime.net/ver/') ||
+        lower.includes('tioanime.com/ver/') ||
+        lower.includes('latanime.org/ver/') ||
+        lower.includes('tubepelis.com/pelicula/')) &&
+      !lower.includes('.m3u8') &&
+      !lower.includes('.mp4')
+    );
+  };
+
+  // Si hay streams reales (.m3u8, .mp4 o embeds), descartar URLs crudas de la página web
+  const hasRealStreams = uniqueUrls.some((u) => !isRawWebpage(u));
+  const filteredUrls = hasRealStreams ? uniqueUrls.filter((u) => !isRawWebpage(u)) : uniqueUrls;
+
   const deduplicatedUrlsMap = new Map<string, string>();
-  for (const raw of uniqueUrls) {
+  for (const raw of filteredUrls) {
     let u = raw;
     if (u.includes('mega.nz/file/')) {
       u = u.replace('mega.nz/file/', 'mega.nz/embed/');

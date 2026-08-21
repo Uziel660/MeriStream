@@ -203,29 +203,51 @@ async function startServer() {
 
   // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver
   app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
-    const episodeId = req.params.episode_id;
+    const targetId = req.params.episode_id;
 
     try {
-      const foundEpisode = await prisma.episode.findUnique({
-        where: { id: episodeId },
+      let foundEpisode = await prisma.episode.findUnique({
+        where: { id: targetId },
         include: { show: true },
       });
 
+      let targetShow = foundEpisode?.show || null;
+
+      // Si no es ID de episodio, buscar si es el ID de una película u obra (Show)
       if (!foundEpisode) {
-        return res.status(404).json({ detail: "Episodio no encontrado en la base de datos." });
+        const foundShow = await prisma.show.findUnique({
+          where: { id: targetId },
+          include: { episodes: true },
+        });
+
+        if (foundShow) {
+          targetShow = foundShow;
+          if (foundShow.episodes && foundShow.episodes.length > 0) {
+            foundEpisode = { ...foundShow.episodes[0], show: foundShow } as any;
+          }
+        }
+      }
+
+      const sourceUrl = foundEpisode?.source_url || (targetShow as any)?.source_url || (targetShow as any)?.url || "";
+      if (!sourceUrl && !foundEpisode) {
+        return res.status(404).json({ detail: "Episodio u obra no encontrada en la base de datos." });
       }
 
       // Just-in-time extraction: if the source_url is a web page, resolve actual video servers in real time
-      const extracted = await extractStreamFromUrl(foundEpisode.source_url);
+      const extracted = await extractStreamFromUrl(sourceUrl);
       const allStreams = Array.from(
-        new Set([extracted.stream_url, ...(extracted.all_available_streams || []), foundEpisode.source_url].filter(Boolean))
+        new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
       );
 
+      const title = foundEpisode?.title
+        ? `${targetShow?.title || ""} - ${foundEpisode.title}`
+        : targetShow?.title || extracted.title || "Reproducción";
+
       res.json({
-        episode_id: foundEpisode.id,
-        stream_url: allStreams[0] || foundEpisode.source_url,
-        title: `${foundEpisode.show?.title || ""} - ${foundEpisode.title}`,
-        all_available_streams: allStreams,
+        episode_id: foundEpisode?.id || targetShow?.id || targetId,
+        stream_url: extracted.stream_url || allStreams[0] || sourceUrl,
+        title,
+        all_available_streams: allStreams.length > 0 ? allStreams : [sourceUrl],
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

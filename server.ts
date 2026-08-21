@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
@@ -659,14 +660,14 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
-  const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
+  const episodes: Episode[] = (showData.episodes || []).map((ep: { title?: string; number?: string | number; url?: string }, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
-    episode_number: parseFloat(ep.number) || idx + 1,
-    source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
+    episode_number: parseFloat(String(ep.number)) || idx + 1,
+    source_url: ep.url || showData.detected_streams?.[0] || "",
   }));
 
   if (episodes.length === 0) {
@@ -675,7 +676,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
       show_id: showId,
       title: showData.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
       episode_number: 1,
-      source_url: (showData.detected_streams && showData.detected_streams[0]) || "",
+      source_url: showData.detected_streams?.[0] || "",
     });
   }
 
@@ -713,14 +714,14 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
     return res.status(400).json({ detail: "Se requiere un array de URLs o títulos ('urls')" });
   }
 
-  const results: any[] = [];
+  const results: Show[] = [];
   for (const itemUrl of urls.slice(0, 15)) {
     try {
       const cleanUrl = itemUrl.trim();
       if (!cleanUrl) continue;
 
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,
@@ -732,7 +733,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
 
       const newShow: Show = {
         id: showId,
-        mal_id: (analysis as any).mal_id,
+        mal_id: (analysis as { mal_id?: number }).mal_id,
         title: analysis.title,
         japanese_title: analysis.japanese_title || undefined,
         english_title: analysis.english_title || undefined,

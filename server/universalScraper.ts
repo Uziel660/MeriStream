@@ -635,3 +635,9 @@ async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult>
     catalog_items: [],
   };
 }
+
+export async function extractCatalogListing(url: string): Promise<Array<{ title: string; url: string }>> {
+  // Fallback stub for missing extractCatalogListing function
+  console.warn("extractCatalogListing stub called for", url);
+  return [];
+}

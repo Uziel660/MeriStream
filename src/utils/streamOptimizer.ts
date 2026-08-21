@@ -100,7 +100,14 @@ export function getProviderName(url: string, index: number): string {
 /**
  * Evalúa y califica un servidor multimedia para ordenar por máxima calidad y mejor salud
  */
-export function scoreServer(url: string, index: number): ScoredServer {
+export function scoreServer(rawUrl: string, index: number): ScoredServer {
+  let url = (rawUrl || '').trim();
+
+  // Mega.nz: Convertir /file/ a /embed/ para evitar redirección a la web externa de Mega
+  if (url.includes('mega.nz/file/')) {
+    url = url.replace('mega.nz/file/', 'mega.nz/embed/');
+  }
+
   const isEmbed = isEmbedUrl(url);
   const quality = detectQualityFromUrl(url);
   const provider = getProviderName(url, index);
@@ -164,7 +171,12 @@ export function rankAndSortServers(urls: string[]): ScoredServer[] {
   const uniqueUrls = Array.from(new Set(urls.filter((u) => Boolean(u && typeof u === 'string'))));
 
   const deduplicatedUrlsMap = new Map<string, string>();
-  for (const u of uniqueUrls) {
+  for (const raw of uniqueUrls) {
+      let u = raw;
+      if (u.includes('mega.nz/file/')) {
+        u = u.replace('mega.nz/file/', 'mega.nz/embed/');
+      }
+
       try {
           const urlObj = new URL(u);
           // Extract base URL without query parameters and trailing slashes to prevent duplicates

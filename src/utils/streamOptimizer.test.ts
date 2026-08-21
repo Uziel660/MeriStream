@@ -163,7 +163,7 @@ describe('streamOptimizer', () => {
       expect(result[0].url).toBe('https://example.com/video-4k.m3u8');
       expect(result[1].url).toBe('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
       expect(result[2].url).toBe('https://voe.sx/embed/123');
-      expect(result[3].url).toBe('https://mega.nz/file/1234');
+      expect(result[3].url).toBe('https://mega.nz/embed/1234');
       expect(result[4].url).toBe('https://example.com/video-480p.mp4');
 
       expect(result[0].quality).toBe('4K');

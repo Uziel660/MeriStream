@@ -4,6 +4,7 @@ import { UniversalAnalysisResult, ExtractedEpisode, ExtractedCatalogItem } from 
 import { cleanQueryTitle, enrichUniversalMetadata } from "../../metadataEngine";
 import { PageClassifier } from "../../pageClassifier";
 import { MediaValidator } from "../../validator";
+import { EmbedResolvers } from "../../resolvers";
 
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
@@ -172,15 +173,29 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     if (!html) throw new Error("No se pudo obtener el contenido del episodio de AnimeFLV");
 
     const $ = cheerio.load(html);
-    const streams = this.extractAnimeflvStreams($, html, url);
+    const rawStreams = this.extractAnimeflvStreams($, html, url);
 
-    if (streams.length === 0) {
+    if (rawStreams.length === 0) {
       throw new Error("No se encontraron servidores de video en este episodio.");
     }
 
+    const resolvedStreams: string[] = [];
+    for (const st of rawStreams) {
+      const resolved = await EmbedResolvers.resolve(st);
+      if (resolved && !resolvedStreams.includes(resolved)) {
+        resolvedStreams.push(resolved);
+      }
+      if (!resolvedStreams.includes(st)) {
+        resolvedStreams.push(st);
+      }
+    }
+
+    const validStreams = await MediaValidator.validateUrls(resolvedStreams);
+    const finalStreams = validStreams.length > 0 ? validStreams : resolvedStreams;
+
     return {
-      stream_url: streams[0],
-      all_available_streams: streams,
+      stream_url: finalStreams[0],
+      all_available_streams: finalStreams,
     };
   }
 

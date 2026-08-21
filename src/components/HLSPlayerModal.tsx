@@ -88,6 +88,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // Estados de Servidores y Selección Inteligente
   const [servers, setServers] = useState<ScoredServer[]>([]);
   const [activeServerIndex, setActiveServerIndex] = useState<number>(0);
+  const [serverHealthMap, setServerHealthMap] = useState<Record<string, 'online' | 'checking' | 'failed'>>({});
   const [streamInfo, setStreamInfo] = useState<MediaStreamOut | null>(null);
   const [isLoadingStream, setIsLoadingStream] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -165,18 +166,32 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       setIsLoadingStream(false);
 
       // Comprobar salud en segundo plano para enriquecer la UI sin retrasar el inicio
+      const initialMap: Record<string, 'online' | 'checking' | 'failed'> = {};
+      ranked.forEach((s) => {
+        initialMap[s.id] = s.isEmbed ? 'online' : 'checking';
+      });
+      setServerHealthMap(initialMap);
+
       ranked.forEach((srv, idx) => {
-        quickProbeServerHealth(srv, 1000).then((lat) => {
-          if (!cancelled && lat !== null) {
-            setServers((prev) => {
-              const copy = [...prev];
-              if (copy[idx]) {
-                copy[idx] = { ...copy[idx], latencyMs: lat };
+        if (!srv.isEmbed) {
+          quickProbeServerHealth(srv, 1500).then((lat) => {
+            if (!cancelled) {
+              setServerHealthMap((prev) => ({
+                ...prev,
+                [srv.id]: lat !== null ? 'online' : 'failed',
+              }));
+              if (lat !== null) {
+                setServers((prev) => {
+                  const copy = [...prev];
+                  if (copy[idx]) {
+                    copy[idx] = { ...copy[idx], latencyMs: lat };
+                  }
+                  return copy;
+                });
               }
-              return copy;
-            });
-          }
-        });
+            }
+          });
+        }
       });
       return;
     }
@@ -347,9 +362,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (!data.fatal) return;
 
         console.warn('HLS Fatal Error:', data.type, data.details);
+        if (activeServer) {
+          setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
+        }
+
         // Si hay más servidores en la lista, pasar automáticamente al siguiente sin interrumpir al usuario
         if (activeServerIndex < servers.length - 1) {
-          handleServerChange(activeServerIndex + 1, true);
+          const nextIdx = activeServerIndex + 1;
+          setFailoverNotice(`Cambiando a ${servers[nextIdx]?.label || 'siguiente servidor'}...`);
+          setTimeout(() => setFailoverNotice(null), 3000);
+          handleServerChange(nextIdx, true);
         } else {
           setPlaybackError('No se pudo reproducir este stream. Puedes probar con otro servidor en la lista superior.');
         }
@@ -700,32 +722,57 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       <span className="text-[10px] text-emerald-400 font-normal">Auto-ordenados por calidad</span>
                     </div>
                     <div className="mt-1 space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {servers.map((srv, idx) => (
-                        <button
-                          key={srv.id}
-                          type="button"
-                          onClick={() => {
-                            handleServerChange(idx);
-                            setActiveMenu('none');
-                          }}
-                          className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                            activeServerIndex === idx
-                              ? 'bg-zinc-800 text-white font-semibold'
-                              : 'text-zinc-300 hover:bg-zinc-800/60'
-                          }`}
-                        >
-                          <div className="flex flex-col truncate pr-2">
-                            <span className="truncate">{srv.label}</span>
-                            <span className="text-[10px] text-zinc-500 font-mono">
-                              {srv.isEmbed ? 'Reproductor Web' : 'Stream HLS Nativo'}
-                              {srv.latencyMs ? ` • ${srv.latencyMs}ms` : ''}
-                            </span>
-                          </div>
-                          {activeServerIndex === idx && (
-                            <Check size={14} className="text-emerald-400 shrink-0" />
-                          )}
-                        </button>
-                      ))}
+                      {servers.map((srv, idx) => {
+                        const status = serverHealthMap[srv.id] || (srv.isEmbed ? 'online' : 'checking');
+                        return (
+                          <button
+                            key={srv.id}
+                            type="button"
+                            onClick={() => {
+                              handleServerChange(idx);
+                              setActiveMenu('none');
+                            }}
+                            className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                              activeServerIndex === idx
+                                ? 'bg-zinc-800 text-white font-semibold'
+                                : status === 'failed'
+                                ? 'text-zinc-500 opacity-60 hover:bg-zinc-800/30'
+                                : 'text-zinc-300 hover:bg-zinc-800/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-2">
+                              {/* Indicador visual de salud */}
+                              <span
+                                className={`h-2 w-2 rounded-full shrink-0 ${
+                                  status === 'online'
+                                    ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                                    : status === 'checking'
+                                    ? 'bg-amber-400 animate-pulse'
+                                    : 'bg-rose-500'
+                                }`}
+                                title={
+                                  status === 'online'
+                                    ? 'Servidor Verificado (Online)'
+                                    : status === 'checking'
+                                    ? 'Comprobando respuesta...'
+                                    : 'Servidor no disponible'
+                                }
+                              />
+                              <div className="flex flex-col truncate">
+                                <span className={`truncate ${status === 'failed' ? 'line-through' : ''}`}>{srv.label}</span>
+                                <span className="text-[10px] text-zinc-500 font-mono">
+                                  {srv.isEmbed ? 'Reproductor Web (Embed)' : 'Stream Directo (HLS)'}
+                                  {srv.latencyMs ? ` • ${srv.latencyMs}ms` : ''}
+                                  {status === 'failed' ? ' • No disponible' : ''}
+                                </span>
+                              </div>
+                            </div>
+                            {activeServerIndex === idx && (
+                              <Check size={14} className="text-emerald-400 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

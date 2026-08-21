@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
@@ -320,7 +320,7 @@ const episodesStore = new Map<string, { show: Show; episode: Episode }>();
 function addShow(show: Show) {
   // If show already exists, clean up old episodes to prevent leaks
   const existingShow = showsStore.get(show.id);
-  if (existingShow && existingShow.episodes) {
+  if (existingShow?.episodes) {
     existingShow.episodes.forEach(ep => episodesStore.delete(ep.id));
   }
 
@@ -334,7 +334,7 @@ function addShow(show: Show) {
 
 function deleteShow(showId: string) {
   const show = showsStore.get(showId);
-  if (show && show.episodes) {
+  if (show?.episodes) {
     show.episodes.forEach(ep => episodesStore.delete(ep.id));
   }
   showsStore.delete(showId);
@@ -677,7 +677,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
     episode_number: Number(ep.number) || idx + 1,
-    source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
+    source_url: ep.url || (showData.detected_streams?.[0]) || "",
   }));
 
   if (episodes.length === 0) {
@@ -686,7 +686,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
       show_id: showId,
       title: showData.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
       episode_number: 1,
-      source_url: (showData.detected_streams && showData.detected_streams[0]) || "",
+      source_url: (showData.detected_streams?.[0]) || "",
     });
   }
 

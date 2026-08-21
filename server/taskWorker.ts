@@ -1,3 +1,4 @@
+import crypto from "crypto";
 // server/taskWorker.ts
 // Background Worker with Rate Limiting, Anti-Blocking Jitter, Queue & Persistent Execution
 
@@ -78,7 +79,7 @@ class BackgroundCrawlerWorker {
     delay_ms?: number;
     name?: string;
   }): CrawlJob {
-    const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const id = `task-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     const targetUrl = options.target_url.trim();
     const scope = options.scope || (options.max_pages && options.max_pages > 1 ? "catalog_pages" : "catalog_pages");
     const delay = options.delay_ms && options.delay_ms >= 500 ? options.delay_ms : this.settings.default_delay_ms;
@@ -198,7 +199,7 @@ class BackgroundCrawlerWorker {
     let delay = job.rate_limit_delay_ms || this.settings.default_delay_ms;
     if (this.settings.jitter_enabled) {
       // Add random jitter (200-700ms) to prevent robotic pattern detection
-      const jitter = Math.floor(Math.random() * 500) + 200;
+      const jitter = Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] % 500) + 200;
       delay += jitter;
     }
     await this.sleep(delay);
@@ -342,7 +343,7 @@ class BackgroundCrawlerWorker {
 
       try {
         const itemAnalysis = await analyzeUniversalUrl(item.url || item.title);
-        const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
         const episodes = (itemAnalysis.episodes || []).map((ep, idx) => ({
           id: `ep-${showId}-${idx + 1}`,

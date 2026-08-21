@@ -543,7 +543,7 @@ function handleDirectStream(streamUrl: string): UniversalAnalysisResult {
 }
 
 async function handleArchiveOrg(archiveUrl: string): Promise<UniversalAnalysisResult> {
-  const match = archiveUrl.match(/archive\.org\/details\/([^\/\?#]+)/);
+  const match = archiveUrl.match(/archive\.org\/details\/([^\/\?#]{1,250})/);
   const identifier = match ? match[1] : "";
 
   let title = identifier.replace(/[-_]/g, " ");

@@ -16,7 +16,6 @@ import {
   RotateCw,
   Server,
   ExternalLink,
-  Loader2,
   Check,
   Languages,
   PictureInPicture,
@@ -143,6 +142,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setIsLoadingStream(true);
     setLoadError(null);
 
+    if (props.isLoading) {
+      setIsLoadingStream(true);
+      return;
+    }
+
+    if (props.loadError) {
+      setIsLoadingStream(false);
+      setLoadError(props.loadError);
+      return;
+    }
+
     const rawDirect = directSource?.url || props.streamUrl || props.src || media?.stream_url;
     const allCandidateUrls: string[] = Array.from(
       new Set(
@@ -233,7 +243,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [media?.id, directSource, props.streamUrl, props.src, props.all_streams]);
+  }, [media?.id, directSource, props.streamUrl, props.src, props.all_streams, props.isLoading, props.loadError]);
 
   const activeServer = servers[activeServerIndex] || null;
 
@@ -858,9 +868,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           onDoubleClick={toggleFullscreen}
         >
           {isLoadingStream && (
-            <div className="flex flex-col items-center gap-3 text-white z-20">
-              <Loader2 className="h-10 w-10 animate-spin text-zinc-400" />
-              <p className="text-xs font-mono text-zinc-400">Optimizando servidores y máxima calidad...</p>
+            <div className="flex flex-col items-center gap-4 text-white z-20 animate-in fade-in duration-200">
+              <div className="relative flex items-center justify-center">
+                <div className="h-16 w-16 rounded-full border-2 border-emerald-500/20 border-t-emerald-500 animate-spin" />
+                <Zap size={22} className="absolute text-emerald-400 animate-pulse" />
+              </div>
+              <div className="flex flex-col items-center gap-1.5 text-center px-4">
+                <p className="text-base font-semibold text-white tracking-wide">Cargando Reproductor...</p>
+                <p className="text-xs font-mono text-zinc-400">Optimizando servidores y máxima calidad disponible</p>
+              </div>
             </div>
           )}
 

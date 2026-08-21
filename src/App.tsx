@@ -133,31 +133,50 @@ export function App() {
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
+    const showId = episode.show_id || selectedShowId || 'unknown';
+    const currentShow = shows.find((s) => s.id === showId);
+    const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
+    const initialTime = existingProgress?.currentTime || 0;
+
+    // 1. Abrir el reproductor al instante para feedback visual inmediato
+    setPlayingStreamData({
+      title: `${showTitle} - ${episode.title}`,
+      streamUrl: '',
+      all_streams: [],
+      initialTime,
+      showId,
+      showTitle,
+      showPoster: currentShow?.poster_url || undefined,
+      episodeId: episode.id,
+      episodeNumber: episode.episode_number,
+      episodeTitle: episode.title,
+      isLoading: true,
+    });
+
     try {
       const res = await fetch(`/api/v1/play/${episode.id}`);
       if (!res.ok) throw new Error('No se pudo resolver el video');
       const data = await res.json();
 
-      const showId = episode.show_id || selectedShowId || 'unknown';
-      const currentShow = shows.find((s) => s.id === showId);
-
-      const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
-      const initialTime = existingProgress?.currentTime || 0;
-
-      setPlayingStreamData({
-        title: `${showTitle} - ${episode.title}`,
-        streamUrl: data.stream_url,
-        all_streams: data.all_available_streams,
-        initialTime,
-        showId,
-        showTitle,
-        showPoster: currentShow?.poster_url || undefined,
-        episodeId: episode.id,
-        episodeNumber: episode.episode_number,
-        episodeTitle: episode.title,
+      // 2. Transición fluida con los streams listos
+      setPlayingStreamData((prev: any) => {
+        if (!prev || prev.episodeId !== episode.id) return prev;
+        return {
+          ...prev,
+          streamUrl: data.stream_url,
+          all_streams: data.all_available_streams,
+          isLoading: false,
+        };
       });
     } catch (e: any) {
-      alert(e.message || 'Error al iniciar la reproducción');
+      setPlayingStreamData((prev: any) => {
+        if (!prev || prev.episodeId !== episode.id) return prev;
+        return {
+          ...prev,
+          loadError: e.message || 'Error al iniciar la reproducción',
+          isLoading: false,
+        };
+      });
     }
   };
 
@@ -460,6 +479,8 @@ export function App() {
           streamUrl={playingStreamData.streamUrl}
           all_streams={playingStreamData.all_streams}
           initialTime={playingStreamData.initialTime}
+          isLoading={playingStreamData.isLoading}
+          loadError={playingStreamData.loadError}
           onProgressUpdate={(currentTime, duration) => {
             if (duration > 0 && currentTime > 0) {
               const progressPercent = Math.round((currentTime / duration) * 100);

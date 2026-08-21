@@ -5,7 +5,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
-import { taskWorker, CrawlJob } from "./server/taskWorker";
+import { taskWorker } from "./server/taskWorker";
 
 interface Episode {
   id: string;

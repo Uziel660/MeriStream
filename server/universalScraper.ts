@@ -126,18 +126,17 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
     );
 
     // --- Determine Content Kind ---
-    let detectedKind: ContentKind = "anime";
     const pathAndTitle = (urlOrQuery + " " + ogTitle + " " + ogDesc).toLowerCase();
 
-    if (domain.includes("anime") || pathAndTitle.includes("anime") || pathAndTitle.includes("manga") || domain.includes("jkanime")) {
-      detectedKind = "anime";
-    } else if (domain.includes("cuevana") || domain.includes("pelis") || pathAndTitle.includes("pelicula") || pathAndTitle.includes("movie") || schemaMedia?.["@type"] === "Movie") {
-      detectedKind = "movie";
-    } else if (pathAndTitle.includes("serie") || pathAndTitle.includes("temporada") || pathAndTitle.includes("season") || schemaMedia?.["@type"] === "TVSeries") {
-      detectedKind = "series";
-    } else if (domain.includes("archive.org")) {
-      detectedKind = "open_archive";
-    }
+    const determineKind = (domainStr: string, textStr: string, schemaType?: string): ContentKind => {
+      if (domainStr.includes("archive.org")) return "open_archive";
+      if (domainStr.includes("anime") || domainStr.includes("jkanime") || textStr.includes("anime") || textStr.includes("manga")) return "anime";
+      if (domainStr.includes("cuevana") || domainStr.includes("pelis") || textStr.includes("pelicula") || textStr.includes("movie") || schemaType === "Movie") return "movie";
+      if (textStr.includes("serie") || textStr.includes("temporada") || textStr.includes("season") || schemaType === "TVSeries") return "series";
+      return "anime";
+    };
+
+    const detectedKind = determineKind(domain, pathAndTitle, schemaMedia?.["@type"]);
 
     // --- Extract Real Streams / Embeds from HTML ---
     const detectedStreams = extractEmbedsAndStreamsFromHtml($, html, urlOrQuery);
@@ -156,8 +155,8 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
     });
     const allScripts = scriptTexts.join("\n");
 
-    const animeInfoMatch = allScripts.match(/var\s+anime_info\s*=\s*(\[[^;]+\]);/);
-    const episodesMatch = allScripts.match(/var\s+episodes\s*=\s*(\[[^;]+\]);/);
+    const animeInfoMatch = allScripts.match(/var\s+anime_info\s*=\s*(\[[^;]{1,5000}\]);/);
+    const episodesMatch = allScripts.match(/var\s+episodes\s*=\s*(\[[^;]{1,50000}\]);/);
 
     if (episodesMatch) {
       try {
@@ -377,19 +376,24 @@ function extractEmbedsAndStreamsFromHtml($: cheerio.CheerioAPI, html: string, ba
 
   // 4. Data attributes on elements (e.g. data-video, data-server, data-url, data-iframe)
   $("[data-video], [data-server], [data-url], [data-src], [data-player], [data-embed]").each((_, el) => {
-    const val = $(el).attr("data-video") || $(el).attr("data-url") || $(el).attr("data-src") || $(el).attr("data-player") || $(el).attr("data-embed") || "";
-    if (val) {
-      if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("//")) {
-        const resolved = resolveRelativeUrl(val, baseUrl);
-        if (!streams.includes(resolved)) streams.push(resolved);
-      } else if (isBase64(val)) {
-        try {
-          const decoded = Buffer.from(val, "base64").toString("utf-8");
-          if (decoded.startsWith("http")) {
-            if (!streams.includes(decoded)) streams.push(decoded);
-          }
-        } catch {}
-      }
+    const $el = $(el);
+    const val = $el.attr("data-video") || $el.attr("data-url") || $el.attr("data-src") || $el.attr("data-player") || $el.attr("data-embed");
+
+    if (!val) return;
+
+    if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("//")) {
+      const resolved = resolveRelativeUrl(val, baseUrl);
+      if (!streams.includes(resolved)) streams.push(resolved);
+      return;
+    }
+
+    if (isBase64(val)) {
+      try {
+        const decoded = Buffer.from(val, "base64").toString("utf-8");
+        if (decoded.startsWith("http") && !streams.includes(decoded)) {
+          streams.push(decoded);
+        }
+      } catch {}
     }
   });
 

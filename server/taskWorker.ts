@@ -360,7 +360,7 @@ class BackgroundCrawlerWorker {
             title: itemAnalysis.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
             episode_number: 1,
             source_url:
-              (itemAnalysis.detected_streams && itemAnalysis.detected_streams[0]) ||
+              itemAnalysis.detected_streams?.[0] ||
               item.url,
           });
         }

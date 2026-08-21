@@ -8,7 +8,7 @@ import { MediaRow } from './components/MediaRow';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
 import { HLSPlayerModal } from './components/HLSPlayerModal';
-import { AdminPanel } from './components/AdminPanel';
+import { AdminPanel, StreamResult } from './components/AdminPanel';
 import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
@@ -479,11 +479,11 @@ export function App() {
           setIsAdminOpen(false);
           loadCatalog();
         }}
-        onPlayDirect={(streamResult: any) => {
+        onPlayDirect={(streamResult: StreamResult) => {
           setPlayingStreamData({
             title: streamResult.title,
             streamUrl: streamResult.stream_url,
-            all_streams: streamResult.all_streams,
+            all_streams: streamResult.all_available_streams,
           });
         }}
       />

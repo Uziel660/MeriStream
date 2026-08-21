@@ -31,12 +31,18 @@ import {
 } from 'lucide-react';
 import type { Show, ScraperPreset, UniversalAnalysisResult, BackgroundWorkerJob, WorkerSettings } from '../types';
 
+export interface StreamResult {
+  title: string;
+  stream_url: string;
+  all_available_streams: string[];
+}
+
 interface AdminPanelProps {
   isOpen?: boolean;
   onClose?: () => void;
-  onPlayDirect?: (streamResult: any) => void;
-  onPlay?: (streamResult: any) => void;
-  onPlayStream?: (streamResult: any) => void;
+  onPlayDirect?: (streamResult: StreamResult) => void;
+  onPlay?: (streamResult: StreamResult) => void;
+  onPlayStream?: (streamResult: StreamResult) => void;
   [key: string]: any;
 }
 

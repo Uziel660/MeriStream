@@ -585,6 +585,27 @@ async function startServer() {
     }
 
     try {
+      const parsedUrl = new URL(targetUrl);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        return res.status(400).json({ detail: "Protocolo no permitido" });
+      }
+
+      const hostname = parsedUrl.hostname;
+      const isPrivate =
+        hostname === "localhost" ||
+        hostname.endsWith(".local") ||
+        hostname.includes("::") ||
+        hostname.startsWith("127.") ||
+        hostname.startsWith("10.") ||
+        hostname.startsWith("192.168.") ||
+        hostname.startsWith("169.254.") ||
+        hostname.startsWith("0.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
+      if (isPrivate) {
+        return res.status(400).json({ detail: "Host no permitido" });
+      }
+
       const response = await fetch(targetUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

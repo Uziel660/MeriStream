@@ -53,11 +53,7 @@ export function isEmbedUrl(url: string): boolean {
     u.includes('upstream') ||
     u.includes('embedsito') ||
     u.includes('streamlare') ||
-    u.includes('fastre') ||
-    u.includes('animeflv.') ||
-    u.includes('jkanime.') ||
-    u.includes('/ver/') ||
-    u.includes('cuevana')
+    u.includes('fastre')
   );
 }
 

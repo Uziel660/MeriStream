@@ -254,7 +254,21 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     try {
       const playerData = JSON.parse(playerRes);
       const embeds = playerData?.data?.embeds || playerData?.embeds || [];
-      embedUrls = embeds.map((e: any) => e.url).filter(Boolean);
+      embeds.forEach((e: any) => {
+        if (e.url && typeof e.url === "string") {
+          embedUrls.push(e.url.trim());
+        }
+      });
+      const downloads = playerData?.data?.downloads || playerData?.downloads || [];
+      downloads.forEach((d: any) => {
+        if (d.url && typeof d.url === "string") {
+          let u = d.url.trim();
+          if (u.includes("mega.nz")) {
+            u = u.replace("mega.nz/file/", "mega.nz/embed/").replace("mega.nz/#!", "mega.nz/embed/#!");
+            embedUrls.push(u);
+          }
+        }
+      });
     } catch {
       // Fallback: extraer iframes del HTML
       const $ = cheerio.load(html);
@@ -266,27 +280,28 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       });
     }
 
-    // Resolver cada iframe para obtener streams directos
-    const resolvedStreams: string[] = [];
+    // Resolver iframes para streams directos manteniendo siempre los embeds disponibles
+    const directStreams: string[] = [];
+    const embedStreams: string[] = [];
+
     for (const embedUrl of embedUrls) {
       if (embedUrl.includes(".m3u8") || embedUrl.includes(".mp4")) {
-        if (!resolvedStreams.includes(embedUrl)) {
-          resolvedStreams.push(embedUrl);
+        if (!directStreams.includes(embedUrl)) {
+          directStreams.push(embedUrl);
         }
       } else {
         const iframeStreams = await this.resolveIframeStream(embedUrl, cleanUrl);
         if (iframeStreams.length > 0) {
           iframeStreams.forEach((st) => {
-            if ((st.includes(".m3u8") || st.endsWith(".mp4")) && !resolvedStreams.includes(st)) {
-              resolvedStreams.push(st);
+            if ((st.includes(".m3u8") || st.endsWith(".mp4")) && !directStreams.includes(st)) {
+              directStreams.push(st);
             }
           });
-        } else {
-          // Intentar con EmbedResolvers estándar
-          const resolved = await EmbedResolvers.resolve(embedUrl);
-          if (resolved && (resolved.includes(".m3u8") || resolved.endsWith(".mp4")) && !resolvedStreams.includes(resolved)) {
-            resolvedStreams.push(resolved);
-          }
+        }
+
+        // Siempre mantener el reproductor embed como alternativa 100% funcional
+        if (!embedStreams.includes(embedUrl)) {
+          embedStreams.push(embedUrl);
         }
       }
     }
@@ -295,8 +310,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const $ = cheerio.load(html);
     const title = $("h1").first().text().trim() || $('meta[property="og:title"]').attr("content") || "";
 
-    // Si no se resolvieron streams, devolver los embed URLs como fallback
-    const finalStreams = resolvedStreams.length > 0 ? resolvedStreams : embedUrls;
+    const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
 
     return {
       stream_url: finalStreams[0] || cleanUrl,

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
@@ -448,8 +449,8 @@ async function startServer() {
         total: sorted.length,
         genres: sorted,
       });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
+    } catch (e: unknown) {
+      res.status(500).json({ error: e instanceof Error ? (e as Error).message : String(e) });
     }
   });
 
@@ -637,8 +638,8 @@ async function startServer() {
         res.end();
       };
       await pump();
-    } catch (e: any) {
-      res.status(500).json({ error: `Error en proxy: ${e.message}` });
+    } catch (e: unknown) {
+      res.status(500).json({ error: `Error en proxy: ${e instanceof Error ? (e as Error).message : String(e)}` });
     }
   });
 
@@ -657,8 +658,8 @@ app.post("/api/v1/catalog/analyze", async (req: Request, res: Response) => {
   try {
     const analysis = await analyzeUniversalUrl(url);
     res.json(analysis);
-  } catch (e: any) {
-    res.status(500).json({ detail: `Error analizando: ${e.message}` });
+  } catch (e: unknown) {
+    res.status(500).json({ detail: `Error analizando: ${e instanceof Error ? (e as Error).message : String(e)}` });
   }
 });
 
@@ -670,9 +671,9 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`;
 
-  const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
+  const episodes: Episode[] = (showData.episodes || []).map((ep: { title?: string; number?: number; url?: string; }, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
@@ -731,7 +732,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
       if (!cleanUrl) continue;
 
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,
@@ -760,8 +761,8 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
 
       addShow(newShow);
       results.push({ url: cleanUrl, status: "success", title: newShow.title, show_id: showId });
-    } catch (e: any) {
-      results.push({ url: itemUrl, status: "failed", error: e.message });
+    } catch (e: unknown) {
+      results.push({ url: itemUrl, status: "failed", error: e instanceof Error ? (e as Error).message : String(e) });
     }
   }
 
@@ -917,8 +918,8 @@ app.post("/api/v1/extract", async (req: Request, res: Response) => {
       poster_url: analysis?.poster_url || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800",
       subtitles: [],
     });
-  } catch (e: any) {
-    res.status(500).json({ detail: `Error extrayendo stream: ${e.message}` });
+  } catch (e: unknown) {
+    res.status(500).json({ detail: `Error extrayendo stream: ${e instanceof Error ? (e as Error).message : String(e)}` });
   }
 });
 

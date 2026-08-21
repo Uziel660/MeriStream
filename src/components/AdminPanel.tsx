@@ -57,6 +57,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [isEditingMetadata, setIsEditingMetadata] = useState(false);
   const [editedShow, setEditedShow] = useState<any | null>(null);
   const [importingCardUrl, setImportingCardUrl] = useState<string | null>(null);
+  const [importedCardUrls, setImportedCardUrls] = useState<string[]>([]);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
   // --- Ingesta en Lote (Batch Ingestion) ---
@@ -85,7 +86,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   // --- Probador de Stream & Anti-CORS ---
-  const [testStreamUrl, setTestStreamUrl] = useState('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8');
+  const [testStreamUrl, setTestStreamUrl] = useState('');
   const [testReferer, setTestReferer] = useState('https://animeflv.net/');
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractResult, setExtractResult] = useState<any | null>(null);
@@ -97,6 +98,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  // const [isImporting, setIsImporting] = useState(false);
 
   // Cargar presets y settings de worker al montar
   useEffect(() => {
@@ -258,7 +260,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   // 3. IMPORTAR TARJETA DE CATÁLOGO DETECTADA
   const handleImportCardItem = async (cardItem: any) => {
-    setImportingCardUrl(cardItem.url || cardItem.title);
+    const cardKey = cardItem.url || cardItem.title;
+    setImportingCardUrl(cardKey);
     setImportMessage(null);
 
     try {
@@ -280,6 +283,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (!saveRes.ok) throw new Error('Error guardando en el catálogo');
       const resData = await saveRes.json();
       setImportMessage(resData.message || `¡'${cardItem.title}' guardado!`);
+      setImportedCardUrls((prev) => [...prev, cardKey, cardItem.title, cardItem.url]);
       loadLibrary();
     } catch (err: any) {
       setAnalysisError(err.message || 'Error importando');
@@ -955,37 +959,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-60 overflow-y-auto pr-1">
-                        {analysisResult.catalog_items.map((card, idx) => (
-                          <div
-                            key={idx}
-                            className="flex flex-col p-2.5 rounded-xl border border-zinc-800/90 bg-zinc-950/60 space-y-2 group"
-                          >
-                            {card.image_url && (
-                              <img
-                                src={card.image_url}
-                                alt={card.title}
-                                className="w-full h-24 object-cover rounded-lg border border-zinc-800"
-                              />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold text-zinc-200 truncate">{card.title}</p>
-                              <p className="text-[10px] text-zinc-500 truncate">{card.url}</p>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={importingCardUrl === (card.url || card.title)}
-                              onClick={() => handleImportCardItem(card)}
-                              className="w-full py-1 rounded-md bg-zinc-800 hover:bg-amber-500 hover:text-black text-zinc-300 font-semibold text-[11px] transition-colors flex items-center justify-center gap-1"
+                        {analysisResult.catalog_items.map((card, idx) => {
+                          const cardKey = card.url || card.title;
+                          const isAlreadyImported =
+                            importedCardUrls.includes(cardKey) ||
+                            importedCardUrls.includes(card.title) ||
+                            importedCardUrls.includes(card.url) ||
+                            libraryShows.some(
+                              (s) =>
+                                s.title.toLowerCase() === card.title.toLowerCase() ||
+                                s.episodes?.some((e) => e.source_url === card.url)
+                            );
+
+                          return (
+                            <div
+                              key={idx}
+                              className={`flex flex-col p-2.5 rounded-xl border space-y-2 transition-all ${
+                                isAlreadyImported
+                                  ? 'border-emerald-500/40 bg-emerald-950/20 shadow-sm shadow-emerald-500/10'
+                                  : 'border-zinc-800/90 bg-zinc-950/60'
+                              }`}
                             >
-                              {importingCardUrl === (card.url || card.title) ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <Plus size={12} />
+                              {card.image_url && (
+                                <img
+                                  src={card.image_url}
+                                  alt={card.title}
+                                  className="w-full h-24 object-cover rounded-lg border border-zinc-800"
+                                />
                               )}
-                              Importar
-                            </button>
-                          </div>
-                        ))}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-zinc-200 truncate">{card.title}</p>
+                                <p className="text-[10px] text-zinc-500 truncate">{card.url}</p>
+                              </div>
+                              {isAlreadyImported ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="w-full py-1 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[11px] flex items-center justify-center gap-1 cursor-default"
+                                >
+                                  <Check size={12} />
+                                  Importado
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={importingCardUrl === cardKey}
+                                  onClick={() => handleImportCardItem(card)}
+                                  className="w-full py-1 rounded-md bg-zinc-800 hover:bg-amber-500 hover:text-black text-zinc-300 font-semibold text-[11px] transition-colors flex items-center justify-center gap-1"
+                                >
+                                  {importingCardUrl === cardKey ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    <Plus size={12} />
+                                  )}
+                                  Importar
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

@@ -1,3 +1,4 @@
+import sanitizeHtml from 'sanitize-html';
 import { ContentKind } from "./types";
 
 export interface EnrichedMetadata {
@@ -21,23 +22,73 @@ export function cleanQueryTitle(raw: string): string {
   let title = raw.trim();
   title = title.replace(/^(?:Ver\s+Online|Ver|Pelicula|Película|Serie|Anime|Ova|Donghua|Watch|Full\s+Movie)\s+/i, "");
   title = title.replace(/\s*\(TV\)/i, "");
-  title = title.replace(/[\(\[\{].*?[\)\]\}]/g, "");
+  title = title.replace(/\s*\([^)]*\)|\s*\[[^\]]*\]|\s*\{[^}]*\}/g, "");
   title = title.replace(/\s*(?:Sub\s*Español|Audio\s*Latino|Latino|Castellano|Dual|1080p|720p|4K|HD|Full\s*HD|Online|Gratis|Free|Episodio\s*\d+|Capitulo\s*\d+|Cap\s*\d+|S\d+E\d+).*$/i, "");
-  // Clean up any trailing hyphens or pipes that might have been left behind when suffixes were removed
-  title = title.replace(/\s+[-\x7C—]\s*$/, "");
-  title = title.split(/\s+[-\x7C—]\s+/)[0].trim();
+  title = title.replace(/\s+[-|—]\s*$/, "");
+  title = title.split(/\s+[-|—]\s+/)[0].trim();
   return title.trim();
+}
+
+const GENERIC_TITLES = new Set([
+  "anime", "anime online", "ver anime", "ver anime online", "contenido", "catalogo", "catálogo",
+  "directorio", "pagina", "página", "movies", "series", "inicio", "home",
+  "lista", "list", "animes", "pelicula", "películas", "movie", "tv", "show", "watch", "online",
+]);
+
+function isGenericQuery(lower: string): boolean {
+  return (
+    GENERIC_TITLES.has(lower) ||
+    lower.length < 3 ||
+    /^page\s*\d+$/i.test(lower) ||
+    lower.startsWith("page ") ||
+    lower.includes("pagina ")
+  );
+}
+
+function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: ContentKind, genres: string[] = ["Multimedia"]): EnrichedMetadata {
+  return {
+    title: cleaned || rawQuery || "Contenido Multimedia",
+    description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
+    poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+    banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
+    rating: 8.0,
+    year: new Date().getFullYear(),
+    status: "Finalizado",
+    genres,
+    content_type: hintKind || "anime",
+  };
 }
 
 /**
  * Enriches metadata across multiple engines (TVMaze, Jikan MAL, Kitsu, Internet Archive, Wikipedia)
  */
+
+  const createAnimeResponse = (title: string, poster: string, cover: string, status: string, attr: any) => {
+    return {
+      title: attr.canonicalTitle || attr.titles?.en_jp || attr.titles?.en || title,
+      original_title: attr.titles?.ja_jp || undefined,
+      description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
+      poster_url: poster,
+      banner_url: cover,
+      rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+      year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+      status: status === "current" ? "En emisión" : "Finalizado",
+      genres: ["Anime"],
+      content_type: "anime" as ContentKind,
+    };
+  };
+
 export async function enrichUniversalMetadata(
   rawQuery: string,
   hintKind?: ContentKind
 ): Promise<EnrichedMetadata> {
   const cleaned = cleanQueryTitle(rawQuery);
   const lower = cleaned.toLowerCase();
+
+  // If query is a generic placeholder or page number, do NOT query external APIs to prevent false matches (e.g. Little Witch Academia)
+  if (isGenericQuery(lower)) {
+    return buildDefaultMetadata(cleaned, rawQuery, hintKind, ["Multimedia"]);
+  }
 
   // If hint is archive or query mentions archive/classic/dominio publico
   if (hintKind === "open_archive" || lower.includes("archive.org") || lower.includes("dominio publico")) {
@@ -71,26 +122,134 @@ export async function enrichUniversalMetadata(
   if (wikiMeta) return wikiMeta;
 
   // Fallback defaults
-  return {
-    title: cleaned || rawQuery || "Contenido Multimedia",
-    description: "Contenido indexado en VoidStream con reproductor Just-In-Time.",
-    poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
-    banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
-    rating: 8.0,
-    year: new Date().getFullYear(),
-    status: "Finalizado",
-    genres: ["Acción", "Aventura"],
-    content_type: hintKind || "anime",
-  };
+  return buildDefaultMetadata(cleaned, rawQuery, hintKind, ["Acción", "Aventura"]);
 }
 
-// --- Jikan MAL & Kitsu Anime Enricher ---
+// --- AniList, Kitsu & Jikan MAL Anime Enricher ---
 async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | null> {
-  // 1. Jikan API
+  // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
+  const simplifiedQuery = query
+    .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|\b[IVXLCDM]+\b)/gi, "")
+    .replace(/\s*\([^)]*\)|\s*\[[^\]]*\]|\s*\{[^}]*\}/g, "")
+    .replace(/[-_]/g, " ")
+    .trim();
+
+  const searchQuery = simplifiedQuery.length >= 3 ? simplifiedQuery : query;
+
+  // 1. AniList GraphQL API (Primary & Fast <200ms)
+  try {
+    const graphqlQuery = `
+      query ($search: String) {
+        Media(search: $search, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          description(asHtml: false)
+          coverImage {
+            extraLarge
+            large
+          }
+          bannerImage
+          averageScore
+          startDate {
+            year
+          }
+          status
+          genres
+          episodes
+        }
+      }
+    `;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: graphqlQuery, variables: { search: searchQuery } }),
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data: any = await res.json();
+      const media = data?.data?.Media;
+      if (media) {
+        const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
+        const banner = media.bannerImage || poster;
+        const cleanDesc = (media.description || "")
+
+          .replace(/\n\s*\n/g, "\n")
+          .trim();
+
+        return {
+          title: media.title?.romaji || media.title?.english || query,
+          original_title: media.title?.native || media.title?.romaji,
+          japanese_title: media.title?.native || undefined,
+          english_title: media.title?.english || undefined,
+          description: cleanDesc || "Sin descripción disponible.",
+          poster_url: poster,
+          banner_url: banner,
+          rating: media.averageScore ? Math.round((media.averageScore / 10) * 10) / 10 : 8.2,
+          year: media.startDate?.year || 2024,
+          status: media.status === "RELEASING" ? "En emisión" : "Finalizado",
+          genres: Array.isArray(media.genres) && media.genres.length > 0 ? media.genres : ["Anime"],
+          content_type: "anime",
+        };
+      }
+    }
+  } catch {
+    // ignore, try fallbacks
+  }
+
+  // 2. Kitsu API fallback
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, {
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(searchQuery)}&page[limit]=1`, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "VoidStream-Universal-Scraper/2.5",
+        Accept: "application/vnd.api+json",
+      },
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const json: any = await res.json();
+      if (json?.data && json.data.length > 0) {
+        const attr = json.data[0].attributes || {};
+        const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
+        const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
+
+        return {
+          title: attr.canonicalTitle || query,
+          original_title: attr.titles?.ja_jp,
+          japanese_title: attr.titles?.ja_jp || undefined,
+          english_title: attr.titles?.en || undefined,
+          description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
+          poster_url: poster,
+          banner_url: cover,
+          rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
+          year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+          status: attr.status === "current" ? "En emisión" : "Finalizado",
+          genres: ["Anime"],
+          content_type: "anime",
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Jikan MAL API fallback
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchQuery)}&limit=1`, {
       signal: controller.signal,
       headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
     });
@@ -102,76 +261,21 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
         const item = json.data[0];
         const poster = item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || item.images?.jpg?.image_url;
         const genres = Array.isArray(item.genres) ? item.genres.map((g: any) => g.name) : ["Anime"];
-        const epCount = item.episodes || 12;
-        const suggested_episodes = [];
-        for (let i = 1; i <= Math.min(epCount, 24); i++) {
-          suggested_episodes.push({
-            number: i,
-            title: `Episodio ${i}`,
-          });
-        }
 
         return {
           title: item.title || query,
           original_title: item.title_japanese || item.title,
-          japanese_title: item.title_japanese,
-          english_title: item.title_english,
-          description: item.synopsis || "Sin descripción disponible.",
+          japanese_title: item.title_japanese || undefined,
+          english_title: item.title_english || undefined,
+          description: item.synopsis ? sanitizeHtml(item.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
-          year: item.year || item.aired?.prop?.from?.year || 2023,
+          year: item.year || item.aired?.prop?.from?.year || 2024,
           status: item.status === "Currently Airing" ? "En emisión" : "Finalizado",
           genres,
           content_type: "anime",
-          suggested_episodes,
           mal_id: item.mal_id,
-        };
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // 2. Kitsu API fallback
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(query)}&page[limit]=1`, {
-      signal: controller.signal,
-      headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
-    });
-    clearTimeout(timer);
-
-    if (res.ok) {
-      const json: any = await res.json();
-      if (json?.data && json.data.length > 0) {
-        const attr = json.data[0].attributes || {};
-        const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
-        const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
-        const epCount = attr.episodeCount || 12;
-        const suggested_episodes = [];
-        for (let i = 1; i <= Math.min(epCount, 24); i++) {
-          suggested_episodes.push({
-            number: i,
-            title: `Episodio ${i}`,
-          });
-        }
-
-        return {
-          title: attr.canonicalTitle || query,
-          original_title: attr.titles?.ja_jp,
-          japanese_title: attr.titles?.ja_jp,
-          english_title: attr.titles?.en,
-          description: attr.synopsis || "Sin descripción disponible.",
-          poster_url: poster,
-          banner_url: cover,
-          rating: attr.averageRating ? parseFloat(attr.averageRating) / 10 : 8.0,
-          year: attr.startDate ? parseInt(attr.startDate.slice(0, 4), 10) : 2024,
-          status: attr.status === "current" ? "En emisión" : "Finalizado",
-          genres: ["Anime"],
-          content_type: "anime",
-          suggested_episodes,
         };
       }
     }
@@ -197,8 +301,8 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
       const show: any = await res.json();
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
-        const cleanSummary = (show.summary || "").replace(/<[^>]+>/g, "").trim();
-        const year = show.premiered ? parseInt(show.premiered.slice(0, 4), 10) : 2023;
+        const cleanSummary = sanitizeHtml((show.summary || ""), { allowedTags: [] }).trim();
+        const year = show.premiered ? Number.parseInt(show.premiered.slice(0, 4), 10) : 2023;
         const isAnime = (show.type || "").toLowerCase() === "animation" && (show.genres || []).includes("Anime");
 
         const suggested_episodes = (show._embedded?.episodes || []).map((ep: any) => ({
@@ -248,11 +352,11 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
         return {
           title: doc.title || query,
           original_title: doc.title,
-          description: doc.description ? doc.description.replace(/<[^>]+>/g, "").slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
+          description: doc.description ? sanitizeHtml(doc.description, { allowedTags: [] }).slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
           poster_url: poster,
           banner_url: poster,
           rating: 8.5,
-          year: doc.year ? parseInt(doc.year, 10) : 1970,
+          year: doc.year ? Number.parseInt(doc.year, 10) : 1970,
           status: "Dominio Público",
           genres: ["Clásico", "Dominio Público", "Cine de Culto"],
           content_type: "open_archive",

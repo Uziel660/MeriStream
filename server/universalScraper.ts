@@ -1,6 +1,11 @@
 import * as cheerio from "cheerio";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem, ScraperPreset } from "./types";
 import { cleanQueryTitle, enrichUniversalMetadata } from "./metadataEngine";
+import { PageClassifier } from "./pageClassifier";
+import { EmbedResolvers } from "./resolvers";
+import { MediaValidator } from "./validator";
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
@@ -149,6 +154,25 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
     const extractedEpisodes: ExtractedEpisode[] = [];
 
     // 1. AnimeFLV JavaScript Parser (var anime_info = [...], var episodes = [...])
+    const epDataElement = $(".animeflv-episodes-data");
+    if (epDataElement.length > 0) {
+      try {
+        const epData = JSON.parse(epDataElement.text().trim() || "[]");
+        if (Array.isArray(epData)) {
+          const sorted = [...epData].sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+          sorted.forEach((ep) => {
+            if (ep.permalink) {
+              extractedEpisodes.push({
+                number: Number(ep.number) || 1,
+                title: `Episodio ${ep.number || 1}`,
+                url: ep.permalink,
+              });
+            }
+          });
+        }
+      } catch {}
+    }
+
     const scriptTexts: string[] = [];
     $("script").each((_, el) => {
       const content = $(el).html() || "";
@@ -233,47 +257,99 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
 
     // --- Extract Catalog / Directory Items if this is a directory/browse page ---
     const catalogItems: ExtractedCatalogItem[] = [];
+    const seenCatalogUrls = new Set<string>();
+
     const cardSelectors = [
-      "article.Anime a",
-      ".anime-item a",
-      ".poster-card a",
-      ".movie-item a",
-      ".catalog-card a",
-      ".item-pelicula a",
-      "ul.ListAnimes li a",
-      ".items-list article a",
-      "div.card a",
-      ".browse-item a",
+      "ul.ListAnimes > li", "article.anime", "article", ".anime-card", ".item", ".film", ".card",
+      "li.anime", "ul.animes > li", ".list-animes > li", ".grid > div",
+      ".catalog-grid > div", ".row > div", ".post", ".hentry", ".ht_grid_1_4",
+      ".type-post", ".browse-item", ".catalog-card"
     ];
 
+    let cards = $([]);
     for (const selector of cardSelectors) {
-      $(selector).each((_, el) => {
-        const cardTitle = $(el).find("h3, h2, .Title, .title").text().trim() || $(el).attr("title") || $(el).text().trim();
-        let cardHref = $(el).attr("href") || "";
-        const cardImg = $(el).find("img").attr("src") || $(el).find("img").attr("data-src") || null;
-
-        if (cardHref && !cardHref.startsWith("http")) {
-          try {
-            cardHref = new URL(cardHref, urlOrQuery).toString();
-          } catch {}
-        }
-
-        if (cardTitle && cardHref && !catalogItems.some((c) => c.url === cardHref)) {
-          catalogItems.push({
-            title: cleanQueryTitle(cardTitle),
-            url: cardHref,
-            image_url: cardImg ? (cardImg.startsWith("//") ? `https:${cardImg}` : cardImg) : null,
-            kind: detectedKind,
-          });
-        }
-      });
-      if (catalogItems.length > 0) break;
+      const found = $(selector);
+      if (found.length >= 3) {
+        cards = found;
+        break;
+      }
     }
 
-    const isCatalog = catalogItems.length >= 3 && extractedEpisodes.length === 0;
+    if (cards.length === 0) {
+      const fallback: cheerio.Element[] = [];
+      $("article, li, div").each((_, el) => {
+        if ($(el).find("a[href]").length > 0 && $(el).find("img").length > 0) {
+          fallback.push(el);
+        }
+      });
+      if (fallback.length >= 3) {
+        cards = $(fallback);
+      }
+    }
+
+    cards.each((_, card) => {
+      const anchors = $(card).find("a[href]");
+      if (anchors.length === 0) return;
+
+      const showUrl = extractShowUrlFromAnchors($, anchors, urlOrQuery, domain);
+      if (!showUrl || seenCatalogUrls.has(showUrl)) return;
+
+      const imgUrl = extractCardImgUrl($, card, urlOrQuery);
+      const cardTitle = extractCatalogCardTitle($, card, anchors, showUrl);
+
+      if (["inicio", "home", "directorio anime", "dmca", "contacto", "login"].some((b) => cardTitle.toLowerCase().includes(b))) {
+        return;
+      }
+
+      seenCatalogUrls.add(showUrl);
+      catalogItems.push({
+        title: cleanQueryTitle(cardTitle),
+        url: showUrl,
+        image_url: imgUrl,
+        kind: detectedKind,
+      });
+    });
+
+    const classifiedType = PageClassifier.classify(urlOrQuery, $);
+    const isCatalog = classifiedType === "collection" || (catalogItems.length >= 3 && extractedEpisodes.length === 0);
     const pageType: UniversalAnalysisResult["page_type"] = isCatalog ? "catalog" : "detail";
 
-    // Clean title and enrich metadata
+    // Validate extracted streams
+    const validatedStreams = await MediaValidator.validateUrls(detectedStreams);
+    const finalStreams = validatedStreams.length > 0 ? validatedStreams : detectedStreams;
+
+    // --- CASE A: CATALOG / DIRECTORY PAGE ---
+    if (isCatalog) {
+      const catalogTitle = ogTitle || `Catálogo de Medios (${domain})`;
+      const firstImage = catalogItems.find((c) => c.image_url)?.image_url || null;
+      let catalogPoster = firstImage;
+      if (ogImage) {
+        catalogPoster = ogImage.startsWith("//") ? `https:${ogImage}` : ogImage;
+      }
+
+      return {
+        page_type: "catalog",
+        content_type: detectedKind,
+        title: catalogTitle,
+        description: ogDesc || `Directorio de ${catalogItems.length} obras multimedia detectadas en ${domain}.`,
+        poster_url: catalogPoster,
+        banner_url: catalogPoster,
+        rating: 8.5,
+        year: new Date().getFullYear(),
+        status: "Catálogo",
+        genres: ["Directorio", "Catálogo"],
+        source_domain: domain,
+        detected_streams: [],
+        episodes: [],
+        catalog_items: catalogItems,
+        raw_metadata: {
+          og: { title: ogTitle, description: ogDesc, image: ogImage },
+          embeds: [],
+        },
+      };
+    }
+
+    // --- CASE B: SINGLE DETAIL / SHOW PAGE ---
     const rawCleanTitle = cleanQueryTitle(schemaMedia?.name || ogTitle || urlObj.pathname.split("/").pop() || "Contenido");
     const enriched = await enrichUniversalMetadata(rawCleanTitle, detectedKind);
 
@@ -321,12 +397,12 @@ export async function analyzeUniversalUrl(input: string): Promise<UniversalAnaly
       status: enriched.status || "Finalizado",
       genres: enriched.genres.length > 0 ? enriched.genres : ["Multimedia"],
       source_domain: domain,
-      detected_streams: detectedStreams,
+      detected_streams: finalStreams,
       episodes: finalEpisodes,
       catalog_items: catalogItems,
       raw_metadata: {
-        og: { title: ogTitle, description: ogDesc, image: ogImage, type: ogType },
-        embeds: detectedStreams,
+        og: { title: ogTitle, description: ogDesc, image: ogImage },
+        embeds: finalStreams,
       },
     };
   } catch (err: any) {
@@ -475,19 +551,25 @@ export async function extractStreamFromUrl(targetUrl: string): Promise<{ stream_
 
     const html = await response.text();
     const $ = cheerio.load(html);
-    const streams = extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
+    const rawStreams = extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
 
-    if (streams.length > 0) {
-      return {
-        stream_url: streams[0],
-        all_available_streams: streams,
-        title: $("title").text() || undefined,
-      };
+    // Resolve iframe & embed URLs using EmbedResolvers
+    const resolvedStreams: string[] = [];
+    for (const stream of rawStreams) {
+      const resolved = await EmbedResolvers.resolve(stream);
+      resolvedStreams.push(resolved || stream);
+    }
+
+    // Validate URLs with MediaValidator
+    const validStreams = await MediaValidator.validateUrls(resolvedStreams);
+    let finalStreams = validStreams;
+    if (finalStreams.length === 0) {
+      finalStreams = resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl];
     }
 
     return {
-      stream_url: cleanUrl,
-      all_available_streams: [cleanUrl],
+      stream_url: finalStreams[0],
+      all_available_streams: finalStreams,
       title: $("title").text() || undefined,
     };
   } catch {
@@ -524,8 +606,8 @@ function handleDirectStream(streamUrl: string): UniversalAnalysisResult {
     content_type: "movie",
     title: cleanQueryTitle(title) || "Stream Multimedia",
     description: "Fuente de video directa indexada con compatibilidad HLS / MP4 nativa.",
-    poster_url: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80",
-    banner_url: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1600&q=80",
+    poster_url: null,
+    banner_url: null,
     rating: 8.5,
     year: new Date().getFullYear(),
     status: "Directo",
@@ -543,7 +625,7 @@ function handleDirectStream(streamUrl: string): UniversalAnalysisResult {
 }
 
 async function handleArchiveOrg(archiveUrl: string): Promise<UniversalAnalysisResult> {
-  const match = archiveUrl.match(/archive\.org\/details\/([^\/\?#]+)/);
+  const match = archiveUrl.match(/archive\.org\/details\/([^/?#]+)/);
   const identifier = match ? match[1] : "";
 
   let title = identifier.replace(/[-_]/g, " ");
@@ -601,37 +683,228 @@ async function handleArchiveOrg(archiveUrl: string): Promise<UniversalAnalysisRe
 
 async function handleSearchTerm(query: string): Promise<UniversalAnalysisResult> {
   const cleaned = cleanQueryTitle(query);
+
+  // Try searching AnimeFLV to return real catalog items with their cover images
+  const animeflvItems: ExtractedCatalogItem[] = [];
+  try {
+    const searchUrl = `https://www3.animeflv.net/browse?q=${encodeURIComponent(cleaned)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+
+    const res = await fetch(searchUrl, {
+      signal: controller.signal,
+      headers: COMMON_HEADERS,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      const cardSelectors = [
+        "ul.ListAnimes > li", "article.anime", "article", ".anime-card", ".item", ".film", ".card",
+        "li.anime", "ul.animes > li", ".list-animes > li", ".grid > div"
+      ];
+      let cards = $([]);
+      for (const selector of cardSelectors) {
+        const found = $(selector);
+        if (found.length > 0) {
+          cards = found;
+          break;
+        }
+      }
+
+      cards.each((_, card) => {
+        const item = extractAnimeflvCard($, card);
+        if (item && !animeflvItems.some((i) => i.url === item.url)) {
+          animeflvItems.push(item);
+        }
+      });
+    }
+  } catch (e) {
+    console.error("Error al buscar en AnimeFLV:", e);
+  }
+
   const enriched = await enrichUniversalMetadata(cleaned);
+
+  const primaryUrl = animeflvItems[0]?.url || `https://www3.animeflv.net/anime/${cleaned.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
   const defaultEpisodes: ExtractedEpisode[] = (enriched.suggested_episodes && enriched.suggested_episodes.length > 0)
     ? enriched.suggested_episodes.map((s) => ({
         number: s.number,
         title: s.title,
-        url: s.url || `https://www3.animeflv.net/anime/${cleaned.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        url: s.url || primaryUrl,
       }))
     : [
         {
           number: 1,
           title: "Episodio 1",
-          url: `https://www3.animeflv.net/anime/${cleaned.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          url: primaryUrl,
         },
       ];
 
+  const posterUrl = enriched.poster_url || (animeflvItems[0]?.image_url || null);
+
   return {
-    page_type: "detail",
+    page_type: animeflvItems.length > 0 ? "catalog" : "detail",
     content_type: enriched.content_type || "anime",
-    title: enriched.title,
+    title: animeflvItems[0]?.title || enriched.title,
     original_title: enriched.original_title,
     japanese_title: enriched.japanese_title,
     english_title: enriched.english_title,
-    description: enriched.description,
-    poster_url: enriched.poster_url,
-    banner_url: enriched.banner_url || enriched.poster_url,
+    description: enriched.description || `Resultados de búsqueda para '${query}'`,
+    poster_url: posterUrl,
+    banner_url: enriched.banner_url || posterUrl,
     rating: enriched.rating,
     year: enriched.year,
     status: enriched.status,
     genres: enriched.genres,
     episodes: defaultEpisodes,
-    catalog_items: [],
+    catalog_items: animeflvItems,
   };
 }
+
+/**
+ * Extracts catalog items from a given page URL (used by background task worker for pagination)
+ */
+export async function extractCatalogListing(catalogUrl: string): Promise<ExtractedCatalogItem[]> {
+  const result = await analyzeUniversalUrl(catalogUrl);
+  return result.catalog_items || [];
+}
+
+function extractShowUrlFromAnchors($: cheerio.CheerioAPI, anchors: cheerio.Cheerio<cheerio.Element>, urlOrQuery: string, domain: string): string | null {
+  let showUrl: string | null = null;
+  anchors.each((_, a) => {
+    const href = ($(a).attr("href") || "").trim();
+    if (!href) return;
+
+    let fullUrl = href;
+    if (!fullUrl.startsWith("http")) {
+      try {
+        fullUrl = new URL(href, urlOrQuery).toString();
+      } catch {
+        return;
+      }
+    }
+
+    try {
+      const parsed = new URL(fullUrl);
+      if (parsed.hostname.toLowerCase() === domain) {
+        const pathLower = parsed.pathname.toLowerCase();
+        if (
+          pathLower !== "" &&
+          pathLower !== "/" &&
+          pathLower !== "/home" &&
+          pathLower !== "/inicio" &&
+          !["/category/", "/genre/", "/tag/", "/page/", "/browse", "#", "javascript:"].some((b) => pathLower.includes(b))
+        ) {
+          showUrl = fullUrl;
+          return false;
+        }
+      }
+    } catch {}
+  });
+  return showUrl;
+}
+
+function extractCardImgUrl($: cheerio.CheerioAPI, card: cheerio.Element, urlOrQuery: string): string | null {
+  const img = $(card).find("img").first();
+  if (img.length === 0) return null;
+  const imgSrc = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("data-original") || img.attr("srcset") || img.attr("src") || "";
+  if (!imgSrc) return null;
+  const firstSrc = imgSrc.split(/\s+/)[0];
+  try {
+    return new URL(firstSrc, urlOrQuery).toString();
+  } catch {
+    return firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
+  }
+}
+
+function extractCatalogCardTitle($: cheerio.CheerioAPI, card: cheerio.Element, anchors: cheerio.Cheerio<cheerio.Element>, showUrl: string): string {
+  const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
+  if (heading.length > 0 && heading.text().trim().length > 1) {
+    return heading.text().trim();
+  }
+
+  const img = $(card).find("img").first();
+  if (img.length > 0 && img.attr("alt")) {
+    return img.attr("alt")!.trim();
+  }
+
+  let anchorTitle = "";
+  anchors.each((_, a) => {
+    const t = $(a).text().trim() || $(a).attr("title") || "";
+    if (t.length > 1 && !["ver", "anime", "leer"].some((b) => t.toLowerCase().includes(b))) {
+      anchorTitle = t;
+      return false;
+    }
+  });
+  if (anchorTitle) return anchorTitle;
+
+  if (showUrl) {
+    const parts = showUrl.replace(/\/$/, "").split("/");
+    return parts[parts.length - 1].replace(/[-_]/g, " ");
+  }
+
+  return "";
+}
+
+function extractAnimeflvCard($: cheerio.CheerioAPI, card: cheerio.Element): ExtractedCatalogItem | null {
+  const animeAnchor = $(card).find("a[href*='/anime/']").first();
+  const anchor = animeAnchor.length > 0 ? animeAnchor : $(card).find("a[href]").first();
+
+  if (anchor.length === 0) return null;
+  const href = (anchor.attr("href") || "").trim();
+  if (!href) return null;
+
+  let fullUrl = href;
+  if (!fullUrl.startsWith("http")) {
+    try {
+      fullUrl = new URL(href, "https://www3.animeflv.net").toString();
+    } catch {
+      return null;
+    }
+  }
+
+  const img = $(card).find("img").first();
+  let imgUrl: string | null = null;
+  if (img.length > 0) {
+    const imgSrc =
+      img.attr("data-src") ||
+      img.attr("data-cfsrc") ||
+      img.attr("data-lazy-src") ||
+      img.attr("data-original") ||
+      img.attr("srcset") ||
+      img.attr("src") ||
+      "";
+    if (imgSrc) {
+      const firstSrc = imgSrc.split(/\s+/)[0];
+      try {
+        imgUrl = new URL(firstSrc, "https://www3.animeflv.net").toString();
+      } catch {
+        imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
+      }
+    }
+  }
+
+  let cardTitle = "";
+  const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
+  if (heading.length > 0 && heading.text().trim().length > 1) {
+    cardTitle = heading.text().trim();
+  }
+  if (!cardTitle && img.length > 0 && img.attr("alt")) {
+    cardTitle = img.attr("alt")!.trim();
+  }
+  if (!cardTitle) {
+    cardTitle = anchor.text().trim() || anchor.attr("title") || "";
+  }
+
+  if (!cardTitle || !fullUrl) return null;
+
+  return {
+    title: cleanQueryTitle(cardTitle),
+    url: fullUrl,
+    image_url: imgUrl,
+    kind: "anime",
+  };
+}
+

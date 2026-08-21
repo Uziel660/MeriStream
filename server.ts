@@ -1,10 +1,11 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
-import { taskWorker, CrawlJob } from "./server/taskWorker";
+import { taskWorker } from "./server/taskWorker";
 
 interface Episode {
   id: string;
@@ -322,7 +323,7 @@ taskWorker.setImportCallback((showObj: Show) => {
   showsStore.set(showObj.id, showObj);
 });
 
-const tasksStore = new Map<string, CrawlTask>();
+
 
 async function startServer() {
   const app = express();
@@ -600,7 +601,7 @@ async function startServer() {
         hostname.startsWith("192.168.") ||
         hostname.startsWith("169.254.") ||
         hostname.startsWith("0.") ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+        (hostname.startsWith("172.") && (() => { const p = parseInt(hostname.split(".")[1], 10); return p >= 16 && p <= 31; })());
 
       if (isPrivate) {
         return res.status(400).json({ detail: "Host no permitido" });
@@ -668,14 +669,14 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
   }
 
   const title = showData.title.trim();
-  const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const showId = `show-${crypto.randomUUID()}`;
 
   const episodes: Episode[] = (showData.episodes || []).map((ep: any, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
-    episode_number: parseFloat(ep.number) || idx + 1,
-    source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
+    episode_number: (ep.number !== undefined && !Number.isNaN(Number(ep.number))) ? Number(ep.number) : idx + 1,
+    source_url: ep.url || showData.detected_streams?.[0] || "",
   }));
 
   if (episodes.length === 0) {
@@ -684,7 +685,7 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
       show_id: showId,
       title: showData.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
       episode_number: 1,
-      source_url: (showData.detected_streams && showData.detected_streams[0]) || "",
+      source_url: showData.detected_streams?.[0] || "",
     });
   }
 
@@ -729,7 +730,7 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
       if (!cleanUrl) continue;
 
       const analysis = await analyzeUniversalUrl(cleanUrl);
-      const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const showId = `show-${crypto.randomUUID()}`;
 
       const episodes: Episode[] = (analysis.episodes || []).map((ep, idx) => ({
         id: `ep-${showId}-${idx + 1}`,
@@ -867,20 +868,7 @@ app.get("/api/v1/tasks/:task_id", (req: Request, res: Response) => {
     });
   }
 
-  const legacyTask = tasksStore.get(taskId);
-  if (!legacyTask) {
-    return res.status(404).json({ detail: "Tarea no encontrada" });
-  }
-  res.json({
-    task_id: legacyTask.id,
-    status: legacyTask.status,
-    pages_crawled: legacyTask.pages_crawled,
-    shows_imported: legacyTask.shows_imported,
-    episodes_imported: legacyTask.episodes_imported,
-    error_message: legacyTask.error_message,
-    created_at: legacyTask.created_at,
-    logs: legacyTask.logs || [],
-  });
+  return res.status(404).json({ detail: "Tarea no encontrada" });
 });
 
 // POST /api/v1/extract - Universal Stream & Video Extractor

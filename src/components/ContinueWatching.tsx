@@ -12,6 +12,8 @@ export interface WatchProgress {
   episodeNumber: number;
   episodeTitle: string;
   progressPercent: number; // e.g. 45 for 45%
+  currentTime?: number;
+  duration?: number;
   lastWatchedAt: number;
 }
 

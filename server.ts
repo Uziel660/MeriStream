@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -326,6 +326,21 @@ const tasksStore = new Map<string, CrawlTask>();
 
 async function startServer() {
   const app = express();
+
+
+// Admin Authentication Middleware
+const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
+  const apiKey = req.headers["x-api-key"];
+  const validKey = process.env.ADMIN_API_KEY;
+  if (!validKey) {
+    return res.status(500).json({ detail: "Server misconfiguration: ADMIN_API_KEY is not set" });
+  }
+  if (!apiKey || apiKey !== validKey) {
+    return res.status(401).json({ detail: "Unauthorized: Invalid or missing API key" });
+  }
+  next();
+};
+
   const PORT = 3000;
 
   app.use(cors());
@@ -640,7 +655,7 @@ app.post("/api/v1/catalog/analyze", async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/catalog/import-show - Save single or analyzed media item
-app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
+app.post("/api/v1/catalog/import-show", requireAdminAuth, (req: Request, res: Response) => {
   const showData = req.body?.show_data;
   if (!showData || !showData.title) {
     return res.status(400).json({ detail: "show_data con title es requerido" });

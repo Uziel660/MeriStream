@@ -4,7 +4,6 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import crypto from "crypto";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
-import { cleanQueryTitle } from "./server/metadataEngine";
 import { taskWorker, CrawlJob } from "./server/taskWorker";
 
 interface Episode {
@@ -670,7 +669,7 @@ app.post("/api/v1/catalog/import-show", requireAdminAuth, (req: Request, res: Re
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
     episode_number: parseFloat(ep.number) || idx + 1,
-    source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
+    source_url: ep.url || showData.detected_streams?.[0] || "",
   }));
 
   if (episodes.length === 0) {
@@ -679,7 +678,7 @@ app.post("/api/v1/catalog/import-show", requireAdminAuth, (req: Request, res: Re
       show_id: showId,
       title: showData.content_type === "movie" ? "Película Completa" : "Episodio 1: Estreno",
       episode_number: 1,
-      source_url: (showData.detected_streams && showData.detected_streams[0]) || "",
+      source_url: showData.detected_streams?.[0] || "",
     });
   }
 

@@ -67,7 +67,7 @@ function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: Cont
     return {
       title: attr.canonicalTitle || attr.titles?.en_jp || attr.titles?.en || title,
       original_title: attr.titles?.ja_jp || undefined,
-      description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
+      description: attr.synopsis ? sanitizeHtml(attr.synopsis, { allowedTags: [] }).replace(/<[^>]*>?/gm, "").trim() : "Sin descripción disponible.",
       poster_url: poster,
       banner_url: cover,
       rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
@@ -78,12 +78,84 @@ function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: Cont
     };
   };
 
+
+// --- TMDB API (Movies, TV Series, Anime fallback) ---
+async function fetchTMDBMetadata(query: string, kind?: ContentKind): Promise<EnrichedMetadata | null> {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    // Use multi search to get movies or tv shows
+    const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=es-MX&api_key=${apiKey}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data: any = await res.json();
+      if (data && data.results && data.results.length > 0) {
+        // Filter out people, prefer what matches the kind if provided
+        let bestResult = data.results.find((r: any) => r.media_type !== 'person');
+        if (kind === 'movie') {
+            bestResult = data.results.find((r: any) => r.media_type === 'movie') || bestResult;
+        } else if (kind === 'series' || kind === 'anime') {
+            bestResult = data.results.find((r: any) => r.media_type === 'tv') || bestResult;
+        }
+
+        if (bestResult) {
+            const isTV = bestResult.media_type === 'tv';
+            const title = bestResult.title || bestResult.name || query;
+            const originalTitle = bestResult.original_title || bestResult.original_name || title;
+            const overview = (bestResult.overview || "").replace(/<[^>]*>?/gm, "").trim() || "Sin descripción disponible.";
+
+            const poster = bestResult.poster_path ? `https://image.tmdb.org/t/p/w780${bestResult.poster_path}` : null;
+            const banner = bestResult.backdrop_path ? `https://image.tmdb.org/t/p/w1280${bestResult.backdrop_path}` : poster;
+
+            const yearStr = bestResult.release_date || bestResult.first_air_date || "";
+            const year = yearStr ? parseInt(yearStr.substring(0, 4), 10) : new Date().getFullYear();
+
+            const rating = bestResult.vote_average ? Math.round(bestResult.vote_average * 10) / 10 : 8.0;
+
+            let contentType: ContentKind = kind || (isTV ? "series" : "movie");
+            // If it's TV and originating from Japan (usually anime)
+            if (isTV && bestResult.origin_country && bestResult.origin_country.includes('JP')) {
+                contentType = "anime";
+            }
+
+            return {
+                title,
+                original_title: originalTitle,
+                description: overview,
+                poster_url: poster,
+                banner_url: banner,
+                rating,
+                year,
+                status: "Finalizado", // TMDB search doesn't give status directly without another fetch
+                genres: [isTV ? "Serie de TV" : "Película"], // Basic fallback, getting real genres requires fetching genre list or details
+                content_type: contentType
+            };
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export async function enrichUniversalMetadata(
   rawQuery: string,
   hintKind?: ContentKind
 ): Promise<EnrichedMetadata> {
   const cleaned = cleanQueryTitle(rawQuery);
   const lower = cleaned.toLowerCase();
+
+  // 1. TMDB (Primary source, enforcing es-MX)
+  const tmdbData = await fetchTMDBMetadata(cleaned, hintKind);
+  if (tmdbData) return tmdbData;
+
 
   // If query is a generic placeholder or page number, do NOT query external APIs to prevent false matches (e.g. Little Witch Academia)
   if (isGenericQuery(lower)) {
@@ -181,7 +253,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
         const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
         const banner = media.bannerImage || poster;
         const cleanDesc = (media.description || "")
-
+          .replace(/<[^>]*>?/gm, "")
           .replace(/\n\s*\n/g, "\n")
           .trim();
 
@@ -267,7 +339,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           original_title: item.title_japanese || item.title,
           japanese_title: item.title_japanese || undefined,
           english_title: item.title_english || undefined,
-          description: item.synopsis ? sanitizeHtml(item.synopsis, { allowedTags: [] }).trim() : "Sin descripción disponible.",
+          description: item.synopsis ? sanitizeHtml(item.synopsis, { allowedTags: [] }).replace(/<[^>]*>?/gm, "").trim() : "Sin descripción disponible.",
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
@@ -301,7 +373,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
       const show: any = await res.json();
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
-        const cleanSummary = sanitizeHtml((show.summary || ""), { allowedTags: [] }).trim();
+        const cleanSummary = sanitizeHtml((show.summary || ""), { allowedTags: [] }).replace(/<[^>]*>?/gm, "").trim();
         const year = show.premiered ? Number.parseInt(show.premiered.slice(0, 4), 10) : 2023;
         const isAnime = (show.type || "").toLowerCase() === "animation" && (show.genres || []).includes("Anime");
 
@@ -352,7 +424,7 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
         return {
           title: doc.title || query,
           original_title: doc.title,
-          description: doc.description ? sanitizeHtml(doc.description, { allowedTags: [] }).slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
+          description: doc.description ? sanitizeHtml(doc.description, { allowedTags: [] }).replace(/<[^>]*>?/gm, "").slice(0, 400) : "Película u obra audiovisual de libre acceso en Internet Archive.",
           poster_url: poster,
           banner_url: poster,
           rating: 8.5,
@@ -392,7 +464,7 @@ async function fetchWikipediaMetadata(query: string): Promise<EnrichedMetadata |
       if (page && page.title && page.extract) {
         return {
           title: page.title,
-          description: page.extract,
+          description: typeof page.extract === "string" ? page.extract.replace(/<[^>]*>?/gm, "") : page.extract,
           poster_url: page.thumbnail?.source || page.originalimage?.source || null,
           banner_url: page.originalimage?.source || page.thumbnail?.source || null,
           rating: 8.0,

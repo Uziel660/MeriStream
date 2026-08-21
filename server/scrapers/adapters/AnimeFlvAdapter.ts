@@ -198,6 +198,30 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
   private extractAnimeflvEpisodes($: cheerio.CheerioAPI, html: string, urlObj: URL): ExtractedEpisode[] {
     const extractedEpisodes: ExtractedEpisode[] = [];
 
+    // 1. WordPress (animeflv.or.at / custom themes) JSON embedded episodes
+    const epDataElement = $(".animeflv-episodes-data");
+    if (epDataElement.length > 0) {
+      try {
+        const epData = JSON.parse(epDataElement.text().trim() || "[]");
+        if (Array.isArray(epData)) {
+          const sorted = [...epData].sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+          sorted.forEach((ep) => {
+            if (ep.permalink) {
+              extractedEpisodes.push({
+                number: Number(ep.number) || 1,
+                title: `Episodio ${ep.number || 1}`,
+                url: ep.permalink,
+              });
+            }
+          });
+        }
+      } catch {}
+    }
+
+    if (extractedEpisodes.length > 0) {
+      return extractedEpisodes;
+    }
+
     const scriptTexts: string[] = [];
     $("script").each((_, el) => {
       const content = $(el).html() || "";

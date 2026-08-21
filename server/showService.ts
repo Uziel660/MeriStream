@@ -46,18 +46,23 @@ function applyEnrichedMetadata(target: any, enriched: any) {
 
 function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
   const inputEpisodes = input.episodes || [];
-  const normalizedEpisodes = inputEpisodes.map((ep, idx) => ({
-    number: ep.number ?? ep.episode_number ?? idx + 1,
-    title: ep.title || `Episodio ${ep.number ?? ep.episode_number ?? idx + 1}`,
-    url: ep.url || ep.source_url || input.detected_streams?.[0] || "",
-  }));
+  const normalizedEpisodes = inputEpisodes
+    .filter((ep) => Boolean(ep.url || ep.source_url || input.detected_streams?.[0]))
+    .map((ep, idx) => ({
+      number: ep.number ?? ep.episode_number ?? idx + 1,
+      title: ep.title || (kind === "movie" ? "Película Completa" : `Episodio ${ep.number ?? ep.episode_number ?? idx + 1}`),
+      url: ep.url || ep.source_url || input.detected_streams?.[0] || "",
+    }));
 
-  if (normalizedEpisodes.length === 0 && input.detected_streams && input.detected_streams.length > 0) {
-    normalizedEpisodes.push({
-      number: 1,
-      title: kind === "movie" ? "Película Completa" : "Episodio 1",
-      url: input.detected_streams[0],
-    });
+  if (normalizedEpisodes.length === 0) {
+    const fallbackUrl = input.detected_streams?.[0] || (input as any).source_url || (input as any).url || "";
+    if (fallbackUrl) {
+      normalizedEpisodes.push({
+        number: 1,
+        title: kind === "movie" ? "Película Completa" : "Episodio 1",
+        url: fallbackUrl,
+      });
+    }
   }
 
   return normalizedEpisodes;

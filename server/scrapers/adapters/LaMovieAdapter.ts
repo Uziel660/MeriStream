@@ -376,9 +376,11 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     // Extraer metadatos
     const metadata = this.extractMetadata(html, cleanUrl);
 
-    // Extraer episodios (si es serie/anime)
-    const episodes = contentType === "series" || contentType === "anime" ?
-      this.extractEpisodes(html, cleanUrl) : [];
+    // Extraer episodios (si es serie/anime, extraer la lista; si es película, generar episodio 1 con la URL de la película)
+    const episodes =
+      contentType === "series" || contentType === "anime"
+        ? this.extractEpisodes(html, cleanUrl)
+        : [{ number: 1, title: metadata.title || "Película Completa", url: cleanUrl }];
 
     // Extraer streams si se solicita
     let detectedStreams: string[] = [];

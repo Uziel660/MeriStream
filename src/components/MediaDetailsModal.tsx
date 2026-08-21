@@ -246,15 +246,29 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   </div>
 
                   {/* BOTÓN DE REPRODUCIR PARA PELÍCULAS O LISTA DE EPISODIOS */}
-                  {show.kind === 'movie' || show.category?.toLowerCase() === 'película' ? (
+                  {show.kind === 'movie' ||
+                  (show as any).content_type === 'movie' ||
+                  ['pelicula', 'película', 'peliculas', 'películas', 'movie', 'movies', 'cine'].includes(
+                    (show.category || '').toLowerCase().trim()
+                  ) ? (
                     <div className="pt-4 flex justify-center pb-8">
                       <button
                         type="button"
-                        onClick={() => onSelectEpisode(episodes[0] || { id: '1', title: 'Película Completa', episode_number: 1, source_url: show.sources?.master_m3u8 }, show.title)}
-                        className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)]"
+                        onClick={() => {
+                          const movieEp =
+                            episodes[0] ||
+                            (show.episodes && show.episodes[0]) || {
+                              id: show.id,
+                              title: show.title || 'Película Completa',
+                              episode_number: 1,
+                              source_url: (show as any).source_url || show.sources?.master_m3u8 || '',
+                            };
+                          onSelectEpisode(movieEp, show.title);
+                        }}
+                        className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] cursor-pointer"
                       >
                         <Play size={20} className="fill-black" />
-                        REPRODUCIR
+                        REPRODUCIR PELÍCULA
                       </button>
                     </div>
                   ) : (

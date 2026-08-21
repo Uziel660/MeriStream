@@ -18,18 +18,46 @@ export interface ScoredServer {
 export function isEmbedUrl(url: string): boolean {
   if (!url) return false;
   const u = url.toLowerCase();
+
+  // Direct media files (.m3u8, .mp4, .webm, .mkv) are played via native HLS/Video
+  if (
+    (u.includes('.m3u8') || u.includes('.mp4') || u.includes('.webm') || u.includes('.mkv')) &&
+    !u.includes('mega.nz') &&
+    !u.includes('streamtape.com') &&
+    !u.includes('mp4upload.com') &&
+    !u.includes('voe.sx') &&
+    !u.includes('/embed') &&
+    !u.includes('/e/')
+  ) {
+    return false;
+  }
+
   return (
     u.includes('player.zilla-networks.com') ||
     u.includes('/embed') ||
     u.includes('/e/') ||
-    u.includes('voe.sx') ||
+    u.includes('voe.') ||
     u.includes('mega.nz') ||
     u.includes('mp4upload.com') ||
     u.includes('streamtape.com') ||
     u.includes('byselapuix.com') ||
     u.includes('ok.ru/videoembed') ||
     u.includes('streamwish') ||
-    u.includes('filemoon')
+    u.includes('filemoon') ||
+    u.includes('yourupload.com') ||
+    u.includes('vidmoly') ||
+    u.includes('dood') ||
+    u.includes('fembed') ||
+    u.includes('mixdrop') ||
+    u.includes('uqload') ||
+    u.includes('upstream') ||
+    u.includes('embedsito') ||
+    u.includes('streamlare') ||
+    u.includes('fastre') ||
+    u.includes('animeflv.') ||
+    u.includes('jkanime.') ||
+    u.includes('/ver/') ||
+    u.includes('cuevana')
   );
 }
 
@@ -54,10 +82,20 @@ export function getProviderName(url: string, index: number): string {
   if (u.includes('mux.dev') || u.includes('test-streams')) return 'CDN Ultra HLS (Rápido)';
   if (u.includes('commondatastorage.googleapis.com') || u.includes('storage.googleapis')) return 'Google Fast Direct';
   if (u.includes('zilla-networks')) return 'Zilla HLS Network';
-  if (u.includes('voe.sx') || u.includes('byselapuix')) return 'VOE HighSpeed';
+  if (u.includes('voe.sx') || u.includes('voe.') || u.includes('byselapuix')) return 'VOE HighSpeed';
+  if (u.includes('streamwish')) return 'Streamwish CDN';
+  if (u.includes('filemoon')) return 'Filemoon HD';
+  if (u.includes('yourupload')) return 'YourUpload';
   if (u.includes('streamtape')) return 'Streamtape CDN';
   if (u.includes('mega.nz')) return 'Mega Cloud';
   if (u.includes('mp4upload')) return 'MP4Upload HD';
+  if (u.includes('vidmoly')) return 'Vidmoly Fast';
+  if (u.includes('dood')) return 'Doodstream';
+  if (u.includes('fembed')) return 'Fembed HD';
+  if (u.includes('mixdrop')) return 'Mixdrop';
+  if (u.includes('uqload')) return 'Uqload Fast';
+  if (u.includes('animeflv')) return 'AnimeFLV Server';
+  if (u.includes('jkanime')) return 'JKanime Server';
   if (u.endsWith('.m3u8') || u.includes('/m3u8/')) return `HLS Master ${index + 1}`;
   if (u.endsWith('.mp4')) return `Direct MP4 ${index + 1}`;
   return `Servidor ${index + 1}`;

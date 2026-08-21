@@ -702,11 +702,10 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
   }
 
   const results: any[] = [];
-  for (const itemUrl of urls.slice(0, 15)) {
-    try {
-      const cleanUrl = itemUrl.trim();
-      if (!cleanUrl) continue;
+  const processedUrls = urls.slice(0, 15).map(u => u.trim()).filter(Boolean);
 
+  const importPromises = processedUrls.map(async (cleanUrl) => {
+    try {
       const analysis = await analyzeUniversalUrl(cleanUrl);
       const showId = `show-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -736,11 +735,14 @@ app.post("/api/v1/catalog/batch-import", async (req: Request, res: Response) => 
       };
 
       showsStore.set(showId, newShow);
-      results.push({ url: cleanUrl, status: "success", title: newShow.title, show_id: showId });
+      return { url: cleanUrl, status: "success", title: newShow.title, show_id: showId };
     } catch (e: any) {
-      results.push({ url: itemUrl, status: "failed", error: e.message });
+      return { url: cleanUrl, status: "failed", error: e.message };
     }
-  }
+  });
+
+  const settledResults = await Promise.all(importPromises);
+  results.push(...settledResults);
 
   res.json({
     status: "ok",

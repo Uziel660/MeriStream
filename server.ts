@@ -4,8 +4,7 @@ import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
-import { cleanQueryTitle } from "./server/metadataEngine";
-import { taskWorker, CrawlJob } from "./server/taskWorker";
+import { taskWorker } from "./server/taskWorker";
 
 interface Episode {
   id: string;
@@ -673,11 +672,11 @@ app.post("/api/v1/catalog/import-show", (req: Request, res: Response) => {
   const title = showData.title.trim();
   const showId = `show-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`;
 
-  const episodes: Episode[] = (showData.episodes || []).map((ep: { title?: string; number?: number; url?: string; }, idx: number) => ({
+  const episodes: Episode[] = (showData.episodes || []).map((ep: { title?: string; number?: string | number; url?: string; }, idx: number) => ({
     id: `ep-${showId}-${idx + 1}`,
     show_id: showId,
     title: ep.title || `Episodio ${ep.number || idx + 1}`,
-    episode_number: parseFloat(ep.number) || idx + 1,
+    episode_number: Number(ep.number) || idx + 1,
     source_url: ep.url || (showData.detected_streams && showData.detected_streams[0]) || "",
   }));
 

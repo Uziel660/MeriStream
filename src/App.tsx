@@ -7,7 +7,7 @@ import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
-import { HLSPlayerModal } from './components/HLSPlayerModal';
+import { PlyrPlayerModal } from './components/PlyrPlayerModal';
 import { AdminPanel } from './components/AdminPanel';
 import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
@@ -451,9 +451,9 @@ export function App() {
         showsCountByGenre={showsCountByGenre}
       />
 
-      {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}
+      {/* REPRODUCTOR PLYR + HLS Y PROXY DE VIDEO JUST-IN-TIME */}
       {playingStreamData && (
-        <HLSPlayerModal
+        <PlyrPlayerModal
           isOpen={Boolean(playingStreamData)}
           onClose={() => setPlayingStreamData(null)}
           title={playingStreamData.title}

@@ -16,6 +16,7 @@ export class StrategyRouter {
   public static readonly KNOWN_HOSTS: string[] = [
     "zilla-networks.com",
     "voe.sx",
+    "voe.",
     "byselapuix.com",
     "mp4upload.com",
     "mega.nz",
@@ -30,6 +31,18 @@ export class StrategyRouter {
     "vidmoly.",
     "luluvdo.",
     "streamhide.",
+    "fembed.",
+    "mixdrop.",
+    "uqload.",
+    "upstream.",
+    "embedsito.",
+    "streamlare.",
+    "fastre.",
+    "gamovideo.",
+    "netu.",
+    "waaw.",
+    "streamdav.",
+    "streamhub.",
   ];
 
   private static isValidMediaUrl(url: string): boolean {

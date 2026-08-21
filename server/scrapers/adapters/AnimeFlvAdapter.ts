@@ -8,7 +8,7 @@ import { MediaValidator } from "../../validator";
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
   readonly name = "AnimeFLV / Anime Streaming";
-  readonly supportedDomains = ["animeflv.net", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
+  readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
 
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
@@ -38,30 +38,69 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     // 2. Extract Streams from AnimeFLV JavaScript `var videos = ...` or DOM
     const detectedStreams = this.extractAnimeflvStreams($, html, urlOrQuery);
 
-    // 3. Extract Episodes from AnimeFLV JavaScript `var anime_info` / `var episodes`
+    // 3. Extract Episodes from AnimeFLV JavaScript `var anime_info` / `var episodes` or DOM
     const extractedEpisodes = this.extractAnimeflvEpisodes($, html, urlObj);
 
     // 4. Extract Catalog Items
     const catalogItems: ExtractedCatalogItem[] = [];
-    const cardSelectors = ["ul.ListAnimes > li", "article.anime", "article", ".anime-card", "li.anime", "ul.animes > li", ".list-animes > li"];
+    const seenUrls = new Set<string>();
+
+    const cardSelectors = [
+      "ul.ListAnimes > li",
+      "article.anime",
+      "article",
+      ".anime-card",
+      ".item",
+      ".film",
+      ".card",
+      "li.anime",
+      "ul.animes > li",
+      ".list-animes > li",
+      ".ht_grid_1_4",
+      ".post",
+      ".hentry",
+      ".type-post",
+      ".List-Episodes > div",
+      ".listCats > div",
+      ".browse-item"
+    ];
+
     let cards = $([]);
     for (const selector of cardSelectors) {
       const found = $(selector);
-      if (found.length > 0) {
+      if (found.length >= 3) {
         cards = found;
         break;
       }
     }
 
+    if (cards.length === 0) {
+      for (const selector of cardSelectors) {
+        const found = $(selector);
+        if (found.length > 0) {
+          cards = found;
+          break;
+        }
+      }
+    }
+
     cards.each((_, card) => {
-      const item = this.extractAnimeflvCard($, card);
-      if (item && !catalogItems.some((i) => i.url === item.url)) {
+      const item = this.extractAnimeflvCard($, card, urlObj.origin);
+      if (item && !seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
         catalogItems.push(item);
       }
     });
 
     const classifiedType = PageClassifier.classify(urlOrQuery, $);
-    const isCatalog = explicitType === "catalog" || (explicitType !== "detail" && (classifiedType === "collection" || (catalogItems.length >= 3 && extractedEpisodes.length === 0)));
+    const isCatalog =
+      explicitType === "catalog" ||
+      (explicitType !== "detail" &&
+        (classifiedType === "collection" ||
+          (catalogItems.length >= 3 && extractedEpisodes.length === 0) ||
+          urlOrQuery.includes("/page/") ||
+          urlOrQuery.includes("?page=")));
+
     const pageType: UniversalAnalysisResult["page_type"] = isCatalog ? "catalog" : "detail";
 
     // Validate streams
@@ -90,7 +129,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     // Detail page
-    const rawCleanTitle = cleanQueryTitle($("h1.Title, h1").first().text().trim() || ogTitle || urlObj.pathname.split("/").pop() || "Anime");
+    const rawCleanTitle = cleanQueryTitle($("h1.Title, h1.entry-title, h1").first().text().trim() || ogTitle || urlObj.pathname.split("/").filter(Boolean).pop() || "Anime");
     const enriched = await enrichUniversalMetadata(rawCleanTitle, "anime");
 
     let finalEpisodes = extractedEpisodes;
@@ -200,7 +239,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     if (extractedEpisodes.length === 0) {
-      $("ul.episodes-list li a, .ListCaps a, ul.ListCaps li a").each((idx, el) => {
+      $("ul.episodes-list li a, .ListCaps a, ul.ListCaps li a, .capitulos-list a, .episode-list a").each((idx, el) => {
         const rawText = $(el).text().trim() || $(el).attr("title") || `Episodio ${idx + 1}`;
         let href = $(el).attr("href") || "";
         if (href && !href.startsWith("http")) {
@@ -223,31 +262,37 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     return extractedEpisodes;
   }
 
-  private extractAnimeflvCard($: cheerio.CheerioAPI, card: cheerio.Element): ExtractedCatalogItem | null {
-    const animeAnchor = $(card).find("a[href*='/anime/']").first();
-    const anchor = animeAnchor.length > 0 ? animeAnchor : $(card).find("a[href]").first();
-    if (anchor.length === 0) return null;
+  private extractAnimeflvCard($: cheerio.CheerioAPI, card: cheerio.Element, baseUrl: string): ExtractedCatalogItem | null {
+    const animeAnchor = $(card).find("a.thumbnail-link, a[href*='/anime/'], h2.entry-title a, h3 a, h2 a, a[href]").first();
+    if (animeAnchor.length === 0) return null;
 
-    const href = (anchor.attr("href") || "").trim();
-    if (!href) return null;
+    const href = (animeAnchor.attr("href") || "").trim();
+    if (!href || href === "#" || href.startsWith("javascript:")) return null;
 
     let fullUrl = href;
     if (!fullUrl.startsWith("http")) {
       try {
-        fullUrl = new URL(href, "https://www3.animeflv.net").toString();
+        fullUrl = new URL(href, baseUrl).toString();
       } catch {
         return null;
       }
     }
 
-    const img = $(card).find("img").first();
+    const img = $(card).find("img.anime-image, img").first();
     let imgUrl: string | null = null;
     if (img.length > 0) {
-      const imgSrc = img.attr("data-src") || img.attr("data-cfsrc") || img.attr("data-lazy-src") || img.attr("data-original") || img.attr("srcset") || img.attr("src") || "";
+      const imgSrc =
+        img.attr("data-src") ||
+        img.attr("data-cfsrc") ||
+        img.attr("data-lazy-src") ||
+        img.attr("data-original") ||
+        img.attr("srcset") ||
+        img.attr("src") ||
+        "";
       if (imgSrc) {
         const firstSrc = imgSrc.split(/\s+/)[0];
         try {
-          imgUrl = new URL(firstSrc, "https://www3.animeflv.net").toString();
+          imgUrl = new URL(firstSrc, baseUrl).toString();
         } catch {
           imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
         }
@@ -255,7 +300,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     let cardTitle = "";
-    const heading = $(card).find("h1, h2, h3, h4, h5, strong, .Title, .title").first();
+    const heading = $(card).find("h1, h2, h3, h4, h5, strong, .entry-title, .Title, .title").first();
     if (heading.length > 0 && heading.text().trim().length > 1) {
       cardTitle = heading.text().trim();
     }
@@ -263,10 +308,17 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       cardTitle = img.attr("alt")!.trim();
     }
     if (!cardTitle) {
-      cardTitle = anchor.text().trim() || anchor.attr("title") || "";
+      cardTitle = animeAnchor.text().trim() || animeAnchor.attr("title") || "";
     }
 
-    if (!cardTitle || !fullUrl) return null;
+    const lowerTitle = cardTitle.toLowerCase();
+    if (
+      !cardTitle ||
+      !fullUrl ||
+      ["inicio", "home", "directorio anime", "dmca", "contacto", "login", "terms of service", "skip to content"].some((b) => lowerTitle.includes(b))
+    ) {
+      return null;
+    }
 
     return {
       title: cleanQueryTitle(cardTitle),

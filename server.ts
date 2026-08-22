@@ -19,6 +19,7 @@ import { playwrightResolver } from "./server/playwrightResolver";
 import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
 import { pipeline } from "node:stream/promises";
 import { request } from "undici";
+import { buildProxyHeaders } from "./server/hostProfiles";
 
 // Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
 const stealthClient = new ImpitHttpClient({
@@ -405,27 +406,14 @@ async function startServer() {
       }
 
       // We use the original targetUrl to maintain TLS/SNI integrity.
-      // Goodstream (hls*/enc*.goodstream.one): el token del m3u8 se firma contra el
-      // User-Agent EXACTO del embed (Chrome/124). Además su nginx rechaza requests sin
-      // headers fetch estándar (accept/accept-language/sec-fetch-mode) con 403, y no
-      // tolera Referer. Por eso la rama goodstream usa este set exacto vía undici.
-      const lowerForHeaders = targetUrl.toLowerCase();
-      const isGoodstream = lowerForHeaders.includes("goodstream.one");
-      // MP4Upload tiene hotlink-protection: exige Referer de su propio dominio
-      // (p.ej. el mp4 directo de latanime llega con referer=latanime.org y da 403;
-      // con www.mp4upload.com responde 206). Verificado con curl el 2026-08-22.
-      const isMp4Upload = lowerForHeaders.includes("mp4upload.com");
-      const reqHeaders: any = isGoodstream
-        ? {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            Accept: "*/*",
-            "Accept-Language": "*",
-            "Sec-Fetch-Mode": "cors",
-          }
-        : {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Referer: isMp4Upload ? "https://www.mp4upload.com/" : referer,
-          };
+      // Los perfiles por host (Goodstream, MP4Upload, ...) viven en server/hostProfiles.ts:
+      // cada CDN/WAF exige un set distinto de UA/Referer/Sec-Fetch y cliente HTTP.
+      const { headers: reqHeaders, profile: activeProfile } = buildProxyHeaders(
+        targetUrl,
+        typeof referer === "string" ? referer : undefined,
+        typeof req.headers.range === "string" ? req.headers.range : undefined
+      );
+      const isGoodstream = activeProfile.client === "undici";
 
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
@@ -440,8 +428,6 @@ async function startServer() {
         lowerTargetUrl.includes('/m3u8/');  // Zilla Networks: /m3u8/{hash} format
 
       if (isHlsResource) {
-        if (req.headers.range) reqHeaders.Range = req.headers.range;
-
         let upstreamStatus: number;
         let responseHeaders: any;
         let rawBody: any;

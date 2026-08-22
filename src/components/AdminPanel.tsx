@@ -915,7 +915,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                   onPlayHandler({
                                     title: `${editedShow.title} - ${ep.title}`,
                                     stream_url: ep.url,
-                                    all_available_streams: [ep.url],
+                                    all_available_streams: analysisResult?.detected_streams?.length
+                                      ? analysisResult.detected_streams
+                                      : [ep.url],
                                   })
                                 }
                                 className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black transition-colors"

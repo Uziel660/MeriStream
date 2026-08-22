@@ -20,13 +20,11 @@ export function isEmbedUrl(url: string): boolean {
   if (!url) return false;
   const u = url.toLowerCase();
 
-  // Direct media files (.m3u8, .mp4, .webm, .mkv) are played via native HLS/Video
+  // Direct media files (.m3u8, .mp4, .webm, .mkv) are played via native HLS/Video.
+  // Extension regex (not substring): evita que ".mp4upload.com" haga match de ".mp4".
   if (
-    (u.includes('.m3u8') || u.includes('.mp4') || u.includes('.webm') || u.includes('.mkv')) &&
+    (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/.test(u)) &&
     !u.includes('mega.nz') &&
-    !u.includes('streamtape.com') &&
-    !u.includes('mp4upload.com') &&
-    !u.includes('voe.sx') &&
     !u.includes('/embed') &&
     !u.includes('/e/')
   ) {
@@ -86,6 +84,7 @@ export function getProviderName(url: string, index: number): string {
   if (u.includes('yourupload')) return 'YourUpload';
   if (u.includes('streamtape')) return 'Streamtape CDN';
   if (u.includes('mega.nz')) return 'Mega Cloud';
+  if (u.includes('mp4upload.com/embed') || /mp4upload\.com\/[a-z0-9]+$/.test(u)) return 'MP4Upload (Embed)';
   if (u.includes('mp4upload')) return 'MP4Upload HD';
   if (u.includes('vidmoly')) return 'Vidmoly Fast';
   if (u.includes('dood')) return 'Doodstream';
@@ -110,6 +109,26 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
     url = url.replace('mega.nz/file/', 'mega.nz/embed/');
   }
 
+  // Placeholder del host (ej. VOE sirve Big Buck Bunny cuando el archivo cayó): invalidar
+  const u0 = url.toLowerCase();
+  const isPlaceholder =
+    ((u0.includes('big_buck_bunny') || u0.includes('big-buck-bunny') || u0.includes('bigbuckbunny')) &&
+      !u0.includes('googleapis.com')) ||
+    u0.endsWith('_5mb.mp4');
+  if (isPlaceholder) {
+    return {
+      id: `server-${index}-placeholder`,
+      url,
+      label: `[Inválido] Servidor sin contenido`,
+      provider: getProviderName(url, index),
+      quality: '480p',
+      isEmbed: false,
+      streamType: 'direct',
+      score: -1000,
+      health: 'desconocida',
+    };
+  }
+
   const isEmbed = isEmbedUrl(url);
   const streamType = isEmbed ? 'embed' : 'direct';
   const quality = detectQualityFromUrl(url);
@@ -132,7 +151,11 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
 
   // 3. Calificación de Salud y Estabilidad Heurística
   let health: ScoredServer['health'] = 'excelente';
-  if (isEmbed) {
+  if (u.includes('zilla-networks')) {
+    // Restaurado a la normalidad: El stealth proxy resuelve el 403
+    score += 15;
+    health = 'excelente';
+  } else if (isEmbed) {
     if (u.includes('voe.sx') || u.includes('byselapuix')) {
       health = 'buena';
       score += 10;
@@ -185,7 +208,8 @@ export function rankAndSortServers(urls: string[]): ScoredServer[] {
         lower.includes('jkanime.net/ver/') ||
         lower.includes('tioanime.com/ver/') ||
         lower.includes('latanime.org/ver/') ||
-        lower.includes('tubepelis.com/pelicula/')) &&
+        lower.includes('tubepelis.com/pelicula/') ||
+        lower.includes('cinecalidad.am/')) &&
       !lower.includes('.m3u8') &&
       !lower.includes('.mp4')
     );

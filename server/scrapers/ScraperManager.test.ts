@@ -44,6 +44,31 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
     expect(adapter2.id).toBe("lamovie");
   });
 
+  it("resolves TioAnimeAdapter for tioanime.com URLs", () => {
+    const adapter = manager.getAdapter("https://tioanime.com/anime/naruto");
+    expect(adapter.id).toBe("tioanime");
+  });
+
+  it("resolves TioPlusAdapter for tioplus.app URLs", () => {
+    const adapter = manager.getAdapter("https://tioplus.app/serie/supergirl/season/1/episode/1");
+    expect(adapter.id).toBe("tioplus");
+  });
+
+  it("resolves TubePelisAdapter for tubepelis.com URLs", () => {
+    const adapter = manager.getAdapter("https://tubepelis.com/pelicula/4603/spider-man-un-nuevo-dia.html");
+    expect(adapter.id).toBe("tubepelis");
+  });
+
+  it("resolves CinecalidadAdapter for cinecalidad URLs", () => {
+    const adapter = manager.getAdapter("https://cinecalidad.am/pelicula/ejemplo.html");
+    expect(adapter.id).toBe("cinecalidad");
+  });
+
+  it("resolves VerAnimesAdapter for veranimes.net URLs", () => {
+    const adapter = manager.getAdapter("https://wwv.veranimes.net/anime/naruto");
+    expect(adapter.id).toBe("veranimes");
+  });
+
   it("resolves GenericAdapter for unhandled / generic websites", () => {
     const adapter = manager.getAdapter("https://cuevana.biz/pelicula/oppenheimer");
     expect(adapter.id).toBe("generic");
@@ -56,12 +81,18 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
 
   it("lists all available adapters", () => {
     const adapters = manager.getAvailableAdapters();
-    expect(adapters.length).toBeGreaterThanOrEqual(6);
+    expect(adapters.length).toBeGreaterThanOrEqual(11);
     expect(adapters.some((a) => a.id === "direct_stream")).toBe(true);
     expect(adapters.some((a) => a.id === "archive_org")).toBe(true);
     expect(adapters.some((a) => a.id === "tvmaze")).toBe(true);
     expect(adapters.some((a) => a.id === "animeflv")).toBe(true);
     expect(adapters.some((a) => a.id === "lamovie")).toBe(true);
+    expect(adapters.some((a) => a.id === "latanime")).toBe(true);
+    expect(adapters.some((a) => a.id === "tioanime")).toBe(true);
+    expect(adapters.some((a) => a.id === "tioplus")).toBe(true);
+    expect(adapters.some((a) => a.id === "tubepelis")).toBe(true);
+    expect(adapters.some((a) => a.id === "cinecalidad")).toBe(true);
+    expect(adapters.some((a) => a.id === "veranimes")).toBe(true);
     expect(adapters.some((a) => a.id === "generic")).toBe(true);
   });
 

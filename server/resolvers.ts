@@ -1,4 +1,5 @@
 // server/resolvers.ts
+import * as crypto from "crypto";
 import { unpackDeanEdwards, unpackGeneric, extractMediaUrlsFromCode } from "./scrapers/utils/jsUnpacker";
 
 export interface ResolvedStreamMeta {
@@ -27,6 +28,23 @@ export class EmbedResolvers {
   }
 
   /**
+   * Detecta streams placeholder servidos por el host (ej. VOE devuelve Big Buck Bunny
+   * cuando el archivo real cayó). Deben tratarse como inválidos para forzar failover.
+   */
+  public static isPlaceholderUrl(url: string): boolean {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return (
+      u.includes("big_buck_bunny") ||
+      u.includes("big-buck-bunny") ||
+      u.includes("bigbuckbunny") ||
+      // Demo genérico usado por CDNs cuando el archivo no existe
+      (u.includes("sample") && u.includes("mp4") && !u.includes("/sample/")) ||
+      u.endsWith("_5mb.mp4")
+    );
+  }
+
+  /**
    * Obtiene el nombre del proveedor legible a partir de la URL
    */
   public static getProviderName(url: string): string {
@@ -44,6 +62,7 @@ export class EmbedResolvers {
     if (u.includes("vimeos.net")) return "Vimeos";
     if (u.includes("mixdrop") || u.includes("mxdrop")) return "Mixdrop";
     if (u.includes("hqq.tv") || u.includes("waaw")) return "Netu/HQQ";
+    if (u.includes("byseqekaho.com") || u.includes("byselapuix.com")) return "Byse";
     if (u.includes("cfglobalcdn.com")) return "Fast CDN (HLS)";
     return "Servidor";
   }
@@ -65,8 +84,8 @@ export class EmbedResolvers {
 
     const provider = this.getProviderName(rawUrl);
 
-    // Si ya es un stream directo, retornar inmediatamente
-    if (this.isDirectMediaUrl(rawUrl)) {
+    // Si ya es un stream directo, retornar inmediatamente (salvo placeholders del host)
+    if (this.isDirectMediaUrl(rawUrl) && !this.isPlaceholderUrl(rawUrl)) {
       return {
         url: rawUrl,
         original_url: rawUrl,
@@ -77,7 +96,7 @@ export class EmbedResolvers {
     }
 
     const resolvedUrl = await this.resolve(rawUrl);
-    const isDirect = this.isDirectMediaUrl(resolvedUrl);
+    const isDirect = this.isDirectMediaUrl(resolvedUrl) && !this.isPlaceholderUrl(resolvedUrl);
 
     return {
       url: resolvedUrl,
@@ -134,6 +153,14 @@ export class EmbedResolvers {
     if (rawUrl.includes("voe.sx") || rawUrl.includes("byselapuix.com") || rawUrl.includes("voe.")) {
       const voeDirect = await this.resolveVoe(rawUrl);
       if (voeDirect) return voeDirect;
+    }
+
+    // 6b. BYSE (SPA con playback cifrado AES-GCM, ej. byseqekaho.com): la página /e/{code}
+    // es un shell React vacío; el m3u8 firmado vive en /api/videos/{code}/ dentro de
+    // playback.payload, descifrable con key_parts + version (lógica pública del player).
+    if (this.isByseHost(rawUrl)) {
+      const byseDirect = await this.resolveByse(rawUrl);
+      if (byseDirect) return byseDirect;
     }
 
     // 7. STREAMTAPE: Extraer token y enlace directo
@@ -298,6 +325,71 @@ export class EmbedResolvers {
         return streamUrl;
       }
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detecta hosts del ecosistema "Byse" (SPA React con playback AES-GCM).
+   * El título de su HTML es "Byse Frontend" y sirve /assets/index-*.js.
+   */
+  private static isByseHost(url: string): boolean {
+    return /byseqekaho\.com|byselapuix\.com/i.test(url);
+  }
+
+  /**
+   * Resuelve streams de backends Byse:
+   * 1. GET {origin}/api/videos/{code}/ → JSON con playback {algorithm, iv, payload, key_parts, version}
+   * 2. key = concat(base64url(key_parts[i])) según permutación de `version` (N^0, 31-N^0)
+   * 3. AES-256-GCM decrypt (tag = últimos 16 bytes) → JSON con sources[].url (.m3u8 firmado)
+   */
+  private static async resolveByse(url: string): Promise<string | null> {
+    try {
+      const match = url.match(/\/e\/([a-zA-Z0-9]+)/i);
+      if (!match) return null;
+
+      const origin = new URL(url).origin;
+      const apiUrl = `${origin}/api/videos/${match[1]}/`;
+      const json = await this.fetchHtml(apiUrl);
+      if (!json) return null;
+
+      const data = JSON.parse(json) as {
+        playback?: {
+          algorithm?: string;
+          iv: string;
+          payload: string;
+          key_parts?: string[];
+          version?: string | number;
+        };
+      };
+      const pb = data.playback;
+      if (!pb || pb.algorithm !== "AES-256-GCM" || !Array.isArray(pb.key_parts)) return null;
+
+      const b64url = (s: string) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+
+      // Permutación pública del player: version N → [N ^ 0, 31 - N ^ 0] (1-based)
+      const v = parseInt(String(pb.version ?? ""), 10);
+      const parts = Number.isInteger(v) ? [v ^ 0, 31 - (v ^ 0)] : [];
+      const picked = parts
+        .filter((i) => i >= 1 && i <= pb.key_parts.length)
+        .map((i) => pb.key_parts![i - 1])
+        .filter((s) => typeof s === "string" && s.length > 0);
+      const keyStr = picked.length > 0 ? picked : pb.key_parts;
+
+      const key = Buffer.concat(keyStr.map(b64url));
+      const iv = b64url(pb.iv);
+      const full = b64url(pb.payload);
+      const tag = full.subarray(full.length - 16);
+      const body = full.subarray(0, full.length - 16);
+
+      const dec = crypto.createDecipheriv("aes-256-gcm", key, iv);
+      dec.setAuthTag(tag);
+      const plain = Buffer.concat([dec.update(body), dec.final()]).toString("utf8");
+      const inner = JSON.parse(plain) as { sources?: Array<{ url?: string }> };
+
+      const m3u8 = (inner.sources || []).map((s) => s.url || "").find((u) => u.startsWith("http") && u.includes(".m3u8"));
+      return m3u8 || null;
     } catch {
       return null;
     }

@@ -122,13 +122,37 @@ server/scrapers/
 ├── ScraperManager.ts               # Registry & Factory que resuelve el adaptador adecuado para cada URL
 ├── ScraperManager.test.ts          # Pruebas unitarias de resolución de adaptadores
 ├── VideoExtraction.test.ts         # Pruebas unitarias de validación y extracción de streams
-└── adapters/
-    ├── AnimeFlvAdapter.ts          # Adaptador específico para AnimeFLV / JKanime (parseo de JS y catálogos)
-    ├── ArchiveOrgAdapter.ts        # Adaptador para Internet Archive (API de metadatos + streams MP4/HLS)
-    ├── TvMazeAdapter.ts            # Adaptador para TVMaze (series internacionales y temporadas)
-    ├── DirectStreamAdapter.ts      # Adaptador para streams directos (.m3u8, .mp4, .webm, Mux, Google Storage)
-    └── GenericAdapter.ts           # Adaptador fallback universal con IA semántica (PageClassifier, JSON-LD, OpenGraph)
+└── adapters/                       # 12 adaptadores registrados (modulares e intercambiables)
+    ├── LaMovieAdapter.ts           # lamovie.org — películas/series; Filemoon/VOE/Mega/HLSWish/Goodstream
+    ├── CinecalidadAdapter.ts       # cinecalidad.am — películas; m3u8 Goodstream + embeds VOE/Dood/Vimeos
+    ├── TubePelisAdapter.ts         # tubepelis.com — películas; backend Byse cifrado (AES-256-GCM)
+    ├── LatAnimeAdapter.ts          # latanime.org — animes; data-player Base64 + MP4Upload directo
+    ├── TioAnimeAdapter.ts          # tioanime.com — animes; array `var videos`, embeds fiables priorizados
+    ├── TioPlusAdapter.ts           # tioplus.app — películas/series; player propio + turboviplay HLS
+    ├── VerAnimesAdapter.ts         # wwv.veranimes.net — animes; StreamWish/HQQ resueltos
+    ├── AnimeFlvAdapter.ts          # www3.animeflv.net / jkanime / animeflv.or.at — parseo de JS y catálogos
+    ├── ArchiveOrgAdapter.ts        # archive.org — API metadatos + streams MP4/HLS
+    ├── TvMazeAdapter.ts            # tvmaze.com — series internacionales (solo metadatos/temporadas)
+    ├── DirectStreamAdapter.ts      # streams directos (.m3u8, .mp4, .webm, Mux, Google Storage)
+    └── GenericAdapter.ts           # fallback universal con IA semántica (PageClassifier, JSON-LD, OpenGraph)
 ```
+
+> Informes técnicos por adaptador en `informes/` y pruebas de integración contra sitios reales en `tests/scrapers/`.
+
+### Estado de validación E2E (2026-08-22)
+
+| Adaptador | Estado | Notas |
+|---|---|---|
+| Cinecalidad | ✅ PASS | 6 streams (1 HLS directo + 5 embeds), proxy 200 |
+| TubePelis | ✅ PASS | Decrypt Byse verificado con datos frescos, proxy 200 |
+| TioPlus | ✅ PASS | Película y episodio OK, turboviplay HLS vía proxy 200 |
+| LatAnime | ✅ PASS* | MP4Upload exige Referer propio → proxy lo fuerza por host |
+| VerAnimes | ✅ PASS* | Fix detected_streams confirmado; embed StreamWish OK |
+| TioAnime | ✅ PASS* | Streams efímeros/IP-dependientes van al final; embeds fiables primero |
+| AnimeFLV / LaMovie | ✅ | Validados en sesiones anteriores |
+| Archive.org / Directos | ✅ | Sanity checks previos |
+
+`PASS*` = funciona end-to-end con mitigaciones ya aplicadas (limitaciones externas del sitio fuente).
 
 ### Funcionamiento del `ScraperManager`:
 1. Recibe una URL o término de búsqueda.

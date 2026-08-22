@@ -120,9 +120,106 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   }
 
   /**
-   * Extrae metadatos de una página de detalle
+   * Deriva slug y postType de una URL de detalle (/peliculas|/series|/animes/{slug})
    */
-  private extractMetadata(html: string, url: string): {
+  private getSlugAndPostType(url: string): { slug: string; postType: string } | null {
+    const pathMatch = url.match(/\/(?:peliculas|series|animes)\/([^/]+)\/?$/i);
+    if (!pathMatch) return null;
+
+    const lower = url.toLowerCase();
+    const postType = lower.includes("/series/") ? "tvshows" : lower.includes("/animes/") ? "animes" : "movies";
+    return { slug: pathMatch[1], postType };
+  }
+
+  /**
+   * Obtiene el Post ID vía la API interna single (campo `_id`) cuando el HTML no lo expone.
+   * Endpoint real descubierto en producción: /wp-api/v1/single/{postType}?slug={slug}&postType={postType}
+   */
+  private async fetchPostIdFromInternalApi(url: string): Promise<string | null> {
+    try {
+      const info = this.getSlugAndPostType(url);
+      if (!info) return null;
+
+      const apiUrl = `https://lamovie.org/wp-api/v1/single/${info.postType}?slug=${encodeURIComponent(info.slug)}&postType=${info.postType}`;
+      const raw = await this.fetchHtml(apiUrl, 8000);
+      if (!raw) return null;
+
+      const json = JSON.parse(raw);
+      const id = json?.data?._id;
+      return id !== undefined && id !== null ? String(id) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Consulta la API interna de la SPA para obtener metadatos completos del detalle.
+   * Endpoint real descubierto en producción: /wp-api/v1/single/{postType}?slug={slug}&postType={postType}
+   */
+  private async fetchInternalMetadata(url: string): Promise<{
+    title?: string;
+    original_title?: string;
+    description?: string;
+    poster_url?: string;
+    banner_url?: string;
+    rating?: number;
+    year?: number;
+    duration?: string;
+  } | null> {
+    try {
+      const info = this.getSlugAndPostType(url);
+      if (!info) return null;
+
+      const { slug, postType } = info;
+      const apiUrl = `https://lamovie.org/wp-api/v1/single/${postType}?slug=${encodeURIComponent(slug)}&postType=${postType}`;
+      const raw = await this.fetchHtml(apiUrl, 8000);
+      if (!raw) return null;
+
+      const json = JSON.parse(raw);
+      const data = json?.data;
+      if (!data) return null;
+
+      const uploadsBase = "https://lamovie.org/wp-content/uploads";
+      const absImage = (p?: string) =>
+        p ? (p.startsWith("http") ? p : `${uploadsBase}${p.startsWith("/") ? "" : "/"}${p}`) : undefined;
+
+      // Título limpio sin el año entre paréntesis
+      const rawTitle: string = (data.title || "").trim();
+      const cleanTitle = rawTitle.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+
+      let year: number | undefined;
+      if (data.release_date) {
+        const y = parseInt(String(data.release_date).slice(0, 4), 10);
+        if (!Number.isNaN(y)) year = y;
+      }
+
+      let duration: string | undefined;
+      if (data.runtime) {
+        const mins = Math.round(parseFloat(data.runtime));
+        if (!Number.isNaN(mins) && mins > 0) duration = `${mins} min`;
+      }
+
+      return {
+        title: cleanTitle || rawTitle || undefined,
+        original_title: data.original_title || undefined,
+        description: data.overview || undefined,
+        poster_url: absImage(data.images?.poster),
+        banner_url: absImage(data.images?.backdrop),
+        rating: data.rating !== undefined && data.rating !== null ? parseFloat(data.rating) : undefined,
+        year,
+        duration,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extrae metadatos de una página de detalle.
+   * Fuente primaria: API interna de la SPA (sitio renderizado en React).
+   * Fallbacks: meta tags OpenGraph, JSON-LD (breadcrumb con año) y regex sobre el HTML.
+   */
+  private async extractMetadata(html: string, url: string): Promise<{
     title: string;
     original_title?: string;
     description: string;
@@ -133,40 +230,51 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     genres: string[];
     duration?: string;
     content_type: ContentKind;
-  } {
+  }> {
     const $ = cheerio.load(html);
 
-    // Título
+    // --- Fuente primaria: API interna ---
+    const api = await this.fetchInternalMetadata(url);
+
+    // Título (fallbacks: API > og:title > h1)
     const ogTitle = $('meta[property="og:title"]').attr("content") || "";
     const h1Title = $("h1").first().text().trim();
-    const title = ogTitle || h1Title || "Contenido LaMovie";
 
-    // Título original (si está en el título)
-    const originalTitleMatch = title.match(/(.+)\s*\((\d{4})\)\s*\|/);
-    const original_title = originalTitleMatch ? originalTitleMatch[1].trim() : undefined;
+    // Año: API > patrón "(YYYY)" en og:title/breadcrumb JSON-LD > regex legacy
+    let year = api?.year ?? 0;
+    if (!year) {
+      const breadcrumbName = html.match(/"ListItem","position":2,"name":"[^"]*?\((\d{4})\)"/i)?.[1];
+      const parenYear = ogTitle.match(/\((\d{4})\)/)?.[1] || breadcrumbName;
+      const yearMatch =
+        parenYear ||
+        html.match(/Año[\s:]*(\d{4})/i)?.[1] ||
+        html.match(/release_date[\s:]*["'](\d{4})/i)?.[1];
+      year = yearMatch ? parseInt(yearMatch, 10) : new Date().getFullYear();
+    }
+
+    // Título original: API > patrón legacy del og:title
+    const originalTitleFromOg = ogTitle.match(/Pelicula\s+(.+?)\s*\(\d{4}\)/i)?.[1];
+    const original_title = api?.original_title || originalTitleFromOg || undefined;
+
+    const title = api?.title || (ogTitle.replace(/\s*\(\d{4}\)\s*/, " ").replace(/\s*\|\s*LaMovie\s*$/i, "").trim()) || h1Title || "Contenido LaMovie";
 
     // Descripción
-    const ogDesc = $('meta[property="og:description"]').attr("content") ||
+    const ogDesc = api?.description ||
+      $('meta[property="og:description"]').attr("content") ||
       $('meta[name="description"]').attr("content") ||
       $(".overview, .sinopsis, .description").first().text().trim() ||
       "";
 
-    // Poster
+    // Poster/Banner
     const ogImage = $('meta[property="og:image"]').attr("content");
-    const posterUrl = ogImage ? this.resolveRelativeUrl(ogImage, url) : undefined;
+    const posterUrl = api?.poster_url || (ogImage ? this.resolveRelativeUrl(ogImage, url) : undefined);
+    const bannerUrl = api?.banner_url || posterUrl;
 
-    // Rating (IMDb)
-    const ratingMatch = html.match(/IMDb[\s:]*([\d.]+)/i) ||
-      html.match(/rating[\s:]*([\d.]+)/i);
-    const rating = ratingMatch ? parseFloat(ratingMatch[1]) : 7.0;
+    // Rating (API > IMDb)
+    const ratingMatch = html.match(/IMDb[\s:]*([\d.]+)/i) || html.match(/rating[\s:]*([\d.]+)/i);
+    const rating = api?.rating ?? (ratingMatch ? parseFloat(ratingMatch[1]) : 7.0);
 
-    // Año
-    const yearMatch = html.match(/Año[\s:]*(\d{4})/i) ||
-      html.match(/(\d{4})\s*\|/i) ||
-      html.match(/release_date[\s:]*["'](\d{4})/i);
-    const year = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
-
-    // Géneros
+    // Géneros (el HTML crudo es una SPA vacía; quedará [] si la API no los expone por nombre)
     const genres: string[] = [];
     $("a[href*='/genero/'], .genres a, .meta-genres a").each((_, el) => {
       const genre = $(el).text().trim();
@@ -177,7 +285,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
     // Duración
     const durationMatch = html.match(/Duración[\s:]*([\d]+\s*min)/i);
-    const duration = durationMatch ? durationMatch[1] : undefined;
+    const duration = api?.duration || (durationMatch ? durationMatch[1] : undefined);
 
     // Tipo de contenido
     const content_type = url.includes("/series/") ? "series" :
@@ -188,7 +296,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       original_title,
       description: ogDesc,
       poster_url: posterUrl,
-      banner_url: posterUrl,
+      banner_url: bannerUrl,
       rating,
       year,
       genres,
@@ -223,100 +331,126 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   }
 
   /**
-   * Extrae streams de video usando la API interna de LaMovie
+   * Extrae streams de video usando la API interna de LaMovie.
+   * Cadena resiliente: Post ID del HTML (shortlink) > API interna single (`_id`) >
+   * extracción genérica de embeds del HTML. Nunca lanza excepción.
    */
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const cleanUrl = targetUrl.trim();
-    const html = await this.fetchHtml(cleanUrl, 10000);
 
-    if (!html) {
-      throw new Error("No se pudo obtener el HTML de la página");
-    }
-
-    // Extraer Post ID
-    const postId = this.extractPostId(html);
-    if (!postId) {
-      throw new Error("No se encontró el Post ID en la página");
-    }
-
-    // Consultar API de reproductor
-    const playerApiUrl = `https://lamovie.org/wp-api/v1/player?postId=${postId}&demo=0`;
-    const playerRes = await this.fetchHtml(playerApiUrl, 7500, {
-      Referer: cleanUrl,
-      "User-Agent": COMMON_HEADERS["User-Agent"],
-    });
-
-    if (!playerRes) {
-      throw new Error("No se pudo obtener datos del reproductor");
-    }
-
-    let embedUrls: string[] = [];
     try {
-      const playerData = JSON.parse(playerRes);
-      const embeds = playerData?.data?.embeds || playerData?.embeds || [];
-      embeds.forEach((e: any) => {
-        if (e.url && typeof e.url === "string") {
-          embedUrls.push(e.url.trim());
-        }
-      });
-      const downloads = playerData?.data?.downloads || playerData?.downloads || [];
-      downloads.forEach((d: any) => {
-        if (d.url && typeof d.url === "string") {
-          let u = d.url.trim();
-          if (u.includes("mega.nz")) {
-            u = u.replace("mega.nz/file/", "mega.nz/embed/").replace("mega.nz/#!", "mega.nz/embed/#!");
-            embedUrls.push(u);
-          }
-        }
-      });
-    } catch {
-      // Fallback: extraer iframes del HTML
-      const $ = cheerio.load(html);
-      $("iframe").each((_, el) => {
-        const src = $(el).attr("src");
-        if (src && !/(ads|adserver|popunder|banner)/i.test(src)) {
-          embedUrls.push(this.resolveRelativeUrl(src, cleanUrl));
-        }
-      });
-    }
+      const html = await this.fetchHtml(cleanUrl, 10000);
 
-    // Resolver iframes para streams directos manteniendo siempre los embeds disponibles
-    const directStreams: string[] = [];
-    const embedStreams: string[] = [];
+      // Extraer Post ID: shortlink en HTML > campo `_id` de la API interna
+      let postId = html ? this.extractPostId(html) : null;
+      if (!postId) {
+        postId = await this.fetchPostIdFromInternalApi(cleanUrl);
+      }
 
-    for (const embedUrl of embedUrls) {
-      if (embedUrl.includes(".m3u8") || embedUrl.includes(".mp4")) {
-        if (!directStreams.includes(embedUrl)) {
-          directStreams.push(embedUrl);
-        }
-      } else {
-        const iframeStreams = await this.resolveIframeStream(embedUrl, cleanUrl);
-        if (iframeStreams.length > 0) {
-          iframeStreams.forEach((st) => {
-            if ((st.includes(".m3u8") || st.endsWith(".mp4")) && !directStreams.includes(st)) {
-              directStreams.push(st);
-            }
-          });
-        }
+      let embedUrls: string[] = [];
+      const downloadUrls: string[] = [];
 
-        // Siempre mantener el reproductor embed como alternativa 100% funcional
-        if (!embedStreams.includes(embedUrl)) {
-          embedStreams.push(embedUrl);
+      if (postId && html) {
+        // Consultar API de reproductor
+        const playerApiUrl = `https://lamovie.org/wp-api/v1/player?postId=${postId}&demo=0`;
+        const playerRes = await this.fetchHtml(playerApiUrl, 7500, {
+          Referer: cleanUrl,
+          "User-Agent": COMMON_HEADERS["User-Agent"],
+        });
+
+        if (playerRes) {
+          try {
+            const playerData = JSON.parse(playerRes);
+            const embeds = playerData?.data?.embeds || playerData?.embeds || [];
+            embeds.forEach((e: any) => {
+              if (e.url && typeof e.url === "string") {
+                embedUrls.push(e.url.trim());
+              }
+            });
+            const downloads = playerData?.data?.downloads || playerData?.downloads || [];
+            downloads.forEach((d: any) => {
+              if (d.url && typeof d.url === "string") {
+                let u = d.url.trim();
+                if (u.includes("mega.nz")) {
+                  u = u.replace("mega.nz/file/", "mega.nz/embed/").replace("mega.nz/#!", "mega.nz/embed/#!");
+                }
+                if (/^https?:\/\//i.test(u)) {
+                  downloadUrls.push(u);
+                }
+              }
+            });
+          } catch {}
         }
       }
+
+      // Fallback: extraer embeds directamente del HTML (SPA shell o player API caída)
+      if (embedUrls.length === 0 && html) {
+        try {
+          const $ = cheerio.load(html);
+          const rawEmbeds = this.extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
+          for (const raw of rawEmbeds) {
+            if (raw.includes(".m3u8") || raw.includes(".mp4")) {
+              if (!embedUrls.includes(raw)) embedUrls.push(raw);
+            } else if (!downloadUrls.some((d) => d === raw)) {
+              if (!embedUrls.includes(raw)) embedUrls.push(raw);
+            }
+          }
+        } catch {}
+      }
+
+      if (html) {
+        // Completar con descargas HTTP directas si faltan alternativas
+        for (const dl of downloadUrls) {
+          if (!embedUrls.includes(dl)) embedUrls.push(dl);
+        }
+      }
+
+      // Resolver iframes para streams directos manteniendo siempre los embeds disponibles
+      const directStreams: string[] = [];
+      const embedStreams: string[] = [];
+
+      for (const embedUrl of embedUrls) {
+        if (embedUrl.includes(".m3u8") || embedUrl.includes(".mp4") || embedUrl.startsWith("magnet:")) {
+          if (!directStreams.includes(embedUrl)) {
+            directStreams.push(embedUrl);
+          }
+        } else {
+          const meta = await EmbedResolvers.resolveWithMeta(embedUrl);
+          if (meta.resolved && meta.url && !directStreams.includes(meta.url)) {
+            directStreams.push(meta.url);
+          }
+
+          // Siempre mantener el reproductor embed como alternativa 100% funcional
+          if (!embedStreams.includes(embedUrl)) {
+            embedStreams.push(embedUrl);
+          }
+        }
+      }
+
+      // Extraer título
+      let title: string | undefined;
+      if (html) {
+        const $ = cheerio.load(html);
+        title =
+          $("h1").first().text().trim() ||
+          $('meta[property="og:title"]').attr("content") ||
+          $("title").text().trim() ||
+          undefined;
+      }
+
+      const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
+
+      return {
+        stream_url: finalStreams[0] || cleanUrl,
+        all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
+        title: title || undefined,
+      };
+    } catch {
+      return {
+        stream_url: cleanUrl,
+        all_available_streams: [cleanUrl],
+      };
     }
-
-    // Extraer título
-    const $ = cheerio.load(html);
-    const title = $("h1").first().text().trim() || $('meta[property="og:title"]').attr("content") || "";
-
-    const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
-
-    return {
-      stream_url: finalStreams[0] || cleanUrl,
-      all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
-      title: title || undefined,
-    };
   }
 
   /**
@@ -388,7 +522,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     }
 
     // Extraer metadatos
-    const metadata = this.extractMetadata(html, cleanUrl);
+    const metadata = await this.extractMetadata(html, cleanUrl);
 
     // Extraer episodios (si es serie/anime, extraer la lista; si es película, generar episodio 1 con la URL de la película)
     const episodes =
@@ -396,9 +530,9 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         ? this.extractEpisodes(html, cleanUrl)
         : [{ number: 1, title: metadata.title || "Película Completa", url: cleanUrl }];
 
-    // Extraer streams si se solicita
+    // Extraer streams (siempre en analyze para que el frontend tenga las URLs disponibles)
     let detectedStreams: string[] = [];
-    if (explicitType === "stream" || explicitType === "auto") {
+    if (!explicitType || explicitType === "stream" || explicitType === "auto") {
       try {
         const streamResult = await this.extractStream(cleanUrl);
         detectedStreams = streamResult.all_available_streams;

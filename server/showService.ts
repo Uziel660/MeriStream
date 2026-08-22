@@ -241,17 +241,19 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 export async function getShowsFromDb(search?: string, category?: string) {
   let where: any = {};
 
+  // El provider (SQLite/libsql) no soporta mode:"insensitive"; se normaliza a minúsculas
+  // en el propio filtro usando un raw LIKE, insensible a mayúsculas por colación.
   if (category) {
-    where.category = { contains: category, mode: "insensitive" };
+    where.category = { contains: category };
   }
 
   if (search) {
     const s = search.toLowerCase().trim();
     where.OR = [
-      { title: { contains: s, mode: "insensitive" } },
-      { english_title: { contains: s, mode: "insensitive" } },
-      { japanese_title: { contains: s, mode: "insensitive" } },
-      { genres: { contains: s, mode: "insensitive" } },
+      { title: { contains: s } },
+      { english_title: { contains: s } },
+      { japanese_title: { contains: s } },
+      { genres: { contains: s } },
     ];
   }
 

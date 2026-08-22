@@ -1,15 +1,70 @@
 import * as cheerio from "cheerio";
-import { BaseScraperAdapter } from "../BaseAdapter";
+import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
 import { UniversalAnalysisResult, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { cleanQueryTitle, enrichUniversalMetadata } from "../../metadataEngine";
 import { PageClassifier } from "../../pageClassifier";
 import { MediaValidator } from "../../validator";
 import { EmbedResolvers } from "../../resolvers";
 
+/**
+ * Hosts de embebido conocidos (espejo ampliado de validator.KNOWN_EMBED_HOSTS +
+ * dominios espejo observados hoy en producción: sfastwish/vidhidevip/mdbekjwqa/d-s.io).
+ * Los embeds conocidos son reproducibles tal cual y no necesitan resolución.
+ */
+const KNOWN_EMBED_HOSTS = [
+  "zilla-networks.com",
+  "voe.",
+  "byselapuix.com",
+  "mp4upload.com",
+  "mega.nz",
+  "streamtape.",
+  "yourupload.com",
+  "vidmoly.",
+  "luluvdo.",
+  "streamhide.",
+  "ok.ru",
+  "vimeo.com",
+  "dood.",
+  "doodstream.",
+  "fembed.",
+  "mixdrop.",
+  "uqload.",
+  "upstream.",
+  "embedsito.",
+  "streamlare.",
+  "fastre.",
+  "gamovideo.",
+  "netu.",
+  "waaw.",
+  "streamdav.",
+  "streamhub.",
+  "streamwish.",
+  "filemoon.",
+  // Espejos reales detectados hoy (2026-08-21)
+  "sfastwish.com",
+  "vidhidevip.com",
+  "mdbekjwqa.pw",
+  "d-s.io",
+  "hlswish.com",
+  "goodstream.one",
+  "playmudos.com",
+];
+
+/** Dominios de DESCARGA (no reproducibles en iframe): se excluyen de los streams. */
+const DOWNLOAD_ONLY_HOSTS = ["mediafire.com", "drive.google.com", "4shared.com", "zippyshare.com"];
+
+const isKnownEmbedHost = (url: string) =>
+  KNOWN_EMBED_HOSTS.some((h) => url.toLowerCase().includes(h));
+const isDownloadOnly = (url: string) =>
+  DOWNLOAD_ONLY_HOSTS.some((h) => url.toLowerCase().includes(h));
+
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
   readonly name = "AnimeFLV / Anime Streaming";
   readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
+
+  /** Límite de páginas consultadas al AJAX de episodios de jkanime (16 eps/página). */
+  private static readonly JK_PAGES = 2;
 
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
@@ -23,6 +78,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const urlOrQuery = input.trim();
     const urlObj = new URL(urlOrQuery);
     const domain = urlObj.hostname.toLowerCase();
+    const isJkanime = domain.includes("jkanime");
 
     const html = await this.fetchHtml(urlOrQuery);
     if (!html) {
@@ -39,8 +95,11 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     // 2. Extract Streams from AnimeFLV JavaScript `var videos = ...` or DOM
     const detectedStreams = this.extractAnimeflvStreams($, html, urlOrQuery);
 
-    // 3. Extract Episodes from AnimeFLV JavaScript `var anime_info` / `var episodes` or DOM
-    const extractedEpisodes = this.extractAnimeflvEpisodes($, html, urlObj);
+    // 3. Extract Episodes: jkanime usa un AJAX paginado con CSRF; animeflv usa
+    // `var anime_info`/`var episodes` o el DOM.
+    const extractedEpisodes = isJkanime
+      ? await this.extractJkanimeEpisodes(html, urlObj)
+      : this.extractAnimeflvEpisodes($, html, urlObj);
 
     // 4. Extract Catalog Items
     const catalogItems: ExtractedCatalogItem[] = [];
@@ -133,6 +192,21 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const rawCleanTitle = cleanQueryTitle($("h1.Title, h1.entry-title, h1").first().text().trim() || ogTitle || urlObj.pathname.split("/").filter(Boolean).pop() || "Anime");
     const enriched = await enrichUniversalMetadata(rawCleanTitle, "anime");
 
+    // WordPress theme metadata (animeflv.or.at): fuentes primarias del theme
+    const wpTitle = $("h1.anime-title").first().text().trim() || undefined;
+    const wpPosterRaw = $("img.poster-image").attr("src") || $("img.poster-image").attr("data-src") || undefined;
+    const wpPoster = wpPosterRaw
+      ? (wpPosterRaw.startsWith("//") ? `https:${wpPosterRaw}` : wpPosterRaw.startsWith("http") ? wpPosterRaw : new URL(wpPosterRaw, urlOrQuery).toString())
+      : undefined;
+    const wpSynopsis = $(".anime-synopsis p").first().text().trim() || undefined;
+    const wpGenres: string[] = [];
+    $("span.genre-tag").each((_, el) => {
+      const g = $(el).text().trim();
+      if (g) wpGenres.push(g);
+    });
+    const wpRatingRaw = $(".anime-rating .rating-score").first().text().trim();
+    const wpRating = parseFloat(wpRatingRaw) || undefined;
+
     let finalEpisodes = extractedEpisodes;
     if (finalEpisodes.length === 0) {
       if (detectedStreams.length > 0) {
@@ -149,17 +223,17 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     return {
       page_type: pageType,
       content_type: "anime",
-      title: enriched.title || rawCleanTitle,
+      title: wpTitle || enriched.title || rawCleanTitle,
       original_title: enriched.original_title,
       japanese_title: enriched.japanese_title,
       english_title: enriched.english_title,
-      description: enriched.description || ogDesc || "Serie de anime indexada desde AnimeFLV.",
-      poster_url: enriched.poster_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
-      banner_url: enriched.banner_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
-      rating: enriched.rating || 8.5,
+      description: wpSynopsis || enriched.description || ogDesc || "Serie de anime indexada desde AnimeFLV.",
+      poster_url: wpPoster || enriched.poster_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
+      banner_url: enriched.banner_url || wpPoster || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
+      rating: wpRating || enriched.rating || 8.5,
       year: enriched.year || 2024,
       status: enriched.status || "En emisión",
-      genres: enriched.genres.length > 0 ? enriched.genres : ["Anime", "Animación"],
+      genres: wpGenres.length > 0 ? wpGenres : (enriched.genres.length > 0 ? enriched.genres : ["Anime", "Animación"]),
       source_domain: domain,
       detected_streams: finalStreams,
       episodes: finalEpisodes,
@@ -170,34 +244,33 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
 
   async extractStream(url: string): Promise<{ stream_url: string; all_available_streams: string[] }> {
     const cleanUrl = url.trim();
+
+    // jkanime tiene su propio mecanismo de servidores (var servers + jkplayer)
+    if (cleanUrl.toLowerCase().includes("jkanime.")) {
+      return this.extractJkanimeStream(cleanUrl);
+    }
+
     const html = await this.fetchHtml(cleanUrl);
-    if (!html) return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+    if (!html) {
+      const mirrored = await this.extractViaJkanimeMirror(cleanUrl);
+      if (mirrored) return mirrored;
+      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+    }
 
     const $ = cheerio.load(html);
     const rawStreams = this.extractAnimeflvStreams($, html, cleanUrl);
 
     if (rawStreams.length === 0) {
+      // EVIDENCIA 2026-08-21: www3/www4/m.animeflv.net sirven `var videos = []` para
+      // muchas IPs (servidores retenidos server-side). Espejo contra jkanime antes
+      // de devolver la página del episodio como pseudo-stream.
+      const mirrored = await this.extractViaJkanimeMirror(cleanUrl);
+      if (mirrored) return mirrored;
       return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
     }
 
-    const directStreams: string[] = [];
-    const embedStreams: string[] = [];
-
-    for (const st of rawStreams) {
-      try {
-        const meta = await EmbedResolvers.resolveWithMeta(st);
-        if (meta.resolved && meta.type === "direct") {
-          if (!directStreams.includes(meta.url)) directStreams.push(meta.url);
-        } else {
-          const finalEmbed = meta.url || st;
-          if (!embedStreams.includes(finalEmbed)) embedStreams.push(finalEmbed);
-        }
-      } catch {
-        if (!embedStreams.includes(st)) embedStreams.push(st);
-      }
-    }
-
-    const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
+    const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
 
     return {
       stream_url: finalStreams[0] || cleanUrl,
@@ -205,23 +278,364 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     };
   }
 
+  /**
+   * Clasifica candidatos: embeds conocidos pasan tal cual (regla de oro), los demás
+   * se resuelven en paralelo (acotado) buscando upgrades a .m3u8/.mp4 directo.
+   * Excepción mp4upload: el embed se conserva como fallback pero su página expone
+   * el .mp4 directo en JS plano (player.src), así que también se intenta resolver.
+   */
+  private async resolveCandidates(rawStreams: string[]): Promise<{ directStreams: string[]; embedStreams: string[] }> {
+    const directStreams: string[] = [];
+    const embedStreams: string[] = [];
+    const needResolve: string[] = [];
+    const mp4UploadTargets: string[] = [];
+
+    for (const st of rawStreams) {
+      const normalized = this.normalizeServerUrl(st);
+      if (!normalized.startsWith("http")) continue;
+      if (isDownloadOnly(normalized)) continue;
+      if (EmbedResolvers.isDirectMediaUrl(normalized)) {
+        if (!directStreams.includes(normalized)) directStreams.push(normalized);
+      } else if (normalized.toLowerCase().includes("mp4upload.com")) {
+        const target = this.toMp4UploadEmbedUrl(normalized);
+        if (!mp4UploadTargets.includes(target)) mp4UploadTargets.push(target);
+        if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
+      } else if (isKnownEmbedHost(normalized)) {
+        if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
+      } else if (!needResolve.includes(normalized)) {
+        needResolve.push(normalized);
+      }
+    }
+
+    const targets = needResolve.slice(0, 6);
+    const results = await Promise.allSettled([
+      ...targets.map((t) => EmbedResolvers.resolveWithMeta(t)),
+      ...mp4UploadTargets.map((t) => EmbedResolvers.resolveWithMeta(t)),
+    ]);
+    results.forEach((r) => {
+      if (r.status !== "fulfilled") return;
+      const meta = r.value;
+      if (meta.resolved && meta.type === "direct") {
+        if (!directStreams.includes(meta.url)) directStreams.push(meta.url);
+      } else if (meta.url && !embedStreams.includes(meta.url)) {
+        embedStreams.push(meta.url);
+      }
+    });
+
+    // Candidatos desconocidos fuera del lote resuelto: se conservan como embeds
+    for (const extra of needResolve.slice(6)) {
+      if (!embedStreams.includes(extra)) embedStreams.push(extra);
+    }
+
+    return { directStreams, embedStreams };
+  }
+
+  /**
+   * mp4upload: la página con el .mp4 directo es /embed-{code}.html; la variante
+   * plana /{code} solo sirve el HTML de descarga (sin player).
+   */
+  private toMp4UploadEmbedUrl(url: string): string {
+    const m = url.match(/mp4upload\.com\/(?:embed-)?([a-z0-9]+)(?:\.html?)?$/i);
+    if (!m) return url;
+    return `https://www.mp4upload.com/embed-${m[1]}.html`;
+  }
+
+  private normalizeServerUrl(raw: string): string {
+    let u = (raw || "").trim().replace(/\\/g, "");
+    if (u.includes("mega.nz/#!")) {
+      u = u.replace("mega.nz/#!", "mega.nz/embed/#!");
+    } else if (u.includes("mega.nz/file/")) {
+      u = u.replace("mega.nz/file/", "mega.nz/embed/");
+    } else if (u.includes("yourupload.com/watch/")) {
+      u = u.replace("yourupload.com/watch/", "yourupload.com/embed/");
+    } else if (u.includes("streamtape.com/v/")) {
+      u = u.replace("streamtape.com/v/", "streamtape.com/e/");
+    }
+    return u;
+  }
+
+  /* ===================== jkanime ===================== */
+
+  /**
+   * Episodios de jkanime: el listado completo llega por AJAX paginado
+   * (POST /ajax/episodes/{animeId}/{page} con _token CSRF + cookie de sesión).
+   * El HTML crudo solo incluye el último episodio publicado.
+   */
+  private async extractJkanimeEpisodes(html: string, urlObj: URL): Promise<ExtractedEpisode[]> {
+    try {
+      const idMatch = html.match(/ajax\/episodes\/(\d+)\//);
+      if (!idMatch) return [];
+
+      // La sesión y el token deben provenir de la MISMA respuesta
+      const { html: freshHtml, cookie } = await this.fetchWithCookies(urlObj.toString());
+      const source = freshHtml ?? html;
+      const token = source.match(/name="csrf-token" content="([^"]+)"/)?.[1] || "";
+      const animeId = source.match(/ajax\/episodes\/(\d+)\//)?.[1] || idMatch[1];
+      if (!token) return [];
+
+      const parts = urlObj.pathname.split("/").filter(Boolean).map((p) => decodeURIComponent(p));
+      const slug = parts[parts.length - 1] || "anime";
+      const origin = urlObj.origin;
+
+      const episodes: ExtractedEpisode[] = [];
+      const seen = new Set<number>();
+
+      for (let page = 1; page <= AnimeFlvAdapter.JK_PAGES; page++) {
+        const data = await this.jkanimeEpisodesPage(origin, animeId, page, token, cookie);
+        if (!data || !Array.isArray(data.data)) break;
+
+        for (const ep of data.data) {
+          const num = Number(ep?.number);
+          if (!Number.isFinite(num) || num <= 0 || seen.has(num)) continue;
+          seen.add(num);
+          const title = typeof ep?.title === "string" && ep.title.trim() ? ep.title.trim() : `Episodio ${num}`;
+          episodes.push({
+            number: num,
+            title,
+            url: `${origin}/${encodeURIComponent(slug)}/${num}/`,
+          });
+        }
+
+        const lastPage = Number(data.last_page);
+        if (Number.isFinite(lastPage) && page >= lastPage) break;
+      }
+
+      return episodes.sort((a, b) => a.number - b.number);
+    } catch {
+      return [];
+    }
+  }
+
+  /** GET que captura Set-Cookie junto al HTML (necesario para el CSRF de Laravel). */
+  private async fetchWithCookies(
+    url: string,
+    timeoutMs = 9000
+  ): Promise<{ html: string | null; cookie: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal, headers: COMMON_HEADERS });
+      clearTimeout(timer);
+      const raw =
+        typeof res.headers.getSetCookie === "function"
+          ? res.headers.getSetCookie()
+          : [res.headers.get("set-cookie")].filter(Boolean) as string[];
+      const cookie = raw
+        .map((c) => c.split(";")[0].trim())
+        .filter(Boolean)
+        .join("; ");
+      if (!res.ok) return { html: null, cookie };
+      return { html: await res.text(), cookie };
+    } catch {
+      clearTimeout(timer);
+      return { html: null, cookie: "" };
+    }
+  }
+
+  private async jkanimeEpisodesPage(
+    origin: string,
+    animeId: string,
+    page: number,
+    token: string,
+    cookie: string
+  ): Promise<{ data?: Array<{ number?: unknown; title?: unknown }>; last_page?: unknown } | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9000);
+      const res = await fetch(`${origin}/ajax/episodes/${animeId}/${page}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          ...COMMON_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+          Referer: `${origin}/`,
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: new URLSearchParams({ _token: token }).toString(),
+      });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return (await res.json()) as { data?: Array<{ number?: unknown; title?: unknown }>; last_page?: unknown };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Streams de una página de episodio jkanime:
+   * 1. `var servers = [{remote: <base64>, server: "..."}]` (mega/voe/mp4upload/streamtape/...)
+   * 2. Iframes reales y cadenas JS tipo video[0] = '<iframe src="...jkplayer/um?..."'
+   * Cada wrapper jkplayer resuelve internamente a un .m3u8 directo.
+   */
+  private async extractJkanimeStream(url: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
+    const html = await this.fetchHtml(url, 12000);
+    if (!html) return { stream_url: url, all_available_streams: [url] };
+
+    const title = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/)?.[1];
+    const rawStreams = this.parseJkanimeServers(html);
+
+    if (rawStreams.length === 0) {
+      return { stream_url: url, all_available_streams: [url], title };
+    }
+
+    const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
+
+    return {
+      stream_url: finalStreams[0] || url,
+      all_available_streams: finalStreams.length > 0 ? finalStreams : [url],
+      title,
+    };
+  }
+
+  private parseJkanimeServers(html: string): string[] {
+    const streams: string[] = [];
+    const push = (raw: string) => {
+      const clean = this.normalizeServerUrl(raw);
+      if (clean.startsWith("http") && !isDownloadOnly(clean) && !streams.includes(clean)) {
+        streams.push(clean);
+      }
+    };
+
+    // 1. var servers = [{remote: base64}]
+    const serversMatch = html.match(/var\s+servers\s*=\s*(\[[\s\S]*?\]);\s*(?:var|<\/script>)/);
+    if (serversMatch) {
+      try {
+        const arr = JSON.parse(serversMatch[1]);
+        for (const srv of arr) {
+          if (!srv?.remote) continue;
+          try {
+            const decoded = Buffer.from(String(srv.remote), "base64").toString("utf-8").trim();
+            if (/^https?:\/\//i.test(decoded)) push(decoded);
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // 2. Iframes reales del DOM
+    const $ = cheerio.load(html);
+    $("iframe").each((_, el) => {
+      const src = $(el).attr("src") || $(el).attr("data-src");
+      if (src) push(src);
+    });
+
+    // 3. Iframes dentro de strings JS (video[0] = '<iframe src="...">') y wrappers jkplayer
+    const jsIframe = /<iframe[^>]+src=["']([^"']+)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = jsIframe.exec(html)) !== null) push(m[1]);
+    const jkPlayer = /https?:\/\/jkanime\.net\/jkplayer\/[^\s"'<>\\]+/gi;
+    while ((m = jkPlayer.exec(html)) !== null) push(m[0]);
+
+    return streams;
+  }
+
+  /**
+   * Espejo animeflv -> jkanime: dado `/ver/{slug}-{n}` busca el título en jkanime
+   * (/buscar?q=) y extrae los servidores del episodio equivalente `{slug}/{n}/`.
+   */
+  private async extractViaJkanimeMirror(
+    afUrl: string
+  ): Promise<{ stream_url: string; all_available_streams: string[] } | null> {
+    try {
+      const u = new URL(afUrl);
+      const parts = u.pathname.split("/").filter(Boolean);
+      const verIdx = parts.findIndex((p) => p.toLowerCase() === "ver");
+      const tail = verIdx >= 0 ? parts[verIdx + 1] : undefined;
+      if (!tail) return null;
+
+      const numMatch = tail.match(/-(\d+(?:\.\d+)?)$/);
+      if (!numMatch) return null;
+      const epNum = parseFloat(numMatch[1]);
+      const slug = tail.slice(0, tail.length - numMatch[0].length).toLowerCase();
+      if (!slug) return null;
+
+      const candidates = await this.searchJkanime(slug.replace(/-/g, " "));
+      for (const animeUrl of candidates.slice(0, 3)) {
+        const epUrl = `${animeUrl.replace(/\/+$/, "")}/${epNum}/`;
+        const html = await this.fetchHtml(epUrl, 12000);
+        if (!html) continue;
+
+        const rawStreams = this.parseJkanimeServers(html);
+        if (rawStreams.length === 0) continue;
+
+        const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+        const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
+        if (finalStreams.length > 0) {
+          return { stream_url: finalStreams[0], all_available_streams: finalStreams };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Búsqueda en jkanime (/buscar?q=): tarjetas .anime__item con enlaces raíz de anime. */
+  private async searchJkanime(query: string): Promise<string[]> {
+    const html = await this.fetchHtml(
+      `https://jkanime.net/buscar?q=${encodeURIComponent(query)}`,
+      10000
+    );
+    if (!html) return [];
+
+    const results: string[] = [];
+    const $ = cheerio.load(html);
+    $(".anime__item a[href]").each((_, el) => {
+      const href = ($(el).attr("href") || "").trim();
+      if (/^https?:\/\/jkanime\.net\/[^/]+\/?$/i.test(href)) {
+        const clean = href.replace(/\/+$/, "") + "/";
+        if (!results.includes(clean)) results.push(clean);
+      }
+    });
+    if (results.length === 0) {
+      const regex = /href="(https?:\/\/jkanime\.net\/[a-z0-9\-]+\/)"/gi;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(html)) !== null) {
+        const clean = m[1].replace(/\/+$/, "") + "/";
+        if (!results.includes(clean)) results.push(clean);
+      }
+    }
+    return results;
+  }
+
+  /* ===================== animeflv ===================== */
+
+  /**
+   * WordPress theme (animeflv.or.at) sirve servidores codificados en base64
+   * dentro de botones y contenedores DOM.
+   */
+  private extractWordPressServers($: cheerio.CheerioAPI): string[] {
+    const servers: string[] = [];
+    const seen = new Set<string>();
+
+    const pushDecoded = (raw: string) => {
+      const trimmed = (raw || "").trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      try {
+        const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
+        if (/^https?:\/\//i.test(decoded)) {
+          servers.push(decoded);
+        }
+      } catch {}
+    };
+
+    $("button.iframe_code[data-src]").each((_, el) => {
+      const val = $(el).attr("data-src") || "";
+      if (val) pushDecoded(val);
+    });
+
+    $("#iframeHolder[data-default-src]").each((_, el) => {
+      const val = $(el).attr("data-default-src") || "";
+      if (val) pushDecoded(val);
+    });
+
+    return servers;
+  }
+
   private extractAnimeflvStreams($: cheerio.CheerioAPI, html: string, baseUrl: string): string[] {
     const streams: string[] = [];
-
-    // Helper para normalizar URLs de servidores de AnimeFLV
-    const normalizeUrl = (raw: string): string => {
-      let u = (raw || "").trim().replace(/\\/g, "");
-      if (u.includes("mega.nz/#!")) {
-        u = u.replace("mega.nz/#!", "mega.nz/embed/#!");
-      } else if (u.includes("mega.nz/file/")) {
-        u = u.replace("mega.nz/file/", "mega.nz/embed/");
-      } else if (u.includes("yourupload.com/watch/")) {
-        u = u.replace("yourupload.com/watch/", "yourupload.com/embed/");
-      } else if (u.includes("streamtape.com/v/")) {
-        u = u.replace("streamtape.com/v/", "streamtape.com/e/");
-      }
-      return u;
-    };
 
     // 1. var videos = { "SUB": [ ... ] }
     const videoObjectMatch = html.match(/var\s+videos\s*=\s*(\{.+?\});/s) || html.match(/videos\s*=\s*(\{.+?\});/s);
@@ -234,7 +648,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
             grp.forEach((srv: any) => {
               const link = srv.code || srv.url;
               if (link && typeof link === "string") {
-                const clean = normalizeUrl(link);
+                const clean = this.normalizeServerUrl(link);
                 if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
               }
             });
@@ -251,7 +665,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         if (Array.isArray(parsed)) {
           parsed.forEach((entry: any) => {
             if (Array.isArray(entry) && entry[1] && typeof entry[1] === "string") {
-              const clean = normalizeUrl(entry[1]);
+              const clean = this.normalizeServerUrl(entry[1]);
               if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
             }
           });
@@ -261,9 +675,16 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
 
     const standardStreams = this.extractEmbedsAndStreamsFromHtml($, html, baseUrl);
     standardStreams.forEach((st) => {
-      const clean = normalizeUrl(st);
+      const clean = this.normalizeServerUrl(st);
       if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
     });
+
+    // 4. WordPress theme: botones `button.iframe_code[data-src]` y `#iframeHolder[data-default-src]`
+    const wpServers = this.extractWordPressServers($);
+    for (const raw of wpServers) {
+      const clean = this.normalizeServerUrl(raw);
+      if (clean.startsWith("http") && !streams.includes(clean)) streams.push(clean);
+    }
 
     return streams;
   }
@@ -312,19 +733,22 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         if (animeInfoMatch) {
           try {
             const info = JSON.parse(animeInfoMatch[1]);
-            animeSlug = info[1] || "";
+            // anime_info = [id, titulo, slug]: el slug es el índice 2 (no el título)
+            animeSlug = String(info[2] || "").trim();
           } catch {}
         }
         if (!animeSlug) {
-          const parts = urlObj.pathname.split("/").filter(Boolean);
-          animeSlug = parts[parts.length - 1] || "anime";
+          const seg = urlObj.pathname.split("/").filter(Boolean).pop() || "anime";
+          animeSlug = decodeURIComponent(seg).toLowerCase().replace(/\s+/g, "-");
+        } else {
+          animeSlug = animeSlug.toLowerCase().replace(/\s+/g, "-");
         }
 
         if (Array.isArray(epData)) {
           const sorted = [...epData].sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0));
           sorted.forEach((ep) => {
             const epNum = ep[0];
-            const epUrl = `https://${urlObj.host}/ver/${animeSlug}-${epNum}`;
+            const epUrl = `https://${urlObj.host}/ver/${encodeURIComponent(`${animeSlug}-${epNum}`).replace(/%2D/g, "-")}`;
             extractedEpisodes.push({
               number: Number(epNum) || 1,
               title: `Episodio ${epNum}`,

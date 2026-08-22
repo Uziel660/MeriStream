@@ -243,9 +243,13 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const episodes = this.extractEpisodes(html, cleanUrl);
 
     let detectedStreams: string[] | undefined;
-    if (explicitType === "stream" || explicitType === "auto") {
+    if (!explicitType || explicitType === "stream" || explicitType === "auto") {
       try {
-        const streamResult = await this.extractStream(cleanUrl);
+        // Los players viven solo en páginas de episodio (/ver/...); en detalle
+        // decodeDataPlayers devuelve [] y el fallback genérico captura thumbnails.
+        const first = episodes[0];
+        const target = first ? first.url : cleanUrl;
+        const streamResult = await this.extractStream(target);
         detectedStreams = streamResult.all_available_streams;
       } catch {}
     }
@@ -294,9 +298,12 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     }
 
     const $ = cheerio.load(html);
+    // En páginas de episodio el primer <h1> es el botón "Reportar episodio":
+    // priorizar og:title (sin sufijo "- Latanime") y usar h1 solo como fallback.
     const title =
-      $("h1").first().text().trim() ||
       $('meta[property="og:title"]').attr("content")?.replace(/\s*[-–—]\s*Latanime\s*$/i, "").trim() ||
+      $("h2").filter((_, el) => /-\s*\d+\s*$/.test($(el).text())).first().text().replace(/\s*-\s*\d+\s*$/, "").trim() ||
+      $("h1").first().text().trim() ||
       undefined;
 
     const iframeUrls = this.decodeDataPlayers(html);

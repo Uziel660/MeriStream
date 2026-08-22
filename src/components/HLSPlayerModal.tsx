@@ -83,7 +83,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
-  const lastFailoverTimeRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
 
   // Estados de Servidores y Selección Inteligente
@@ -255,13 +254,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (index >= servers.length || index < 0) return;
 
     if (isAutoFailover) {
-      const now = Date.now();
-      // Prevenir bucles rápidos de failover en menos de 2000ms o más de 2 fallos consecutivos
-      if (now - lastFailoverTimeRef.current < 2000 || autoFailoverCountRef.current >= 2) {
+      if (autoFailoverCountRef.current >= servers.length) {
         setPlaybackError('No se pudo reproducir automáticamente este video. Por favor selecciona un servidor en la lista superior.');
         return;
       }
-      lastFailoverTimeRef.current = now;
       autoFailoverCountRef.current += 1;
     } else {
       // Selección manual del usuario: resetear contador
@@ -313,6 +309,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const isHls = url.includes('.m3u8') || url.includes('/m3u8/');
 
+    let finalUrl = url;
+    if (url.startsWith('http') && !url.includes('/api/v1/proxy/stream') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      const apiHost = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3005';
+      // El referer se elige por host; el backend además fuerza el correcto para
+      // hosts con hotlink-protection (mp4upload exige su propio dominio).
+      const lowerUrl = url.toLowerCase();
+      const refererForHost = lowerUrl.includes('mp4upload.com')
+        ? 'https://www.mp4upload.com/'
+        : lowerUrl.includes('latanime.org')
+          ? 'https://latanime.org/'
+          : 'https://animeflv.or.at/';
+      finalUrl = `${apiHost}/api/v1/proxy/stream?referer=${encodeURIComponent(refererForHost)}&url=${encodeURIComponent(url)}`;
+    }
+
     if (isHls && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
@@ -323,7 +333,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       });
 
       hlsRef.current = hls;
-      hls.loadSource(url);
+      hls.loadSource(finalUrl);
       hls.attachMedia(video);
 
       // Cuando se analiza el manifiesto, extraemos las calidades e iniciamos en la más alta
@@ -403,7 +413,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
       });
         } else if (video.canPlayType('application/vnd.apple.mpegurl') || true) { // the || true handles the generic else case
-      video.src = url;
+      video.src = finalUrl;
       const onLoadedMetadata = () => {
         if (props.initialTime && props.initialTime > 0) {
           video.currentTime = props.initialTime;
@@ -433,10 +443,30 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (!activeServer || !activeServer.isEmbed) return;
     if (activeServer.url.includes("mega.nz/embed")) return;
 
+    const isPlaceholderUrl = (u: string) => {
+      const lower = u.toLowerCase();
+      return (
+        lower.includes('big_buck_bunny') ||
+        lower.includes('big-buck-bunny') ||
+        lower.includes('bigbuckbunny') ||
+        lower.endsWith('_5mb.mp4')
+      );
+    };
+
     api.resolveEmbed(activeServer.url)
       .then((res) => {
         if (cancelled || !res || !res.resolved || !res.url) return;
-        
+
+        // El host sirve un demo placeholder (ej. VOE -> Big Buck Bunny): failover al siguiente server
+        if (isPlaceholderUrl(res.url)) {
+          if (activeServerIndex < servers.length - 1) {
+            setFailoverNotice('Servidor sin contenido real, cambiando de servidor...');
+            setTimeout(() => setFailoverNotice(null), 3000);
+            handleServerChange(activeServerIndex + 1, true);
+          }
+          return;
+        }
+
         // ¡El servidor logró extraer el .m3u8 o .mp4 nativo! Actualizamos el servidor a modo nativo
         setServers((prev) => {
           const copy = [...prev];
@@ -462,7 +492,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed]);
+  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed, servers.length]);
 
   // 4. EVENT LISTENERS DEL ELEMENTO VIDEO
   useEffect(() => {
@@ -712,7 +742,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl p-0 sm:p-4 select-none animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl p-0 sm:p-4 select-none animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       onMouseMove={showControlsTemporarily}

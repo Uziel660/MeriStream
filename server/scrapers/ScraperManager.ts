@@ -6,6 +6,11 @@ import { AnimeFlvAdapter } from "./adapters/AnimeFlvAdapter";
 import { GenericAdapter } from "./adapters/GenericAdapter";
 import { LaMovieAdapter } from "./adapters/LaMovieAdapter";
 import { LatAnimeAdapter } from "./adapters/LatAnimeAdapter";
+import { TioAnimeAdapter } from "./adapters/TioAnimeAdapter";
+import { TioPlusAdapter } from "./adapters/TioPlusAdapter";
+import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
+import { CinecalidadAdapter } from "./adapters/CinecalidadAdapter";
+import { VerAnimesAdapter } from "./adapters/VerAnimesAdapter";
 
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
 
@@ -24,7 +29,11 @@ export class ScraperManager {
     this.registerAdapter(new AnimeFlvAdapter());
     this.registerAdapter(new LaMovieAdapter());
     this.registerAdapter(new LatAnimeAdapter());
-
+    this.registerAdapter(new TioAnimeAdapter());
+    this.registerAdapter(new TioPlusAdapter());
+    this.registerAdapter(new TubePelisAdapter());
+    this.registerAdapter(new CinecalidadAdapter());
+    this.registerAdapter(new VerAnimesAdapter());
   }
 
   public static getInstance(): ScraperManager {

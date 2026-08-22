@@ -522,7 +522,7 @@ export function App() {
           setPlayingStreamData({
             title: streamResult.title,
             streamUrl: streamResult.stream_url,
-            all_streams: streamResult.all_streams,
+            all_streams: streamResult.all_streams || streamResult.all_available_streams,
           });
         }}
       />

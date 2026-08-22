@@ -16,14 +16,27 @@ import {
 import { prisma } from "./server/db";
 import { EmbedResolvers } from "./server/resolvers";
 import { playwrightResolver } from "./server/playwrightResolver";
+import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
+import { pipeline } from "node:stream/promises";
+import { request } from "undici";
+
+// Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
+const stealthClient = new ImpitHttpClient({
+  browser: Browser.Chrome,
+  http3: false,
+  ignoreTlsErrors: true
+});
+
+const CHUNK_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_NETWORK_RETRIES = 3;
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3005;
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
-    : ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"];
+    : ["http://localhost:3005", "http://localhost:5173", "http://127.0.0.1:3005", "http://127.0.0.1:5173"];
 
   app.use(
     cors({
@@ -277,7 +290,11 @@ async function startServer() {
 
       // 2. Capa Avanzada: Playwright Headless Sniffer (Solo para embeds difíciles como VOE, Filemoon, etc.)
       const playwrightUrl = await playwrightResolver.resolve(rawUrl);
-      if (playwrightUrl && EmbedResolvers.isDirectMediaUrl(playwrightUrl)) {
+      if (
+        playwrightUrl &&
+        EmbedResolvers.isDirectMediaUrl(playwrightUrl) &&
+        !EmbedResolvers.isPlaceholderUrl(playwrightUrl)
+      ) {
         return res.json({
           url: playwrightUrl,
           original_url: rawUrl,
@@ -388,40 +405,249 @@ async function startServer() {
       }
 
       // We use the original targetUrl to maintain TLS/SNI integrity.
-      // While this technically allows a narrow TOCTOU (DNS Rebinding) window,
-      // preventing DNS rebinding in Node fetch without breaking TLS requires custom Agents
-      // which is out of scope for a basic < 20 loc fix.
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Referer: referer,
-        },
-      });
+      // Goodstream (hls*/enc*.goodstream.one): el token del m3u8 se firma contra el
+      // User-Agent EXACTO del embed (Chrome/124). Además su nginx rechaza requests sin
+      // headers fetch estándar (accept/accept-language/sec-fetch-mode) con 403, y no
+      // tolera Referer. Por eso la rama goodstream usa este set exacto vía undici.
+      const lowerForHeaders = targetUrl.toLowerCase();
+      const isGoodstream = lowerForHeaders.includes("goodstream.one");
+      // MP4Upload tiene hotlink-protection: exige Referer de su propio dominio
+      // (p.ej. el mp4 directo de latanime llega con referer=latanime.org y da 403;
+      // con www.mp4upload.com responde 206). Verificado con curl el 2026-08-22.
+      const isMp4Upload = lowerForHeaders.includes("mp4upload.com");
+      const reqHeaders: any = isGoodstream
+        ? {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "*/*",
+            "Accept-Language": "*",
+            "Sec-Fetch-Mode": "cors",
+          }
+        : {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Referer: isMp4Upload ? "https://www.mp4upload.com/" : referer,
+          };
 
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "*");
 
-      const contentType = response.headers.get("content-type") || "application/vnd.apple.mpegurl";
-      res.setHeader("Content-Type", contentType);
+      const lowerTargetUrl = targetUrl.toLowerCase();
+      const isHlsResource =
+        lowerTargetUrl.includes('.m3u8') ||
+        lowerTargetUrl.includes('.ts') ||
+        lowerTargetUrl.includes('.m4s') ||
+        lowerTargetUrl.includes('/segs/') ||
+        lowerTargetUrl.includes('/m3u8/');  // Zilla Networks: /m3u8/{hash} format
 
-      if (!response.body) {
-        return res.end();
-      }
+      if (isHlsResource) {
+        if (req.headers.range) reqHeaders.Range = req.headers.range;
 
-      // @ts-ignore
-      const reader = response.body.getReader();
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(Buffer.from(value));
+        let upstreamStatus: number;
+        let responseHeaders: any;
+        let rawBody: any;
+
+        // Goodstream valida el token contra la huella HTTP/2 del cliente que pidió el
+        // embed. El fingerprint Chrome de impit (Rust) es rechazado con 403, mientras
+        // que undici/node-fetch nativo pasa. Para ese host usamos undici en la rama HLS.
+        if (isGoodstream) {
+          const upstream = await request(targetUrl, {
+            method: 'GET',
+            headers: reqHeaders,
+            headersTimeout: 15000,
+            bodyTimeout: 30000,
+          });
+          upstreamStatus = upstream.statusCode;
+          responseHeaders = upstream.headers;
+          const chunks: Buffer[] = [];
+          for await (const ch of upstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
+          rawBody = Buffer.concat(chunks);
+        } else {
+          // Impit's sendRequest with responseType:'buffer' always returns a Node.js
+          // Buffer (ResponseTypes['buffer'] = Buffer). Defensive normalization kept.
+          const response = await stealthClient.sendRequest({
+            url: targetUrl,
+            method: 'GET',
+            headers: reqHeaders,
+            responseType: 'buffer'
+          } as any);
+          upstreamStatus = response.statusCode ?? 0;
+          responseHeaders = response.headers || {};
+          rawBody = response.body;
         }
-        res.end();
-      };
-      await pump();
+
+        // Normalize SimpleHeaders → string. They can be string | string[] | undefined.
+        const getHeader = (name: string): string => {
+          const v = responseHeaders[name];
+          return v === undefined ? '' : Array.isArray(v) ? v[0] : String(v);
+        };
+
+        const contentType = getHeader('content-type').toLowerCase();
+        const bodyBuffer = Buffer.isBuffer(rawBody)
+          ? rawBody
+          : rawBody instanceof ArrayBuffer
+            ? Buffer.from(rawBody)
+            : ArrayBuffer.isView(rawBody)
+              ? Buffer.from(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength)
+              : Buffer.from(rawBody ?? '');
+        const isManifest = lowerTargetUrl.includes('.m3u8') || contentType.includes('mpegurl');
+
+        // ── UPSTREAM ERROR PROPAGATION ──
+        // If the upstream returned an error (e.g. Cloudflare 403, Zilla WAF block),
+        // forward the status and body as-is so the client gets meaningful feedback
+        // instead of re-sending an HTML error page disguised as a valid m3u8.
+        if (upstreamStatus < 200 || upstreamStatus >= 400) {
+          console.warn(`[proxy/stream] upstream ${upstreamStatus} for ${targetUrl.slice(0, 120)}`);
+          res.status(upstreamStatus);
+          if (getHeader('content-type')) res.setHeader('Content-Type', getHeader('content-type'));
+          if (bodyBuffer.length > 0) res.setHeader('Content-Length', bodyBuffer.length);
+          return res.end(bodyBuffer);
+        }
+
+        res.status(upstreamStatus);
+        res.setHeader('Content-Type', contentType || (isManifest ? 'application/vnd.apple.mpegurl' : 'application/octet-stream'));
+
+        if (!isManifest) {
+          const cr = getHeader('content-range');
+          const ar = getHeader('accept-ranges');
+          if (cr) res.setHeader('Content-Range', cr);
+          if (ar) res.setHeader('Accept-Ranges', ar);
+          // Zilla sirve segmentos .html con Content-Type text/html aunque son MP4/TS binarios.
+          // Corregir content-types mentirosos para que MSE/HLS.js acepte el buffer.
+          const looksBinary = bodyBuffer.length > 8 &&
+            (bodyBuffer.subarray(4, 8).toString('latin1') === 'ftyp' ||  // MP4 (ftyp en offset 4)
+             (bodyBuffer[0] === 0x47 && bodyBuffer[188] === 0x47));       // MPEG-TS (sync bytes)
+          if (contentType.includes('text/html') && looksBinary) {
+            res.setHeader('Content-Type', 'video/mp4');
+          }
+          res.setHeader('Content-Length', bodyBuffer.length);
+          return res.end(bodyBuffer);
+        }
+
+        // ── M3U8 MANIFEST REWRITE ──
+        const text = bodyBuffer.toString('utf8');
+        const baseUrl = new URL(targetUrl);
+        const proxyUri = (uri: string) => {
+          const absoluteUri = /^https?:\/\//i.test(uri) ? uri : new URL(uri, baseUrl).toString();
+          return `/api/v1/proxy/stream?referer=${encodeURIComponent(referer)}&url=${encodeURIComponent(absoluteUri)}`;
+        };
+        const rewritten = text.split(/\r?\n/).map((line) => {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) return proxyUri(trimmed);
+          return line.replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${proxyUri(uri)}"`);
+        }).join('\n');
+
+        // Content-Length must be recalculated after rewriting (URLs are longer via proxy).
+        const rewrittenBuffer = Buffer.from(rewritten, 'utf8');
+        res.setHeader('Content-Length', rewrittenBuffer.length);
+        return res.end(rewrittenBuffer);
+      } else {
+        // MP4/manual range proxy. Each internal chunk must contain exactly the requested
+        // range; accepting a 200 here would append the whole file repeatedly and corrupt it.
+        const clientRangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
+        const metadataResponse = await request(targetUrl, { method: 'HEAD', headers: reqHeaders });
+        const contentLengthHeader = metadataResponse.headers['content-length'];
+
+        if (!contentLengthHeader) {
+          const upstream = await request(targetUrl, {
+            method: 'GET',
+            headers: clientRangeHeader ? { ...reqHeaders, Range: clientRangeHeader } : reqHeaders,
+            bodyTimeout: 0,
+          });
+          res.status(upstream.statusCode);
+          for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges'] as const) {
+            const value = upstream.headers[header];
+            if (value !== undefined) res.setHeader(header, String(value));
+          }
+          await pipeline(upstream.body, res);
+          return;
+        }
+
+        const totalFileSize = Number(contentLengthHeader);
+        if (!Number.isSafeInteger(totalFileSize) || totalFileSize <= 0) {
+          return res.status(502).json({ error: 'El origen devolvió un Content-Length inválido' });
+        }
+
+        let startOffset = 0;
+        let finalEndOffset = totalFileSize - 1;
+        if (clientRangeHeader) {
+          const match = /^bytes=(\d*)-(\d*)$/i.exec(clientRangeHeader.trim());
+          if (!match || (!match[1] && !match[2])) {
+            res.setHeader('Content-Range', `bytes */${totalFileSize}`);
+            return res.status(416).end();
+          }
+          if (!match[1]) {
+            const suffixLength = Number(match[2]);
+            startOffset = Math.max(0, totalFileSize - suffixLength);
+          } else {
+            startOffset = Number(match[1]);
+            if (match[2]) finalEndOffset = Math.min(Number(match[2]), totalFileSize - 1);
+          }
+        }
+
+        if (startOffset >= totalFileSize || finalEndOffset < startOffset) {
+          res.setHeader('Content-Range', `bytes */${totalFileSize}`);
+          return res.status(416).end();
+        }
+
+        const computedContentLength = finalEndOffset - startOffset + 1;
+        res.status(clientRangeHeader ? 206 : 200);
+        if (clientRangeHeader) res.setHeader('Content-Range', `bytes ${startOffset}-${finalEndOffset}/${totalFileSize}`);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Content-Length', computedContentLength);
+        res.setHeader('Content-Type', String(metadataResponse.headers['content-type'] || 'video/mp4'));
+
+        let cursor = startOffset;
+        while (cursor <= finalEndOffset && !res.destroyed) {
+          const chunkBoundary = Math.min(cursor + CHUNK_SIZE_BYTES - 1, finalEndOffset);
+          let lastError: Error | null = null;
+
+          for (let attempt = 1; attempt <= MAX_NETWORK_RETRIES; attempt++) {
+            try {
+              const upstream = await request(targetUrl, {
+                method: 'GET',
+                headers: { ...reqHeaders, Range: `bytes=${cursor}-${chunkBoundary}` },
+                headersTimeout: 15000,
+                bodyTimeout: 30000,
+              });
+              if (upstream.statusCode !== 206) {
+                // destroy() puede emitir 'error' no manejado (UND_ERR_ABORTED) y tumbar el
+                // proceso si el cliente ya abortó; consumir el error antes de destruir.
+                upstream.body.on('error', () => {});
+                upstream.body.destroy();
+                throw new Error(`El origen ignoró Range (status ${upstream.statusCode})`);
+              }
+
+              upstream.body.on('error', () => {});
+              let received = 0;
+              for await (const piece of upstream.body) {
+                const buffer = Buffer.isBuffer(piece) ? piece : Buffer.from(piece);
+                received += buffer.length;
+                if (!res.write(buffer)) await new Promise<void>((resolve) => res.once('drain', resolve));
+              }
+              const expected = chunkBoundary - cursor + 1;
+              if (received !== expected) throw new Error(`Chunk incompleto: ${received}/${expected} bytes`);
+              lastError = null;
+              break;
+            } catch (error: any) {
+              lastError = error;
+              if (attempt < MAX_NETWORK_RETRIES) {
+                await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+              }
+            }
+          }
+
+          if (lastError) throw lastError;
+          cursor = chunkBoundary + 1;
+        }
+        if (!res.destroyed) res.end();
+      }
     } catch (e: any) {
-      res.status(500).json({ error: `Error en proxy: ${e.message}` });
+      console.error(`[proxy/stream] Error para ${targetUrl?.slice(0, 100)}:`, e.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: `Error en proxy: ${e.message}` });
+      } else if (!res.writableEnded) {
+        res.end();
+      }
     }
   });
 

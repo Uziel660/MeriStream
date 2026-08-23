@@ -239,6 +239,65 @@ export function App() {
     [shows]
   );
 
+  // Algoritmo de Recomendación Inteligente basado en el historial de Continue Watching
+  const { recommendedShows, topGenre } = useMemo(() => {
+    if (!continueWatchingItems || continueWatchingItems.length === 0 || shows.length === 0) {
+      return { recommendedShows: [], topGenre: null };
+    }
+
+    // 1. Contar frecuencia de géneros vistos recientemente
+    const genreScore: Record<string, number> = {};
+    const watchedShowIds = new Set(continueWatchingItems.map((item) => item.showId));
+
+    continueWatchingItems.forEach((item) => {
+      const show = shows.find((s) => s.id === item.showId);
+      if (show && Array.isArray(show.genres)) {
+        show.genres.forEach((g) => {
+          const clean = g.trim();
+          if (
+            clean &&
+            clean.toLowerCase() !== 'anime' &&
+            clean.toLowerCase() !== 'película' &&
+            clean.toLowerCase() !== 'serie'
+          ) {
+            genreScore[clean] = (genreScore[clean] || 0) + 1;
+          }
+        });
+      }
+    });
+
+    // Encontrar el género dominante
+    let maxGenre = '';
+    let maxCount = 0;
+    for (const [genre, count] of Object.entries(genreScore)) {
+      if (count > maxCount) {
+        maxCount = count;
+        maxGenre = genre;
+      }
+    }
+
+    if (!maxGenre) {
+      return { recommendedShows: [], topGenre: null };
+    }
+
+    // 2. Filtrar shows que compartan ese género y que no hayan sido vistos aún
+    const recommendations = shows.filter((s) => {
+      if (watchedShowIds.has(s.id)) return false;
+      const genresStr = Array.isArray(s.genres)
+        ? s.genres.join(' ').toLowerCase()
+        : String(s.genres || '').toLowerCase();
+      return genresStr.includes(maxGenre.toLowerCase());
+    });
+
+    // Ordenar por rating
+    const sorted = [...recommendations].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+
+    return {
+      recommendedShows: sorted.slice(0, 10),
+      topGenre: maxGenre,
+    };
+  }, [continueWatchingItems, shows]);
+
   const featuredShow = filteredShows.length > 0 ? filteredShows[0] : (shows.length > 0 ? shows[0] : null);
 
   return (
@@ -338,6 +397,17 @@ export function App() {
                         const target = shows.find((s) => s.id === showId);
                         if (target) handleOpenDetails(target);
                       }}
+                    />
+                  )}
+
+                  {/* RECOMENDACIONES PERSONALIZADAS POR GÉNERO CONSUMIDO */}
+                  {recommendedShows.length > 0 && topGenre && (
+                    <MediaRow
+                      title={`Porque te gusta ${topGenre}`}
+                      items={recommendedShows}
+                      onSelectMedia={handleOpenDetails}
+                      onHoverMedia={handleHoverMedia}
+                      isLoading={isLoading}
                     />
                   )}
 

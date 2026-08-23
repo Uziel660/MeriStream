@@ -3,6 +3,7 @@ import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { unpackGeneric, extractMediaUrlsFromCode } from "../utils/jsUnpacker";
 import { EmbedResolvers } from "../../resolvers";
+import { VimeosResolver } from "../vimeosResolver";
 
 /**
  * Adaptador para lamovie.org - Extrae catálogo de sitemaps XML, detalles de páginas estáticas,
@@ -12,6 +13,26 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   readonly id = "lamovie";
   readonly name = "LaMovie (Películas, Series, Animes)";
   readonly supportedDomains = ["lamovie.org", "lamovie.to", "lamovie.ws"];
+
+  /** Hosts de descarga directa (no exponen stream embebido): no intentar resolver */
+  private static readonly DOWNLOAD_HOSTS = ["1fichier.com", "megaup.net"];
+
+  private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
+    /cfglobalcdn\.com/i,
+    /yourupload\.com/i,
+    /streamtape\./i,
+    /dsvplay\.com/i,
+    /savefiles\.com/i,
+    /d-s\.io/i,
+    /a\d+\.mp4upload\.com/i,
+    /vidcache\.net/i,
+    /my\.mail\.ru/i,
+    /v\.tioanime\.com/i,
+  ];
+
+  private static isDeadOrBlocked(url: string): boolean {
+    return LaMovieAdapter.DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
+  }
 
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
@@ -405,25 +426,50 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         }
       }
 
-      // Resolver iframes para streams directos manteniendo siempre los embeds disponibles
+      const isDownloadHost = (u: string) =>
+        LaMovieAdapter.DOWNLOAD_HOSTS.some((h) => u.toLowerCase().includes(h));
+
+      // Resolver iframes en paralelo preservando el orden original (los hosts
+      // muertos queman su timeout sin bloquear a los vivos). Los hosts de
+      // descarga (páginas HTML, no video) se excluyen del resultado.
+      const resolved = await Promise.all(
+        embedUrls.map(async (embedUrl) => {
+          const isDownload = isDownloadHost(embedUrl);
+          const isEmbedPage =
+            !embedUrl.includes(".m3u8") &&
+            !embedUrl.includes(".mp4") &&
+            !embedUrl.startsWith("magnet:") &&
+            !isDownload;
+
+          let direct: string | null = null;
+          if (isEmbedPage) {
+            if (VimeosResolver.isVimeosUrl(embedUrl)) {
+              const urls = await VimeosResolver.resolveVimeos(embedUrl);
+              if (urls.length > 0) direct = urls[0];
+            } else {
+              const meta = await EmbedResolvers.resolveWithMeta(embedUrl);
+              if (meta.resolved && meta.url && !EmbedResolvers.isPlaceholderUrl(meta.url)) {
+                direct = meta.url;
+              }
+            }
+          }
+
+          return { embedUrl, isDownload, direct };
+        })
+      );
+
       const directStreams: string[] = [];
       const embedStreams: string[] = [];
+      for (const { embedUrl, isDownload, direct } of resolved) {
+        if (isDownload) continue;
 
-      for (const embedUrl of embedUrls) {
-        if (embedUrl.includes(".m3u8") || embedUrl.includes(".mp4") || embedUrl.startsWith("magnet:")) {
-          if (!directStreams.includes(embedUrl)) {
-            directStreams.push(embedUrl);
-          }
-        } else {
-          const meta = await EmbedResolvers.resolveWithMeta(embedUrl);
-          if (meta.resolved && meta.url && !directStreams.includes(meta.url)) {
-            directStreams.push(meta.url);
-          }
+        if (direct && !LaMovieAdapter.isDeadOrBlocked(direct) && !directStreams.includes(direct)) {
+          directStreams.push(direct);
+        }
 
-          // Siempre mantener el reproductor embed como alternativa 100% funcional
-          if (!embedStreams.includes(embedUrl)) {
-            embedStreams.push(embedUrl);
-          }
+        // Siempre mantener el reproductor embed como alternativa 100% funcional
+        if (!LaMovieAdapter.isDeadOrBlocked(embedUrl) && !embedStreams.includes(embedUrl)) {
+          embedStreams.push(embedUrl);
         }
       }
 
@@ -438,7 +484,8 @@ export class LaMovieAdapter extends BaseScraperAdapter {
           undefined;
       }
 
-      const finalStreams = directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
+      const finalStreams =
+        directStreams.length > 0 ? [...directStreams, ...embedStreams] : embedStreams;
 
       return {
         stream_url: finalStreams[0] || cleanUrl,

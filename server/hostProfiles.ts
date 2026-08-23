@@ -25,6 +25,12 @@ export interface HostProfile {
   extraHeaders?: Record<string, string>;
   /** Cliente HTTP a usar: undici (fetch nativo) o stealth (impit) */
   client?: "undici" | "stealth";
+  /**
+   * Timeout de conexión (TCP+TLS handshake) en ms que se pasa como connectTimeout
+   * al request de undici. Default de undici: 10s. Elevarlo para hosts cuyo WAF
+   * tarda mucho en completar el handshake (MP4Upload llega a ~35s).
+   */
+  connectTimeoutMs?: number;
 }
 
 export const CHROME_124_UA =
@@ -37,6 +43,28 @@ export const CHROME_120_UA =
  * Cada entrada está verificada con curl contra el host real.
  */
 export const HOST_PROFILES: HostProfile[] = [
+  {
+    // TurboViPlay/TurboSPlayer (cadena HLS de tioplus.app, verificado 2026-08-22):
+    // hoy no validan Referer (200 con cualquiera), pero reciben uno ajeno
+    // (animeflv.*) vía passthrough. Perfil preventivo: imitar al usuario legítimo
+    // de tioplus.app antes de que activen hotlink-protection (patrón MP4Upload).
+    match: ["turboviplay.com", "turbosplayer.com"],
+    refererMode: "fixed",
+    referer: "https://tioplus.app/",
+  },
+  {
+    // Zilla Networks (2026-08-22): Cloudflare activó WAF sobre /segs/* que
+    // rechaza con 403 toda request sin Sec-Fetch-Site; con "same-origin"
+    // pasa incluso sin UA ni Referer. Verificado por bisección con curl.
+    match: ["zilla-networks.com"],
+    refererMode: "none",
+    extraHeaders: {
+      Accept: "*/*",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+    },
+    client: "undici",
+  },
   {
     // Goodstream: token firmado contra UA Chrome/124 exacto del embed; nginx
     // rechaza con 403 cualquier request CON Referer o sin headers fetch estándar.
@@ -58,6 +86,9 @@ export const HOST_PROFILES: HostProfile[] = [
     refererMode: "fixed",
     referer: "https://www.mp4upload.com/",
     userAgent: CHROME_120_UA,
+    // TLS handshake puede tardar ~35s; el default de undici (10s) corta la
+    // conexión antes de recibir respuesta (UND_ERR_CONNECT_TIMEOUT).
+    connectTimeoutMs: 35000,
   },
 ];
 

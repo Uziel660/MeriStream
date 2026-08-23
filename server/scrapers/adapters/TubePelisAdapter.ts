@@ -6,6 +6,22 @@ import { MediaValidator } from "../../validator";
 
 const BASE_URL = "https://tubepelis.com";
 
+const DEAD_OR_BLOCKED_HOST_PATTERNS = [
+  /cfglobalcdn\.com/i,
+  /yourupload\.com/i,
+  /streamtape\./i,
+  /dsvplay\.com/i,
+  /savefiles\.com/i,
+  /d-s\.io/i,
+  /a\d+\.mp4upload\.com/i,
+  /vidcache\.net/i,
+  /my\.mail\.ru/i,
+  /v\.tioanime\.com/i,
+];
+
+const isDeadOrBlocked = (url: string) =>
+  DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
+
 /**
  * Adaptador para tubepelis.com (películas)
  *
@@ -276,7 +292,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
     const candidates: string[] = [];
     for (const { embedUrl, resolved } of resolutions) {
       const candidate = resolved || embedUrl;
-      if (candidate.startsWith("http") && !candidates.includes(candidate)) {
+      if (candidate.startsWith("http") && !isDeadOrBlocked(candidate) && !candidates.includes(candidate)) {
         candidates.push(candidate);
       }
     }
@@ -284,7 +300,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
     const validStreams = await MediaValidator.validateUrls(candidates);
     // Fallback: si el validador descarta todo (hosts desconocidos como playmogo/dood
     // con captcha), conservamos los embeds decodificados para no quedarnos sin failover.
-    const finalStreams = validStreams.length > 0 ? validStreams : candidates;
+    const finalStreams = (validStreams.length > 0 ? validStreams : candidates).filter((s) => !isDeadOrBlocked(s));
 
     return {
       stream_url: finalStreams[0] || "",

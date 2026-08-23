@@ -3,7 +3,14 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES } from "./server/universalScraper";
+import {
+  analyzeUniversalUrl,
+  extractStreamFromUrl,
+  PRESET_SOURCES,
+  getActivePresets,
+  saveCustomPresetOverride,
+  resetCustomPresetOverride,
+} from "./server/universalScraper";
 import { cleanQueryTitle } from "./server/metadataEngine";
 import { taskWorker } from "./server/taskWorker";
 import {
@@ -414,6 +421,17 @@ async function startServer() {
         typeof req.headers.range === "string" ? req.headers.range : undefined
       );
       const isGoodstream = activeProfile.client === "undici";
+      // Timeout de conexión (TCP+TLS) opcional del perfil (p.ej. MP4Upload ~35s de
+      // handshake). En undici el timer de headersTimeout arranca antes de completar
+      // el connect, así que debe elevarse junto al connectTimeout o corta igual.
+      const profileConnect = activeProfile.connectTimeoutMs;
+      const profileConnectOpts =
+        profileConnect !== undefined
+          ? {
+              connectTimeout: profileConnect,
+              headersTimeout: profileConnect + 5000,
+            }
+          : {};
 
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
@@ -441,6 +459,7 @@ async function startServer() {
             headers: reqHeaders,
             headersTimeout: 15000,
             bodyTimeout: 30000,
+            ...profileConnectOpts,
           });
           upstreamStatus = upstream.statusCode;
           responseHeaders = upstream.headers;
@@ -530,7 +549,7 @@ async function startServer() {
         // MP4/manual range proxy. Each internal chunk must contain exactly the requested
         // range; accepting a 200 here would append the whole file repeatedly and corrupt it.
         const clientRangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
-        const metadataResponse = await request(targetUrl, { method: 'HEAD', headers: reqHeaders });
+        const metadataResponse = await request(targetUrl, { method: 'HEAD', headers: reqHeaders, ...profileConnectOpts });
         const contentLengthHeader = metadataResponse.headers['content-length'];
 
         if (!contentLengthHeader) {
@@ -538,6 +557,7 @@ async function startServer() {
             method: 'GET',
             headers: clientRangeHeader ? { ...reqHeaders, Range: clientRangeHeader } : reqHeaders,
             bodyTimeout: 0,
+            ...profileConnectOpts,
           });
           res.status(upstream.statusCode);
           for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges'] as const) {
@@ -594,6 +614,7 @@ async function startServer() {
                 headers: { ...reqHeaders, Range: `bytes=${cursor}-${chunkBoundary}` },
                 headersTimeout: 15000,
                 bodyTimeout: 30000,
+                ...profileConnectOpts,
               });
               if (upstream.statusCode !== 206) {
                 // destroy() puede emitir 'error' no manejado (UND_ERR_ABORTED) y tumbar el
@@ -637,9 +658,33 @@ async function startServer() {
     }
   });
 
-  // Scraper Presets Endpoint
+  // Scraper Presets Endpoints (Persistencia Global en Servidor)
   app.get("/api/v1/scraper/presets", (req: Request, res: Response) => {
-    res.json(PRESET_SOURCES);
+    res.json(getActivePresets());
+  });
+
+  app.post(["/api/v1/scraper/presets/:id", "/api/v1/scraper/presets/:id/update"], (req: Request, res: Response) => {
+    const presetId = req.params.id;
+    const exampleUrl = typeof req.body?.example_url === "string" ? req.body.example_url.trim() : "";
+    if (!exampleUrl) {
+      return res.status(400).json({ detail: "El campo 'example_url' es requerido." });
+    }
+    saveCustomPresetOverride(presetId, exampleUrl);
+    res.json({
+      status: "ok",
+      message: "Enlace del preset guardado exitosamente en el servidor para todos los usuarios.",
+      presets: getActivePresets(),
+    });
+  });
+
+  app.post("/api/v1/scraper/presets/:id/reset", (req: Request, res: Response) => {
+    const presetId = req.params.id;
+    resetCustomPresetOverride(presetId);
+    res.json({
+      status: "ok",
+      message: "Enlace del preset restablecido a su valor por defecto.",
+      presets: getActivePresets(),
+    });
   });
 
   // POST /api/v1/catalog/analyze - Universal Scraper & Metadata Enricher
@@ -654,6 +699,48 @@ async function startServer() {
       res.json(analysis);
     } catch (e: any) {
       res.status(500).json({ detail: `Error analizando: ${e.message}` });
+    }
+  });
+
+  // POST /api/v1/catalog/episode-servers - Resolución Just-In-Time de los servidores
+  // reales de video de una PÁGINA de episodio (ej. animeflv /ver/{slug}-{n}, que solo
+  // expone embeds vía JS o espejo jkanime). Devuelve streams reproducibles sin tocar DB.
+  app.post("/api/v1/catalog/episode-servers", async (req: Request, res: Response) => {
+    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!url) {
+      return res.status(400).json({ detail: "URL del episodio requerida." });
+    }
+
+    try {
+      const extracted = await extractStreamFromUrl(url);
+      const all = Array.from(
+        new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+      );
+
+      // El adaptador devuelve la propia página como pseudo-stream cuando no encuentra nada:
+      // eso NO cuenta como resolución (el player nativo moriría con MEDIA_ERR_SRC_NOT_SUPPORTED).
+      const isSourcePage = (u: string) => {
+        try {
+          const pathname = new URL(u).pathname.toLowerCase();
+          return (
+            /\/(ver|watch|episode|ep|capitulo)\//.test(pathname) &&
+            !/\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u)
+          );
+        } catch {
+          return false;
+        }
+      };
+
+      const realStreams = all.filter((u) => u !== url && !isSourcePage(u));
+      res.json({
+        url,
+        stream_url: extracted.stream_url,
+        all_available_streams: all,
+        title: extracted.title,
+        resolved: realStreams.length > 0,
+      });
+    } catch (e: any) {
+      res.status(500).json({ detail: `Error resolviendo servidores del episodio: ${e.message}` });
     }
   });
 

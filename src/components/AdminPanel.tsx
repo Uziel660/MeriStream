@@ -55,6 +55,78 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   // --- Presets ---
   const [presets, setPresets] = useState<ScraperPreset[]>([]);
+  const [editingPreset, setEditingPreset] = useState<ScraperPreset | null>(null);
+  const [editingUrlInput, setEditingUrlInput] = useState('');
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+
+  const loadPresets = async () => {
+    try {
+      const res = await fetch('/api/v1/scraper/presets');
+      if (res.ok) {
+        const data: ScraperPreset[] = await res.json();
+        setPresets(data);
+      }
+    } catch (e) {
+      console.error('Error cargando presets:', e);
+    }
+  };
+
+  const handleSaveCustomPresetUrl = async (presetId: string, newUrl: string) => {
+    const trimmed = newUrl.trim();
+    if (!trimmed) return;
+    setIsSavingPreset(true);
+    try {
+      const res = await fetch(`/api/v1/scraper/presets/${presetId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ example_url: trimmed }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.presets) {
+          setPresets(data.presets);
+        } else {
+          await loadPresets();
+        }
+        setImportMessage('Enlace guardado globalmente en el servidor para todos los usuarios.');
+        setEditingPreset(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al guardar en el servidor');
+      }
+    } catch (e: any) {
+      setAnalysisError(e.message || 'Error al guardar el preset');
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
+
+  const handleResetCustomPresetUrl = async (presetId: string) => {
+    setIsSavingPreset(true);
+    try {
+      const res = await fetch(`/api/v1/scraper/presets/${presetId}/reset`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.presets) {
+          setPresets(data.presets);
+          const found = data.presets.find((p: ScraperPreset) => p.id === presetId);
+          if (found) setEditingUrlInput(found.example_url);
+        } else {
+          await loadPresets();
+        }
+        setImportMessage('Enlace restablecido al valor original en el servidor.');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al restablecer preset en el servidor');
+      }
+    } catch (e: any) {
+      setAnalysisError(e.message || 'Error al restablecer preset');
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
 
   // --- Explorador Inteligente & Analizador Universal ---
   const [smartUrl, setSmartUrl] = useState('');
@@ -109,10 +181,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   // Cargar presets y settings de worker al montar
   useEffect(() => {
-    fetch('/api/v1/scraper/presets')
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setPresets(data))
-      .catch(() => {});
+    loadPresets();
 
     fetch('/api/v1/worker/settings')
       .then((res) => (res.ok ? res.json() : null))
@@ -626,32 +695,150 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-zinc-400 font-medium">
                   <span>Fuentes adaptadas y presets rápidos de prueba:</span>
-                  <span className="text-[11px] text-zinc-500">Haz clic en cualquier fuente para autocompletar</span>
+                  <span className="text-[11px] text-zinc-500">Haz clic para autocompletar o usa el lápiz para editar el enlace</span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                  {presets.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => handleAnalyzeUrl(preset.example_url)}
-                      className="flex flex-col items-start p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-850 hover:border-zinc-700 transition-colors text-left group"
-                    >
-                      <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
-                        {preset.category === 'anime' && <Tv size={13} className="text-zinc-400" />}
-                        {preset.category === 'movies' && <Film size={13} className="text-zinc-400" />}
-                        {preset.category === 'series' && <Layers size={13} className="text-zinc-400" />}
-                        {preset.category === 'archive' && <Database size={13} className="text-zinc-400" />}
-                        {preset.category === 'direct' && <Play size={13} className="text-zinc-400" />}
-                        <span className="truncate">{preset.name.split(' ')[0]}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {presets.map((preset) => {
+                    const isCustom = Boolean(preset.is_custom);
+                    let presetDomain = preset.example_url;
+                    try {
+                      presetDomain = new URL(preset.example_url).hostname.replace(/^www\d?\./, '');
+                    } catch {}
+                    return (
+                      <div
+                        key={preset.id}
+                        onClick={() => handleAnalyzeUrl(preset.example_url)}
+                        title={`${preset.description}\nURL: ${preset.example_url}${isCustom ? ' (Personalizada)' : ''}`}
+                        className="relative flex flex-col items-start p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-850 hover:border-zinc-700 transition-all text-left group cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200 group-hover:text-white transition-colors truncate">
+                            {preset.category === 'anime' && <Tv size={13} className="text-zinc-400 shrink-0" />}
+                            {preset.category === 'movies' && <Film size={13} className="text-zinc-400 shrink-0" />}
+                            {preset.category === 'series' && <Layers size={13} className="text-zinc-400 shrink-0" />}
+                            {preset.category === 'archive' && <Database size={13} className="text-zinc-400 shrink-0" />}
+                            {preset.category === 'direct' && <Play size={13} className="text-zinc-400 shrink-0" />}
+                            <span className="truncate">{preset.name.split(' ')[0]}</span>
+                            {isCustom && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Enlace personalizado por ti" />
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPreset(preset);
+                              setEditingUrlInput(preset.example_url);
+                            }}
+                            title="Editar enlace por defecto de este preset"
+                            className="opacity-60 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-700/80 transition-all ml-1 shrink-0"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                        </div>
+
+                        <span className="text-[10px] text-zinc-500 truncate w-full mt-1 font-mono">
+                          {presetDomain}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-zinc-500 truncate w-full mt-1">
-                        {preset.description}
-                      </span>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Modal para Editar Link por Defecto del Preset */}
+              {editingPreset && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
+                  <div className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <Edit3 size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-white">
+                            Editar enlace: {editingPreset.name}
+                          </h3>
+                          <p className="text-[11px] text-zinc-400">
+                            Cambia la URL por defecto en el servidor (aplica para todos los usuarios).
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingPreset(null)}
+                        className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-zinc-300 block">
+                        URL del Preset
+                      </label>
+                      <input
+                        type="text"
+                        value={editingUrlInput}
+                        onChange={(e) => setEditingUrlInput(e.target.value)}
+                        placeholder="https://..."
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-white focus:outline-none focus:border-amber-500/70 font-mono"
+                        autoFocus
+                      />
+                      {editingPreset.original_url && (
+                        <p className="text-[11px] text-zinc-500 truncate font-mono">
+                          Original: {editingPreset.original_url}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+                      <button
+                        type="button"
+                        disabled={isSavingPreset}
+                        onClick={() => handleResetCustomPresetUrl(editingPreset.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-800 text-zinc-300 text-xs transition-colors disabled:opacity-50"
+                      >
+                        <RotateCcw size={12} />
+                        Restablecer original
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isSavingPreset}
+                          onClick={() => setEditingPreset(null)}
+                          className="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs transition-colors disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSavingPreset || !editingUrlInput.trim()}
+                          onClick={() =>
+                            handleSaveCustomPresetUrl(editingPreset.id, editingUrlInput)
+                          }
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                        >
+                          {isSavingPreset ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              Guardando en servidor...
+                            </>
+                          ) : (
+                            <>
+                              <Check size={13} />
+                              Guardar para todos
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Formulario de Entrada */}
               <form onSubmit={(e) => { e.preventDefault(); handleAnalyzeUrl(); }} className="space-y-2">

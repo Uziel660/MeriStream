@@ -3,8 +3,25 @@ import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
+import { orderStreamsByHealth } from "../hostHealth";
 
 const BASE_URL = "https://wwv.veranimes.net";
+
+const DEAD_OR_BLOCKED_HOST_PATTERNS = [
+  /cfglobalcdn\.com/i,
+  /yourupload\.com/i,
+  /streamtape\./i,
+  /dsvplay\.com/i,
+  /savefiles\.com/i,
+  /d-s\.io/i,
+  /a\d+\.mp4upload\.com/i,
+  /vidcache\.net/i,
+  /my\.mail\.ru/i,
+  /v\.tioanime\.com/i,
+];
+
+const isDeadOrBlocked = (url: string) =>
+  DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
 
 /**
  * Adaptador para VerAnimes (wwv.veranimes.net)
@@ -530,21 +547,31 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
     const directStreams: string[] = [];
 
     for (const { iframeUrl, resolved } of resolutions) {
-      if (resolved && !all_available_streams.includes(resolved)) {
+      if (resolved && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
         all_available_streams.push(resolved);
       }
       const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(resolved) && resolved !== iframeUrl;
-      if (isDirectMedia && !directStreams.includes(resolved)) {
+      if (isDirectMedia && !isDeadOrBlocked(resolved) && !directStreams.includes(resolved)) {
         directStreams.push(resolved);
       }
-      if (!all_available_streams.includes(iframeUrl)) {
+      if (!isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
         all_available_streams.push(iframeUrl);
       }
     }
 
-    const ordered = directStreams.length > 0
-      ? [...directStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))]
-      : all_available_streams;
+    // Sondeo de salud de streams directos: los CDNs con hotlink-protection pueden
+    // estar caídos o lentos (ej. a3.mp4upload.com:183 tarda 10-36s en handshake TLS).
+    // Sin sondeo, un MP4 muerto encabeza la lista y el player falla antes del failover.
+    let healthyDirects = directStreams;
+    if (directStreams.length > 1) {
+      healthyDirects = await this.probeAndOrderDirectStreams(directStreams);
+    }
+
+    const embedStreams = all_available_streams.filter((s) => !directStreams.includes(s));
+    const ordered =
+      directStreams.length > 0
+        ? [...healthyDirects, ...embedStreams, ...directStreams.filter((d) => !healthyDirects.includes(d))]
+        : all_available_streams;
 
     // Validación final con MediaValidator
     const validStreams = await MediaValidator.validateUrls(ordered);
@@ -555,6 +582,16 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
       title,
     };
+  }
+
+  /**
+   * Sonda de salud de URLs de media directo (.m3u8/.mp4), delegada al módulo
+   * global hostHealth (headers del proxy según hostProfiles + caché negativa).
+   * Devuelve las sanas primero (orden original) y descarta las que no
+   * responden a tiempo.
+   */
+  private async probeAndOrderDirectStreams(urls: string[]): Promise<string[]> {
+    return orderStreamsByHealth(urls, { playerReferer: "https://wwv.veranimes.net/" });
   }
 
   /**

@@ -1,6 +1,7 @@
 // server/resolvers.ts
 import * as crypto from "crypto";
 import { unpackDeanEdwards, unpackGeneric, extractMediaUrlsFromCode } from "./scrapers/utils/jsUnpacker";
+import { VimeosResolver } from "./scrapers/vimeosResolver";
 
 export interface ResolvedStreamMeta {
   url: string;
@@ -123,12 +124,12 @@ export class EmbedResolvers {
       return rawUrl;
     }
 
-    // 2. VIMEOS.NET: Extraer enlace de descarga directa o stream
-    if (rawUrl.includes("vimeos.net/embed-") || rawUrl.includes("vimeos.net/e/")) {
-      const match = rawUrl.match(/embed-([a-zA-Z0-9]+)\.html/);
-      if (match) {
-        return `https://vimeos.net/d/${match[1]}_h`;
-      }
+    // 2. VIMEOS.NET: MP4 directo vía POST download_orig; fallback al propio embed
+    // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)
+    if (VimeosResolver.isVimeosUrl(rawUrl)) {
+      const streams = await VimeosResolver.resolveVimeos(rawUrl);
+      if (streams.length > 0 && !this.isPlaceholderUrl(streams[0])) return streams[0];
+      return rawUrl;
     }
 
     // 3. MP4UPLOAD: Desempaquetar JS de mp4upload para obtener .mp4 directo
@@ -371,11 +372,13 @@ export class EmbedResolvers {
       // Permutación pública del player: version N → [N ^ 0, 31 - N ^ 0] (1-based)
       const v = parseInt(String(pb.version ?? ""), 10);
       const parts = Number.isInteger(v) ? [v ^ 0, 31 - (v ^ 0)] : [];
+      const keyParts = Array.isArray(pb.key_parts) ? pb.key_parts : [];
+      if (keyParts.length === 0) return null;
       const picked = parts
-        .filter((i) => i >= 1 && i <= pb.key_parts.length)
-        .map((i) => pb.key_parts![i - 1])
-        .filter((s) => typeof s === "string" && s.length > 0);
-      const keyStr = picked.length > 0 ? picked : pb.key_parts;
+        .filter((i) => i >= 1 && i <= keyParts.length)
+        .map((i) => keyParts[i - 1])
+        .filter((s): s is string => typeof s === "string" && s.length > 0);
+      const keyStr = picked.length > 0 ? picked : keyParts;
 
       const key = Buffer.concat(keyStr.map(b64url));
       const iv = b64url(pb.iv);

@@ -312,15 +312,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     let finalUrl = url;
     if (url.startsWith('http') && !url.includes('/api/v1/proxy/stream') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
       const apiHost = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3005';
-      // El referer se elige por host; el backend además fuerza el correcto para
-      // hosts con hotlink-protection (mp4upload exige su propio dominio).
-      const lowerUrl = url.toLowerCase();
-      const refererForHost = lowerUrl.includes('mp4upload.com')
-        ? 'https://www.mp4upload.com/'
-        : lowerUrl.includes('latanime.org')
-          ? 'https://latanime.org/'
-          : 'https://animeflv.or.at/';
-      finalUrl = `${apiHost}/api/v1/proxy/stream?referer=${encodeURIComponent(refererForHost)}&url=${encodeURIComponent(url)}`;
+      // Sin referer inventado en el cliente: los perfiles por host del server
+      // (server/hostProfiles.ts) deciden el Referer correcto (fixed/none/passthrough).
+      finalUrl = `${apiHost}/api/v1/proxy/stream?url=${encodeURIComponent(url)}`;
     }
 
     if (isHls && Hls.isSupported()) {

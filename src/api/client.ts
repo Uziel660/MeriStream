@@ -309,6 +309,19 @@ export const api = {
     };
   },
 
+  async getEpisodeServers(url: string): Promise<{
+    url: string;
+    stream_url: string;
+    all_available_streams: string[];
+    title?: string;
+    resolved: boolean;
+  }> {
+    return request<any>(`/catalog/episode-servers`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  },
+
   async resolveEmbed(url: string): Promise<{
     url: string;
     original_url: string;

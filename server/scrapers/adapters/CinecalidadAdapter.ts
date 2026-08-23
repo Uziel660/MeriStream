@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers } from "../../resolvers";
+import { VimeosResolver } from "../vimeosResolver";
 import { MediaValidator } from "../../validator";
 
 const BASE_URL = "https://www.cinecalidad.am";
@@ -20,6 +21,9 @@ const BASE_URL = "https://www.cinecalidad.am";
  *   #dooplay_player_response). Los reproductores también exponen URLs directas en
  *   `li[data-option]` (vimeos.net, voe.sx, doodstream, goodstream). Todo se resuelve
  *   con EmbedResolvers.resolve y se valida con MediaValidator.
+ * - Vimeos.net: resuelto con el módulo compartido VimeosResolver (MP4 directo vía
+ *   el form POST `op=download_orig`; verificado 2026-08-22: POST con el hash del
+ *   HTML → enlace `s{N}.vimeos.net/v/.../*.mp4`, responde 206 video/mp4).
  */
 export class CinecalidadAdapter extends BaseScraperAdapter {
   readonly id = "cinecalidad";
@@ -401,12 +405,15 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const hashLinks = this.decodeHashLinks(html);
     const playerOptions = this.extractPlayerOptions(html);
 
-    const candidates: string[] = [];
+    const rawCandidates: string[] = [];
     [...hashLinks, ...playerOptions]
       .filter((u) => !this.isJunkUrl(u))
       .forEach((u) => {
-        if (!candidates.includes(u)) candidates.push(u);
+        if (!rawCandidates.includes(u)) rawCandidates.push(u);
       });
+    // Vimeos `/d/{id}_h` es una página de descarga HTML: sustituir por MP4 directo
+    // (y descartar los que fallen, no son reproducibles).
+    const candidates = await VimeosResolver.fixVimeosStreams(rawCandidates);
 
     if (candidates.length === 0) {
       const generic = await super.extractStream(cleanUrl);
@@ -431,11 +438,15 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       })
     );
 
-    const resolvedList: string[] = [];
+    const rawResolvedList: string[] = [];
     for (const { candidate, resolved } of resolutions) {
-      if (resolved && !resolvedList.includes(resolved)) resolvedList.push(resolved);
-      if (!resolvedList.includes(candidate)) resolvedList.push(candidate);
+      if (resolved && !rawResolvedList.includes(resolved)) rawResolvedList.push(resolved);
+      if (!rawResolvedList.includes(candidate)) rawResolvedList.push(candidate);
     }
+
+    // EmbedResolvers puede devolver el embed de vimeos sin resolver: re-aplicar
+    // la conversión a MP4 directo sobre la lista resuelta.
+    const resolvedList = await VimeosResolver.fixVimeosStreams(rawResolvedList);
 
     const validated = await MediaValidator.validateUrls(resolvedList);
     const usableValidated = validated.filter((u) => !this.isJunkUrl(u));
@@ -470,12 +481,28 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     return /\/ver-(?:serie|el-episodio)\//i.test(url) ? "series" : "movie";
   }
 
+  private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
+    /cfglobalcdn\.com/i,
+    /yourupload\.com/i,
+    /streamtape\./i,
+    /dsvplay\.com/i,
+    /savefiles\.com/i,
+    /d-s\.io/i,
+    /a\d+\.mp4upload\.com/i,
+    /vidcache\.net/i,
+    /my\.mail\.ru/i,
+    /v\.tioanime\.com/i,
+  ];
+
   /**
    * Filtra URLs basura que el fallback genérico puede arrastrar:
-   * imágenes TMDb (lazy-load data-src), banners publicitarios y estáticos.
+   * imágenes TMDb (lazy-load data-src), banners publicitarios, estáticos y hosts muertos.
    */
   private isJunkUrl(url: string): boolean {
-    return /image\.tmdb\.org|adsanalytics\.org|\.(jpe?g|png|gif|webp|svg|css|js)(\?|$)/i.test(url);
+    return (
+      /image\.tmdb\.org|adsanalytics\.org|\.(jpe?g|png|gif|webp|svg|css|js)(\?|$)/i.test(url) ||
+      CinecalidadAdapter.DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url))
+    );
   }
 
   private cleanTitle(raw: string): string {

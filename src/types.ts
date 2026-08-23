@@ -152,6 +152,8 @@ export interface ScraperPreset {
   description: string;
   example_url: string;
   icon: string;
+  original_url?: string;
+  is_custom?: boolean;
 }
 
 export interface UniversalAnalysisResult {

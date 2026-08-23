@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "C:/Users/Uziel/.local/bin/codebase-memory-mcp.exe"
+    },
+    "parallel-browser": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "parallel-browser-mcp@latest",
+        "--isolated"
+      ]
+    },
+    "playwright": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    }
+  }
+}

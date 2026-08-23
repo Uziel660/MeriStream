@@ -17,8 +17,6 @@ const KNOWN_EMBED_HOSTS = [
   "byselapuix.com",
   "mp4upload.com",
   "mega.nz",
-  "streamtape.",
-  "yourupload.com",
   "vidmoly.",
   "luluvdo.",
   "streamhide.",
@@ -40,11 +38,10 @@ const KNOWN_EMBED_HOSTS = [
   "streamhub.",
   "streamwish.",
   "filemoon.",
-  // Espejos reales detectados hoy (2026-08-21)
+  // Espejos reales detectados hoy
   "sfastwish.com",
   "vidhidevip.com",
   "mdbekjwqa.pw",
-  "d-s.io",
   "hlswish.com",
   "goodstream.one",
   "playmudos.com",
@@ -53,10 +50,25 @@ const KNOWN_EMBED_HOSTS = [
 /** Dominios de DESCARGA (no reproducibles en iframe): se excluyen de los streams. */
 const DOWNLOAD_ONLY_HOSTS = ["mediafire.com", "drive.google.com", "4shared.com", "zippyshare.com"];
 
+const DEAD_OR_BLOCKED_HOST_PATTERNS = [
+  /cfglobalcdn\.com/i,
+  /yourupload\.com/i,
+  /streamtape\./i,
+  /dsvplay\.com/i,
+  /savefiles\.com/i,
+  /d-s\.io/i,
+  /a\d+\.mp4upload\.com/i,
+  /vidcache\.net/i,
+  /my\.mail\.ru/i,
+  /v\.tioanime\.com/i,
+];
+
 const isKnownEmbedHost = (url: string) =>
   KNOWN_EMBED_HOSTS.some((h) => url.toLowerCase().includes(h));
 const isDownloadOnly = (url: string) =>
   DOWNLOAD_ONLY_HOSTS.some((h) => url.toLowerCase().includes(h));
+const isDeadOrBlocked = (url: string) =>
+  DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
 
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
@@ -283,6 +295,10 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
    * se resuelven en paralelo (acotado) buscando upgrades a .m3u8/.mp4 directo.
    * Excepción mp4upload: el embed se conserva como fallback pero su página expone
    * el .mp4 directo en JS plano (player.src), así que también se intenta resolver.
+   * IMPORTANTE: el chequeo de host conocido va ANTES del de medio directo porque
+   * algunos embeds usan extensiones falsas en el path (streamtape /e/{id}/x.mp4 es
+   * una página HTML, no un archivo); clasificarlos como directos pone una página
+   * muerta como stream principal (MEDIA_ERR_SRC_NOT_SUPPORTED).
    */
   private async resolveCandidates(rawStreams: string[]): Promise<{ directStreams: string[]; embedStreams: string[] }> {
     const directStreams: string[] = [];
@@ -293,15 +309,15 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     for (const st of rawStreams) {
       const normalized = this.normalizeServerUrl(st);
       if (!normalized.startsWith("http")) continue;
-      if (isDownloadOnly(normalized)) continue;
-      if (EmbedResolvers.isDirectMediaUrl(normalized)) {
-        if (!directStreams.includes(normalized)) directStreams.push(normalized);
-      } else if (normalized.toLowerCase().includes("mp4upload.com")) {
+      if (isDownloadOnly(normalized) || isDeadOrBlocked(normalized)) continue;
+      if (normalized.toLowerCase().includes("mp4upload.com")) {
         const target = this.toMp4UploadEmbedUrl(normalized);
         if (!mp4UploadTargets.includes(target)) mp4UploadTargets.push(target);
         if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
       } else if (isKnownEmbedHost(normalized)) {
         if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
+      } else if (EmbedResolvers.isDirectMediaUrl(normalized)) {
+        if (!directStreams.includes(normalized)) directStreams.push(normalized);
       } else if (!needResolve.includes(normalized)) {
         needResolve.push(normalized);
       }
@@ -315,6 +331,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     results.forEach((r) => {
       if (r.status !== "fulfilled") return;
       const meta = r.value;
+      if (!meta.url || isDeadOrBlocked(meta.url)) return;
       if (meta.resolved && meta.type === "direct") {
         if (!directStreams.includes(meta.url)) directStreams.push(meta.url);
       } else if (meta.url && !embedStreams.includes(meta.url)) {
@@ -520,12 +537,21 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       if (src) push(src);
     });
 
-    // 3. Iframes dentro de strings JS (video[0] = '<iframe src="...">') y wrappers jkplayer
+    // 3. Iframes dentro de strings JS (video[0] = '<iframe src="...">') y wrappers jkplayer.
+    // Se excluye /jkplayer/c1?u= porque en el HTML es una PLANTILLA de concatenación
+    // (`'...c1?u='+val.remote+'&s='+...`): el match captura el parámetro vacío y produce
+    // un wrapper no reproducible.
     const jsIframe = /<iframe[^>]+src=["']([^"']+)["']/gi;
     let m: RegExpExecArray | null;
-    while ((m = jsIframe.exec(html)) !== null) push(m[1]);
+    while ((m = jsIframe.exec(html)) !== null) {
+      if (/jkanime\.net\/jkplayer\/[^"']*?\?(?:[^"']*&)?u=$/i.test(m[1])) continue;
+      push(m[1]);
+    }
     const jkPlayer = /https?:\/\/jkanime\.net\/jkplayer\/[^\s"'<>\\]+/gi;
-    while ((m = jkPlayer.exec(html)) !== null) push(m[0]);
+    while ((m = jkPlayer.exec(html)) !== null) {
+      if (/jkanime\.net\/jkplayer\/[^?]*\?[^#]*&?u=$/i.test(m[0])) continue;
+      push(m[0]);
+    }
 
     return streams;
   }

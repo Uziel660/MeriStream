@@ -13,6 +13,8 @@ import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
 import { extractDominantColor } from './utils/colorExtractor';
+import { isEmbedUrl } from './utils/streamOptimizer';
+import { api } from './api/client';
 import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
 import type { Show, Episode } from './types';
 
@@ -519,10 +521,57 @@ export function App() {
           loadCatalog();
         }}
         onPlayDirect={(streamResult: any) => {
+          const candidates: string[] = (
+            streamResult.all_streams ||
+            streamResult.all_available_streams ||
+            (streamResult.stream_url ? [streamResult.stream_url] : [])
+          ).filter(Boolean);
+          // Playable = medio directo (.m3u8/.mp4/...) o embed de host conocido;
+          // lo demás son páginas web crudas que requieren resolución JIT.
+          const isPlayable = (u: string) =>
+            /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || isEmbedUrl(u);
+          const playableCandidates = candidates.filter(isPlayable);
+
+          if (playableCandidates.length === 0 && streamResult.stream_url) {
+            // Página de episodio sin servidores resueltos (ej. AnimeFLV /ver/...):
+            // resolver Just-In-Time contra el backend antes de abrir el player.
+            setPlayingStreamData({
+              title: streamResult.title,
+              streamUrl: '',
+              all_streams: [],
+              isLoading: true,
+            });
+            api
+              .getEpisodeServers(streamResult.stream_url)
+              .then((data) => {
+                const streams = data.all_available_streams.filter(isPlayable);
+                if (streams.length === 0) throw new Error('El episodio no tiene servidores disponibles.');
+                setPlayingStreamData((prev: any) =>
+                  prev
+                    ? { ...prev, streamUrl: streams[0], all_streams: streams, isLoading: false }
+                    : prev
+                );
+              })
+              .catch((e: any) => {
+                setPlayingStreamData((prev: any) =>
+                  prev
+                    ? {
+                        ...prev,
+                        loadError: e.message || 'No se pudo resolver el video del episodio.',
+                        isLoading: false,
+                      }
+                    : prev
+                );
+              });
+            return;
+          }
+
           setPlayingStreamData({
             title: streamResult.title,
-            streamUrl: streamResult.stream_url,
-            all_streams: streamResult.all_streams || streamResult.all_available_streams,
+            streamUrl:
+              playableCandidates[0] || streamResult.stream_url,
+            all_streams:
+              playableCandidates.length > 0 ? playableCandidates : candidates,
           });
         }}
       />

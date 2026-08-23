@@ -7,12 +7,38 @@ import { MediaValidator } from "../../validator";
 const BASE_URL = "https://tioanime.com";
 
 /**
+ * Hosts de video muertos o irrecuperables verificados en vivo (2026-08-22):
+ * - cfglobalcdn.com: cert Cloudflare Origin CA no confiable + token secip atado a otra IP;
+ *   la conexión TLS se cierra abruptamente (curl exit 56/60).
+ * - vidcache.net: StretchFS exige handshake propietario; además ya no aparece en las
+ *   páginas actuales del sitio (solo sobrevive en ingestas viejas guardadas en BD).
+ * - v.tioanime.com (Amus/Mepu): /embed.php responde 404.
+ * - my.mail.ru (Maru): embeds responden 404.
+ */
+const DEAD_HOST_PATTERNS = [
+  /cfglobalcdn\.com/i,
+  /vidcache\.net/i,
+  /v\.tioanime\.com\/embed\.php/i,
+  /my\.mail\.ru\/video\/embed/i,
+  /yourupload\.com/i,
+  /streamtape\.com/i,
+  /dsvplay\.com/i,
+  /savefiles\.com/i,
+  /d-s\.io/i,
+  /a\d+\.mp4upload\.com/i,
+];
+
+/**
  * Adaptador para tioanime.com
  *
  * - Catálogo: selector `<article>` con href, title (h3/title/alt), image_url (data-src o src)
  * - Metadatos: og:title y <p class="sinopsis"> (fallback og:description, .sinopsis, p.description)
  * - Video: array global `var videos = [["Mega","https://..."],["Voe","..."]];` parseado vía regex JSON
  * - Episodios: a[href*="/ver/"] o a[href*="/anime/"] con episodio, o lista .episodes
+ * - VOE: decodifica el blob JSON ofuscado del player moderno (rot13+pares+b64+shift+reverse)
+ *   para obtener el .m3u8 directo y evitar el iframe con publicidad.
+ * - cfglobalcdn/vidcache se descartan: hosts muertos documentados (cert Cloudflare Origin CA
+ *   inválido + token secip de otra IP / handshake StretchFS propietario).
  */
 export class TioAnimeAdapter extends BaseScraperAdapter {
   readonly id = "tioanime";
@@ -685,82 +711,56 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title };
       }
 
-      const resolvedStreams: string[] = [];
-      for (const stream of rawStreams) {
-        try {
-          const resolved = await EmbedResolvers.resolve(stream);
-          const final = resolved || stream;
-          if (!resolvedStreams.includes(final)) resolvedStreams.push(final);
-          if (final !== stream && !resolvedStreams.includes(stream)) resolvedStreams.push(stream);
-        } catch {
-          if (!resolvedStreams.includes(stream)) resolvedStreams.push(stream);
-        }
-      }
+      const { resolved, originals } = await this.sanitizeAndResolve(rawStreams);
 
-      const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-      const finalStreams = validStreams.length > 0 ? validStreams : (resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl]);
-
-      // Mismo criterio: embeds fiables primero, directos efímeros al final (ver abajo)
-      const isEphemeralDirect = (s: string) =>
-        /\.(m3u8|mp4|webm)(\?|$)/i.test(s) &&
-        /cfglobalcdn\.com|vidcache\.net/.test(s);
-      const ordered = [
-        ...finalStreams.filter((s) => !isEphemeralDirect(s)),
-        ...finalStreams.filter((s) => isEphemeralDirect(s)),
-      ];
+      const combined = [...resolved, ...originals];
+      const validStreams = await MediaValidator.validateUrls(combined);
+      const finalStreams =
+        validStreams.length > 0 ? validStreams : combined.length > 0 ? combined : [cleanUrl];
 
       return {
-        stream_url: ordered[0] || cleanUrl,
-        all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
+        stream_url: finalStreams[0] || cleanUrl,
+        all_available_streams: finalStreams,
         title,
       };
     }
 
-    // Resolver todos los videos del array var videos en paralelo
-    const resolutions = await Promise.all(
-      videos.map(async (videoUrl) => {
+    // Array var videos: filtrar hosts muertos + resolver VOE a HLS directo
+    const { resolved, originals } = await this.sanitizeAndResolve(videos);
+
+    const allAvailable: string[] = [];
+    for (const url of resolved) {
+      if (!allAvailable.includes(url)) allAvailable.push(url);
+    }
+    for (const url of originals) {
+      if (!allAvailable.includes(url)) allAvailable.push(url);
+    }
+
+    // Resolver el resto con EmbedResolvers (mega file->embed, ok.ru->hls, etc.)
+    const withEmbedResolution = await Promise.all(
+      allAvailable.map(async (url) => {
         try {
-          const resolved = await EmbedResolvers.resolve(videoUrl);
-          return { videoUrl, resolved: resolved || videoUrl };
+          const r = await EmbedResolvers.resolve(url);
+          return r || url;
         } catch {
-          return { videoUrl, resolved: videoUrl };
+          return url;
         }
       })
     );
 
-    const all_available_streams: string[] = [];
-    const directStreams: string[] = [];
-
-    for (const { videoUrl, resolved } of resolutions) {
-      const finalUrl = resolved || videoUrl;
-      if (!all_available_streams.includes(finalUrl)) {
-        all_available_streams.push(finalUrl);
-      }
-      // Si el resuelto es diferente al embed original, conservar ambos (embed como fallback)
-      if (finalUrl !== videoUrl && !all_available_streams.includes(videoUrl)) {
-        all_available_streams.push(videoUrl);
-      }
-
-      const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(finalUrl) && finalUrl !== videoUrl;
-      if (isDirectMedia && !directStreams.includes(finalUrl)) {
-        directStreams.push(finalUrl);
-      }
+    const merged: string[] = [];
+    for (const url of withEmbedResolution) {
+      if (!merged.includes(url)) merged.push(url);
+    }
+    // Re-agregar originales como fallback si su resolución difiere
+    for (const url of allAvailable) {
+      if (!merged.includes(url)) merged.push(url);
     }
 
-    // Validar con MediaValidator (hosts conocidos pasan directo)
-    const validated = await MediaValidator.validateUrls(all_available_streams);
-    const finalStreamsBase = validated.length > 0 ? validated : all_available_streams;
-
-    // Los streams "directos" de tioanime (cfglobalcdn m3u8 con token secip atado a IP,
-    // vidcache mp4 que exige handshake propietario) caducan fuera de la sesión de
-    // extracción y fallan en el proxy. Los embeds (ok.ru, mega, yourupload) sí son
-    // reproducibles, así que van primero.
-    const isEphemeralDirect = (s: string) =>
-      /\.(m3u8|mp4|webm)(\?|$)/i.test(s) &&
-      /cfglobalcdn\.com|vidcache\.net/.test(s);
-    const reliable = finalStreamsBase.filter((s) => !isEphemeralDirect(s));
-    const ephemeral = finalStreamsBase.filter((s) => isEphemeralDirect(s));
-    const ordered = [...reliable, ...ephemeral];
+    // Los streams "directos" heredados del sitio (cfglobalcdn/vidcache) ya se descartaron
+    // arriba; lo que queda son embeds reproducibles y HLS resueltos (VOE/ok.ru).
+    const validated = await MediaValidator.validateUrls(merged);
+    const ordered = validated.length > 0 ? validated : merged;
 
     return {
       stream_url: ordered[0] || cleanUrl,
@@ -786,5 +786,121 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         .replace(/\b\w/g, (l) => l.toUpperCase())
         .trim();
     }
+  }
+
+  /**
+   * Decodificador del player VOE moderno. La página /e/{code} hace redirect JS a un
+   * dominio rotativo cuyo HTML trae un <script type="application/json"> con el setup
+   * del player ofuscado. Pipeline real extraído de su loader:
+   *   rot13 -> reemplazar pares ['@$','^^','~@','%?','*~','!!','#&'] por '_'
+   *         -> quitar '_' y concatenar -> base64 decode -> shift -3 por char
+   *         -> reverse -> base64 decode -> JSON { source: "<master.m3u8 firmado>", ... }
+   * El m3u8 resultante se reproduce nativo (sin iframe, sin publicidad del host).
+   */
+  private async resolveVoeDirect(iframeUrl: string): Promise<string | null> {
+    try {
+      let html = await this.fetchHtml(iframeUrl, 8000);
+      if (!html) return null;
+
+      // Dominio rotativo: window.location.href = 'https://<rotador>/e/<code>'
+      if (!html.includes('type="application/json"')) {
+        const redirectMatch = html.match(
+          /window\.location\.href\s*=\s*['"](https?:\/\/[^'"]+)['"]/i
+        );
+        if (redirectMatch && redirectMatch[1] !== iframeUrl) {
+          html = await this.fetchHtml(redirectMatch[1], 8000);
+          if (!html) return null;
+        }
+      }
+
+      const blobMatch = html.match(/type="application\/json"[^>]*>([\s\S]*?)<\/script>/i);
+      if (!blobMatch) return null;
+      const blob = blobMatch[1].trim();
+
+      // Paso 1: rot13
+      const rot13 = blob.replace(/[a-zA-Z]/g, (c) => {
+        const base = c <= "Z" ? 65 : 97;
+        return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+      });
+
+      // Paso 2+3: pares ofuscados -> '_' -> quitarlos
+      const PAIRS = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
+      let step2 = rot13;
+      for (const pair of PAIRS) {
+        step2 = step2.split(pair).join("_");
+      }
+      step2 = step2.split("_").join("");
+
+      // Paso 4: base64 decode
+      const b64decoded = Buffer.from(step2, "base64");
+
+      // Paso 5: shift -3 por charCode
+      let shifted = "";
+      for (let i = 0; i < b64decoded.length; i++) {
+        shifted += String.fromCharCode(b64decoded[i] - 3);
+      }
+
+      // Paso 6: reverse + base64 decode -> JSON
+      const reversed = shifted.split("").reverse().join("");
+      const jsonStr = Buffer.from(reversed, "base64").toString("utf-8");
+      const data = JSON.parse(jsonStr) as {
+        source?: string;
+        direct_access_url?: string;
+      };
+
+      if (typeof data.source === "string" && /\.m3u8(\?|$)/.test(data.source)) {
+        return data.source;
+      }
+      if (
+        typeof data.direct_access_url === "string" &&
+        /\.(m3u8|mp4)(\?|$)/.test(data.direct_access_url)
+      ) {
+        return data.direct_access_url;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Filtra hosts muertos documentados y resuelve VOE a stream directo.
+   * Devuelve [streamsFiltradosYResueltos, embedsOriginalesConservados].
+   */
+  private async sanitizeAndResolve(streams: string[]): Promise<{
+    resolved: string[];
+    originals: string[];
+  }> {
+    const alive = streams.filter((s) => !DEAD_HOST_PATTERNS.some((p) => p.test(s)));
+    const deadRemoved = streams.length - alive.length;
+    if (deadRemoved > 0) {
+      console.log(`[TioAnime] ${deadRemoved} stream(s) descartado(s): host muerto documentado`);
+    }
+
+    const resolved: string[] = [];
+    const originals: string[] = [];
+
+    await Promise.all(
+      alive.map(async (url) => {
+        // VOE: intentar decodificación directa antes del resolver genérico
+        let finalUrl = url;
+        if (/voe\./i.test(url)) {
+          const voeDirect = await this.resolveVoeDirect(url);
+          if (voeDirect) {
+            console.log(`[TioAnime] VOE resuelto a HLS directo: ${voeDirect.slice(0, 80)}...`);
+            finalUrl = voeDirect;
+          }
+        }
+
+        if (!resolved.includes(finalUrl)) resolved.push(finalUrl);
+
+        // Conservar el embed original como fallback cuando difiere del directo
+        if (finalUrl !== url && !originals.includes(url)) {
+          originals.push(url);
+        }
+      })
+    );
+
+    return { resolved, originals };
   }
 }

@@ -55,19 +55,31 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     "upns.pro",
   ];
 
+  private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
+    /cfglobalcdn\.com/i,
+    /yourupload\.com/i,
+    /streamtape\./i,
+    /dsvplay\.com/i,
+    /savefiles\.com/i,
+    /d-s\.io/i,
+    /a\d+\.mp4upload\.com/i,
+    /vidcache\.net/i,
+    /my\.mail\.ru/i,
+    /v\.tioanime\.com/i,
+  ];
+
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
     return lower.includes("tioplus.app");
   }
 
   /**
-   * Detecta URLs de players SPA no reproducibles. Regla genérica adicional:
-   * URL que es solo origen + "#token" sin ninguna ruta (estos players rotan
-   * dominios constantemente; ningún CDN/embed legítimo sirve video en "/").
+   * Detecta URLs de players SPA no reproducibles o hosts caídos.
    */
   private isUnplayablePlayerUrl(url: string): boolean {
     const lower = url.toLowerCase();
     if (TioPlusAdapter.UNPLAYABLE_SPA_HOSTS.some((h) => lower.includes(h))) return true;
+    if (TioPlusAdapter.DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url))) return true;
     try {
       const u = new URL(url);
       return u.pathname === "/" && u.hash.length > 1;

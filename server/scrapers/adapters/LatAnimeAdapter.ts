@@ -5,6 +5,22 @@ import { EmbedResolvers } from "../../resolvers";
 
 const BASE_URL = "https://latanime.org";
 
+const DEAD_OR_BLOCKED_HOST_PATTERNS = [
+  /cfglobalcdn\.com/i,
+  /yourupload\.com/i,
+  /streamtape\./i,
+  /dsvplay\.com/i,
+  /savefiles\.com/i,
+  /d-s\.io/i,
+  /a\d+\.mp4upload\.com/i,
+  /vidcache\.net/i,
+  /my\.mail\.ru/i,
+  /v\.tioanime\.com/i,
+];
+
+const isDeadOrBlocked = (url: string) =>
+  DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
+
 /**
  * Adaptador para latanime.org
  *
@@ -181,7 +197,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       if (!encoded) return;
       try {
         const decoded = Buffer.from(encoded, "base64").toString("utf-8").trim();
-        if (/^https?:\/\//i.test(decoded) && !iframes.includes(decoded)) {
+        if (/^https?:\/\//i.test(decoded) && !isDeadOrBlocked(decoded) && !iframes.includes(decoded)) {
           iframes.push(decoded);
         }
       } catch {}
@@ -195,17 +211,24 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     explicitType?: "auto" | "catalog" | "detail" | "stream"
   ): Promise<UniversalAnalysisResult> {
     const cleanUrl = input.trim();
-    const path = new URL(cleanUrl).pathname.toLowerCase();
+    const url = new URL(cleanUrl);
+    const path = url.pathname.toLowerCase();
 
-    // 1. Modo catálogo: Home, rutas raíz o petición explícita
-    if (explicitType === "catalog" || path === "/" || /^\/(browse|letra|emision)?\/?$/.test(path)) {
-      const html = await this.fetchHtml(BASE_URL, 10000);
+    // 1. Modo catálogo: home, /animes (con paginación ?p=N), búsqueda, género,
+    // letra, emisión o petición explícita.
+    const isCatalogRoute =
+      path === "/" || /^\/(animes|browse|letra|emision)(\/.*)?$/.test(path) || path.startsWith("/buscar");
+    if (explicitType === "catalog" || isCatalogRoute) {
+      // Respetar la URL pedida (paginación ?p=N, búsqueda ?q=...); el home sin
+      // ruta usa BASE_URL tal cual.
+      const target = path === "/" ? BASE_URL : `${url.origin}${url.pathname}${url.search}`;
+      const html = await this.fetchHtml(target, 10000);
       const catalogItems = html ? this.extractCatalogItems(html) : [];
 
       return {
         page_type: "catalog",
         content_type: "anime",
-        title: "Catálogo de Animes - LatAnime",
+        title: path.startsWith("/buscar") ? `Búsqueda en LatAnime` : "Catálogo de Animes - LatAnime",
         description: `Catálogo completo de animes en LatAnime (${catalogItems.length} títulos)`,
         poster_url: null,
         banner_url: null,
@@ -244,14 +267,21 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
 
     let detectedStreams: string[] | undefined;
     if (!explicitType || explicitType === "stream" || explicitType === "auto") {
-      try {
-        // Los players viven solo en páginas de episodio (/ver/...); en detalle
-        // decodeDataPlayers devuelve [] y el fallback genérico captura thumbnails.
-        const first = episodes[0];
-        const target = first ? first.url : cleanUrl;
-        const streamResult = await this.extractStream(target);
-        detectedStreams = streamResult.all_available_streams;
-      } catch {}
+      // Los players viven solo en páginas de episodio (/ver/...). Si la URL
+      // ya es de episodio, usarla tal cual; si es ficha, caer al ep1.
+      const isEpisodePage = /\/ver\//.test(path) || /\/ver\//.test(cleanUrl);
+      const target = isEpisodePage ? cleanUrl : episodes[0]?.url;
+      if (target) {
+        try {
+          const streamResult = await this.extractStream(target);
+          // En fichas sin /ver/ el fallback genérico captura thumbnails:
+          // no contaminar detected_streams con imágenes.
+          const mediaOnly = streamResult.all_available_streams.filter(
+            (s) => !/\.(jpe?g|png|webp|gif)(\?|$)/i.test(s)
+          );
+          if (mediaOnly.length > 0) detectedStreams = mediaOnly;
+        } catch {}
+      }
     }
 
     return {
@@ -328,16 +358,16 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const directStreams: string[] = [];
 
     for (const { iframeUrl, resolved } of resolutions) {
-      if (resolved && !all_available_streams.includes(resolved)) {
+      if (resolved && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
         all_available_streams.push(resolved);
       }
       // Stream directo confirmado (.m3u8/.mp4) distinto del propio iframe
       const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(resolved) && resolved !== iframeUrl;
-      if (isDirectMedia && !directStreams.includes(resolved)) {
+      if (isDirectMedia && !isDeadOrBlocked(resolved) && !directStreams.includes(resolved)) {
         directStreams.push(resolved);
       }
       // El iframe crudo como última alternativa
-      if (!all_available_streams.includes(iframeUrl)) {
+      if (!isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
         all_available_streams.push(iframeUrl);
       }
     }

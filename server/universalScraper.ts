@@ -1,22 +1,72 @@
+import fs from "fs";
+import path from "path";
 import { UniversalAnalysisResult, ExtractedCatalogItem, ScraperPreset } from "./types";
 import { ScraperManager } from "./scrapers/ScraperManager";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
     id: "anime-animeflv",
-    name: "AnimeFLV / JKanime (Anime en Español)",
+    name: "AnimeFLV Catálogo (Anime Español)",
     category: "anime",
-    description: "Portales de anime con temporadas completas, lista de episodios y servidores multi-fuente.",
-    example_url: "https://www3.animeflv.net/anime/sousou-no-frieren",
+    description: "Directorio /browse de animes con temporadas completas y servidores multi-fuente.",
+    example_url: "https://www3.animeflv.net/browse",
     icon: "Tv",
   },
   {
-    id: "movies-cuevana",
-    name: "Películas & Series Web (Streaming)",
+    id: "movies-lamovie",
+    name: "LaMovie Catálogo (Películas Latino)",
     category: "movies",
-    description: "Directorio de películas y series con reproductores en línea y opciones de calidad.",
-    example_url: "https://cuevana.biz/pelicula/oppenheimer",
+    description: "Catálogo paginado vía API wp-api/v1; fichas con embeds multi-servidor.",
+    example_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
     icon: "Film",
+  },
+  {
+    id: "movies-cinecalidad",
+    name: "Cinecalidad Catálogo (HD)",
+    category: "movies",
+    description: "Home-listado de películas en calidad HD con streams Goodstream/HLS directos.",
+    example_url: "https://www.cinecalidad.am/",
+    icon: "Film",
+  },
+  {
+    id: "movies-tubepelis",
+    name: "TubePelis Catálogo (Castellano)",
+    category: "movies",
+    description: "Listado de películas; fichas con servidores Byse cifrados AES-256-GCM descifrados JIT.",
+    example_url: "https://www.tubepelis.com/peliculas.html",
+    icon: "Film",
+  },
+  {
+    id: "movies-tioplus",
+    name: "TioPlus Catálogo (Multi-Fuente)",
+    category: "movies",
+    description: "Directorio paginado de películas con múltiples servidores embebidos.",
+    example_url: "https://tioplus.app/peliculas",
+    icon: "Film",
+  },
+  {
+    id: "anime-latanime",
+    name: "LatAnime Catálogo (Sub/Latino)",
+    category: "anime",
+    description: "Directorio completo de animes; episodios MP4Upload con Referer forzado.",
+    example_url: "https://latanime.org/animes",
+    icon: "Tv",
+  },
+  {
+    id: "anime-tioanime",
+    name: "TioAnime Catálogo (Multi-Servidor)",
+    category: "anime",
+    description: "Directorio completo; embeds Mega/YourUpload/ok.ru priorizados sobre efímeros.",
+    example_url: "https://tioanime.com/directorio",
+    icon: "Tv",
+  },
+  {
+    id: "anime-veranimes",
+    name: "VerAnimes Catálogo (Espejo WWV)",
+    category: "anime",
+    description: "Directorio completo; StreamWish con failover automático a embed si el CDN cae.",
+    example_url: "https://wwv.veranimes.net/animes",
+    icon: "Tv",
   },
   {
     id: "series-tvmaze",
@@ -53,6 +103,56 @@ export const PRESET_SOURCES: ScraperPreset[] = [
 ];
 
 export const scraperManager = ScraperManager.getInstance();
+
+const PRESET_OVERRIDES_PATH = path.join(process.cwd(), "prisma", "custom_presets.json");
+
+export function getCustomPresetOverrides(): Record<string, string> {
+  try {
+    if (fs.existsSync(PRESET_OVERRIDES_PATH)) {
+      const data = fs.readFileSync(PRESET_OVERRIDES_PATH, "utf-8");
+      return JSON.parse(data) || {};
+    }
+  } catch (e) {
+    console.error("Error leyendo custom_presets.json:", e);
+  }
+  return {};
+}
+
+export function saveCustomPresetOverride(presetId: string, url: string): void {
+  try {
+    const current = getCustomPresetOverrides();
+    if (!url || !url.trim()) {
+      delete current[presetId];
+    } else {
+      current[presetId] = url.trim();
+    }
+    const dir = path.dirname(PRESET_OVERRIDES_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(PRESET_OVERRIDES_PATH, JSON.stringify(current, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error guardando custom_presets.json:", e);
+  }
+}
+
+export function resetCustomPresetOverride(presetId: string): void {
+  try {
+    const current = getCustomPresetOverrides();
+    delete current[presetId];
+    fs.writeFileSync(PRESET_OVERRIDES_PATH, JSON.stringify(current, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error restableciendo custom_presets.json:", e);
+  }
+}
+
+export function getActivePresets(): (ScraperPreset & { original_url: string; is_custom: boolean })[] {
+  const overrides = getCustomPresetOverrides();
+  return PRESET_SOURCES.map((p) => ({
+    ...p,
+    original_url: p.example_url,
+    is_custom: Boolean(overrides[p.id]),
+    example_url: overrides[p.id] || p.example_url,
+  }));
+}
 
 /**
  * Universal Scraper Entrypoint: delegates to the appropriate specialized Adapter (Strategy Pattern)

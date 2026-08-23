@@ -1,5 +1,6 @@
 // src/App.tsx
 import { useEffect, useState, useMemo } from 'react';
+import { Login } from './components/Login';
 import { motion, AnimatePresence } from 'motion/react';
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { AllCategoriesModal } from './components/AllCategoriesModal';
@@ -21,6 +22,17 @@ import type { Show, Episode } from './types';
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
 
 export function App() {
+
+  // Perfil activo (Login)
+  const [activeProfile, setActiveProfile] = useState<any>(null);
+
+  // Restaurar perfil al cargar
+  useEffect(() => {
+    const stored = localStorage.getItem('niti_active_profile');
+    if (stored) {
+      try { setActiveProfile(JSON.parse(stored)); } catch (e) {}
+    }
+  }, []);
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -299,6 +311,11 @@ export function App() {
   }, [continueWatchingItems, shows]);
 
   const featuredShow = filteredShows.length > 0 ? filteredShows[0] : (shows.length > 0 ? shows[0] : null);
+
+
+  if (!activeProfile) {
+    return <Login onLogin={(profile) => setActiveProfile(profile)} />;
+  }
 
   return (
     <div className="relative min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-x-hidden">

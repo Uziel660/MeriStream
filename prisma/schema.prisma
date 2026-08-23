@@ -71,3 +71,12 @@ model WorkerSettingsStore {
   user_agent_rotation Boolean  @default(true)
   updated_at           DateTime @updatedAt
 }
+
+model Profile {
+  id         String   @id @default(cuid())
+  name       String
+  avatar_id  String
+  pin        String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}

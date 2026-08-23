@@ -7,11 +7,8 @@ with open("server.ts", "r") as f:
 # 1. Unused or generic error in catch (err) -> catch (err: any) or just catch { ... }?
 # Actually in TS, catch (err) is fine, but `err` is implicitly `any` or `unknown`. Let's just do `catch` or `catch (err: unknown)` or don't declare it.
 content = content.replace("} catch (err) {", "} catch {")
-
-# Sonar might complain about the immediately invoked function expression (IIFE) for 172.x checking:
-# `(() => { const p = parseInt(resolvedIp.split(".")[1], 10); return p >= 16 && p <= 31; })()`
-# Let's extract that to a helper function or simplify.
-# Actually, since we're using ES6/TS, we can use a simpler approach for IP validation to avoid IIFEs inside a huge condition.
+content = content.replace("} catch (error) {", "} catch {")
+content = content.replace("} catch (e) {", "} catch {")
 
 old_block = """      const isPrivate =
         resolvedIp === "localhost" ||
@@ -53,8 +50,6 @@ new_block = """      let isPrivate = false;
 
 if old_block in content:
     content = content.replace(old_block, new_block)
-    with open("server.ts", "w") as f:
-        f.write(content)
-    print("Success")
-else:
-    print("Old block not found!")
+
+with open("server.ts", "w") as f:
+    f.write(content)

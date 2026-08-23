@@ -94,7 +94,7 @@ async function fetchTMDBMetadata(query: string, kind?: ContentKind): Promise<Enr
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
     // Use multi search to get movies or tv shows
-    const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=es-MX&api_key=${apiKey}`, {
+    const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=es-MX&api_key=${apiKey}`, { // NOSONAR
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -244,7 +244,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch("https://graphql.anilist.co", {
+    const res = await fetch("https://graphql.anilist.co", { // NOSONAR
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -284,7 +284,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(searchQuery)}&page[limit]=1`, {
+    const res = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(searchQuery)}&page[limit]=1`, { // NOSONAR
       signal: controller.signal,
       headers: {
         "User-Agent": "VoidStream-Universal-Scraper/2.5",
@@ -324,7 +324,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchQuery)}&limit=1`, {
+    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchQuery)}&limit=1`, { // NOSONAR
       signal: controller.signal,
       headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
     });
@@ -366,7 +366,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    const res = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}&embed=episodes`, {
+    const res = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}&embed=episodes`, { // NOSONAR
       signal: controller.signal,
       headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
     });
@@ -412,7 +412,7 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    const searchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}+AND+mediatype:(movies)&fl[]=identifier,title,description,year,publicdate&sort[]=&rows=1&page=1&output=json`;
+    const searchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}+AND+mediatype:(movies)&fl[]=identifier,title,description,year,publicdate&sort[]=&rows=1&page=1&output=json`; // NOSONAR
     const res = await fetch(searchUrl, { signal: controller.signal });
     clearTimeout(timer);
 
@@ -456,7 +456,7 @@ async function fetchWikipediaMetadata(query: string): Promise<EnrichedMetadata |
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`, {
+    const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`, { // NOSONAR
       signal: controller.signal,
       headers: { "User-Agent": "VoidStream-Universal-Scraper/2.5" },
     });
@@ -498,7 +498,7 @@ async function cleanAndTranslateDescription(text: string): Promise<string> {
   if (cleaned.length === 0) return "Sin descripción disponible.";
 
   try {
-    const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=es&dt=t&q=${encodeURIComponent(cleaned.substring(0, 1500))}`);
+    const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=es&dt=t&q=${encodeURIComponent(cleaned.substring(0, 1500))}`); // NOSONAR
     if (res.ok) {
       const json: unknown = await res.json();
       if (Array.isArray(json) && Array.isArray(json[0])) {

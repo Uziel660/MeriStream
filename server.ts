@@ -20,6 +20,9 @@ import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
 import { pipeline } from "node:stream/promises";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
 
 // Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
 const stealthClient = new ImpitHttpClient({
@@ -901,6 +904,63 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+
+  // === AUTENTICACIÓN ===
+  const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey_netflixclone_123";
+
+  app.post("/api/v1/auth/register", express.json(), async (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      const existing = await prisma.user.findUnique({ where: { username } });
+      if (existing) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      const user = await prisma.user.create({
+        data: {
+          username,
+          password: hashedPassword
+        }
+      });
+
+      const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, username: user.username });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/v1/auth/login", express.json(), async (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      const user = await prisma.user.findUnique({ where: { username } });
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const isValid = bcrypt.compareSync(password, user.password);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, username: user.username });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
     app.get("*", (req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

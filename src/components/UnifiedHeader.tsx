@@ -24,6 +24,7 @@ export const MAIN_QUICK_FILTERS: FilterItem[] = [
 ];
 
 interface UnifiedHeaderProps {
+  onLogout?: () => void;
   onSearchChange: (query: string) => void;
   onOpenAdmin: () => void;
   activeFilter: string;
@@ -37,6 +38,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
   activeFilter,
   onSelectCategory,
   onOpenAllCategories,
+  onLogout,
 }) => {
   const [query, setQuery] = useState('');
   const [isScrolled, setIsScrolled] = useState(false);
@@ -140,7 +142,17 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
 
           {/* ADMIN & WORKER ACTIVITY BUTTON */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex items-center gap-2 px-3 sm:px-3.5 py-2 rounded-full bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white transition-all shadow-sm group"
+                title="Cerrar sesión"
+              >
+                <span className="hidden sm:inline text-xs font-semibold">Salir</span>
+              </button>
+            )}
+<button
               type="button"
               onClick={onOpenAdmin}
               id="open-admin-panel-btn"

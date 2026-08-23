@@ -14,6 +14,7 @@ import { ContinueWatching, type WatchProgress } from './components/ContinueWatch
 import { BentoCollection } from './components/BentoCollection';
 import { extractDominantColor } from './utils/colorExtractor';
 import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
+import { LoginScreen } from './components/LoginScreen';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -43,6 +44,62 @@ export function App() {
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
   const [playingStreamData, setPlayingStreamData] = useState<any | null>(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('nitiflix_token');
+  });
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('nitiflix_token');
+    localStorage.removeItem('nitiflix_username');
+    setIsAuthenticated(false);
+  };
+
+  // Recommendations Algorithm
+  const getRecommendations = () => {
+    if (continueWatchingItems.length === 0 || shows.length === 0) return { topGenre: null, recommendedShows: [] };
+
+    const genreCounts: Record<string, number> = {};
+    const startedShowsIds = new Set(continueWatchingItems.map(cw => cw.showId));
+
+    continueWatchingItems.forEach(cw => {
+      const show = shows.find(s => s.id === cw.showId);
+      if (show && show.genres) {
+        const genresList = Array.isArray(show.genres) ? show.genres : show.genres.split(',').map(g => g.trim());
+        genresList.forEach(g => {
+          genreCounts[g] = (genreCounts[g] || 0) + 1;
+        });
+      }
+    });
+
+    let topGenre = null;
+    let maxCount = 0;
+    for (const [genre, count] of Object.entries(genreCounts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        topGenre = genre;
+      }
+    }
+
+    if (!topGenre) return { topGenre: null, recommendedShows: [] };
+
+    const recommendedShows = shows.filter(s => {
+      if (startedShowsIds.has(s.id)) return false; // Exclude already started
+      const genresList = Array.isArray(s.genres) ? s.genres : (s.genres || '').split(',').map(g => g.trim());
+      return genresList.includes(topGenre);
+    }).slice(0, 10);
+
+    return { topGenre, recommendedShows };
+  };
+
+  const { topGenre, recommendedShows } = useMemo(() => getRecommendations(), [continueWatchingItems, shows]);
+
+
 
   // Fetch all genres from server API (Anime & Movies/Series APIs)
   useEffect(() => {
@@ -239,6 +296,10 @@ export function App() {
 
   const featuredShow = filteredShows.length > 0 ? filteredShows[0] : (shows.length > 0 ? shows[0] : null);
 
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   return (
     <div className="relative min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-x-hidden">
       {/* 1. DYNAMIC AMBIENT GLOW (RESPONDE AL COLOR DOMINANTE DEL CONTENIDO EN FOCO) */}
@@ -246,12 +307,13 @@ export function App() {
 
       {/* HEADER UNIFICADO: LOGO, BUSCADOR, PANEL Y CATEGORÍAS EN LA MISMA BARRA SUPERIOR */}
       <UnifiedHeader
-        onSearchChange={setSearchQuery}
-        onOpenAdmin={() => setIsAdminOpen(true)}
-        activeFilter={activeFilter}
-        onSelectCategory={setActiveFilter}
-        onOpenAllCategories={() => setIsCategoriesModalOpen(true)}
-      />
+          onSearchChange={setSearchQuery}
+          onOpenAdmin={() => setIsAdminOpen(true)}
+          activeFilter={activeFilter}
+          onSelectCategory={setActiveFilter}
+          onOpenAllCategories={() => setIsCategoriesModalOpen(true)}
+          onLogout={handleLogout}
+        />
 
       <main className="relative z-10 flex-1 pb-24">
         {shows.length > 0 ? (
@@ -336,6 +398,17 @@ export function App() {
                         const target = shows.find((s) => s.id === showId);
                         if (target) handleOpenDetails(target);
                       }}
+                    />
+                  )}
+
+{/* RECOMENDACIONES PERSONALIZADAS */}
+                  {recommendedShows.length > 0 && topGenre && (
+                    <MediaRow
+                      title={`Porque te gusta ${topGenre}`}
+                      items={recommendedShows}
+                      onSelectMedia={handleOpenDetails}
+                      onHoverMedia={handleHoverMedia}
+                      isLoading={isLoading}
                     />
                   )}
 

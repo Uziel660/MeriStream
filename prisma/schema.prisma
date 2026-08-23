@@ -71,3 +71,11 @@ model WorkerSettingsStore {
   user_agent_rotation Boolean  @default(true)
   updated_at           DateTime @updatedAt
 }
+
+model User {
+  id         String   @id @default(cuid())
+  username   String   @unique
+  password   String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}

@@ -57,7 +57,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  const episodes = show?.episodes || [];
+  const episodes = show?.episodes ? [...show.episodes].sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0)) : [];
 
   // Extract seasons
   const seasonData = useMemo(() => {
@@ -321,7 +321,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         No se encontraron episodios {episodeSearch ? `que coincidan con "${episodeSearch}"` : 'registrados'}.
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[420px] overflow-y-auto pr-1">
                         {filteredEpisodes.map((ep) => {
                           return (
                             <button

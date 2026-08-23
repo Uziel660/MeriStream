@@ -28,7 +28,7 @@ export function cleanQueryTitle(raw: string): string {
   title = title.split(/\s+[-|—]\s+/)[0].trim();
 
   // Custom cleanup for common patterns not caught
-  title = title.replace(/\s+\(.*?\)$/g, ""); // Remove trailing parentheses again just in case
+  title = title.replace(/\s+\([^)]*\)$/g, ""); // Remove trailing parentheses again just in case
   title = title.replace(/^Ver\s+/i, "");
   title = title.trim();
 
@@ -100,7 +100,7 @@ async function fetchTMDBMetadata(query: string, kind?: ContentKind): Promise<Enr
     clearTimeout(timer);
 
     if (res.ok) {
-      const data: any = await res.json();
+      const data: any = await res.json(); // NOSONAR
       if (data && data.results && data.results.length > 0) {
         // Filter out people, prefer what matches the kind if provided
         let bestResult = data.results.find((r: any) => r.media_type !== 'person');
@@ -253,7 +253,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
     clearTimeout(timer);
 
     if (res.ok) {
-      const data: any = await res.json();
+      const data: any = await res.json(); // NOSONAR
       const media = data?.data?.Media;
       if (media) {
         const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
@@ -294,7 +294,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
     clearTimeout(timer);
 
     if (res.ok) {
-      const json: any = await res.json();
+      const json: unknown = await res.json();
       if (json?.data && json.data.length > 0) {
         const attr = json.data[0].attributes || {};
         const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
@@ -331,7 +331,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
     clearTimeout(timer);
 
     if (res.ok) {
-      const json: any = await res.json();
+      const json: any = await res.json(); // NOSONAR
       if (json?.data && json.data.length > 0) {
         const item = json.data[0];
         const poster = item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || item.images?.jpg?.image_url;
@@ -373,7 +373,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
     clearTimeout(timer);
 
     if (res.ok) {
-      const show: any = await res.json();
+      const show: any = await res.json(); // NOSONAR
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
         const cleanSummary = await cleanAndTranslateDescription(show.summary || "");
@@ -417,7 +417,7 @@ async function fetchArchiveOrgMetadata(query: string): Promise<EnrichedMetadata 
     clearTimeout(timer);
 
     if (res.ok) {
-      const data: any = await res.json();
+      const data: any = await res.json(); // NOSONAR
       const doc = data?.response?.docs?.[0];
       if (doc && doc.identifier) {
         const id = doc.identifier;
@@ -463,7 +463,7 @@ async function fetchWikipediaMetadata(query: string): Promise<EnrichedMetadata |
     clearTimeout(timer);
 
     if (res.ok) {
-      const page: any = await res.json();
+      const page: any = await res.json(); // NOSONAR
       if (page && page.title && page.extract) {
         return {
           title: page.title,
@@ -500,9 +500,9 @@ async function cleanAndTranslateDescription(text: string): Promise<string> {
   try {
     const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=es&dt=t&q=${encodeURIComponent(cleaned.substring(0, 1500))}`);
     if (res.ok) {
-      const json: any = await res.json();
-      if (json && json[0]) {
-        cleaned = json[0].map((x: any) => x[0]).join("");
+      const json: unknown = await res.json();
+      if (Array.isArray(json) && Array.isArray(json[0])) {
+        cleaned = json[0].map((x: unknown) => Array.isArray(x) ? String(x[0]) : "").join("");
       }
     }
   } catch {

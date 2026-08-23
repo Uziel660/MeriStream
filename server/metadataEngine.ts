@@ -505,7 +505,7 @@ async function cleanAndTranslateDescription(text: string): Promise<string> {
         cleaned = json[0].map((x: any) => x[0]).join("");
       }
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   return cleaned;

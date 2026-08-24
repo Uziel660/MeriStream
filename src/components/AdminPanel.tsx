@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../api/client';
 // src/components/AdminPanel.tsx
 import React, { useState, useEffect } from 'react';
 import {
@@ -61,7 +62,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const loadPresets = async () => {
     try {
-      const res = await fetch('/api/v1/scraper/presets');
+      const res = await fetch(`${API_BASE_URL}/api/v1/scraper/presets`);
       if (res.ok) {
         const data: ScraperPreset[] = await res.json();
         setPresets(data);
@@ -76,7 +77,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     if (!trimmed) return;
     setIsSavingPreset(true);
     try {
-      const res = await fetch(`/api/v1/scraper/presets/${presetId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/scraper/presets/${presetId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ example_url: trimmed }),
@@ -104,7 +105,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const handleResetCustomPresetUrl = async (presetId: string) => {
     setIsSavingPreset(true);
     try {
-      const res = await fetch(`/api/v1/scraper/presets/${presetId}/reset`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/scraper/presets/${presetId}/reset`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -183,7 +184,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   useEffect(() => {
     loadPresets();
 
-    fetch('/api/v1/worker/settings')
+    fetch(`${API_BASE_URL}/api/v1/worker/settings`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) setWorkerSettings(data);
@@ -195,7 +196,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   useEffect(() => {
     const fetchWorkerJobs = async () => {
       try {
-        const res = await fetch('/api/v1/worker/jobs');
+        const res = await fetch(`${API_BASE_URL}/api/v1/worker/jobs`);
         if (res.ok) {
           const jobs: BackgroundWorkerJob[] = await res.json();
           setWorkerJobs(jobs);
@@ -223,7 +224,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/tasks/${targetId}`);
+        const res = await fetch(`${API_BASE_URL}/api/v1/tasks/${targetId}`);
         if (res.ok) {
           const data = await res.json();
           setWorkerJobs((prev) =>
@@ -244,7 +245,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const loadLibrary = async () => {
     try {
       setIsLoadingLibrary(true);
-      const res = await fetch('/api/v1/shows');
+      const res = await fetch(`${API_BASE_URL}/api/v1/shows`);
       if (res.ok) {
         const data = await res.json();
         setLibraryShows(data);
@@ -275,7 +276,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setIsEditingMetadata(false);
 
     try {
-      const res = await fetch('/api/v1/catalog/analyze', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/catalog/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: urlToAnalyze }),
@@ -317,7 +318,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setImportMessage(null);
 
     try {
-      const res = await fetch('/api/v1/catalog/import-show', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/catalog/import-show`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ show_data: editedShow }),
@@ -341,7 +342,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setImportMessage(null);
 
     try {
-      const analyzeRes = await fetch('/api/v1/catalog/analyze', {
+      const analyzeRes = await fetch(`${API_BASE_URL}/api/v1/catalog/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: cardItem.url || cardItem.title }),
@@ -350,7 +351,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (!analyzeRes.ok) throw new Error('Error al analizar la obra');
       const itemData = await analyzeRes.json();
 
-      const saveRes = await fetch('/api/v1/catalog/import-show', {
+      const saveRes = await fetch(`${API_BASE_URL}/api/v1/catalog/import-show`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ show_data: itemData }),
@@ -381,7 +382,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setBatchResults(null);
 
     try {
-      const res = await fetch('/api/v1/catalog/batch-import', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/catalog/batch-import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls }),
@@ -407,7 +408,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setAnalysisError(null);
 
     try {
-      const res = await fetch('/api/v1/catalog/crawl', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/catalog/crawl`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -434,7 +435,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   // 5.1 CONTROL DE TAREAS DEL WORKER
   const handlePauseJob = async (jobId: string) => {
     try {
-      await fetch(`/api/v1/worker/jobs/${jobId}/pause`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/pause`, { method: 'POST' });
     } catch (e) {
       console.error(e);
     }
@@ -442,7 +443,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleResumeJob = async (jobId: string) => {
     try {
-      await fetch(`/api/v1/worker/jobs/${jobId}/resume`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/resume`, { method: 'POST' });
       setActiveTaskId(jobId);
     } catch (e) {
       console.error(e);
@@ -451,7 +452,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleCancelJob = async (jobId: string) => {
     try {
-      await fetch(`/api/v1/worker/jobs/${jobId}/cancel`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/cancel`, { method: 'POST' });
     } catch (e) {
       console.error(e);
     }
@@ -459,7 +460,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleDeleteJob = async (jobId: string) => {
     try {
-      await fetch(`/api/v1/worker/jobs/${jobId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}`, { method: 'DELETE' });
       setWorkerJobs((prev) => prev.filter((j) => j.id !== jobId));
       if (selectedJobId === jobId) setSelectedJobId(null);
       if (activeTaskId === jobId) setActiveTaskId(null);
@@ -470,7 +471,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleClearFinishedJobs = async () => {
     try {
-      await fetch('/api/v1/worker/clear-finished', { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/v1/worker/clear-finished`, { method: 'POST' });
       setWorkerJobs((prev) => prev.filter((j) => j.status === 'running' || j.status === 'pending' || j.status === 'paused'));
     } catch (e) {
       console.error(e);
@@ -480,7 +481,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const handleSaveWorkerSettings = async () => {
     try {
       setIsSavingSettings(true);
-      const res = await fetch('/api/v1/worker/settings', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/worker/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workerSettings),
@@ -505,7 +506,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     setExtractResult(null);
 
     try {
-      const res = await fetch('/api/v1/extract', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testStreamUrl.trim() }),
@@ -525,7 +526,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const handleDeleteShow = async (showId: string) => {
     setDeletingId(showId);
     try {
-      const res = await fetch(`/api/v1/shows/${showId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/v1/shows/${showId}`, { method: 'DELETE' });
       if (res.ok) {
         setLibraryShows((prev) => prev.filter((s) => s.id !== showId));
       }
@@ -540,7 +541,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const handleResetCatalog = async () => {
     setIsResetting(true);
     try {
-      const res = await fetch('/api/v1/catalog/reset-sample', { method: 'POST' });
+      const res = await fetch(`${API_BASE_URL}/api/v1/catalog/reset-sample`, { method: 'POST' });
       if (res.ok) {
         await loadLibrary();
         setImportMessage('Catálogo de muestra restaurado correctamente.');

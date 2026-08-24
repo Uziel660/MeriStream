@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../api/client';
 // src/components/MediaDetailsModal.tsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -32,7 +33,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setError(null);
     setEpisodeSearch('');
 
-    fetch(`/api/v1/shows/${showId}`)
+    fetch(`${API_BASE_URL}/api/v1/shows/${showId}`)
       .then((res) => {
         if (!res.ok) throw new Error('No se pudo cargar la información del título.');
         return res.json();

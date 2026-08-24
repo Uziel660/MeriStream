@@ -20,7 +20,8 @@ import type {
   UniversalAnalysisResult,
 } from "../types";
 
-const BASE_URL = "/api/v1";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const BASE_URL = `${API_BASE_URL}/api/v1`;
 
 function inferProtocolFromUrl(url?: string | null): "hls" | "mp4" {
   if (!url) return "mp4";

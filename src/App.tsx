@@ -1,3 +1,4 @@
+import { API_BASE_URL } from './api/client';
 // src/App.tsx
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -50,7 +51,7 @@ export function App() {
   useEffect(() => {
     const fetchGenres = async () => {
       try {
-        const res = await fetch('/api/v1/genres');
+        const res = await fetch(`${API_BASE_URL}/api/v1/genres`);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data?.genres)) {
@@ -156,7 +157,7 @@ export function App() {
     });
 
     try {
-      const res = await fetch(`/api/v1/play/${episode.id}`);
+      const res = await fetch(`${API_BASE_URL}/api/v1/play/${episode.id}`);
       if (!res.ok) throw new Error('No se pudo resolver el video');
       const data = await res.json();
 

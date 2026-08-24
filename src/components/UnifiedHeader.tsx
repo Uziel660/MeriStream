@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../api/client';
 // src/components/UnifiedHeader.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Shield, X, Clapperboard, ChevronRight, Grid } from 'lucide-react';
@@ -56,7 +57,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
   useEffect(() => {
     const checkWorkers = async () => {
       try {
-        const res = await fetch('/api/v1/worker/jobs');
+        const res = await fetch(`${API_BASE_URL}/api/v1/worker/jobs`);
         if (res.ok) {
           const jobs = await res.json();
           const active = jobs.filter((j: any) => j.status === 'running' || j.status === 'pending').length;

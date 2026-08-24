@@ -221,20 +221,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     if (!targetId) return;
 
     const interval = setInterval(() => {
-      fetch(`${API_BASE_URL}/api/v1/tasks/${targetId}`)
-        .then(res => {
-          if (res.ok) return res.json();
-          throw new Error('Failed to fetch');
-        })
-        .then(data => {
-          setWorkerJobs((prev) =>
-            prev.map((job) => (job.id === targetId ? { ...job, ...data } : job))
-          );
-          if (data.status === 'completed') {
-            loadLibrary();
+      void (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/v1/tasks/${targetId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setWorkerJobs((prev) =>
+              prev.map((job) => (job.id === targetId ? { ...job, ...data } : job))
+            );
+            if (data.status === 'completed') {
+              void loadLibrary();
+            }
           }
-        })
-        .catch(() => { /* ignore */ });
+        } catch {
+          // ignore
+        }
+      })();
     }, 1200);
 
     return () => clearInterval(interval);

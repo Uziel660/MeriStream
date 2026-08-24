@@ -1,4 +1,3 @@
-import { API_BASE_URL } from './api/client';
 // src/App.tsx
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,7 +14,7 @@ import { ContinueWatching, type WatchProgress } from './components/ContinueWatch
 import { BentoCollection } from './components/BentoCollection';
 import { extractDominantColor } from './utils/colorExtractor';
 import { isEmbedUrl } from './utils/streamOptimizer';
-import { api } from './api/client';
+import { api, API_BASE_URL } from './api/client';
 import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
 import type { Show, Episode } from './types';
 

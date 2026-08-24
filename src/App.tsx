@@ -1,4 +1,3 @@
-import { API_BASE_URL } from './api/client';
 // src/App.tsx
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';

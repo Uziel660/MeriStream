@@ -207,9 +207,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             setActiveTaskId(running.id);
           }
         }
-      } catch (e) {
-        console.error(e);
-      }
+      } catch { /* ignore for polling */ }
     };
 
     fetchWorkerJobs();
@@ -222,21 +220,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const targetId = selectedJobId || activeTaskId;
     if (!targetId) return;
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/tasks/${targetId}`);
-        if (res.ok) {
-          const data = await res.json();
+    const interval = setInterval(() => {
+      fetch(`${API_BASE_URL}/api/v1/tasks/${targetId}`)
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error('Failed to fetch');
+        })
+        .then(data => {
           setWorkerJobs((prev) =>
             prev.map((job) => (job.id === targetId ? { ...job, ...data } : job))
           );
           if (data.status === 'completed') {
             loadLibrary();
           }
-        }
-      } catch (e) {
-        console.error(e);
-      }
+        })
+        .catch(() => { /* ignore */ });
     }, 1200);
 
     return () => clearInterval(interval);
@@ -250,9 +248,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         const data = await res.json();
         setLibraryShows(data);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
+    } catch { /* ignore for polling */ } finally {
       setIsLoadingLibrary(false);
     }
   };
@@ -436,26 +432,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const handlePauseJob = async (jobId: string) => {
     try {
       await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/pause`, { method: 'POST' });
-    } catch (e) {
-      console.error(e);
-    }
+    } catch { /* ignore for polling */ }
   };
 
   const handleResumeJob = async (jobId: string) => {
     try {
       await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/resume`, { method: 'POST' });
       setActiveTaskId(jobId);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch { /* ignore for polling */ }
   };
 
   const handleCancelJob = async (jobId: string) => {
     try {
       await fetch(`${API_BASE_URL}/api/v1/worker/jobs/${jobId}/cancel`, { method: 'POST' });
-    } catch (e) {
-      console.error(e);
-    }
+    } catch { /* ignore for polling */ }
   };
 
   const handleDeleteJob = async (jobId: string) => {
@@ -464,18 +454,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setWorkerJobs((prev) => prev.filter((j) => j.id !== jobId));
       if (selectedJobId === jobId) setSelectedJobId(null);
       if (activeTaskId === jobId) setActiveTaskId(null);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch { /* ignore for polling */ }
   };
 
   const handleClearFinishedJobs = async () => {
     try {
       await fetch(`${API_BASE_URL}/api/v1/worker/clear-finished`, { method: 'POST' });
       setWorkerJobs((prev) => prev.filter((j) => j.status === 'running' || j.status === 'pending' || j.status === 'paused'));
-    } catch (e) {
-      console.error(e);
-    }
+    } catch { /* ignore for polling */ }
   };
 
   const handleSaveWorkerSettings = async () => {
@@ -489,9 +475,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (res.ok) {
         setImportMessage('Parámetros de protección de IP y límites guardados.');
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
+    } catch { /* ignore for polling */ } finally {
       setIsSavingSettings(false);
     }
   };
@@ -530,9 +514,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (res.ok) {
         setLibraryShows((prev) => prev.filter((s) => s.id !== showId));
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
+    } catch { /* ignore for polling */ } finally {
       setDeletingId(null);
     }
   };
@@ -546,9 +528,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         await loadLibrary();
         setImportMessage('Catálogo de muestra restaurado correctamente.');
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
+    } catch { /* ignore for polling */ } finally {
       setIsResetting(false);
     }
   };

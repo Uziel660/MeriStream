@@ -586,6 +586,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           <button
             onClick={onClose}
             type="button"
+            aria-label="Cerrar panel de administración"
             className="flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X size={18} />
@@ -678,7 +679,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
               <Check size={15} />
               <span>{importMessage}</span>
             </div>
-            <button onClick={() => setImportMessage(null)} className="text-zinc-400 hover:text-white">
+            <button aria-label="Cerrar mensaje de importación" onClick={() => setImportMessage(null)} className="text-zinc-400 hover:text-white">
               <X size={13} />
             </button>
           </div>
@@ -768,6 +769,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                       </div>
                       <button
                         type="button"
+                        aria-label="Cerrar edición de preset"
                         onClick={() => setEditingPreset(null)}
                         className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
                       >
@@ -1115,6 +1117,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             )}
                             <button
                               type="button"
+                              aria-label="Eliminar episodio"
                               onClick={() => {
                                 const newEps = editedShow.episodes.filter((_: any, i: number) => i !== idx);
                                 setEditedShow({ ...editedShow, episodes: newEps });
@@ -1672,6 +1675,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
                               <button
                                 type="button"
+                                aria-label="Eliminar registro de tarea"
                                 onClick={() => handleDeleteJob(job.id)}
                                 className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
                                 title="Eliminar registro"
@@ -1967,6 +1971,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
+                          aria-label="Eliminar obra del catálogo"
                           disabled={deletingId === show.id}
                           onClick={() => handleDeleteShow(show.id)}
                           className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"

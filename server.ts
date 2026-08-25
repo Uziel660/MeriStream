@@ -1,6 +1,8 @@
 import dns from "dns/promises";
 import express, { Request, Response } from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import {
@@ -59,6 +61,23 @@ async function startServer() {
     })
   );
   app.use(express.json({ limit: "10mb" }));
+
+  // 🛡️ Security Middlewares
+  app.use(
+    helmet({
+      contentSecurityPolicy: process.env.NODE_ENV === "production" ? undefined : false,
+      crossOriginEmbedderPolicy: false,
+    })
+  );
+
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 300, // Limit each IP to 300 requests per window
+    message: { error: "Too many requests from this IP, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use("/api/", apiLimiter);
 
   // ==========================================
   // API Routes

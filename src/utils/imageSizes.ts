@@ -57,10 +57,10 @@ export function bentoBackdropUrl(m: ImageSourceMedia): string | null {
   );
 }
 
-/** Poster vertical para cards/mini-tiles 4:5 y 2:3. */
+/** Poster vertical para cards/mini-tiles 4:5 y 2:3 (w185 = 185px, suficiente para cards de 144-192px). */
 export function cardPosterUrl(m: ImageSourceMedia): string | null {
   return (
-    tmdbImageUrl(m.poster_path, 'w342') ||
+    tmdbImageUrl(m.poster_path, 'w185') ||
     m.poster_url ||
     m.banner_url ||
     m.backdrop_url ||

@@ -1,56 +1,25 @@
 // src/components/SmartImage.tsx
 import React, { useEffect, useState } from 'react';
-import { proxiedImageUrl } from '../utils/proxiedUrl';
 
 interface SmartImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   src?: string | null;
   alt: string;
-  /** Elemento/envoltura que se renderiza si la imagen falla también vía proxy. */
   fallback?: React.ReactNode;
 }
 
-function isLocalSrc(src: string): boolean {
-  return (
-    src.startsWith('/') ||
-    src.startsWith('data:') ||
-    src.startsWith('blob:') ||
-    src.includes('localhost') ||
-    src.includes('127.0.0.1')
-  );
-}
-
 /**
- * <img> tolerante a CORS: los CDNs de metadatos (s4.anilist.co, kitsu.app,
- * wikimedia...) no siempre sirven Access-Control-Allow-Origin y llenan la
- * consola de errores dejando huecos en la UI. Al fallar la carga directa,
- * reintenta una vez vía el proxy del backend (/api/v1/proxy/stream) antes de
- * rendirse con el fallback.
+ * <img> optimizado: carga directa desde CDN. Si falla (CORS), muestra fallback
+ * inmediatamente sin intentar proxy. Esto reduce requests de 2-3x a 1x por imagen.
  */
 export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
   ({ src, alt, fallback = null, onError, ...rest }, ref) => {
-    const [stage, setStage] = useState<'direct' | 'proxy' | 'failed'>('direct');
+    const [failed, setFailed] = useState(false);
 
-    // Reset al cambiar la fuente (navegación entre títulos)
     useEffect(() => {
-      setStage(src ? 'direct' : 'failed');
+      setFailed(!src);
     }, [src]);
 
-    if (!src || stage === 'failed') return <>{fallback}</>;
-
-    if (stage === 'proxy' && !isLocalSrc(src)) {
-      return (
-        <img
-          ref={ref}
-          src={proxiedImageUrl(src)}
-          alt={alt}
-          onError={(e) => {
-            setStage('failed');
-            onError?.(e);
-          }}
-          {...rest}
-        />
-      );
-    }
+    if (!src || failed) return <>{fallback}</>;
 
     return (
       <img
@@ -59,11 +28,7 @@ export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
         alt={alt}
         loading={rest.loading ?? 'lazy'}
         onError={(e) => {
-          if (isLocalSrc(src)) {
-            setStage('failed');
-          } else {
-            setStage('proxy');
-          }
+          setFailed(true);
           onError?.(e);
         }}
         {...rest}

@@ -12,7 +12,7 @@ interface MediaCardProps {
   isNew?: boolean;
 }
 
-export const MediaCard: React.FC<MediaCardProps> = ({
+export const MediaCard: React.FC<MediaCardProps> = React.memo(({
   media,
   onSelectMedia,
   onHover,
@@ -94,7 +94,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       </div>
     </article>
   );
-};
+});
 
 export const MediaCardSkeleton: React.FC = () => {
   return (

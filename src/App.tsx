@@ -12,7 +12,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
-import { extractDominantColor } from './utils/colorExtractor';
+import { extractDominantColor, getFallbackColor } from './utils/colorExtractor';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
@@ -206,6 +206,13 @@ export function App() {
             },
           }) as Show);
 
+          // Only re-render if catalog actually changed (avoids SmartImage reset)
+          if (isBackground) {
+            const currentIds = shows.map(s => s.id).join(',');
+            const newIds = safeShows.map(s => s.id).join(',');
+            if (currentIds === newIds) return;
+          }
+
           setShows(safeShows);
 
           // Save to cache
@@ -215,13 +222,6 @@ export function App() {
               timestamp: Date.now(),
             }));
           } catch {}
-
-          if (!isBackground && safeShows.length > 0) {
-            const firstImg = safeShows[0].poster_url || safeShows[0].banner_url;
-            if (firstImg) {
-              extractDominantColor(firstImg, safeShows[0].title).then(setAmbientRgb);
-            }
-          }
         }
       }
     } catch (e) {
@@ -282,10 +282,7 @@ export function App() {
   };
 
   const handleHoverMedia = (show: Show) => {
-    const img = show.poster_url || show.banner_url;
-    if (img) {
-      extractDominantColor(img, show.title).then(setAmbientRgb);
-    }
+    setAmbientRgb(getFallbackColor(show.title));
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
@@ -611,7 +608,7 @@ export function App() {
                   {/* FILAS DE CATÁLOGO */}
                   <MediaRow
                     title="Novedades & Tendencias"
-                    items={shows}
+                    items={shows.slice(0, 50)}
                     onSelectMedia={handleOpenDetails}
                     onHoverMedia={handleHoverMedia}
                     isLoading={isLoading}

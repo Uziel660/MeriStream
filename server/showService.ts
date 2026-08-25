@@ -722,8 +722,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 export async function getShowsFromDb(search?: string, category?: string) {
   let where: any = {};
 
-  // El provider (SQLite/libsql) no soporta mode:"insensitive"; se normaliza a minúsculas
-  // en el propio filtro usando un raw LIKE, insensible a mayúsculas por colación.
   if (category) {
     where.category = { contains: category };
   }
@@ -749,6 +747,118 @@ export async function getShowsFromDb(search?: string, category?: string) {
   });
 
   return shows;
+}
+
+/**
+ * Lite mode: shows WITHOUT episodes. ~2MB vs ~15MB.
+ * Used by frontend for local-filtered catalog and admin panel.
+ * Supports pagination: ?page=1&limit=100
+ * Uses PostgreSQL full-text search (tsvector + GIN) when search is provided.
+ */
+export async function getShowsFromDbLite(
+  search?: string,
+  category?: string,
+  page?: number,
+  limit?: number
+) {
+  const pageNum = Math.max(1, page || 1);
+  const pageSize = Math.min(500, Math.max(1, limit || 500));
+  const skip = (pageNum - 1) * pageSize;
+
+  // PostgreSQL full-text search via raw query (much faster than LIKE)
+  if (search && search.trim().length >= 2) {
+    const s = search.trim();
+    const tsQuery = s.split(/\s+/).join(" & ");
+
+    let categoryFilter = "";
+    const params: any[] = [tsQuery, s.toLowerCase(), pageSize, skip];
+    let paramIdx = 4;
+
+    if (category) {
+      paramIdx++;
+      params.push(`%${category.toLowerCase()}%`);
+      categoryFilter = `AND LOWER(category) LIKE $${paramIdx}`;
+    }
+
+    const showsQuery = `
+      SELECT
+        "id", "title", "original_title", "japanese_title", "english_title",
+        "normalized_title", "description", "poster_url", "banner_url",
+        "poster_path", "backdrop_path", "category", "rating", "year",
+        "status", "genres", "created_at",
+        ts_rank(search_vector, plainto_tsquery('simple', $1)) AS rank
+      FROM "Show"
+      WHERE (
+        search_vector @@ plainto_tsquery('simple', $1)
+        OR LOWER(title) LIKE $2
+        OR LOWER("english_title") LIKE $2
+        OR LOWER("japanese_title") LIKE $2
+        OR LOWER(genres) LIKE $2
+      )
+      ${categoryFilter}
+      ORDER BY rank DESC, "created_at" DESC
+      LIMIT $3 OFFSET $4
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*)::int AS total
+      FROM "Show"
+      WHERE (
+        search_vector @@ plainto_tsquery('simple', $1)
+        OR LOWER(title) LIKE $2
+        OR LOWER("english_title") LIKE $2
+        OR LOWER("japanese_title") LIKE $2
+        OR LOWER(genres) LIKE $2
+      )
+      ${categoryFilter}
+    `;
+
+    const [shows, countResult] = await Promise.all([
+      prisma.$queryRawUnsafe(showsQuery, ...params),
+      prisma.$queryRawUnsafe(countQuery, tsQuery, `%${s.toLowerCase()}%`, ...(category ? [`%${category.toLowerCase()}%`] : [])),
+    ]);
+
+    const total = (countResult as any[])[0]?.total || 0;
+    return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
+
+  // Fallback: sin búsqueda, solo categoría o todo
+  let where: any = {};
+  if (category) {
+    where.category = { contains: category };
+  }
+
+  const [shows, total] = await Promise.all([
+    prisma.show.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        original_title: true,
+        japanese_title: true,
+        english_title: true,
+        normalized_title: true,
+        description: true,
+        poster_url: true,
+        banner_url: true,
+        poster_path: true,
+        backdrop_path: true,
+        category: true,
+        rating: true,
+        year: true,
+        status: true,
+        genres: true,
+        created_at: true,
+        _count: { select: { episodes: true } },
+      },
+      orderBy: { created_at: "desc" },
+      skip,
+      take: pageSize,
+    }),
+    prisma.show.count({ where }),
+  ]);
+
+  return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
 }
 
 /**

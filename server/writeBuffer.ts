@@ -272,8 +272,8 @@ async function writerLoop(): Promise<void> {
         if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
         else totalFailed++;
       }
-      // Pequeña pausa entre ops para no saturar SQLite
-      await new Promise((r) => setTimeout(r, 50));
+      // Pequeña pausa entre ops (PostgreSQL maneja concurrencia nativamente)
+      await new Promise((r) => setTimeout(r, 5));
     }
 
     // Si la cola quedó vacía y hay JSONL residual, limpiarlo

@@ -58,12 +58,12 @@ export interface WorkerSettings {
 }
 
 const DEFAULT_SETTINGS: WorkerSettings = {
-  default_delay_ms: 1500,
-  jitter_enabled: true,
-  max_concurrent_jobs: 3,
+  default_delay_ms: 0,
+  jitter_enabled: false,
+  max_concurrent_jobs: 5,
   user_agent_rotation: true,
-  page_concurrency: 8,
-  item_concurrency: 16,
+  page_concurrency: 16,
+  item_concurrency: 24,
 };
 
 // Columnas que EXISTEN en la tabla WorkerSettingsStore (schema.prisma).
@@ -653,7 +653,7 @@ class BackgroundCrawlerWorker {
 
   private async applyPoliteRateLimit(job: CrawlJob) {
     // El ritmo cortés protege al SITIO scrapeado. Las llamadas posteriores
-    // (TMDB/AniList/SQLite) no necesitan sleep y son el cuello real.
+    // (TMDB/AniList/PostgreSQL) no necesitan sleep y son el cuello real.
     const host = (() => {
       try {
         return new URL(job.target_url).hostname.replace(/^www\./, "");
@@ -988,7 +988,7 @@ class BackgroundCrawlerWorker {
           await this.updateJobState(job.id, { items_queue: queue });
           await this.addLog(job.id, "warn", `Error en '${item.title}': ${item.error}. Continuando con el siguiente...`);
         }
-        // Pausa entre items: dar tiempo a SQLite para drenar el WAL y al write buffer para aplicar.
+        // Pausa entre items: dar tiempo al write buffer para aplicar.
         await this.sleep(2000);
       }
     };

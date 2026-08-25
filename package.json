@@ -11,7 +11,9 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "fast-start": "npx tsx tools/fast-start.ts",
+    "merge-dbs": "npx tsx tools/merge-dbs.ts"
   },
   "dependencies": {
     "@crawlee/impit-client": "^3.18.1",
@@ -19,6 +21,7 @@
     "@libsql/client": "^0.17.4",
     "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^5.22.0",
+    "better-sqlite3": "^11.10.0",
     "cheerio": "^1.2.0",
     "colorthief": "^3.5.0",
     "cors": "^2.8.6",
@@ -37,6 +40,7 @@
     "undici": "^8.10.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/colorthief": "^2.6.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

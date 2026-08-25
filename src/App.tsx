@@ -173,36 +173,30 @@ export function App() {
     [removeContinueWatchingItem, updateContinueWatchingItem]
   );
 
-  // 1. Cargar el catálogo
+  // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
   const loadCatalog = async () => {
     try {
       setIsLoading(true);
-      const url = searchQuery
-        ? `/api/v1/shows?search=${encodeURIComponent(searchQuery)}`
-        : '/api/v1/shows';
-
-      const res = await fetch(url);
+      const res = await fetch('/api/v1/shows?lite=true&limit=500');
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data)) {
-          const safeShows: Show[] = data.map((s: any) => ({
+        const list = Array.isArray(data) ? data : data.shows || [];
+        if (Array.isArray(list)) {
+          const safeShows: Show[] = list.map((s: any) => ({
             id: s.id || `show-${Math.random()}`,
             title: s.title || 'Sin Título',
             description: s.description || s.synopsis || '',
             synopsis: s.description || s.synopsis || '',
             poster_url: s.poster_url || '',
             banner_url: s.banner_url || s.poster_url || '',
-            // Sin fallback al poster: un backdrop 16:9 real se distingue de un
-            // poster 2:3 para los layouts horizontales (hero, thumbs).
             backdrop_url: s.backdrop_url || s.banner_url || '',
-            // Rutas crudas TMDB (Fase 1): aún no tipadas en Show (rama META);
-            // imageSizes.ts las consume vía su interfaz local.
             poster_path: s.poster_path ?? null,
             backdrop_path: s.backdrop_path ?? null,
             category: s.category || 'anime',
             rating: s.rating || 8.2,
             year: s.year || 2024,
             genres: s.genres || ['Anime'],
+            episode_count: s._count?.episodes || 0,
             sources: {
               master_m3u8: `/api/v1/media/${s.id}/stream`,
               fallback_mp4: null,
@@ -212,7 +206,6 @@ export function App() {
           }) as Show);
           setShows(safeShows);
 
-          // Update ambient glow from first show if available
           if (safeShows.length > 0) {
             const firstImg = safeShows[0].poster_url || safeShows[0].banner_url;
             if (firstImg) {
@@ -228,9 +221,10 @@ export function App() {
     }
   };
 
+  // Cargar UNA VEZ al montar (no re-cargar en cada búsqueda)
   useEffect(() => {
     loadCatalog();
-  }, [searchQuery]);
+  }, []);
 
   // Tras cargar el catálogo, purgar las tarjetas de "Seguir Viendo" que
   // apunten a episodios/shows ya borrados (#2/R2).
@@ -339,31 +333,46 @@ export function App() {
 
   // Filtrado suave de catálogo por categorías y géneros
   const filteredShows = useMemo(() => {
-    if (activeFilter === 'all') return shows;
-    const filterKey = activeFilter.toLowerCase();
+    let result = shows;
 
-    return shows.filter((s) => {
-      const cat = (s.category || '').toLowerCase();
-      const title = (s.title || '').toLowerCase();
-      const genresStr = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
+    // Filtro por categoría
+    if (activeFilter !== 'all') {
+      const filterKey = activeFilter.toLowerCase();
+      result = result.filter((s) => {
+        const cat = (s.category || '').toLowerCase();
+        const title = (s.title || '').toLowerCase();
+        const genresStr = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
 
-      if (filterKey === 'anime') return cat.includes('anime') || genresStr.includes('anime');
-      if (filterKey === 'movie') return cat.includes('pel') || cat.includes('movie');
-      if (filterKey === 'series') return cat.includes('serie') || cat.includes('tv');
-      if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror');
-      if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror');
-      if (filterKey === 'acción' || filterKey === 'accion') return genresStr.includes('acci') || genresStr.includes('action');
-      if (filterKey === 'fantasía' || filterKey === 'fantasia') return genresStr.includes('fantas') || genresStr.includes('fantasy');
-      if (filterKey === 'ciencia ficción' || filterKey === 'sci-fi' || filterKey === 'scifi') return genresStr.includes('sci-fi') || genresStr.includes('ciencia') || genresStr.includes('futuro');
-      if (filterKey === 'suspenso') return genresStr.includes('suspen') || genresStr.includes('thriller');
-      if (filterKey === 'shounen' || filterKey === 'shonen') return genresStr.includes('shounen') || genresStr.includes('shonen') || title.includes('piece') || title.includes('naruto') || title.includes('dragon');
-      if (filterKey === 'seinen') return genresStr.includes('seinen') || genresStr.includes('psicológico') || genresStr.includes('drama');
-      if (filterKey === 'romance') return genresStr.includes('romance') || genresStr.includes('amor');
+        if (filterKey === 'anime') return cat.includes('anime') || genresStr.includes('anime');
+        if (filterKey === 'movie') return cat.includes('pel') || cat.includes('movie');
+        if (filterKey === 'series') return cat.includes('serie') || cat.includes('tv');
+        if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror');
+        if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror');
+        if (filterKey === 'acción' || filterKey === 'accion') return genresStr.includes('acci') || genresStr.includes('action');
+        if (filterKey === 'fantasía' || filterKey === 'fantasia') return genresStr.includes('fantas') || genresStr.includes('fantasy');
+        if (filterKey === 'ciencia ficción' || filterKey === 'sci-fi' || filterKey === 'scifi') return genresStr.includes('sci-fi') || genresStr.includes('ciencia') || genresStr.includes('futuro');
+        if (filterKey === 'suspenso') return genresStr.includes('suspen') || genresStr.includes('thriller');
+        if (filterKey === 'shounen' || filterKey === 'shonen') return genresStr.includes('shounen') || genresStr.includes('shonen') || title.includes('piece') || title.includes('naruto') || title.includes('dragon');
+        if (filterKey === 'seinen') return genresStr.includes('seinen') || genresStr.includes('psicológico') || genresStr.includes('drama');
+        if (filterKey === 'romance') return genresStr.includes('romance') || genresStr.includes('amor');
+        return genresStr.includes(filterKey) || cat.includes(filterKey) || title.includes(filterKey);
+      });
+    }
 
-      // Búsqueda genérica por género
-      return genresStr.includes(filterKey) || cat.includes(filterKey) || title.includes(filterKey);
-    });
-  }, [shows, activeFilter]);
+    // Búsqueda local instantánea (sin pegar a la API)
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((s) => {
+        const title = (s.title || '').toLowerCase();
+        const eng = (s as any).english_title?.toLowerCase() || '';
+        const jpn = (s as any).japanese_title?.toLowerCase() || '';
+        const genres = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
+        return title.includes(q) || eng.includes(q) || jpn.includes(q) || genres.includes(q);
+      });
+    }
+
+    return result;
+  }, [shows, activeFilter, searchQuery]);
 
   // Secciones divididas para la pantalla de inicio
   const animeShows = useMemo(

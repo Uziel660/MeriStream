@@ -1,3 +1,15 @@
+// prisma/schema-postgresql.ts
+// ══════════════════════════════════════════════════════════════════
+// Schema Prisma para PostgreSQL (migración desde SQLite)
+//
+// Para usar:
+//   1. Copiar este archivo a schema.prisma
+//   2. Setear DATABASE_URL en .env:
+//      DATABASE_URL="postgresql://user:password@localhost:5432/voidstream?schema=public"
+//   3. npx prisma db push
+//   4. npx tsx tools/migrate-sqlite-to-pg.ts
+// ══════════════════════════════════════════════════════════════════
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")

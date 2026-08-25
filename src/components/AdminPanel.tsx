@@ -316,10 +316,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const loadLibrary = async () => {
     try {
       setIsLoadingLibrary(true);
-      const res = await fetch('/api/v1/shows');
+      const res = await fetch('/api/v1/shows?lite=true&limit=500');
       if (res.ok) {
         const data = await res.json();
-        setLibraryShows(data);
+        const list = Array.isArray(data) ? data : data.shows || [];
+        setLibraryShows(list);
       }
     } catch (e) {
       console.error(e);

@@ -23,6 +23,8 @@ export interface Show {
   poster_url?: string | null;
   banner_url?: string | null;
   backdrop_url?: string | null;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
   category: string;
   kind?: string;
   genres?: string | string[];
@@ -39,6 +41,7 @@ export interface Show {
   license?: string;
   created_at?: string;
   updated_at?: string;
+  episode_count?: number;
   episodes?: Episode[];
   sources?: {
     master_m3u8: string;

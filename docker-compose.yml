@@ -1,0 +1,55 @@
+# docker-compose.yml
+# ══════════════════════════════════════════════════════════════════
+# VoidStream con PostgreSQL (máxima velocidad para escrituras)
+#
+# Uso:
+#   docker-compose up -d                    (arrancar)
+#   docker-compose logs -f app              (ver logs)
+#   docker-compose exec app npx tsx tools/migrate-sqlite-to-pg.ts  (migrar datos)
+#   docker-compose down                     (parar)
+#
+# Para volver a SQLite:
+#   1. Comentar la sección "postgres" en este archivo
+#   2. En .env: DATABASE_URL="file:./dev.db"
+#   3. docker-compose up -d
+# ══════════════════════════════════════════════════════════════════
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: voidstream-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voidstream
+      POSTGRES_USER: voidstream
+      POSTGRES_PASSWORD: voidstream_secret_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voidstream -d voidstream"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: voidstream-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://voidstream:voidstream_secret_2026@postgres:5432/voidstream?schema=public"
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backups:/app/backups
+      - ./data:/app/data
+
+volumes:
+  pgdata:

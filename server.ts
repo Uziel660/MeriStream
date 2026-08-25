@@ -16,6 +16,7 @@ import { taskWorker } from "./server/taskWorker";
 import {
   saveShowWithDeduplication,
   getShowsFromDb,
+  getShowsFromDbLite,
   getShowByIdFromDb,
   deleteShowFromDb,
   clearAllShowsFromDb,
@@ -260,13 +261,24 @@ async function startServer() {
   });
 
   // GET /api/v1/shows - Fetch shows from PostgreSQL
+  // ?lite=true → sin episodios, con paginación (para catálogo local del frontend)
+  // ?search=&category= → filtro server-side
+  // ?page=1&limit=500 → paginación
   app.get("/api/v1/shows", async (req: Request, res: Response) => {
     try {
       const search = typeof req.query.search === "string" ? req.query.search.trim() : undefined;
       const category = typeof req.query.category === "string" ? req.query.category.trim() : undefined;
+      const isLite = req.query.lite === "true";
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
 
-      const showsList = await getShowsFromDb(search, category);
-      res.json(showsList);
+      if (isLite) {
+        const result = await getShowsFromDbLite(search, category, page, limit);
+        res.json(result);
+      } else {
+        const showsList = await getShowsFromDb(search, category);
+        res.json(showsList);
+      }
     } catch (e: any) {
       res.status(500).json({ error: `Error leyendo catÃ¡logo: ${e.message}` });
     }
@@ -1769,17 +1781,13 @@ async function startServer() {
     console.error("[Proceso] ExcepciÃ³n no capturada (servidor se mantiene vivo):", err);
   });
 
-  // OptimizaciÃ³n SQLite para MUCHA concurrencia: WAL (lecturas no bloquean
-  // al escritor), busy_timeout (los writers esperan en vez de reventar) y
-  // synchronous=NORMAL (durabilidad suficiente con velocidad WAL).
+  // PostgreSQL: no PRAGMAs needed (those were SQLite-specific).
+  // PostgreSQL handles concurrency natively with MVCC.
   try {
-    await prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL;");
-    await prisma.$queryRawUnsafe("PRAGMA busy_timeout=60000;");
-    await prisma.$queryRawUnsafe("PRAGMA synchronous=NORMAL;");
-    const mode = await prisma.$queryRawUnsafe("PRAGMA journal_mode;");
-    console.log("[DB] SQLite journal_mode =", JSON.stringify(mode));
+    await prisma.$queryRawUnsafe`SELECT 1 as alive`;
+    console.log("[DB] PostgreSQL connection OK");
   } catch (e) {
-    console.warn("[DB] No se pudieron aplicar pragmas WAL:", e?.message || e);
+    console.warn("[DB] PostgreSQL connection failed:", e?.message || e);
   }
 
   // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).

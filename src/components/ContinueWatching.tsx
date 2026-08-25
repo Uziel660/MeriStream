@@ -1,0 +1,212 @@
+// src/components/ContinueWatching.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
+import { SmartImage } from './SmartImage';
+import type { Episode } from '../types';
+
+export interface WatchProgress {
+  showId: string;
+  showTitle: string;
+  showPoster?: string;
+  episodeId: string;
+  episodeNumber: number;
+  episodeTitle: string;
+  progressPercent: number; // e.g. 45 for 45%
+  currentTime?: number;
+  duration?: number;
+  lastWatchedAt: number;
+}
+
+/** Nunca mostrar "undefined" en tarjetas (#2): fallback al número de episodio. */
+function safeTitle(title: string | undefined, fallbackNumber: number): string {
+  const t = (title || '').trim();
+  if (t && !/^undefined$/i.test(t) && !/^null$/i.test(t)) return t;
+  return fallbackNumber != null ? `Episodio ${fallbackNumber}` : 'Episodio';
+}
+
+interface ContinueWatchingProps {
+  items: WatchProgress[];
+  onPlayEpisode: (showId: string, episode: Episode, showTitle: string) => void;
+  onSelectShow?: (showId: string) => void;
+}
+
+export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
+  items,
+  onPlayEpisode,
+  onSelectShow,
+}) => {
+
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    if (rowRef.current) {
+      const { scrollLeft, clientWidth } = rowRef.current;
+      const scrollAmount = clientWidth * 0.75;
+      rowRef.current.scrollTo({
+        left: direction === 'left' ? scrollLeft - scrollAmount : scrollLeft + scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight">
+          Seguir Viendo
+        </h3>
+        <span className="text-xs text-zinc-500 font-mono">
+          {items.length} en curso
+        </span>
+      </div>
+
+      <div className="group/row relative">
+        {/* BOTÓN SCROLL IZQUIERDA */}
+        <button
+          type="button"
+          onClick={() => handleScroll('left')}
+          aria-label="Desplazar a la izquierda"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-r-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-r border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+        >
+          <ChevronLeft size={22} />
+        </button>
+
+        {/* CONTENEDOR CARRUSEL */}
+        <div
+          ref={rowRef}
+          className="flex gap-4 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none scroll-smooth items-stretch"
+        >
+          {items.map((item) => (
+            <div key={`${item.showId}-${item.episodeId}`} className="w-64 sm:w-72 shrink-0">
+              <ContinueWatchingCard
+                item={item}
+                onPlay={() => {
+                  const ep: Episode = {
+                    id: item.episodeId,
+                    show_id: item.showId,
+                    title: safeTitle(item.episodeTitle, item.episodeNumber),
+                    episode_number: item.episodeNumber,
+                    created_at: new Date().toISOString(),
+                  };
+                  onPlayEpisode(item.showId, ep, safeTitle(item.showTitle, 0) === 'Episodio' ? (item.showTitle || 'Contenido') : item.showTitle);
+                }}
+                onOpenDetails={() => onSelectShow && onSelectShow(item.showId)}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* BOTÓN SCROLL DERECHA */}
+        <button
+          type="button"
+          onClick={() => handleScroll('right')}
+          aria-label="Desplazar a la derecha"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-l-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-l border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+        >
+          <ChevronRight size={22} />
+        </button>
+      </div>
+    </section>
+  );
+};
+
+interface ContinueWatchingCardProps {
+  item: WatchProgress;
+  onPlay: () => void;
+  onOpenDetails: () => void;
+}
+
+const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
+  item,
+  onPlay,
+  onOpenDetails,
+}) => {
+  const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
+
+  useEffect(() => {
+    if (item.showPoster) {
+      extractDominantColor(item.showPoster, item.showTitle).then(setAccentRgb);
+    }
+  }, [item.showPoster, item.showTitle]);
+
+  const accentColor = rgbToRgbaString(accentRgb, 1);
+
+  return (
+    <div
+      onClick={onPlay}
+      className="group/cw relative flex flex-col overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 cursor-pointer select-none"
+    >
+      {/* 16:9 HORIZONTAL THUMBNAIL */}
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-950">
+        {item.showPoster ? (
+          <SmartImage
+            src={item.showPoster}
+            alt={item.showTitle || 'Vista previa'}
+            className="h-full w-full object-cover object-center transition-transform duration-300 ease-out group-hover/cw:scale-105"
+            fallback={
+              <div className="h-full w-full bg-zinc-950 flex items-center justify-center text-zinc-600 text-xs">
+                Sin Vista Previa
+              </div>
+            }
+          />
+        ) : (
+          <div className="h-full w-full bg-zinc-950 flex items-center justify-center text-zinc-600 text-xs">
+            Sin Vista Previa
+          </div>
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-transparent" />
+
+        {/* HOVER PLAY BUTTON */}
+        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/cw:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black shadow-xl group-hover/cw:scale-110 transition-transform">
+            <Play size={18} className="ml-0.5 fill-black text-black" />
+          </span>
+        </div>
+
+        {/* EPISODE BADGE */}
+        <div className="absolute top-2 left-2">
+          <span className="rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-zinc-200 border border-zinc-800">
+            Ep. {item.episodeNumber}
+          </span>
+        </div>
+
+        {/* 3PX INFERIOR PROGRESS BAR */}
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800 overflow-hidden">
+          <div
+            className="h-full transition-all duration-300"
+            style={{
+              width: `${Math.max(5, Math.min(100, item.progressPercent))}%`,
+              backgroundColor: accentColor,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* METADATOS INFERIORES */}
+      <div className="p-3 space-y-0.5">
+        <div className="flex items-center justify-between text-xs">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDetails();
+            }}
+            className="font-medium text-zinc-400 hover:text-zinc-200 truncate max-w-[70%] text-[11px] text-left"
+          >
+            {item.showTitle || 'Contenido'}
+          </button>
+          <span className="text-[10px] text-zinc-500 font-mono">
+            {item.progressPercent}%
+          </span>
+        </div>
+        <h4 className="font-display text-xs sm:text-sm font-semibold text-zinc-100 group-hover/cw:text-amber-400 truncate transition-colors">
+          {safeTitle(item.episodeTitle, item.episodeNumber)}
+        </h4>
+      </div>
+    </div>
+  );
+};

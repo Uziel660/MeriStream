@@ -35,10 +35,10 @@ export type ImageSourceMedia = Partial<TmdbImagePaths> & {
   poster_url?: string | null;
 };
 
-/** Hero a pantalla completa: máxima calidad horizontal disponible. */
+/** Hero a pantalla completa: w1280 (máximo 200KB, no full-res de 1-5MB). */
 export function heroBackdropUrl(m: ImageSourceMedia): string | null {
   return (
-    tmdbImageUrl(m.backdrop_path, 'original') ||
+    tmdbImageUrl(m.backdrop_path, 'w1280') ||
     m.banner_url ||
     m.backdrop_url ||
     m.poster_url ||

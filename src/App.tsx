@@ -37,6 +37,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [gridPageSize, setGridPageSize] = useState(100);
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
 
@@ -491,7 +492,7 @@ export function App() {
       <UnifiedHeader
         onSearchChange={setSearchQuery}
         activeFilter={activeFilter}
-        onSelectCategory={setActiveFilter}
+        onSelectCategory={(f) => { setActiveFilter(f); setGridPageSize(100); }}
         onOpenAllCategories={() => setIsCategoriesModalOpen(true)}
       />
 
@@ -550,6 +551,7 @@ export function App() {
                         onClick={() => {
                           setSearchQuery('');
                           setActiveFilter('all');
+                          setGridPageSize(100);
                         }}
                         className="text-xs text-amber-400 hover:underline font-semibold"
                       >
@@ -557,16 +559,29 @@ export function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                      {filteredShows.map((item) => (
-                        <MediaCard
-                          key={item.id}
-                          media={item}
-                          onSelectMedia={handleOpenDetails}
-                          onHover={handleHoverMedia}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+                        {filteredShows.slice(0, gridPageSize).map((item) => (
+                          <MediaCard
+                            key={item.id}
+                            media={item}
+                            onSelectMedia={handleOpenDetails}
+                            onHover={handleHoverMedia}
+                          />
+                        ))}
+                      </div>
+                      {filteredShows.length > gridPageSize && (
+                        <div className="flex justify-center pt-6">
+                          <button
+                            type="button"
+                            onClick={() => setGridPageSize(prev => prev + 100)}
+                            className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
+                          >
+                            Cargar más ({filteredShows.length - gridPageSize} restantes)
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </section>
               ) : (
@@ -725,6 +740,7 @@ export function App() {
         activeFilter={activeFilter}
         onSelectCategory={(category) => {
           setActiveFilter(category);
+          setGridPageSize(100);
           setIsCategoriesModalOpen(false);
         }}
         showsCountByGenre={showsCountByGenre}

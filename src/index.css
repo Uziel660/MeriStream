@@ -64,8 +64,7 @@ h4,
 }
 
 .animate-ken-burns {
-  animation: kenburns 30s ease-in-out infinite;
-  will-change: transform;
+  animation: kenburns 60s ease-in-out infinite;
 }
 
 /* Custom scrollbar */

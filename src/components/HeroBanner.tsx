@@ -48,13 +48,13 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
           <SmartImage
             src={image}
             alt={media.title}
-            className="h-full w-full object-cover object-center opacity-50 filter brightness-90 animate-ken-burns"
+            className="h-full w-full object-cover object-center opacity-50 animate-ken-burns"
           />
           {/* MULTI-LAYER CINEMATIC VIGNETTE & GRADIENTS */}
           <div className="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/75 to-transparent w-full md:w-4/5" />
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
           <div
-            className="absolute inset-0 pointer-events-none opacity-40 transition-all duration-1000"
+            className="absolute inset-0 pointer-events-none opacity-40 transition-opacity duration-1000"
             style={{
               background: `radial-gradient(circle at 75% 25%, ${glowStyle} 0%, transparent 65%)`,
             }}

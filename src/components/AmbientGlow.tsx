@@ -19,7 +19,7 @@ export const AmbientGlow: React.FC<AmbientGlowProps> = ({ dominantRgb }) => {
   return (
     <div
       aria-hidden="true"
-      className="fixed inset-0 pointer-events-none z-0 overflow-hidden transition-all duration-1000 ease-out"
+      className="fixed inset-0 pointer-events-none z-0 overflow-hidden transition-opacity duration-1000 ease-out"
       style={{
         background: `
           radial-gradient(circle at 80% 15%, ${glowRgba} 0%, transparent 60%),

@@ -38,7 +38,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
       className="group/card relative flex flex-col cursor-pointer select-none text-left w-full"
     >
       {/* POSTER CONTAINER WITH CLEAN ELEVATION */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 shadow-sm transition-all duration-300 group-hover/card:border-zinc-700">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 shadow-sm transition-[border-color] duration-300 group-hover/card:border-zinc-700">
         {poster ? (
           <SmartImage
             src={poster}

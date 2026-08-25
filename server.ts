@@ -1784,7 +1784,7 @@ async function startServer() {
   // PostgreSQL: no PRAGMAs needed (those were SQLite-specific).
   // PostgreSQL handles concurrency natively with MVCC.
   try {
-    await prisma.$queryRawUnsafe`SELECT 1 as alive`;
+    await prisma.$queryRawUnsafe("SELECT 1 as alive");
     console.log("[DB] PostgreSQL connection OK");
   } catch (e) {
     console.warn("[DB] PostgreSQL connection failed:", e?.message || e);

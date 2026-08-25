@@ -179,7 +179,7 @@ export function App() {
   // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
   const fetchFreshCatalog = async (isBackground = false) => {
     try {
-      const res = await fetch('/api/v1/shows?lite=true&limit=15000');
+      const res = await fetch('/api/v1/shows?lite=true&limit=25000');
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.shows || [];

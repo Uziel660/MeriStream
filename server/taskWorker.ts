@@ -60,11 +60,10 @@ export interface WorkerSettings {
 const DEFAULT_SETTINGS: WorkerSettings = {
   default_delay_ms: 1500,
   jitter_enabled: true,
-  // SQLite solo permite 1 writer: serial TOTAL para evitar P1008.
-  max_concurrent_jobs: 1,
+  max_concurrent_jobs: 3,
   user_agent_rotation: true,
-  page_concurrency: 1,
-  item_concurrency: 1,
+  page_concurrency: 8,
+  item_concurrency: 16,
 };
 
 // Columnas que EXISTEN en la tabla WorkerSettingsStore (schema.prisma).

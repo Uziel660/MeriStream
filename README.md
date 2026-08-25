@@ -1,8 +1,8 @@
 # 🎬 NITIFLIX / VOIDSTREAM — FULL-STACK MEDIA & STREAMING PLATFORM
 
-> **Versión del Sistema:** 4.2.0 (Workers Paralelos Multi-Catálogo + Verificación Automática Programable + Reconciliación de Secuelas por TMDB + Índice de Re-escaneo Ligero + Editor de Catálogo + Detección Anti-Bot + Outbox de Escrituras + Admin Exclusivo `/admin` + Configuración Centralizada `app.config.ts`)
-> **Estado:** 100% Funcional de Extremo a Extremo (Base de datos SQLite persistente con Prisma ORM, Arquitectura de Scrapers desacoplada con Adaptadores dedicados y Fallback Semántico, Resolutores de Video Embed multiserver, Validador de Streams, Enriquecimiento Multifuente con AniList/Kitsu/MAL/TMDB es-MX, Catálogo Interactivo con Estado Reactivo de Importación, Reproductor Híbrido HLS/Embed con Proxy Anti-CORS, Worker de Tareas Persistente con Ejecución Paralela, Selector Premium por Plataforma, Deduplicación por Clave Canónica con Fusión de Secuelas, Backfill de Metadatos con Write-Buffer).
-> **Stack:** Node.js (Express + TypeScript + Cheerio + Prisma ORM + SQLite) + React 18 (TypeScript + Vite) + Tailwind CSS + Lucide Icons + Hls.js + Vitest.
+> **Versión del Sistema:** 5.0.0 (Arquitectura de Escrituras Serializadas + Write-Buffer Outbox + Watchdog Auto-Reparador + Túnel ngrok + Configuración Ultra-Seria SQLite)
+> **Estado:** 100% Funcional de Extremo a Extremo (Base de datos SQLite persistente con Prisma ORM, Arquitectura de Scrapers desacoplada con Adaptadores dedicados y Fallback Semántico, Resolutores de Video Embed multiserver, Validador de Streams, Enriquecimiento Multifuente con AniList/Kitsu/MAL/TMDB es-MX, Catálogo Interactivo con Estado Reactivo de Importación, Reproductor Híbrido HLS/Embed + Plyr con Proxy Anti-CORS, Worker de Tareas Persistente con Ejecución Paralela, Selector Premium por Plataforma, Deduplicación por Clave Canónica con Fusión de Secuelas, Backfill de Metadatos con Write-Buffer, Watchdog Auto-Reparador, Túnel ngrok para Acceso Externo).
+> **Stack:** Node.js (Express + TypeScript + Cheerio + Prisma ORM + SQLite) + React 18 (TypeScript + Vite) + Tailwind CSS + Lucide Icons + Hls.js + Plyr + Vitest.
 
 ---
 
@@ -18,6 +18,7 @@
 8. [Guía de Instalación y Ejecución](#8-guía-de-instalación-y-ejecución)
 9. [Suites de Pruebas Automatizadas](#9-suites-de-pruebas-automatizadas)
 10. [Subsistemas v4.2 — Workers, Verificación, Reconciliación y Más](#10-subsistemas-v42--workers-verificación-reconciliación-y-más)
+11. [Novedades v5.0 — Serialización SQLite, Write-Buffer, Watchdog y ngrok](#11-novedades-v50--serialización-sqlite-write-buffer-watchdog-y-ngrok)
 
 ---
 
@@ -377,3 +378,147 @@ Cloudflare (cf-mitigated, "Just a moment", challenge-platform) y 429 repetidos s
 ### 10.9 Selector premium por plataforma
 
 El backend adjunta `source_site` a cada stream (`/play`, `episode-servers`, `play-multi`); el reproductor agrupa y muestra el MEJOR servidor de cada plataforma primero, con badge de plataforma. Prioridad de plataformas reordenable con flechas (SiteRating, tab Fuentes). VOE/Mixdrop/filemoon descartados por lista negra doble (backend + cliente).
+
+---
+
+## 11. Novedades v5.0 — Serialización SQLite, Write-Buffer, Watchdog y ngrok (2026-08-25)
+
+### 11.1 Write-Buffer Outbox (`server/writeBuffer.ts`)
+
+Cuando SQLite está lenta o bloqueada (barridos pesados, múltiples workers), las escrituras se serializan en un archivo JSONL (`data/write-buffer.jsonl`) en lugar de escribir directo a la BD. Un drenador periódico (15s) aplica las operaciones una por una cuando la BD responde.
+
+**Operaciones soportadas:**
+| Tipo | Descripción |
+|------|-------------|
+| `show.update` | Actualización de metadatos (backfill/verificación) |
+| `sourceLink.create` | Alta de fuente de video (dedup por unique constraint) |
+| `mediaItem.create` | Alta de MediaItem (dedup por normalized_title+kind) |
+| `mediaEpisode.upsert` | Alta de episodio (dedup por compuesto) |
+| `crawlTask.update` | Actualización de estado de jobs del worker |
+
+**Características:**
+- Cada operación lleva un `fingerprint` para idempotencia.
+- Reintentos automáticos (máx 5 intentos por operación).
+- `sourceLink.create` resuelve el episode ID automáticamente: si recibe un `mediaItemId` placeholder, busca o crea el episodio correcto antes de insertar el SourceLink.
+- El drenador arranca al boot del servidor y corre cada 15 segundos.
+
+### 11.2 Serialización Total de Escrituras SQLite
+
+Para evitar timeouts P1008 ("database is locked") durante barridos pesados, se implementó una estrategia de serialización completa:
+
+| Parámetro | Valor | Efecto |
+|-----------|-------|--------|
+| `max_concurrent_jobs` | 1 | Solo 1 job simultáneo (antes 3) |
+| `item_concurrency` | 1 | Solo 1 obra procesada a la vez por job |
+| `page_concurrency` | 1 | Solo 1 página a la vez en descubrimiento |
+| `busy_timeout` | 60000ms | Los writers esperan 60s en vez de fallar |
+| `journal_mode` | WAL | Write-Ahead Logging para concurrencia |
+| `synchronous` | NORMAL | Balance entre integridad y performance |
+| Delay entre items | 2000ms | Pausa entre obras para drenar el WAL |
+
+**Flujo de escrituras:**
+```
+Worker procesa obra → enqueueWrite() → data/write-buffer.jsonl
+                                              ↓ (cada 15s)
+                                    drainWriteBuffer() → SQLite
+```
+
+**Además:**
+- `updateJobState` (estado de jobs) usa `enqueueWrite` en vez de escritura directa.
+- `addLog` (logs del worker) se acumula en memoria (`logBuffers`) y flush cada 5s o al finalizar job.
+- `syncEpisodeSources` (upsert + sourceLinks) se encola completo en el write buffer.
+
+### 11.3 Watchdog Auto-Reparador (`server/watchdog.ts`)
+
+Worker periódico que escanea la base de datos en busca de anomalías y las repara automáticamente.
+
+**Anomalías detectadas:**
+| Categoría | Descripción |
+|-----------|-------------|
+| `title` | Títulos basura / placeholder (vacíos, "Sin título", "test", etc.) |
+| `metadata` | Descripciones faltantes o placeholder, posters faltantes |
+| `orphan` | Obras sin episodios (catálogo fantasma) |
+| `stuck_job` | Jobs fallidos o stuck en "running" por >30 min |
+| `empty_show` | Fuentes huérfanas (SourceLinks sin MediaItem válido) |
+| `duplicate` | Duplicados por normalized_title |
+
+**Archivos:**
+- `data/watchdog.config.json` — Configuración (enabled, interval_minutes, auto_fix, title_patterns_blacklist)
+- `data/watchdog-reports.json` — Últimos 50 hallazgos con timestamp y severidad
+- `data/WATCHDOG_ALERT.json` — Alerta crítica para el asistente (opencode)
+
+**Endpoints API:**
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET` | `/api/v1/watchdog` | Estado actual del watchdog |
+| `GET` | `/api/v1/watchdog/config` | Obtener configuración |
+| `POST` | `/api/v1/watchdog/config` | Actualizar configuración |
+| `POST` | `/api/v1/watchdog/run` | Ejecutar escaneo manual |
+| `GET` | `/api/v1/watchdog/reports` | Últimos reportes |
+| `GET` | `/api/v1/watchdog/alert` | Alerta crítica (si existe) |
+| `POST` | `/api/v1/watchdog/alert/clear` | Marcar alerta como procesada |
+
+**Auto-reparación:**
+- Títulos basura → reemplaza por `base_normalized_title` del show.
+- Jobs stuck → marca como `error` con mensaje descriptivo.
+- Jobs fallidos → resetea a `pending` para reintentar.
+
+### 11.4 Watchdog Runner Standalone (`tools/watchdog-runner.ts`)
+
+Runner independiente que puede ejecutarse fuera del servidor:
+
+```bash
+npx tsx tools/watchdog-runner.ts          # Loop continuo
+npx tsx tools/watchdog-runner.ts --once   # Una sola pasada
+```
+
+Si detecta anomalías críticas, invoca automáticamente `opencode run` con el contexto del error para que el asistente revise y repare.
+
+### 11.5 Túnel ngrok para Acceso Externo
+
+ ngrok está configurado para exponer el servidor local vía un dominio público estable:
+
+- **Dominio:** `prehensile-hyperactively-zara.ngrok-free.dev`
+- **Backend:** `http://localhost:3000`
+- **Binario:** `C:\Users\Uziel\AppData\Roaming\npm\node_modules\ngrok\bin\ngrok.exe` (v3.39.11)
+
+El dominio ngrok ya está incluido en la lista de orígenes CORS permitidos en `app.config.ts`. Para iniciar:
+
+```bash
+ngrok http 3000 --domain=prehensile-hyperactively-zara.ngrok-free.dev
+```
+
+### 11.6 Configuración Centralizada de Red (`app.config.ts`)
+
+Única fuente de verdad de host/puerto/CORS. La consumen el backend (`server.ts`), el reproductor (`proxiedUrl.ts`) y el optimizador (`streamOptimizer.ts`). Incluye orígenes de túneles Cloudflare y ngrok.
+
+### 11.7 Plyr Player Modal (`src/components/PlyrPlayerModal.tsx`)
+
+Reproductor moderno basado en Plyr con:
+- Soporte HLS vía Hls.js
+- Selección de calidad
+- UI limpia y responsive
+- Integración con el sistema de servidores multiplex
+
+### 11.8 Repositorio Git Limpio
+
+Los archivos generados en runtime (WAL, SHM, JSONL del write buffer, alertas del watchdog) están excluidos del repositorio vía `.gitignore` para evitar problemas de tamaño en GitHub (>100MB):
+
+```
+prisma/dev.db-wal
+prisma/dev.db-shm
+data/write-buffer.jsonl
+data/WATCHDOG_ALERT.json
+data/watchdog-reports.json
+```
+
+---
+
+## 12. Resumen de Cambios por Versión
+
+| Versión | Fecha | Cambios Principales |
+|---------|-------|---------------------|
+| v5.0 | 2026-08-25 | Write-Buffer outbox, serialización SQLite total, watchdog auto-reparador, túnel ngrok, Plyr player |
+| v4.2 | 2026-08-24 | Workers paralelos, verificación automática, reconciliación de secuelas, editor catálogo, admin `/admin` |
+| v4.1 | 2026-08-22 | Arquitectura híbrida de scrapers (12 adaptadores), dedup multi-API,Continue Watching |
+| v4.0 | 2026-08-20 | Upgrade base, Prisma ORM, tests Vitest, SSRF fixes |

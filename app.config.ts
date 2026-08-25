@@ -35,6 +35,7 @@ export function localAllowedOrigins(): string[] {
     "http://127.0.0.1:5173",
     "https://classifieds-discounts-father-barrier.trycloudflare.com",
     "https://bookstore-britain-lows-locked.trycloudflare.com",
+    "https://fabrics-merit-shut-tone.trycloudflare.com",
     "https://prehensile-hyperactively-zara.ngrok-free.dev",
     "http://prehensile-hyperactively-zara.ngrok-free.dev",
   ];

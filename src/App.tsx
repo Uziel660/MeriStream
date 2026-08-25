@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { AllCategoriesModal } from './components/AllCategoriesModal';
@@ -127,12 +127,21 @@ export function App() {
     }
   };
 
-  const handleHoverMedia = (show: Show) => {
-    const img = show.poster_url || show.banner_url;
-    if (img) {
-      extractDominantColor(img, show.title).then(setAmbientRgb);
-    }
-  };
+  // ⚡ Bolt Performance Optimization:
+  // Debounce the expensive `extractDominantColor` (which relies on Canvas pixel extraction)
+  // during fast onMouseEnter events to prevent main thread blocking and memory bloat.
+  // Impact: Reduces canvas instantiations drastically when dragging mouse across media rows.
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHoverMedia = useCallback((show: Show) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      const img = show.poster_url || show.banner_url;
+      if (img) {
+        extractDominantColor(img, show.title).then(setAmbientRgb);
+      }
+    }, 150);
+  }, []);
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
     const showId = episode.show_id || selectedShowId || 'unknown';

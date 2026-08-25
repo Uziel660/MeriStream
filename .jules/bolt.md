@@ -1,0 +1,3 @@
+## 2024-05-24 - Expensive Un-debounced Hover Events
+**Learning:** Found an issue where moving the mouse quickly across MediaRow items triggers many expensive image fetches and canvas pixel manipulation operations to extract the dominant color via `extractDominantColor`. Since React renders list items quickly, the fast firing of these events on a heavy DOM can stall the main thread or cause unnecessary network/memory usage.
+**Action:** Always verify if high-frequency UI events like `onMouseEnter` or `onMouseMove` perform heavy operations (like DOM manipulation, canvas extraction, or fetching data). Always debounce them using a `setTimeout` paired with a `useRef` to store the timeout handle (or lodash's debounce) to ensure they only run after the user intends to hover.

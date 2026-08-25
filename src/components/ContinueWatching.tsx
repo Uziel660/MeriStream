@@ -1,7 +1,7 @@
 // src/components/ContinueWatching.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { Play, ChevronLeft, ChevronRight } from 'lucide-react';
-import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
+import { rgbToRgbaString } from '../utils/colorExtractor';
 import { SmartImage } from './SmartImage';
 import type { Episode } from '../types';
 
@@ -124,14 +124,7 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   onPlay,
   onOpenDetails,
 }) => {
-  const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
-
-  useEffect(() => {
-    if (item.showPoster) {
-      extractDominantColor(item.showPoster, item.showTitle).then(setAccentRgb);
-    }
-  }, [item.showPoster, item.showTitle]);
-
+  const accentRgb: [number, number, number] = [245, 158, 11];
   const accentColor = rgbToRgbaString(accentRgb, 1);
 
   return (

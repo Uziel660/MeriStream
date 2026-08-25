@@ -180,7 +180,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const finalStreams = validatedStreams.length > 0 ? validatedStreams : detectedStreams;
 
     if (isCatalog) {
-      const catalogPoster = ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : (catalogItems[0]?.image_url || null);
+      const catalogPoster = this.resolveRelativeUrl(ogImage, urlOrQuery) || (catalogItems[0]?.image_url || null);
       return {
         page_type: "catalog",
         content_type: "anime",
@@ -240,8 +240,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       japanese_title: enriched.japanese_title,
       english_title: enriched.english_title,
       description: wpSynopsis || enriched.description || ogDesc || "Serie de anime indexada desde AnimeFLV.",
-      poster_url: wpPoster || enriched.poster_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
-      banner_url: enriched.banner_url || wpPoster || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
+      poster_url: wpPoster || enriched.poster_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
+      banner_url: enriched.banner_url || wpPoster || this.resolveRelativeUrl(ogImage, urlOrQuery),
       rating: wpRating || enriched.rating || 8.5,
       year: enriched.year || 2024,
       status: enriched.status || "En emisión",
@@ -873,6 +873,21 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       image_url: imgUrl,
       kind: "anime",
     };
+  }
+
+  private resolveRelativeUrl(url: string | null | undefined, baseUrl: string): string | null {
+    if (!url) return null;
+    if (url.startsWith("http")) return url;
+    if (url.startsWith("//")) return `https:${url}`;
+    if (url.startsWith("/")) {
+      try {
+        const u = new URL(baseUrl);
+        return `${u.origin}${url}`;
+      } catch {
+        return `https://animeflv.net${url}`;
+      }
+    }
+    return url;
   }
 
   private async fallbackSearch(query: string): Promise<UniversalAnalysisResult> {

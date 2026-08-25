@@ -154,7 +154,7 @@ export class GenericAdapter extends BaseScraperAdapter {
 
       if (isCatalog) {
         const catalogTitle = ogTitle || `Catálogo (${domain})`;
-        const catalogPoster = ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : (catalogItems[0]?.image_url || null);
+        const catalogPoster = this.resolveRelativeUrl(ogImage, urlOrQuery) || (catalogItems[0]?.image_url || null);
 
         return {
           page_type: "catalog",
@@ -197,8 +197,8 @@ export class GenericAdapter extends BaseScraperAdapter {
         japanese_title: enriched.japanese_title,
         english_title: enriched.english_title,
         description: enriched.description || ogDesc || "Contenido indexado en VoidStream.",
-        poster_url: enriched.poster_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
-        banner_url: enriched.banner_url || (ogImage ? (ogImage.startsWith("//") ? `https:${ogImage}` : ogImage) : null),
+        poster_url: enriched.poster_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
+        banner_url: enriched.banner_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
         rating: enriched.rating || 8.0,
         year: enriched.year || 2024,
         status: enriched.status || "Finalizado",
@@ -212,6 +212,21 @@ export class GenericAdapter extends BaseScraperAdapter {
     } catch {
       return this.handleSearchTerm(urlOrQuery);
     }
+  }
+
+  private resolveRelativeUrl(url: string | null | undefined, baseUrl: string): string | null {
+    if (!url) return null;
+    if (url.startsWith("http")) return url;
+    if (url.startsWith("//")) return `https:${url}`;
+    if (url.startsWith("/")) {
+      try {
+        const u = new URL(baseUrl);
+        return `${u.origin}${url}`;
+      } catch {
+        return null;
+      }
+    }
+    return url;
   }
 
   private async handleSearchTerm(query: string): Promise<UniversalAnalysisResult> {
@@ -290,7 +305,16 @@ export class GenericAdapter extends BaseScraperAdapter {
     try {
       return new URL(firstSrc, urlOrQuery).toString();
     } catch {
-      return firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
+      if (firstSrc.startsWith("//")) return `https:${firstSrc}`;
+      if (firstSrc.startsWith("/")) {
+        try {
+          const u = new URL(urlOrQuery);
+          return `${u.origin}${firstSrc}`;
+        } catch {
+          return null;
+        }
+      }
+      return firstSrc;
     }
   }
 

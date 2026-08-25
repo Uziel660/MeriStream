@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { AllCategoriesModal } from './components/AllCategoriesModal';
 import { HeroBanner } from './components/HeroBanner';
@@ -376,11 +376,11 @@ export function App() {
 
   // Secciones divididas para la pantalla de inicio
   const animeShows = useMemo(
-    () => shows.filter((s) => (s.category || '').toLowerCase().includes('anime')),
+    () => shows.filter((s) => (s.category || '').toLowerCase().includes('anime')).slice(0, 50),
     [shows]
   );
   const otherShows = useMemo(
-    () => shows.filter((s) => !(s.category || '').toLowerCase().includes('anime')),
+    () => shows.filter((s) => !(s.category || '').toLowerCase().includes('anime')).slice(0, 50),
     [shows]
   );
   const topRatedShows = useMemo(
@@ -524,29 +524,16 @@ export function App() {
                       </button>
                     </div>
                   ) : (
-                    <motion.div
-                      layout
-                      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5"
-                    >
-                      <AnimatePresence>
-                        {filteredShows.map((item) => (
-                          <motion.div
-                            key={item.id}
-                            layout
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.25 }}
-                          >
-                            <MediaCard
-                              media={item}
-                              onSelectMedia={handleOpenDetails}
-                              onHover={handleHoverMedia}
-                            />
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </motion.div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+                      {filteredShows.map((item) => (
+                        <MediaCard
+                          key={item.id}
+                          media={item}
+                          onSelectMedia={handleOpenDetails}
+                          onHover={handleHoverMedia}
+                        />
+                      ))}
+                    </div>
                   )}
                 </section>
               ) : (

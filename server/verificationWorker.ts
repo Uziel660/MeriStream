@@ -143,7 +143,7 @@ const CATEGORY_PLATFORM_MAP: Record<string, string[]> = {
 
 function defaultConfig(): VerificationConfig {
   return {
-    enabled: false,
+    enabled: true,
     interval_minutes: 1440,
     scope_mode: "all",
     platforms: [],

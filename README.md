@@ -294,6 +294,222 @@ No debería serlo desde v6.0. Si lo es:
 
 ---
 
+## Técnicas de rendimiento aplicadas
+
+### Backend
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| **Write-Buffer RAM** | `server/writeBuffer.ts` | Todas las escrituras a DB van a una cola en memoria. Un writer secuencial las aplica cada 5ms. Los workers NUNCA tocan la DB directamente |
+| **Endpoint lite** | `GET /api/v1/shows?lite=true` | Devuelve shows SIN episodios. Payload ~2MB vs ~15MB |
+| **Full-Text Search** | PostgreSQL tsvector + GIN | Búsqueda por texto en milisegundos. El trigger auto-actualiza el campo de búsqueda |
+| **Fuzzy matching** | pg_trgm | Tolerancia a typos: "narut" todavía encuentra "Naruto" |
+| **Paginación server-side** | `?page=1&limit=500` | Evita traer 12K+ registros de una |
+| **MVCC PostgreSQL** | Workers paralelos | Hasta 5 workers simultáneos sin locks ni bloqueos |
+| **PRAGMAs eliminados** | `server.ts` | Ya no se usan WAL/busy_timeout de SQLite |
+
+### Frontend
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| **Catálogo en memoria** | `App.tsx` | Carga UNA VEZ al montar (~2MB), filtra localmente |
+| **Búsqueda local** | `filteredShows` useMemo | `Array.filter()` en memoria = instantáneo, cero API calls |
+| **Debounce 300ms** | `UnifiedHeader.tsx` | Evita filtrar en cada tecla, espera a que deje de escribir |
+| **Episodios bajo demanda** | `MediaDetailsModal.tsx` | Solo carga episodios cuando el usuario abre un título |
+| **Lazy loading de imágenes** | `SmartImage.tsx` | Las imágenes cargan cuando entran en viewport |
+
+### Scraping
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| **Adaptadores Strategy** | `server/scrapers/adapters/` | Cada sitio tiene su adaptador. Si uno falla, el genérico toma el relevo |
+| **Rate limiting + jitter** | `server/taskWorker.ts` | Delay entre requests + jitter aleatorio para no ser bloqueado |
+| **Anti-bot detection** | `server/utils/antiBot.ts` | Detecta Cloudflare, 429s. Auto-throttle por dominio |
+| **Deduplicación** | `server/showService.ts` | Por mal_id o título normalizado. Fusiona episodios, no crea duplicados |
+| **Write buffer** | `server/writeBuffer.ts` | Las escrituras van a un buffer JSONL y se aplican cuando la DB responde |
+
+---
+
+## Decisiones de arquitectura (NO TOCAR sin entender)
+
+### 1. Write-Buffer: los workers NUNCA tocan la DB
+
+```
+Worker → enqueueWrite() → Cola RAM → Writer secuencial → DB
+```
+
+**Por qué:** Evita carreras de escritura. Si varios workers escriben a la vez, PostgreSQL puede deadlockear o SQLite puede corromperse.
+
+**Si querés modificar:** Nunca pongas `prisma.show.create()` directo en un worker. Usá `enqueueShowCreate()`, `enqueueShowUpdate()`, `enqueueWrite()`.
+
+### 2. Endpoint lite SIN episodios
+
+```
+Frontend → /shows?lite=true → shows sin episodes → filtro local
+Modal → /shows/:id → show CON episodes → solo cuando se abre
+```
+
+**Por qué:** 12K shows × ~6 episodios promedio = ~72K registros. Traerlos todos en cada búsqueda es lento e inútil.
+
+**Si querés modificar:** No agregues `include: { episodes }` al endpoint lite. Si necesitas episodios, usá el endpoint `/shows/:id`.
+
+### 3. Búsqueda local vs server-side
+
+```
+Frontend: Array.filter() en memoria (instantáneo)
+Backend: tsvector + GIN (fallback si el catálogo crece a 100K+)
+```
+
+**Por qué:** La búsqueda local es instantánea (<1ms). La de PostgreSQL es rápida (~5ms) pero requiere round-trip a la DB.
+
+**Si querés modificar:** No deshabilites la búsqueda local. Si agregás más campos de búsqueda, actualizá el `filteredShows` en `App.tsx`.
+
+### 4. Schema Prisma: campos calculados NO van en el schema
+
+El campo `search_vector` se maneja con raw SQL + trigger, NO en el schema.prisma.
+
+**Por qué:** Prisma no soporta tsvector. Si lo ponés en el schema, Prisma intentará manejarlo y fallará.
+
+**Si querés modificar:** Si agregás campos de PostgreSQL avanzados (JSONB, arrays, hstore), usá raw SQL para crearlos e initelos con `$executeRawUnsafe`.
+
+### 5. IDs generados por el worker
+
+Los IDs de show/episode se generan EN EL WORKER antes de encolar, no en el writer.
+
+**Por qué:** El worker necesita el ID para referencias cruzadas (episodes necesitan show_id).
+
+**Si querés cambiar el ID scheme:** Actualizá `generateId()` en el worker y verificá que no haya unique constraints que se rompan.
+
+---
+
+## Consideraciones al modificar la app
+
+### Si agregás una nueva tabla
+
+1. Agregar al `prisma/schema.prisma`
+2. Ejecutar `npx prisma db push`
+3. Si la tabla tiene text search, agregar índice GIN manualmente con `$executeRawUnsafe`
+4. Actualizar `tools/fast-migrate-pg.ts` si querés que la migración la incluya
+
+### Si agregás un nuevo endpoint
+
+1. Agregarlo en `server.ts`
+2. Si escribe a la DB, usar el write-buffer (no prisma directo)
+3. Si es de solo lectura, pode prisma directo
+4. Documentarlo en el README sección "API REST Endpoints"
+
+### Si agregás un adaptador de scraping
+
+1. Crear `server/scrapers/adapters/MiAdapter.ts`
+2. Extender `BaseAdapter`
+3. Implementar `canHandle(url)` y `scrape(url)`
+4. Registrarlo en `ScraperManager.ts`
+5. Probarlo con `npm test`
+
+### Si modificás el reproductor
+
+1. `src/components/HLSPlayerModal.tsx` es el reproductor principal
+2. Usa Hls.js para streams .m3u8
+3. El proxy anti-CORS está en `/api/v1/proxy/stream`
+4. Los streams se resuelven Just-In-Time al dar play
+
+### Si cambiás la base de datos
+
+**De PostgreSQL a SQLite:**
+1. Cambiar `prisma/schema.prisma`: `provider = "sqlite"`
+2. Quitar `.env` (o poner `DATABASE_URL="file:./dev.db"`)
+3. Ejecutar `npx prisma db push`
+4. Quitar full-text search (no existe en SQLite)
+5. Los workers vuelven a ser 1 solo (SQLite tiene locks)
+
+**De PostgreSQL a Turso/libSQL:**
+1. Cambiar `DATABASE_URL` a `libsql://...`
+2. Configurar `TURSO_AUTH_TOKEN`
+3. Ejecutar `npx prisma db push`
+
+---
+
+## Portear a otras plataformas
+
+### Android (React Native o Capacitor)
+
+La app usa React + Vite. Para portear a Android:
+
+**Opción 1: Capacitor (recomendado)**
+```bash
+npm install @capacitor/core @capacitor/cli
+npx cap init nitiflix com.nitiflix.app
+npx cap add android
+npm run build
+npx cap sync
+npx cap open android
+```
+- El backend corre en un servidor remoto (no en el celular)
+- Cambiar `localhost:3000` por la IP del servidor en `app.config.ts`
+- El reproductor HLS funciona nativo en Android via ExoPlayer
+
+**Opción 2: PWA (más fácil)**
+- Agregar un `manifest.json` con iconos y colores
+- Service worker para caché offline
+- Se "instala" desde Chrome en Android
+
+**Cosas a tener en cuenta:**
+- El proxy anti-CORS (`/api/v1/proxy/stream`) DEBE correr en el servidor, no en el celular
+- PostgreSQL debe estar en el servidor (no en Docker local del celular)
+- Los scrapers hacen fetch a sitios externos: necesitan internet
+- El reproductor HLS funciona nativo, pero MP4 puede necesitar configuración extra
+
+### iOS (React Native o Capacitor)
+
+Mismas opciones que Android. Consideraciones:
+- HLS funciona nativo en iOS (es su formato preferido)
+- CORS es menos estricto en WKWebView
+
+### Deploy en servidor (producción)
+
+```bash
+# 1. Compilar
+npm run build
+
+# 2. Configurar .env con PostgreSQL de producción
+DATABASE_URL="postgresql://user:pass@your-pg-host:5432/voidstream"
+
+# 3. Iniciar
+npm start
+```
+
+**Recomendaciones:**
+- Usar PM2 o systemd para mantener el proceso vivo
+- PostgreSQL en RDS (AWS), Cloud SQL (GCP) o DigitalOcean
+- nginx como reverse proxy con SSL
+- El dominio ngrok es solo para desarrollo
+
+---
+
+## Escalabilidad
+
+### Cuánto aguanta la configuración actual
+
+| Métrica | Capacidad actual |
+|---------|-----------------|
+| Shows en catálogo | 12,000+ (probado) |
+| Búsqueda local | Instantánea hasta 50K shows |
+| Workers paralelos | 5 simultáneos |
+| Escrituras/segundo | ~200 (write buffer) |
+| Conexiones DB | Pool de Prisma (~10) |
+
+### Cuándo escalar
+
+| Si necesitás... | Hacer... |
+|-----------------|----------|
+| 50K+ shows | La búsqueda local sigue funcionando, pero considerar paginación |
+| 100K+ shows | Mover búsqueda a server-side (tsvector ya está configurado) |
+| 1000+ usuarios simultáneos | Escalar PostgreSQL (read replicas) |
+| Scraping masivo | Aumentar `max_concurrent_jobs` en WorkerSettings |
+| Deploy global | Mover a Turso/libSQL (SQLite distribuido) o PlanetScale |
+
+---
+
 ## Tecnologías usadas
 
 | Componente | Tecnología |

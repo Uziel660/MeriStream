@@ -177,7 +177,7 @@ export function App() {
   const loadCatalog = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch('/api/v1/shows?lite=true&limit=500');
+      const res = await fetch('/api/v1/shows?lite=true&limit=15000');
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.shows || [];

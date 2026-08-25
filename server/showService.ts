@@ -762,7 +762,7 @@ export async function getShowsFromDbLite(
   limit?: number
 ) {
   const pageNum = Math.max(1, page || 1);
-  const pageSize = Math.min(500, Math.max(1, limit || 500));
+  const pageSize = Math.min(50000, Math.max(1, limit || 500));
   const skip = (pageNum - 1) * pageSize;
 
   // PostgreSQL full-text search via raw query (much faster than LIKE)

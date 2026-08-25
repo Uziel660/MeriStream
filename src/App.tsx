@@ -20,6 +20,8 @@ import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
+const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
+const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
 function safeEpisodeTitle(episode: { title?: string; episode_number?: number }): string {
@@ -174,9 +176,8 @@ export function App() {
   );
 
   // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
-  const loadCatalog = async () => {
+  const fetchFreshCatalog = async (isBackground = false) => {
     try {
-      setIsLoading(true);
       const res = await fetch('/api/v1/shows?lite=true&limit=15000');
       if (res.ok) {
         const data = await res.json();
@@ -204,9 +205,18 @@ export function App() {
               subtitles: [],
             },
           }) as Show);
+
           setShows(safeShows);
 
-          if (safeShows.length > 0) {
+          // Save to cache
+          try {
+            localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({
+              data: safeShows,
+              timestamp: Date.now(),
+            }));
+          } catch {}
+
+          if (!isBackground && safeShows.length > 0) {
             const firstImg = safeShows[0].poster_url || safeShows[0].banner_url;
             if (firstImg) {
               extractDominantColor(firstImg, safeShows[0].title).then(setAmbientRgb);
@@ -214,6 +224,32 @@ export function App() {
           }
         }
       }
+    } catch (e) {
+      if (!isBackground) console.error('Error cargando catálogo:', e);
+    }
+  };
+
+  const loadCatalog = async () => {
+    try {
+      setIsLoading(true);
+
+      // 1. Try cache first (instant)
+      try {
+        const cached = localStorage.getItem(CATALOG_CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+            setShows(data);
+            setIsLoading(false);
+            // Still fetch fresh in background
+            fetchFreshCatalog(true);
+            return;
+          }
+        }
+      } catch {}
+
+      // 2. No cache or expired: fetch normally
+      await fetchFreshCatalog(false);
     } catch (e) {
       console.error('Error cargando catálogo:', e);
     } finally {

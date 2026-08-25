@@ -34,8 +34,9 @@ export function proxiedStreamUrl(url: string, title?: string, provider?: string)
   return `/api/v1/proxy/stream?url=${encodeURIComponent(url)}${titleParam}${provParam}`;
 }
 
-/** Alias semántico para imágenes (mismo endpoint de proxy). */
+/** Lightweight image proxy - no DNS lookup, no stealth client, just fetch + stream */
 export function proxiedImageUrl(url: string): string {
-  return proxiedStreamUrl(url);
+  if (!url || isLocalUrl(url)) return url;
+  return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`;
 }
 

@@ -176,9 +176,19 @@ async function startServer() {
     res.json({ status: "ok", service: "VoidStream Core API (PostgreSQL Enabled)" });
   });
 
+  // Genres cache (TTL 5 minutes)
+  let cachedGenres: any = null;
+  let genresCacheExpiry = 0;
+  const GENRES_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   // GET /api/v1/genres - Fetch all distinct genres across anime, movies, and series APIs
   app.get("/api/v1/genres", async (req: Request, res: Response) => {
     try {
+      // Return cached if valid
+      if (cachedGenres && Date.now() < genresCacheExpiry) {
+        return res.json(cachedGenres);
+      }
+
       const allGenres = new Set<string>();
 
       // 1. Gather all local genres from PostgreSQL catalog
@@ -250,11 +260,17 @@ async function startServer() {
       } catch {}
 
       const sorted = Array.from(allGenres).sort((a, b) => a.localeCompare(b, "es"));
-      res.json({
+      const result = {
         status: "ok",
         total: sorted.length,
         genres: sorted,
-      });
+      };
+
+      // Cache the result
+      cachedGenres = result;
+      genresCacheExpiry = Date.now() + GENRES_CACHE_TTL;
+
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -274,6 +290,9 @@ async function startServer() {
 
       if (isLite) {
         const result = await getShowsFromDbLite(search, category, page, limit);
+        // Cache for 5 minutes, allow stale while revalidating
+        res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+        res.setHeader('X-Catalog-Count', String(result.total || 0));
         res.json(result);
       } else {
         const showsList = await getShowsFromDb(search, category);
@@ -1010,6 +1029,46 @@ async function startServer() {
       } else if (!res.writableEnded) {
         res.end();
       }
+    }
+  });
+
+  // GET /api/v1/proxy/image - Lightweight image proxy (no DNS lookup, no stealth client)
+  // Used by SmartImage for CORS-failing images from CDNs (anilist, tmdb, etc.)
+  app.get("/api/v1/proxy/image", async (req: Request, res: Response) => {
+    const targetUrl = typeof req.query.url === "string" ? req.query.url : "";
+    if (!targetUrl) return res.status(400).json({ error: "url required" });
+
+    try {
+      const parsed = new URL(targetUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return res.status(400).json({ error: "invalid protocol" });
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+
+      const upstream = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!upstream.ok) {
+        return res.status(upstream.status).json({ error: `upstream ${upstream.status}` });
+      }
+
+      const contentType = upstream.headers.get("content-type") || "image/jpeg";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader("Content-Length", buffer.length);
+      res.end(buffer);
+    } catch (e: any) {
+      if (!res.headersSent) res.status(502).json({ error: e.message });
     }
   });
 

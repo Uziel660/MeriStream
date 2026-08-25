@@ -248,6 +248,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [libraryPage, setLibraryPage] = useState(1);
+  const LIBRARY_PAGE_SIZE = 100;
   // const [isImporting, setIsImporting] = useState(false);
 
   // Cargar presets y settings de worker al montar
@@ -656,6 +658,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       genresStr.toLowerCase().includes(q)
     );
   });
+
+  const paginatedLibrary = filteredLibrary.slice(0, libraryPage * LIBRARY_PAGE_SIZE);
+  const hasMoreLibrary = filteredLibrary.length > paginatedLibrary.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
@@ -2130,7 +2135,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                   <input
                     type="text"
                     value={librarySearch}
-                    onChange={(e) => setLibrarySearch(e.target.value)}
+                    onChange={(e) => { setLibrarySearch(e.target.value); setLibraryPage(1); }}
                     placeholder="Filtrar por título, categoría o género..."
                     className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white focus:outline-none focus:border-amber-500/60"
                   />
@@ -2165,55 +2170,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     No se encontraron obras que coincidan con la búsqueda.
                   </div>
                 ) : (
-                  filteredLibrary.map((show) => (
-                    <div
-                      key={show.id}
-                      className="flex items-center justify-between p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 transition-all group"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 pr-4">
-                        <img
-                          src={show.poster_url || show.banner_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=100'}
-                          alt={show.title}
-                          className="w-10 h-14 object-cover rounded-lg border border-zinc-800 shrink-0"
-                        />
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-bold text-white truncate">{show.title}</h4>
-                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                              {show.category || 'Anime'}
-                            </span>
+                  <>
+                    {paginatedLibrary.map((show) => (
+                      <div
+                        key={show.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 pr-4">
+                          <img
+                            src={show.poster_url || show.banner_url || ''}
+                            alt={show.title}
+                            className="w-10 h-14 object-cover rounded-lg border border-zinc-800 shrink-0"
+                            loading="lazy"
+                          />
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-white truncate">{show.title}</h4>
+                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                {show.category || 'Anime'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 truncate max-w-lg">
+                              {show.genres || 'Sin géneros'}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-zinc-400 truncate max-w-lg">
-                            {show.genres || 'Sin géneros'} • {show.episodes?.length || 0} episodios / fuentes
-                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setEditingShow(show)}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                            title="Editar obra"
+                          >
+                            <RefreshCw size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === show.id}
+                            onClick={() => handleDeleteShow(show.id)}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="Eliminar obra"
+                          >
+                            {deletingId === show.id ? (
+                              <Loader2 size={14} className="animate-spin text-red-400" />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
+                    ))}
+                    {hasMoreLibrary && (
+                      <div className="flex justify-center pt-2">
                         <button
                           type="button"
-                          onClick={() => setEditingShow(show)}
-                          className="p-2 rounded-lg text-zinc-500 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
-                          title="Editar obra (metadatos, streams y plataformas)"
+                          onClick={() => setLibraryPage(prev => prev + 1)}
+                          className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 border border-zinc-700 transition-colors"
                         >
-                          <RefreshCw size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={deletingId === show.id}
-                          onClick={() => handleDeleteShow(show.id)}
-                          className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          title="Eliminar obra del catálogo"
-                        >
-                          {deletingId === show.id ? (
-                            <Loader2 size={14} className="animate-spin text-red-400" />
-                          ) : (
-                            <Trash2 size={14} />
-                          )}
+                          Cargar más ({filteredLibrary.length - paginatedLibrary.length} restantes)
                         </button>
                       </div>
-                    </div>
-                  ))
+                    )}
+                  </>
                 )}
               </div>
 

@@ -9,6 +9,25 @@ import { normalizeTitleKey, parseRawTitle, isPlausibleTitle } from "./utils/titl
 import { extractStreamFromUrl } from "./universalScraper";
 import { enqueueWrite } from "./writeBuffer";
 
+/**
+ * Retry con backoff exponencial para escrituras SQLite que necesitan
+ * resultado inmediato (mediaItem.create, mediaEpisode.upsert, etc.).
+ * Evita P1008 sin necesidad de bufferizar.
+ */
+async function retryOnBusy<T>(fn: () => Promise<T>, label: string, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      if (e?.code !== "P1008" || attempt === maxRetries) throw e;
+      const delay = Math.min(2000 * Math.pow(2, attempt), 30000);
+      console.log(`[retryOnBusy] ${label} SQLite locked, reintento ${attempt + 1}/${maxRetries} en ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("retryOnBusy: unreachable");
+}
+
 export interface SourceLinkInput {
   url: string;
   /** Origen del scrape ("cinecalidad.am", "animeflv.net", ...). Default: "unknown". */
@@ -266,10 +285,10 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
   if ((!existingShow.banner_url || existingShow.banner_url === "") && showData.bannerUrl) updatePayload.banner_url = showData.bannerUrl;
 
   if (Object.keys(updatePayload).length > 0) {
-    await prisma.show.update({
+    await retryOnBusy(() => prisma.show.update({
       where: { id: existingShow.id },
       data: updatePayload,
-    });
+    }), `show.update(${existingShow.title})`);
   }
 
   // BATCH: una sola ida a la BD para todos los episodios nuevos.
@@ -361,7 +380,7 @@ async function syncMediaItemSources(
     });
     let mediaItem = pickYearCompatible(itemCandidates, year);
     if (!mediaItem) {
-      mediaItem = await prisma.mediaItem.create({
+      mediaItem = await retryOnBusy(() => prisma.mediaItem.create({
         data: {
           normalized_title: norm,
           base_normalized_title: baseNorm,
@@ -374,7 +393,7 @@ async function syncMediaItemSources(
           poster_path: enrichedAny?.poster_path || null,
           backdrop_path: enrichedAny?.backdrop_path || null,
         },
-      });
+      }), `mediaItem.create(${canonical})`);
     } else {
       const updateData: Record<string, unknown> = {};
       if (!mediaItem.base_normalized_title) updateData.base_normalized_title = baseNorm;
@@ -383,7 +402,7 @@ async function syncMediaItemSources(
       if (enrichedAny?.poster_path && !mediaItem.poster_path) updateData.poster_path = enrichedAny.poster_path;
       if (enrichedAny?.backdrop_path && !mediaItem.backdrop_path) updateData.backdrop_path = enrichedAny.backdrop_path;
       if (Object.keys(updateData).length > 0) {
-        mediaItem = await prisma.mediaItem.update({ where: { id: mediaItem.id }, data: updateData });
+        mediaItem = await retryOnBusy(() => prisma.mediaItem.update({ where: { id: mediaItem!.id }, data: updateData }), `mediaItem.update(${canonical})`);
       }
     }
 
@@ -490,7 +509,7 @@ async function mergeSequelIntoTwin(
   if (!twin.mal_id && showData.malId) patch.mal_id = showData.malId;
   if (!twin.anilist_id && showData.anilistId) patch.anilist_id = showData.anilistId;
   if (Object.keys(patch).length > 0) {
-    await prisma.show.update({ where: { id: twin.id }, data: patch });
+    await retryOnBusy(() => prisma.show.update({ where: { id: twin.id }, data: patch }), `show.update-sequel(${twin.title})`);
   }
 
   console.log(
@@ -642,7 +661,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 
   console.log(`[Deduplication] Nueva obra verificada sin duplicados. Guardando en PostgreSQL...`);
 
-  const createdShow = await prisma.show.create({
+  const createdShow = await retryOnBusy(() => prisma.show.create({
     data: {
       mal_id: showData.malId,
       anilist_id: showData.anilistId,
@@ -676,7 +695,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
         orderBy: { episode_number: "asc" },
       },
     },
-  });
+  }), `show.create(${showData.title})`);
 
   await syncMediaItemSources(input, kind, createdShow.id, normalizedEpisodes, titleInfo);
   enqueueBackfillIfIncomplete(createdShow);
@@ -824,7 +843,7 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
     return getShowByIdFromDb(showId);
   }
 
-  await prisma.show.update({ where: { id: showId }, data });
+  await retryOnBusy(() => prisma.show.update({ where: { id: showId }, data }), `show.update(${showId})`);
   return getShowByIdFromDb(showId);
 }
 

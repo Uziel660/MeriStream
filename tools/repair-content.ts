@@ -2,6 +2,9 @@ import { PrismaClient } from "@prisma/client";
 
 const p = new PrismaClient();
 
+const BATCH_SIZE = 45; // Parallel requests per batch
+const DELAY_BETWEEN_BATCHES = 1000; // 1s between batches
+
 const BAD_DESCRIPTION_PATTERNS = [
   /^obra multimedia indexada/i,
   /^importado de/i,
@@ -12,111 +15,109 @@ const BAD_DESCRIPTION_PATTERNS = [
   /^描述を検索中/i,
 ];
 
-async function repairContent() {
+async function repairBulk() {
   await p.$connect();
+  const start = Date.now();
 
-  console.log('=== CONTENT REPAIR SCRIPT ===\n');
+  console.log('=== BULK CONTENT REPAIR ===\n');
 
+  // 1. Find ALL shows with bad descriptions
   const allShows = await p.show.findMany({
-    select: { id: true, title: true, description: true, poster_url: true, category: true }
+    select: { id: true, title: true, description: true, category: true }
   });
 
-  const badDescShows: Array<{ id: string; title: string; desc: string; reason: string; category: string }> = [];
-  const shortDescShows: Array<{ id: string; title: string; desc: string }> = [];
-  const noEpShows: Array<{ id: string; title: string; category: string }> = [];
-  const singleEpShows: Array<{ id: string; title: string; epCount: number }> = [];
-  const badPosterShows: Array<{ id: string; title: string; poster: string }> = [];
+  const needsRepair: Array<{ id: string; title: string; category: string }> = [];
 
   for (const show of allShows) {
     const desc = (show.description || '').trim();
-
-    const isBadDesc = BAD_DESCRIPTION_PATTERNS.some(pat => pat.test(desc));
-    if (isBadDesc || desc === '') {
-      badDescShows.push({ id: show.id, title: show.title, desc: desc || '(vacío)', reason: 'placeholder', category: show.category });
-    } else if (desc.length > 0 && desc.length < 50) {
-      shortDescShows.push({ id: show.id, title: show.title, desc });
-    }
-
-    if (show.poster_url && !show.poster_url.startsWith('http')) {
-      badPosterShows.push({ id: show.id, title: show.title, poster: show.poster_url });
-    }
-  }
-
-  const showsWithEps = await p.show.findMany({
-    select: { id: true, title: true, category: true, _count: { select: { episodes: true } } }
-  });
-
-  for (const show of showsWithEps) {
-    if (show._count.episodes === 0) {
-      noEpShows.push({ id: show.id, title: show.title, category: show.category });
-    } else if (show._count.episodes === 1) {
-      singleEpShows.push({ id: show.id, title: show.title, epCount: 1 });
+    const isBad = BAD_DESCRIPTION_PATTERNS.some(p => p.test(desc)) || desc === '' || (desc.length > 0 && desc.length < 50);
+    if (isBad) {
+      needsRepair.push({ id: show.id, title: show.title, category: show.category });
     }
   }
 
   console.log(`Total shows: ${allShows.length}`);
-  console.log(`\n--- BAD DESCRIPTIONS ---`);
-  console.log(`Placeholder descriptions: ${badDescShows.length}`);
-  for (const s of badDescShows.slice(0, 20)) {
-    console.log(`  "${s.title}" -> "${s.desc}" [${s.reason}]`);
-  }
-  if (badDescShows.length > 20) console.log(`  ... and ${badDescShows.length - 20} more`);
+  console.log(`Need repair: ${needsRepair.length}`);
+  console.log(`Batch size: ${BATCH_SIZE} parallel requests`);
+  console.log(`Estimated time: ~${Math.ceil(needsRepair.length / BATCH_SIZE * 2)} seconds\n`);
 
-  console.log(`\nShort descriptions (<50 chars): ${shortDescShows.length}`);
-  for (const s of shortDescShows.slice(0, 10)) {
-    console.log(`  "${s.title}" -> "${s.desc}"`);
-  }
+  // 2. Clear ALL bad descriptions immediately
+  console.log('--- PHASE 1: Clearing bad descriptions ---');
+  const idsToClear = needsRepair.map(s => s.id);
 
-  console.log(`\n--- EPISODE ISSUES ---`);
-  console.log(`Shows with 0 episodes: ${noEpShows.length}`);
-  for (const s of noEpShows.slice(0, 20)) {
-    console.log(`  "${s.title}" [${s.category}]`);
-  }
-  if (noEpShows.length > 20) console.log(`  ... and ${noEpShows.length - 20} more`);
-
-  console.log(`\nShows with exactly 1 episode: ${singleEpShows.length}`);
-
-  console.log(`\n--- POSTER ISSUES ---`);
-  console.log(`Shows with non-HTTP poster URLs: ${badPosterShows.length}`);
-  for (const s of badPosterShows) {
-    console.log(`  "${s.title}" -> "${s.poster}"`);
+  // Batch update in chunks of 500
+  for (let i = 0; i < idsToClear.length; i += 500) {
+    const chunk = idsToClear.slice(i, i + 500);
+    await p.show.updateMany({
+      where: { id: { in: chunk } },
+      data: { description: '' }
+    });
+    console.log(`  Cleared ${Math.min(i + 500, idsToClear.length)}/${idsToClear.length} descriptions`);
   }
 
-  console.log(`\n--- ATTEMPTING REPAIRS ---`);
+  // 3. Re-enrich in parallel batches
+  console.log('\n--- PHASE 2: Re-enriching from APIs ---');
+  const { enrichUniversalMetadata } = await import('../server/metadataEngine');
 
   let repaired = 0;
   let failed = 0;
 
-  for (const show of badDescShows.slice(0, 50)) {
-    try {
-      const { enrichUniversalMetadata } = await import('../server/metadataEngine');
-      const enriched = await enrichUniversalMetadata(show.title, show.category as any);
+  for (let i = 0; i < needsRepair.length; i += BATCH_SIZE) {
+    const batch = needsRepair.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(needsRepair.length / BATCH_SIZE);
 
-      if (enriched && enriched.description && enriched.description.length > 50) {
-        await p.show.update({
-          where: { id: show.id },
-          data: { description: enriched.description }
-        });
-        console.log(`  REPAIRED: "${show.title}" -> "${enriched.description.substring(0, 80)}..."`);
-        repaired++;
-      } else {
-        console.log(`  FAILED (no good description): "${show.title}"`);
-        failed++;
-      }
+    const results = await Promise.allSettled(
+      batch.map(async (show) => {
+        try {
+          const enriched = await enrichUniversalMetadata(show.title, show.category as any);
+          if (enriched && enriched.description && enriched.description.length > 50) {
+            await p.show.update({
+              where: { id: show.id },
+              data: { description: enriched.description }
+            });
+            return { ok: true, title: show.title };
+          }
+          return { ok: false, title: show.title, reason: 'no good description' };
+        } catch (e: any) {
+          return { ok: false, title: show.title, reason: e.message };
+        }
+      })
+    );
 
-      await new Promise(r => setTimeout(r, 2000));
-    } catch (e: any) {
-      console.log(`  ERROR: "${show.title}" -> ${e.message}`);
-      failed++;
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.ok) repaired++;
+      else failed++;
+    }
+
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`  Batch ${batchNum}/${totalBatches} done (${elapsed}s) - OK: ${repaired} / FAIL: ${failed}`);
+
+    if (i + BATCH_SIZE < needsRepair.length) {
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
     }
   }
 
-  console.log(`\n--- SUMMARY ---`);
+  // 4. Summary
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`\n=== SUMMARY ===`);
+  console.log(`Total processed: ${needsRepair.length}`);
   console.log(`Repaired: ${repaired}`);
   console.log(`Failed: ${failed}`);
-  console.log(`Remaining bad descriptions: ${badDescShows.length - repaired}`);
+  console.log(`Time: ${elapsed}s`);
+
+  // 5. Verify
+  const remaining = await p.show.count({
+    where: {
+      OR: [
+        { description: '' },
+        { description: { startsWith: 'Obra multimedia indexada' } },
+      ]
+    }
+  });
+  console.log(`Remaining bad descriptions: ${remaining}`);
 
   await p.$disconnect();
 }
 
-repairContent().catch(console.error);
+repairBulk().catch(console.error);

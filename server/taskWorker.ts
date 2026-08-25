@@ -418,7 +418,16 @@ class BackgroundCrawlerWorker {
     const job = await this.getJob(id);
     if (!job) return false;
     if (job.status === "running" || job.status === "pending") {
-      await this.updateJobState(id, { status: "paused" });
+      // Escritura DIRECTA con retry para que el worker lo vea inmediato.
+      for (let i = 0; i < 3; i++) {
+        try {
+          await prisma.crawlTask.update({ where: { id }, data: { status: "paused" } });
+          break;
+        } catch (e: any) {
+          if (e?.code !== "P1008" || i === 2) break;
+          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        }
+      }
       await this.addLog(id, "warn", "Tarea pausada por el usuario.");
       return true;
     }
@@ -429,7 +438,16 @@ class BackgroundCrawlerWorker {
     const job = await this.getJob(id);
     if (!job) return false;
     if (job.status === "paused") {
-      await this.updateJobState(id, { status: "pending" });
+      // Escritura DIRECTA con retry para que el worker lo vea inmediato.
+      for (let i = 0; i < 3; i++) {
+        try {
+          await prisma.crawlTask.update({ where: { id }, data: { status: "pending" } });
+          break;
+        } catch (e: any) {
+          if (e?.code !== "P1008" || i === 2) break;
+          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        }
+      }
       await this.addLog(id, "info", "Tarea reanudada y puesta en cola.");
       return true;
     }
@@ -439,7 +457,16 @@ class BackgroundCrawlerWorker {
   public async cancelJob(id: string): Promise<boolean> {
     const job = await this.getJob(id);
     if (!job) return false;
-    await this.updateJobState(id, { status: "cancelled" });
+    // Escritura DIRECTA con retry para que el worker lo vea inmediato.
+    for (let i = 0; i < 3; i++) {
+      try {
+        await prisma.crawlTask.update({ where: { id }, data: { status: "cancelled" } });
+        break;
+      } catch (e: any) {
+        if (e?.code !== "P1008" || i === 2) break;
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
     await this.addLog(id, "warn", "Tarea cancelada.");
     return true;
   }

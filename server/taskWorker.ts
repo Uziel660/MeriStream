@@ -20,7 +20,9 @@ import { enqueueWrite } from "./writeBuffer";
 
 function siteOf(url: string | undefined): string {
   try {
-    return new URL(url || "").hostname.replace(/^www\./, "") || "unknown";
+    const host = new URL(url || "").hostname.replace(/^www\./, "") || "unknown";
+    // Return first label only: "lamovie.org" → "lamovie"
+    return host.split(".")[0] || host;
   } catch {
     return "unknown";
   }

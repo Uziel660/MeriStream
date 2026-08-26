@@ -46,6 +46,8 @@ export interface SaveShowInput {
   genres?: string | string[];
   /** Sitio de origen del crawl; se propaga a los SourceLink sin source_site propio. */
   source_site?: string;
+  /** Plataforma de origen (animeflv, lamovie, cinecalidad, etc.). Se guarda en Show.source. */
+  source?: string;
   /** Fuentes adicionales de la obra; se adjuntan al primer episodio (caso película). */
   sources?: SourceLinkInput[];
   episodes?: Array<{
@@ -647,6 +649,12 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 
   console.log(`[Deduplication] Nueva obra verificada sin duplicados. Encolando en buffer RAM...`);
 
+  // Normalizar source: "lamovie.org" → "lamovie", "www3.animeflv.net" → "animeflv"
+  const rawSource = input.source || input.source_site || "";
+  const normalizedSource = rawSource.includes(".")
+    ? rawSource.replace(/^www\./, "").split(".")[0] || rawSource
+    : rawSource;
+
   // Generar ID y encolar show.create + episodios (NUNCA toco SQLite directamente)
   const showId = enqueueShowCreate({
     mal_id: showData.malId,
@@ -668,6 +676,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     year: showData.year > 0 ? showData.year : new Date().getFullYear(),
     status: showData.status,
     genres: showData.genresStr,
+    source: normalizedSource,
   });
 
   // Encolar episodios
@@ -988,7 +997,8 @@ function isDirectMediaUrl(url: string): boolean {
 /** Sitio de origen de una URL (hostname sin www) para etiquetar SourceLinks. */
 function siteOfUrl(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./, "") || "unknown";
+    const host = new URL(url).hostname.replace(/^www\./, "") || "unknown";
+    return host.split(".")[0] || host;
   } catch {
     return "unknown";
   }

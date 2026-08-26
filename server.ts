@@ -336,11 +336,39 @@ async function startServer() {
         select: { source_url: true },
       });
       const platCounts = new Map<string, number>();
+      // CDN/known-platform hostname normalization map
+      const CDN_PATTERNS = [
+        [/acek-cdn\.com$/i, null],
+        [/dramiyos-cdn\.com$/i, null],
+        [/turboviplay\.com$/i, null],
+      ];
+      const KNOWN_PLATFORM_HOSTS: Record<string, string> = {
+        animeflv: "animeflv", jkanime: "animeflv",
+        tioanime: "tioanime", "v.tioanime": "tioanime",
+        lamovie: "lamovie",
+        cinecalidad: "cinecalidad",
+        latanime: "latanime",
+        tioplus: "tioplus",
+        veranimes: "veranimes",
+        tubepelis: "tubepelis",
+      };
       for (const e of eps) {
         try {
-          const host = new URL(e.source_url).hostname.replace(/^www\./, "").split(".")[0];
-          if (!host) continue;
-          platCounts.set(host, (platCounts.get(host) || 0) + 1);
+          const rawHost = new URL(e.source_url).hostname.replace(/^www\./, "");
+          const firstLabel = rawHost.split(".")[0].toLowerCase();
+          // Detect CDN hosts: map to null (skip) or known platform
+          const isCdn = CDN_PATTERNS.some(([pat]) => pat.test(rawHost));
+          let platform: string;
+          if (isCdn) {
+            // CDN links don't represent a real platform — skip from display
+            continue;
+          } else if (KNOWN_PLATFORM_HOSTS[firstLabel]) {
+            platform = KNOWN_PLATFORM_HOSTS[firstLabel];
+          } else {
+            platform = firstLabel;
+          }
+          if (!platform) continue;
+          platCounts.set(platform, (platCounts.get(platform) || 0) + 1);
         } catch {
           /* source_url vacío o inválido */
         }

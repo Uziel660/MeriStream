@@ -1,6 +1,6 @@
 # NITIFLIX / VOIDSTREAM — Plataforma de Streaming Personal
 
-**Versión 7.0** | Node.js + Express + TypeScript + React 18 + PostgreSQL 16
+**Versión 7.1** | Node.js + Express + TypeScript + React 18 + PostgreSQL 16
 
 ---
 
@@ -278,6 +278,47 @@ Para pares que las guardas automáticas rechazan (idiomas distintos, etc.).
 
 ---
 
+## Verification Pipeline (paso a paso)
+
+Pipeline extensible y configurable que ejecuta pasos de mantenimiento de la base de datos de forma secuencial. UI en la pestaña "Verificación" del Admin.
+
+### Pasos disponibles
+
+| ID | Nombre | Qué hace |
+|----|--------|----------|
+| `metadata` | Rellenar metadatos faltantes | Busca poster, descripción, géneros y año via TMDB/AniList/TVMaze |
+| `duplicates` | Detectar duplicados | Agrupa obras por título normalizado y fusiona |
+| `seasons` | Consolidar temporadas | Fusiona entradas de temporada dividida (misma obra, mismo tmdb_id) |
+| `sequels` | Reconciliar secuelas | Merge S2/S3 guardados como tarjetas separadas con mismo tmdb_id |
+| `empty` | Limpiar obras vacías | Elimina shows con 0 episodios |
+| `sources` | Reparar fuentes CDN | Busca páginas originales para shows con links CDN directos |
+| `titles` | Normalizar títulos | Detecta títulos basura/placeholder y restaura desde base_normalized_title |
+| `stuck` | Recuperar jobs trabados | Resetea CrawlTasks stuck en "running" por >30 minutos |
+
+### Cómo funciona
+
+- El usuario selecciona los pasos y ejecuta desde la UI
+- Los pasos corren en background, el frontend consulta estado vía polling
+- Cada paso registra found/fixed y errores individuales
+- Estado en memoria (se reinicia con el server)
+
+### API
+
+```bash
+# Consultar estado del pipeline
+GET /api/v1/verify/pipeline
+
+# Ejecutar todos los pasos
+POST /api/v1/verify/pipeline/run
+
+# Ejecutar pasos específicos
+POST /api/v1/verify/pipeline/run { "steps": ["duplicates", "sources"] }
+```
+
+> **Nota**: Los endpoints del pipeline deben registrarse ANTES del middleware Vite SPA para que no sean interceptados por el fallback a `index.html`.
+
+---
+
 ## Write Buffer (cola de escrituras)
 
 Los workers **nunca tocan la DB directamente**. Todo pasa por una cola en memoria:
@@ -413,6 +454,14 @@ El resolver intenta extraer el stream real de un embed/iframe en este orden:
 
 El backend adjunta `source_site` en todas las rutas de reproducción. El panel muestra primero el MEJOR servidor de cada plataforma (badge = plataforma, no servidor). Sin datos reales no se fuerza nada.
 
+### Resolución multi-plataforma
+
+Al reproducir un episodio, el backend intenta resolver streams de hasta 3 plataformas adicionales en paralelo (timeout 8s). Si la plataforma primaria no tiene streams, el frontend puede failover a streams de otras plataformas automáticamente.
+
+### Auto-advance en fallo de embed
+
+Cuando un servidor devuelve `resolved: false` o falla con error de red, el player avanza automáticamente al siguiente servidor sin intervención del usuario. Se muestra un toast informativo ("Conectando automáticamente a servidor de respaldo...").
+
 ---
 
 ## Interfaz de usuario
@@ -474,7 +523,7 @@ Credenciales en `ADMIN_USER` / `ADMIN_PASS` de `.env`. Sesión en `sessionStorag
 
 - **Campos editables**: título, descripción, géneros, año, rating, estado, categoría, poster, banner, títulos alternativos
 - **Refresh Streams**: re-resuelve servidores JIT para todos los episodios (background)
-- **Plataformas**: muestra dónde está disponible el título (dominio + cantidad de episodios)
+- **Plataformas**: muestra dónde está disponible el título (plataforma normalizada + cantidad de episodios). CDN subdominios (acek-cdn, dramiyos-cdn, turboviplay) se ocultan del display y se agrupan bajo la plataforma real.
 - **Cascada multi-fuente**: servidores por plataforma ordenados por prioridad
 
 ### Reconciliación de catálogo
@@ -572,9 +621,11 @@ POST /api/v1/catalog/merge-works
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/v1/verification` | Estado + config |
+| GET | `/api/v1/verification` | Estado + config (worker existente) |
 | POST | `/api/v1/verification/config` | Actualizar config |
 | POST | `/api/v1/verification/run` | Ejecutar verificación |
+| GET | `/api/v1/verify/pipeline` | Pipeline paso a paso (8 pasos configurables) |
+| POST | `/api/v1/verify/pipeline/run` | Ejecutar pasos seleccionados en background |
 
 ### Watchdog
 

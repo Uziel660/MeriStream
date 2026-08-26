@@ -1,4 +1,4 @@
-# Resumen de cambios — Rediseño nitiflix (2026-08-23/24)
+# Resumen de cambios — Rediseño nitiflix (2026-08-23/25)
 
 ## Lo que se cambió
 
@@ -49,3 +49,26 @@
 4. Investigar por qué el toggle del selector manual no muestra el selector aunque esté activado (sospecha: se lee solo al montar el modal).
 5. Reiniciar servidor tras fixes y pedir reprobar Dandelion/MarriageToxin.
 6. Pendiente aparte: metadatos que siguen en inglés/japonés (左ききのエレン, Re:Zero) y probar resolvers dood/uqload/vidhide en stream_tester.
+
+---
+
+## F6 · Verification Pipeline (2026-08-25)
+
+- **Pipeline paso a paso** (`/api/v1/verify/pipeline`): 8 pasos configurables (metadata, duplicates, seasons, sequels, empty, sources, titles, stuck), ejecución en background, UI en VerificationPanel con toggles y log en vivo.
+- **Fix crítico de registro**: los endpoints del pipeline estaban registrados DESPUÉS del middleware Vite SPA (`app.use(vite.middlewares)`), que atrapa todas las requests y devuelve `index.html`. Movidos ANTES del middleware. **Lección**: en Express, los endpoints API deben registrarse antes de cualquier middleware SPA/catch-all.
+
+## F7 · Multi-plataforma + auto-advance (2026-08-25)
+
+- **Resolución cross-plataforma**: `resolveCrossPlatformStreams()` en server.ts resuelve streams de hasta 3 plataformas adicionales en paralelo (timeout 8s). Integrado en `GET /api/v1/play/:episode_id`.
+- **Auto-advance en fallo**: HLSPlayerModal.tsx ahora avanza automáticamente al siguiente servidor cuando `resolveEmbed` devuelve `resolved: false` o falla con error de red. Toast informativo.
+
+## F8 · Normalización de CDN (2026-08-25)
+
+- **episode_platforms CDN normalization**: subdominios CDN ocultos del display (`acek-cdn.com`, `dramiyos-cdn.com`, `turboviplay.com`). Hosts conocidos normalizados (`www3.animeflv.net` → `animeflv`).
+- **Show.source normalization**: `Show.source` se escribe durante importación; `siteOf()` retorna solo el primer label del dominio.
+- **Server priority move buttons**: fix del `move()` para buscar prioridad por familia de host, no por host exacto. Nuevo endpoint `POST /api/v1/sites/ratings/swap` para intercambio atómico.
+
+## F9 · Batch CDN repair (2026-08-25)
+
+- **Spider-Man: Un nuevo universo** reparado manualmente (source_url → cinecalidad page, source → "cinecalidad").
+- **Script batch** (`tmp-fix-cdn-final.cjs`): buscó páginas originales en cinecalidad/lamovie para ~330 shows con links CDN directos. 50+ shows corregidos. Script eliminado tras ejecución.

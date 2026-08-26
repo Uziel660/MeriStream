@@ -1,9 +1,9 @@
 # VoidStream / Nitiflix: Contexto del proyecto
 
-> ⚠️ **ACTUALIZACIÓN 2026-08-24**: las secciones 1-8 de este documento fueron
+> ⚠️ **ACTUALIZACIÓN 2026-08-25**: las secciones 1-8 de este documento fueron
 > REESCRITAS — describían el prototipo histórico Python/FastAPI que ya no existe.
-> El stack real es Node.js (Express + TypeScript + Prisma/SQLite) + React 18.
-> Referencia completa viva: `README.md` y `docs/INFORME_SESION_2026-08-24_PARTE3.md`.
+> El stack real es Node.js (Express + TypeScript + Prisma/PostgreSQL) + React 18.
+> Referencia completa viva: `README.md` y `docs/INFORME_SESION_2026-08-25.md`.
 > Las secciones 9+ (investigación de extensiones Kohi-den/Aniyomi, patrones de
 > scraping, propuesta de mega-adaptador) siguen vigentes como material de referencia.
 
@@ -20,9 +20,9 @@ administración exclusivo en `/admin` con login.
 
 - `src/App.tsx`: catálogo, modales y vistas principales.
 - `src/main.tsx`: enruta `/admin` → `AdminGate` (login + panel); el resto → App.
-- `src/components/HLSPlayerModal.tsx`: reproductor HLS/Embed con selector premium por plataforma.
+- `src/components/HLSPlayerModal.tsx`: reproductor HLS/Embed con selector premium por plataforma, resolución multi-plataforma (hasta 3 fuentes en paralelo), auto-advance en fallo de embed.
 - `src/components/AdminPanel.tsx`: panel de administración (ingesta, workers, verificación, fuentes, catálogo, stream tester).
-- `src/components/VerificationPanel.tsx`: verificación automática programable.
+- `src/components/VerificationPanel.tsx`: verificación automática programable + pipeline paso a paso (8 pasos configurables).
 - `src/components/ShowEditModal.tsx`: editor completo de obras + refresh de streams + plataformas disponibles.
 - `src/components/WorkerSettingsCard.tsx`: ajustes de worker en vivo + alertas anti-bot.
 - `src/utils/proxiedUrl.ts` + `src/utils/streamOptimizer.ts`: URLs del proxy (relativas) y ranking de servidores.
@@ -30,14 +30,14 @@ administración exclusivo en `/admin` con login.
 
 ### Backend (Node.js + Express + TypeScript + Prisma/SQLite)
 
-- `server.ts`: servidor unificado (API + SPA vía Vite middleware), puerto de `app.config.ts`.
+- `server.ts`: servidor unificado (API + SPA vía Vite middleware), puerto de `app.config.ts`. Incluye: pipeline de verificación (`/api/v1/verify/pipeline`), resolución multi-plataforma (hasta 3 fuentes adicionales en paralelo), CDN hostname normalization.
 - `app.config.ts`: **única fuente de verdad** de host/puerto/CORS (incluye túneles cloudflared).
 - `server/taskWorker.ts`: workers paralelos multi-catálogo (pipeline productor-consumidor, índice de re-escaneo ligero, anti-bot, paginación por sitio).
-- `server/verificationWorker.ts`: verificación automática programable (metadatos + novedades por plataforma, timer persistente).
+- `server/verificationWorker.ts`: verificación automática programable (metadatos + novedades por plataforma, timer persistente) + pipeline paso a paso (`/api/v1/verify/pipeline`).
 - `server/showService.ts`: dedup por clave canónica, fusión de secuelas por TMDB, editor de obras, sync multi-fuente.
 - `server/reconcileCatalog.ts`: reconciliación de secuelas ya guardadas (dry-run + guardas de similitud) y fusión manual.
 - `server/metadataBackfill.ts`: completado/reparación de metadatos (descripciones truncadas, títulos con ruido) con write-buffer.
-- `server/writeBuffer.ts`: outbox JSONL para escrituras diferidas cuando la SQLite está saturada.
+- `server/writeBuffer.ts`: outbox JSONL para escrituras diferidas cuando la PostgreSQL está saturada.
 - `server/metadataEngine.ts`: cascada TMDB es-MX → AniList → Jikan → TVMaze, traducción, géneros en español.
 - `server/hostProfiles.ts`: perfiles de cabeceras por CDN (vimeos, goodstream, playmudos, etc.).
 - `server/scrapers/adapters/*`: adaptadores por sitio (AnimeFLV, LaMovie, Cinecalidad, TioAnime, TioPlus, LatAnime, VerAnimes, TubePelis, Archive…).

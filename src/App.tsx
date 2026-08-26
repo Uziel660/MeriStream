@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { AllCategoriesModal } from './components/AllCategoriesModal';
@@ -117,7 +117,8 @@ export function App() {
     loadCatalog();
   }, [searchQuery]);
 
-  const handleOpenDetails = (show: Show) => {
+  // Bolt Performance: Memoized to prevent re-rendering child components
+  const handleOpenDetails = useCallback((show: Show) => {
     if (show?.id) {
       setSelectedShowId(show.id);
       const img = show.poster_url || show.banner_url;
@@ -125,14 +126,15 @@ export function App() {
         extractDominantColor(img, show.title).then(setAmbientRgb);
       }
     }
-  };
+  }, []);
 
-  const handleHoverMedia = (show: Show) => {
+  // Bolt Performance: Memoized to prevent full-tree re-renders when ambient glow state updates on hover
+  const handleHoverMedia = useCallback((show: Show) => {
     const img = show.poster_url || show.banner_url;
     if (img) {
       extractDominantColor(img, show.title).then(setAmbientRgb);
     }
-  };
+  }, []);
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
     const showId = episode.show_id || selectedShowId || 'unknown';

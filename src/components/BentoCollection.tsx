@@ -1,5 +1,5 @@
 // src/components/BentoCollection.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Play, Star } from 'lucide-react';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import type { Show } from '../types';
@@ -12,7 +12,8 @@ interface BentoCollectionProps {
   onHover?: (media: Show) => void;
 }
 
-export const BentoCollection: React.FC<BentoCollectionProps> = ({
+// Bolt Performance: Memoized to prevent re-rendering the entire collection grid on unrelated state updates
+export const BentoCollection: React.FC<BentoCollectionProps> = memo(({
   title,
   items,
   onSelectMedia,
@@ -60,7 +61,7 @@ export const BentoCollection: React.FC<BentoCollectionProps> = ({
       </div>
     </section>
   );
-};
+});
 
 interface BentoCardProps {
   media: Show;

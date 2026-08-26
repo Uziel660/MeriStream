@@ -1,5 +1,5 @@
 // src/components/MediaCard.tsx
-import React from 'react';
+import React, { memo } from 'react';
 import { Play, Star, Tv } from 'lucide-react';
 import type { Show } from '../types';
 
@@ -10,7 +10,8 @@ interface MediaCardProps {
   isNew?: boolean;
 }
 
-export const MediaCard: React.FC<MediaCardProps> = ({
+// Bolt Performance: Memoized to prevent re-rendering identical cards on parent state changes
+export const MediaCard: React.FC<MediaCardProps> = memo(({
   media,
   onSelectMedia,
   onHover,
@@ -87,7 +88,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       </div>
     </article>
   );
-};
+});
 
 export const MediaCardSkeleton: React.FC = () => {
   return (

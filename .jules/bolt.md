@@ -1,0 +1,3 @@
+## 2023-10-25 - Prevent cascading re-renders on hover
+**Learning:** In React, setting states that trigger a parent component re-render when child components hover over can cause a massive performance penalty if child components are not memoized. In `src/App.tsx`, hovering over a media card updates the global `ambientRgb` state, which without `React.memo` re-renders every single card in the catalog on every hover event.
+**Action:** Always memoize deeply nested components in lists/grids using `React.memo` and stabilize event handlers using `useCallback` when parent components contain global state that updates frequently on user interaction.

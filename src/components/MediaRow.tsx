@@ -1,5 +1,5 @@
 // src/components/MediaRow.tsx
-import React, { useRef } from 'react';
+import React, { useRef, memo } from 'react';
 import { ChevronLeft, ChevronRight, Film } from 'lucide-react';
 import { MediaCard, MediaCardSkeleton } from './MediaCard';
 import type { Show } from '../types';
@@ -13,7 +13,8 @@ interface MediaRowProps {
   [key: string]: any;
 }
 
-export const MediaRow: React.FC<MediaRowProps> = ({
+// Bolt Performance: Memoized to prevent re-rendering the entire row and all its items on unrelated state updates
+export const MediaRow: React.FC<MediaRowProps> = memo(({
   title,
   items = [],
   onSelectMedia,
@@ -99,4 +100,4 @@ export const MediaRow: React.FC<MediaRowProps> = ({
       </div>
     </section>
   );
-};
+});

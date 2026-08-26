@@ -646,8 +646,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     }
   };
 
-  // 8. RESTAURAR CATÁLOGO DE MUESTRA
+  // 8. RESTAURAR CATÁLOGO DE MUESTRA (requiere contraseña admin)
   const handleResetCatalog = async () => {
+    const password = window.prompt('Contraseña de administrador para restaurar catálogo:');
+    if (!password) return;
+
+    // Verificar contraseña
+    try {
+      const authRes = await fetch('/api/v1/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: 'uziel', password }),
+      });
+      const authData = await authRes.json();
+      if (!authData.ok) {
+        setImportMessage('Contraseña incorrecta. Operación cancelada.');
+        return;
+      }
+    } catch {
+      setImportMessage('Error al verificar contraseña.');
+      return;
+    }
+
     setIsResetting(true);
     try {
       const res = await fetch('/api/v1/catalog/reset-sample', { method: 'POST' });

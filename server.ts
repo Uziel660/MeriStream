@@ -439,6 +439,91 @@ async function startServer() {
     }
   });
 
+  /**
+   * Busca episodios de la misma obra en OTRAS plataformas y resuelve sus streams en paralelo.
+   * Devuelve un mapa de plataforma → streams[] para merge con la plataforma primaria.
+   */
+  async function resolveCrossPlatformStreams(
+    primaryEpisode: any,
+    primaryShow: any,
+    primarySite: string,
+    maxExtraPlatforms = 3,
+    timeoutMs = 8000
+  ): Promise<Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>> {
+    const result = new Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>();
+    if (!primaryShow?.title) return result;
+
+    try {
+      // Buscar otros episodios de la misma obra (por título) en diferentes plataformas
+      const sameTitleEpisodes = await prisma.episode.findMany({
+        where: {
+          show: { title: primaryShow.title },
+          id: { not: primaryEpisode.id },
+          source_url: { not: "" },
+        },
+        include: { show: true },
+        take: 30,
+      });
+
+      // Agrupar por dominio (plataforma), quedarse con el más cercano al episodio actual
+      const epNum = primaryEpisode.number ?? 1;
+      const platformMap = new Map<string, typeof sameTitleEpisodes[0]>();
+      for (const ep of sameTitleEpisodes) {
+        const domain = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
+        if (!domain || domain === primarySite) continue;
+        if (!platformMap.has(domain)) {
+          platformMap.set(domain, ep);
+        } else {
+          const existing = platformMap.get(domain)!;
+          const existingDist = Math.abs((existing.number ?? 1) - epNum);
+          const newDist = Math.abs((ep.number ?? 1) - epNum);
+          if (newDist < existingDist) platformMap.set(domain, ep);
+        }
+      }
+
+      // Tomar solo las plataformas con mejor rating
+      const entries = Array.from(platformMap.entries());
+      const rated = await Promise.all(
+        entries.map(async ([site, ep]) => ({
+          site,
+          ep,
+          rating: await getSiteRating(site),
+        }))
+      );
+      rated.sort((a, b) => b.rating - a.rating);
+      const topPlatforms = rated.slice(0, maxExtraPlatforms);
+
+      // Resolver en paralelo con timeout
+      const resolutions = await Promise.allSettled(
+        topPlatforms.map(async ({ site, ep }) => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const extracted = await extractStreamFromUrl(ep.source_url);
+            clearTimeout(timer);
+            const streams = Array.from(
+              new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+            );
+            const ranked = rankStreams(streams, getServerPriorities(site));
+            return { site, ranked };
+          } catch {
+            clearTimeout(timer);
+            return { site, ranked: [] as Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }> };
+          }
+        })
+      );
+
+      for (const r of resolutions) {
+        if (r.status === "fulfilled" && r.value.ranked.length > 0) {
+          result.set(r.value.site, r.value.ranked);
+        }
+      }
+    } catch (e: any) {
+      // Error silencioso — la plataforma primaria ya tiene streams
+    }
+    return result;
+  }
+
   // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver
   app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
     const targetId = req.params.episode_id;
@@ -505,12 +590,46 @@ async function startServer() {
       }
 
       const platformSite = siteFromDomain(hostOfStreamUrl(sourceUrl));
-      const ranked = rankStreams(allStreams, getServerPriorities(platformSite)).map((r) => ({
+      const primaryRanked = rankStreams(allStreams, getServerPriorities(platformSite)).map((r) => ({
         ...r,
-        // Plataforma de origen: los streams vienen del sitio cuya pÃ¡gina se resolviÃ³.
-        // El frontend lo usa para el selector "Premium por plataforma".
         source_site: platformSite || undefined,
       }));
+
+      // Resolver streams de OTRAS plataformas en paralelo (máx 3 extra, 8s timeout)
+      const crossPlatform = await resolveCrossPlatformStreams(
+        foundEpisode,
+        targetShow,
+        platformSite,
+        3,
+        8000
+      );
+
+      // Merge: plataforma primaria primero, luego las demás ordenadas por rating
+      const extraEntries = Array.from(crossPlatform.entries());
+      const extraRanked: typeof primaryRanked = [];
+      if (extraEntries.length > 0) {
+        const extraRated = await Promise.all(
+          extraEntries.map(async ([site, streams]) => ({
+            site,
+            streams: streams.map((r) => ({ ...r, source_site: site })),
+            rating: await getSiteRating(site),
+          }))
+        );
+        extraRated.sort((a, b) => b.rating - a.rating);
+        for (const group of extraRated) {
+          extraRanked.push(...group.streams);
+        }
+      }
+
+      const ranked = [...primaryRanked, ...extraRanked];
+
+      const allMergedStreams = Array.from(
+        new Set([
+          ...allStreams,
+          ...extraRanked.map((r) => r.url),
+        ].filter(Boolean))
+      );
+
       const streamUrl =
         ranked.find((r) => r.url === extracted.stream_url)?.url ||
         ranked[0]?.url ||
@@ -520,9 +639,7 @@ async function startServer() {
         episode_id: foundEpisode?.id || targetShow?.id || targetId,
         stream_url: streamUrl,
         title,
-        all_available_streams: allStreams.length > 0 ? allStreams : [sourceUrl],
-        // Cascada ordenada por tier (lista negra filtrada). El frontend consume
-        // estos objetos; los strings crudos se mantienen por compatibilidad legacy.
+        all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [sourceUrl],
         ranked_streams: ranked,
       });
     } catch (e: any) {

@@ -717,7 +717,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     api.resolveEmbed(activeServer.url)
       .then((res) => {
-        if (cancelled || !res || !res.resolved || !res.url) return;
+        if (cancelled) return;
+
+        // Resolución fallida o embed no resoluble → avanzar al siguiente servidor premium
+        if (!res || !res.resolved || !res.url) {
+          if (activeServerIndex < servers.length - 1) {
+            setFailoverNotice('Servidor no resoluble, cambiando al siguiente...');
+            setTimeout(() => setFailoverNotice(null), 3000);
+            handleServerChange(activeServerIndex + 1, true);
+          }
+          return;
+        }
 
         // El host sirve un demo placeholder (ej. VOE -> Big Buck Bunny): failover al siguiente server
         if (isPlaceholderUrl(res.url)) {
@@ -748,7 +758,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setTimeout(() => setFailoverNotice(null), 3000);
       })
       .catch(() => {
-        // Fallback silencioso: se mantiene como iframe embed normal
+        // Error de red o timeout → avanzar al siguiente servidor
+        if (!cancelled && activeServerIndex < servers.length - 1) {
+          setFailoverNotice('Error de resolución, cambiando al siguiente servidor...');
+          setTimeout(() => setFailoverNotice(null), 3000);
+          handleServerChange(activeServerIndex + 1, true);
+        }
       });
 
     return () => {

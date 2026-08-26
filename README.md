@@ -1,16 +1,30 @@
 # NITIFLIX / VOIDSTREAM — Plataforma de Streaming Personal
 
-**Versión 6.0** | Node.js + React + PostgreSQL 16
+**Versión 7.0** | Node.js + Express + TypeScript + React 18 + PostgreSQL 16
 
 ---
 
 ## Qué es esto
 
-Una plataforma de streaming personal estilo Netflix. Sirve para:
-- **Buscar y ver** películas, series y animes
-- **Importar contenido** desde 12+ sitios web (AnimeFLV, Cinecalidad, TioPlus, Archive.org, etc.)
-- **Reproducir** con reproductor HLS/MP4 integrado, sin anuncios
-- **Administrar** todo desde un panel de control
+Una plataforma de streaming personal estilo Netflix que importa contenido desde 7+ sitios web, deduplica entre plataformas, enriquece metadatos automáticamente en español (TMDB, AniList, Jikan, TVMaze) y presenta todo con un reproductor HLS/MP4 integrado sin anuncios.
+
+**Base de datos actual:** ~19,954 shows, ~116,274 episodios, ~295 fusiones cross-plataforma.
+
+---
+
+## Stack tecnológico
+
+| Componente | Tecnología |
+|------------|-----------|
+| Backend | Node.js + Express 5 + TypeScript |
+| Frontend | React 18 + TypeScript + Vite 6 |
+| Base de datos | PostgreSQL 16 (Docker) |
+| ORM | Prisma 5.22 |
+| Estilos | Tailwind CSS 3 |
+| Reproductor | Hls.js + Plyr |
+| Scraping | Cheerio + adaptadores custom |
+| Tests | Vitest 4 |
+| Build | esbuild (backend) + Vite (frontend) |
 
 ---
 
@@ -18,7 +32,7 @@ Una plataforma de streaming personal estilo Netflix. Sirve para:
 
 | Requisito | Versión mínima | Cómo verificar |
 |-----------|---------------|----------------|
-| Node.js | 18+ (recomendado 20 o 24) | `node --version` |
+| Node.js | 18+ (recomendado 24) | `node --version` |
 | npm | 8+ | `npm --version` |
 | Docker | Cualquier versión reciente | `docker --version` |
 
@@ -54,10 +68,13 @@ docker run -d --name voidstream-pg ^
 
 ### 4. Crear archivo de configuración
 
-Crear un archivo llamado `.env` en la raíz del proyecto con este contenido:
+Crear un archivo llamado `.env` en la raíz del proyecto:
 
 ```
 DATABASE_URL="postgresql://voidstream:voidstream123@localhost:5433/voidstream?schema=public"
+TMDB_API_KEY="tu-api-key-de-tmdb"
+ADMIN_USER="admin"
+ADMIN_PASS="tu-password"
 ```
 
 ### 5. Preparar la base de datos
@@ -75,82 +92,8 @@ npm run dev
 
 ### 7. Abrir en el navegador
 
-👉 **http://localhost:3000**
-
-**Listo.** Ya tenés la app funcionando.
-
----
-
-## Cómo usar la app
-
-### Página principal
-
-Al abrir `http://localhost:3000` ves:
-- **Barra de búsqueda** arriba: escribí el nombre de una película o anime
-- **Categorías**: Anime, Películas, Series, Terror, etc.
-- **Hero Banner**: show destacado con imagen grande
-- **Filas de contenido**: categorías organizadas
-
-**La búsqueda es instantánea** — no necesitás esperar, se filtra en memoria.
-
-### Buscar contenido
-
-1. Escribí en la barra de búsqueda (arriba a la derecha)
-2. Los resultados aparecen al instante (sin lag)
-3. Podés filtrar por categoría haciendo clic en los botones
-
-### Ver un título
-
-1. Hacé clic en cualquier tarjeta de contenido
-2. Se abre el modal con descripción, póster y lista de episodios
-3. Elegí un episodio y hací clic en "Play"
-
-### Reproducir
-
-El reproductor carga automáticamente el mejor stream disponible:
-- **HLS** (calidad adaptable) si está disponible
-- **MP4** como fallback
-- **Servidores alternativos** si uno falla (failover automático)
-
----
-
-## Panel de administración
-
-### Acceder
-
-1. Ir a **http://localhost:3000/admin**
-2. Iniciar sesión con las credenciales configuradas en `.env`:
-   - Usuario: `admin` (o el que pongas en `ADMIN_USER`)
-   - Contraseña: la que pongas en `ADMIN_PASS`
-
-### Importar contenido
-
-**Importar una serie/película:**
-1. Copiá la URL del sitio fuente (ej: `https://animeflv.net/anime/naruto`)
-2. Pegala en el campo "URL a analizar"
-3. Hacé clic en "Analizar"
-4. Revisá la información detectada
-5. Hací clic en "Importar"
-
-**Importar varias a la vez:**
-1. Pegá múltiples URLs (una por línea)
-2. Hací clic en "Importar en lote"
-
-### Rastreo automático (Crawler)
-
-1. Configurá la URL base del sitio a rastrear
-2. Elegí el alcance:
-   - **Páginas específicas**: rastrea solo las páginas que indiques
-   - **Catálogo completo**: rastrea todo el sitio automáticamente
-3. Hací clic en "Iniciar Rastreo"
-4. El worker corre en segundo plano y mostrá el progreso
-
-### Gestionar el catálogo
-
-- **Ver**: pestaña "Biblioteca" muestra todos los títulos importados
-- **Buscar**: filtrá por nombre en la biblioteca
-- **Eliminar**: hací clic en el botón de eliminar en cualquier título
-- **Editar**: hací clic en un título para ver sus detalles y fuentes de video
+**http://localhost:3000** — página principal
+**http://localhost:3000/admin** — panel de administración
 
 ---
 
@@ -158,107 +101,669 @@ El reproductor carga automáticamente el mejor stream disponible:
 
 ```bash
 npm run dev          # Arrancar en modo desarrollo
-npm run build        # Compilar para producción
+npm run build        # Compilar para producción (frontend + backend)
 npm start            # Arrancar en modo producción
-npm test             # Ejecutar todos los tests
-npm run lint         # Verificar tipos de TypeScript
+npm test             # Ejecutar tests (Vitest)
+npm run lint         # Verificar tipos de TypeScript (tsc --noEmit)
+npm run db:push      # Push schema a PostgreSQL
+npm run db:generate  # Generar Prisma client
 ```
 
-### Scripts de utilidad
+### Scripts de utilidad (tools/)
 
 ```bash
+npx tsx tools/consolidate-seasons.cjs   # Consolidar temporadas por título (278 merges hechos)
+npx tsx tools/auto-investigate.cjs      # Auto-investigar grupos inciertos vía TMDB API
+npx tsx tools/prep-enrich.ts            # Repair posters + clear English descriptions
 npx tsx tools/fast-migrate-pg.ts        # Migrar datos de SQLite a PostgreSQL
-npx tsx tools/add-fulltext-search.ts    # Agregar índices de búsqueda
-npx tsx tools/fast-start.ts             # Auto-configurar y arrancar todo
+npx tsx tools/add-fulltext-search.ts    # Agregar índices de búsqueda full-text
 npx tsx tools/merge-dbs.ts              # Fusionar múltiples bases SQLite
-npx tsx tools/safe-migrate-pg.ts        # Migración segura con verificación
-npx tsx tools/watchdog-runner.ts        # Runner del watchdog independiente
+npx tsx tools/repopulate-source.ts      # Repoblar campo source desde dominios de episodios
 ```
 
 ---
 
 ## Variables de entorno (.env)
 
-| Variable | Ejemplo | Descripción |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql://...@localhost:5433/voidstream` | Conexión a PostgreSQL |
-| `ADMIN_USER` | `admin` | Usuario del panel admin |
-| `ADMIN_PASS` | `tu-password` | Contraseña del panel admin |
+| Variable | Requerido | Descripción |
+|----------|-----------|-------------|
+| `DATABASE_URL` | Sí | Conexión a PostgreSQL |
+| `TMDB_API_KEY` | Sí | API key de The Movie Database (metadatos en español) |
+| `ADMIN_USER` | No | Usuario del panel admin (default: `admin`) |
+| `ADMIN_PASS` | No | Contraseña del panel admin |
+| `ALLOWED_ORIGINS` | No | Orígenes CORS permitidos (CSV). Si se omite, usa tunels detectados |
 
 ---
 
-## Estructura del proyecto
+## Arquitectura general
 
 ```
-├── prisma/
-│   └── schema.prisma          # Modelo de datos (Show, Episode, MediaItem, etc.)
-├── server/
-│   ├── showService.ts         # CRUD de shows + búsqueda
-│   ├── taskWorker.ts          # Worker de rastreo en segundo plano
-│   ├── metadataEngine.ts      # Enriquecimiento de metadatos (TMDB, AniList)
-│   ├── verificationWorker.ts  # Verificación automática del catálogo
-│   ├── writeBuffer.ts         # Cola de escrituras en memoria
-│   ├── scrapers/
-│   │   ├── ScraperManager.ts  # Factory de adaptadores
-│   │   └── adapters/          # 12 adaptadores para diferentes sitios
-│   └── resolvers.ts           # Resolución de streams de video
-├── src/
-│   ├── App.tsx                # Componente principal React
-│   ├── components/
-│   │   ├── AdminPanel.tsx     # Panel de administración
-│   │   ├── HLSPlayerModal.tsx # Reproductor de video
-│   │   ├── UnifiedHeader.tsx  # Barra de búsqueda y navegación
-│   │   └── MediaDetailsModal.tsx  # Modal de detalles
-│   └── utils/                 # Utilidades (colores, imágenes, streams)
-├── tools/                     # Scripts de utilidad
-├── server.ts                  # Servidor Express (API REST)
-├── .env.example               # Plantilla de variables de entorno
-└── package.json               # Dependencias y scripts
+┌─────────────────────────────────────────────────────────────────┐
+│                         Frontend (React)                        │
+│  App.tsx → Home (Hero, GenreRows, CatalogFilters, Catalog)     │
+│  AdminPanel → SmartImport, Batch, Workers, Verification, etc.  │
+│  HLSPlayerModal → Selector de servidores, cascada, failover     │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ fetch("/api/v1/...")
+┌────────────────────────────▼────────────────────────────────────┐
+│                     Backend (Express + TS)                       │
+│  server.ts → Todas las rutas API REST                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐      │
+│  │  Scrapers     │  │  Metadata    │  │  Workers         │      │
+│  │  (12 adapters)│  │  (TMDB→AniL) │  │  (producer-      │      │
+│  │  + Generic    │  │  →Jikan→TV   │  │   consumer)      │      │
+│  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘      │
+│         │                  │                   │                 │
+│  ┌──────▼──────────────────▼───────────────────▼─────────┐     │
+│  │                  ShowService + WriteBuffer              │     │
+│  │  Dedup → Merge → Enqueue → Sequential Writer → DB     │     │
+│  └────────────────────────┬──────────────────────────────┘     │
+│                           │                                     │
+│  ┌────────────────────────▼──────────────────────────────┐     │
+│  │                   PostgreSQL 16                        │     │
+│  │  Show, Episode, MediaItem, MediaEpisode, SourceLink    │     │
+│  │  + tsvector + GIN + pg_trgm (full-text search)        │     │
+│  └───────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Base de datos
+## Plataformas de scraping (7 activas)
 
-### PostgreSQL (default desde v6.0)
+| Adaptador | Sitio | Tipo de contenido | Notas |
+|-----------|-------|-------------------|-------|
+| `LaMovieAdapter` | lamovie.org/.to/.ws | Películas, series, animes | TMDB season counts para episodios, pre-enriquecido |
+| `TioAnimeAdapter` | tioanime.com | Anime | Paginación `?p=N`, catálogo completo |
+| `AnimeFlvAdapter` | animeflv.net (+mirrors) | Anime | JavaScript inline, servidores múltiples |
+| `LatAnimeAdapter` | latanime.org | Anime latino | Paginación `?p=N` |
+| `VerAnimesAdapter` | veranimes.net | Anime | Paginación `?pag=N` |
+| `CinecalidadAdapter` | cinecalidad.am/.mx/.im | Películas/series | Paginación `/page/N/` |
+| `TioPlusAdapter` | tioplus.app | Películas/series | Patrón `/{path}/{N}` |
 
-La app usa PostgreSQL 16 desplegado en Docker. Características:
-- **Full-Text Search**: búsqueda instantánea con índices GIN
-- **Fuzzy matching**: tolerancia a errores de ortografía (pg_trgm)
-- **Workers paralelos**: hasta 5 trabajos simultáneos (MVCC)
-- **Trigger automático**: el campo de búsqueda se actualiza solo
+### Adaptadores adicionales
 
-### Comandos útiles de PostgreSQL
+| Adaptador | Fuente | Uso |
+|-----------|--------|-----|
+| `TvMazeAdapter` | tvmaze.com | API de series internacionales |
+| `ArchiveOrgAdapter` | archive.org | Películas de dominio público |
+| `DirectStreamAdapter` | URLs directas | .m3u8, .mp4, .webm, .mkv |
+| `GenericAdapter` | Cualquier sitio | Fallback universal |
 
-```bash
-# Verificar que está corriendo
-docker ps | grep voidstream-pg
+### Cómo se registran
 
-# Conectar a la base
-docker exec -it voidstream-pg psql -U voidstream -d voidstream
+Los adaptadores se registran en `ScraperManager` por orden de prioridad. El primero que devuelva `canHandle(url) === true` gana. `GenericAdapter` siempre es el último recurso.
 
-# Ver cuántos shows hay
-docker exec voidstream-pg psql -U voidstream -d voidstream -c "SELECT COUNT(*) FROM \"Show\";"
+---
 
-# Reiniciar
-docker restart voidstream-pg
+## Pipeline de metadatos
 
-# Detener
-docker stop voidstream-pg
+La función `enrichUniversalMetadata()` implementa una cascada:
 
-# Eliminar (borra los datos)
-docker rm -f voidstream-pg
+```
+TMDB es-MX (principal)
+    ↓ si no hay match o es anime
+AniList GraphQL → Kitsu API → Jikan MAL API
+    ↓ si es serie/película
+TVMaze API
+    ↓ siempre
+Internet Archive → Wikipedia es → Metadata por defecto
 ```
 
-### Backup
+### Qué completa
+
+- **Título**: canónico, japonés, inglés
+- **Descripción**: TMDB es-MX, fallback AniList/Jikan, traducción Google Translate
+- **Poster/backdrop**: rutas de TMDB
+- **Géneros**: mapeados al español (50+ géneros)
+- **Rating**: de la fuente o TMDB
+- **Año y estado**: de la fuente o TMDB
+- **tmdb_id**: para dedup y reconciliación
+
+### Validación anti-falsos matches
+
+`isSuspiciousAnimeMatch()` detecta matches TMDB sin género Animación o pre-1995 → AniList/Kitsu ganan si matchean mejor. Evita que "Dandelion" (anime) caiga en una TV movie británica de 1994.
+
+---
+
+## Deduplicación y consolidación
+
+### Dedup en ingesta (`saveShowWithDeduplication`)
+
+1. `parseRawTitle()` extrae título canónico + año + temporada + calidad
+2. `normalizeTitleKey()` genera clave de fusión (slug, sin acentos, sin ruido)
+3. Se busca show existente por `mal_id`, `normalized_title` o `base_normalized_title`
+4. Si existe: se fusionan episodios (batch `createMany`), se mejoran gaps de metadatos
+5. Si no existe: se crea show nuevo
+
+### Consolidación de temporadas (`consolidate-seasons.cjs`)
+
+- **278 merges** ejecutados
+- Detecta marcadores: "S2", "2nd Season", "Temporada 3", "(ONA)", "(OVA)"
+- Agrupa por título base normalizado + `tmdb_id`
+- Guardas Jaccard (similitud de simtokens) para evitar falsos positivos
+- Detección de spinoffs (no fusiona)
+- Separación película vs serie
+
+### Auto-investigación (`auto-investigate.cjs`)
+
+- Investiga grupos inciertos vía TMDB API (colecciones, temporadas, IDs)
+- **7 merges** adicionales
+- Jaccard ≥ 0.15 para aceptar en grupos `tmdb_id`
+
+### Reconciliación cross-plataforma (`reconcile-sequels`)
+
+- Agrupa por `tmdb_id` → fusiona secuelas existentes
+- **8 fusiones**, 101 episodios reubicados
+- Detección automática de temporada desde título
+- Dry-run por defecto (seguro)
+
+### Fusión manual (`merge-works`)
 
 ```bash
-# Crear backup
-docker exec voidstream-pg pg_dump -U voidstream voidstream > backup.sql
-
-# Restaurar backup
-cat backup.sql | docker exec -i voidstream-pg psql -U voidstream -d voidstream
+POST /api/v1/catalog/merge-works
+{ "keep_id": "...", "merge_id": "...", "dry_run": false }
 ```
+
+Para pares que las guardas automáticas rechazan (idiomas distintos, etc.).
+
+### Resultado total
+
+| Métrica | Valor |
+|---------|-------|
+| Shows originales | ~21,133 |
+| Shows después de consolidación | ~19,954 |
+| Shows fusionados | 295 |
+| Episodios reubicados | 5,023 |
+
+---
+
+## Write Buffer (cola de escrituras)
+
+Los workers **nunca tocan la DB directamente**. Todo pasa por una cola en memoria:
+
+```
+Worker → enqueueWrite() → Cola RAM → Writer secuencial (5ms) → PostgreSQL
+```
+
+- **Capacidad**: ~200 escrituras/segundo
+- **Overflow**: si la cola supera 500 entradas, se vacía a `data/write-buffer.jsonl`
+- **Recuperación**: al boot, se recargan operaciones pendientes del JSONL
+- **Retry**: máximo 5 intentos por operación. Duplicate key (P2002) se trata como éxito
+- **Helper**: `GET /api/v1/write-buffer` expone estado (`ramPending`, `totalApplied`, `totalFailed`)
+
+---
+
+## Worker de rastreo
+
+### Arquitectura productor-consumidor
+
+```
+Productor: discoverCatalogPages() → cola de items
+    ↓ (page_concurrency=16 páginas en paralelo)
+Consumidores: N workers (item_concurrency=24) → analyze + save
+```
+
+### Configuración
+
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `max_concurrent_jobs` | 5 | Jobs de catálogo simultáneos |
+| `page_concurrency` | 16 | Páginas de catálogo en paralelo |
+| `item_concurrency` | 24 | Análisis de items en paralelo |
+| `default_delay_ms` | 1500 | Delay entre requests |
+| `jitter_enabled` | true | Jitter aleatorio |
+
+### Ciclo de vida de un job
+
+`pending` → `running` (claim atómico) → `completed` / `failed` / `paused` / `cancelled`
+
+- **Pausa**: el job queda `"paused"` (no se re-arranca solo)
+- **Borrado**: si está activo, se señaliza `"cancelled"` y se espera ≤3s
+- **Reanudar**: pone `"pending"` explícito
+- **Iniciar ahora**: `POST /api/v1/worker/jobs/:id/start` salta la cola
+
+### Detección anti-bot
+
+- Señales: `cf-mitigated`, `server: cloudflare`, "Just a moment", 429 repetidos
+- **Auto-throttle por dominio**: ≥3 hits en 10 min → delay ×2 (máx ×4), expira a 10 min
+- **Banner rojo** en UI (Ajustes del Worker) cuando hay bloqueos activos
+
+### Patrones de paginación por sitio
+
+| Sitio | Patrón |
+|-------|--------|
+| animeflv.net | `?page=N` |
+| animeflv mirrors | `/anime/page/N/` |
+| tioplus.app | `/{path}/{N}` |
+| latanime.org | `?p=N` |
+| tioanime.com | `?p=N` |
+| veranimes.net | `?pag=N` |
+| cinecalidad.am | `/page/N/` |
+| lamovie | `?page=N` |
+
+### Índice de re-escaneo rápido
+
+`quickSyncKnownShow()`: para obras ya conocidas, compara lista de episodios contra la BD e inserta **solo los faltantes** (~2-4s vs 10-30s). Cableado en workers y verificación automática.
+
+---
+
+## Resolución de streams
+
+### Cascada de resolución (`server/resolvers.ts`)
+
+El resolver intenta extraer el stream real de un embed/iframe en este orden:
+
+1. **Mega.nz** — Descifrado AES-128-CTR on-the-fly
+2. **Vimeos.net** — POST download_orig → m3u8
+3. **MP4Upload** — Unpack JS → .mp4
+4. **YourUpload** — Extracción HTML
+5. **OK.RU** — hlsManifestUrl del JSON
+6. **VOE / ByseLapuix** — Regex + Base64 + redirect
+7. **Byse SPA** — AES-256-GCM decrypt
+8. **Streamtape** — Concatenación robotlink
+9. **StreamWish / Filemoon / Vidmoly** — Packed embed (Dean Edwards)
+10. **DoodStream** — pass_md5.sh
+11. **Uqload** — Packed JS → MP4
+12. **Vidhide / Vixhide** — Packed jwplayer → m3u8/mp4
+13. **Fallback genérico** — Extracción de URLs del HTML
+
+### Dead provider blacklist
+
+`voe.sx`, `mixdrop`, `mxdrop`, `filemoon` — descartados del排序 por `streamSorter` y del frontend por `streamOptimizer`.
+
+### Perfiles de CDN (`hostProfiles.ts`)
+
+| CDN | Referer | Headers especiales |
+|-----|---------|-------------------|
+| vimeos.* | none | `Accept-Encoding: identity`, Chrome 124 UA |
+| goodstream.one | none | `Sec-Fetch-Mode: cors` |
+| zilla-networks.com | none | `Sec-Fetch-Site: same-origin` |
+| dood.* | passthrough | — |
+| mp4upload.com | fijo (`mp4upload.com`) | — |
+| ducvomes.com / playmudos.com | passthrough | — |
+| turboviplay.com | fijo (`tioplus.app/`) | — |
+
+### Proxy anti-CORS (`/api/v1/proxy/stream`)
+
+- Reescribe manifest M3U8 (URLs relativas → absolutas)
+- Proxy de chunks MP4 con soporte Range/206
+- Sigue redirects
+- Stealth HTTP client (undici + profiles)
+- MEGA: streaming nativo con descifrado on-the-fly
+
+---
+
+## Reproductor (HLSPlayerModal)
+
+### Características
+
+- **HLS.js** con calidad adaptable (Auto + selección manual)
+- **Selector de servidores** siempre visible cuando hay >1 opción
+- **Failover automático**: al error, intenta siguiente servidor en cascada
+- **Búsqueda de mejor servidor**: HEAD probe + score por tier + prioridad backend
+- **Audio y subtítulos**: selección de pistas
+- **Velocidad**: 0.5x a 2x
+- **Picture-in-Picture**
+- **Fullscreen**
+- **Atajos de teclado**
+- **Telemetría**: detección de pantalla negra, buffering, errores → `/api/v1/network/player-event`
+
+### Selector premium por plataforma
+
+El backend adjunta `source_site` en todas las rutas de reproducción. El panel muestra primero el MEJOR servidor de cada plataforma (badge = plataforma, no servidor). Sin datos reales no se fuerza nada.
+
+---
+
+## Interfaz de usuario
+
+### Página principal (`App.tsx`)
+
+| Sección | Contenido |
+|---------|-----------|
+| **AmbientGlow** | Resplandor dinámico según color dominante del contenido enfocado |
+| **HeroBanner** | Show aleatorio (rating ≥7), Ken Burns effect, botones pill |
+| **Continue Watching** | Tarjetas horizontales con barra de progreso (localStorage) |
+| **Recomendaciones** | "Porque te gusta {topGenre}" basado en historial |
+| **Recién Agregados** | Primeros 50 por fecha de ingesta |
+| **Destacados por la Crítica** | Grid bento asimétrico (top 10 por rating) |
+| **Filas de Género** | Top 5 géneros, cada uno con hasta 40 items por rating |
+| **Catálogo Explorable** | Grid responsive 2-6 columnas con "cargar más" (100 a la vez) |
+
+### Búsqueda
+
+- **Local**: carga catálogo una vez (~2MB), filtra en memoria (`Array.filter()`)
+- **Instantánea**: cero API calls, debounce 300ms
+- **Server-side**: fallback tsvector + GIN cuando el catálogo crece
+
+### Filtros (`CatalogFilters`)
+
+| Filtro | Opciones |
+|--------|----------|
+| Año | "Todos los años" + años disponibles (1940→actual+1) |
+| Orden | Recientes / Mejor rating / Más nuevas / A→Z |
+| Limpiar | Botón X resetea ambos filtros |
+
+### Etiquetas SIEMPRE en español
+
+- "movie" → "Película"
+- "series" → "Serie"
+- "anime" → "Anime"
+
+---
+
+## Panel de administración (`/admin`)
+
+### Login
+
+Credenciales en `ADMIN_USER` / `ADMIN_PASS` de `.env`. Sesión en `sessionStorage`.
+
+### Pestañas
+
+| Pestaña | Funcionalidad |
+|---------|---------------|
+| **Smart Import** | Analizar URL, importar show individual |
+| **Batch Import** | Hasta 15 URLs simultáneas, importación en lote |
+| **Background Tasks** | Crear/pausar/reanudar/cancelar jobs de rastreo, ajustes de worker en vivo |
+| **Server Tester** | Probar todos los servidores de una plataforma, prioridades de servidor |
+| **Verification** | Verificación automática programable (metadatos + novedades) |
+| **Sources (Fuentes)** | Ratings de sitio (0-10), habilitar/deshabilitar plataformas, prioridades |
+| **Library (Biblioteca)** | Navegar catálogo completo, editar shows, refresh de streams, borrar DB |
+
+### Editor de obras (`ShowEditModal`)
+
+- **Campos editables**: título, descripción, géneros, año, rating, estado, categoría, poster, banner, títulos alternativos
+- **Refresh Streams**: re-resuelve servidores JIT para todos los episodios (background)
+- **Plataformas**: muestra dónde está disponible el título (dominio + cantidad de episodios)
+- **Cascada multi-fuente**: servidores por plataforma ordenados por prioridad
+
+### Reconciliación de catálogo
+
+```bash
+# Dry-run (seguro, solo muestra qué haría)
+POST /api/v1/catalog/reconcile-sequels
+
+# Ejecutar fusión
+POST /api/v1/catalog/reconcile-sequels  { "dry_run": false }
+```
+
+### Fusión manual
+
+```bash
+POST /api/v1/catalog/merge-works
+{ "keep_id": "show-a", "merge_id": "show-b", "dry_run": false }
+```
+
+---
+
+## API REST — Todos los endpoints
+
+### Shows
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/shows` | Listar shows (?lite=true, ?search=, ?category=, ?page=, ?limit=) |
+| GET | `/api/v1/shows/:show_id` | Show con episodios, platforms, media_item_id |
+| PUT | `/api/v1/shows/:show_id` | Editar campos (recalcula claves si cambia título) |
+| DELETE | `/api/v1/shows/:show_id` | Eliminar show |
+| POST | `/api/v1/shows/:show_id/refresh-streams` | Re-resolver streams (202 background) |
+
+### Catálogo
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/v1/catalog/analyze` | Analizar URL o término de búsqueda |
+| POST | `/api/v1/catalog/import-show` | Guardar show con dedup |
+| POST | `/api/v1/catalog/batch-import` | Importar hasta 15 URLs |
+| POST | `/api/v1/catalog/crawl` | Crear job de rastreo profundo |
+| POST | `/api/v1/catalog/episode-servers` | Resolución JIT de servidores de episodio |
+| POST | `/api/v1/catalog/merge-works` | Fusión manual de dos shows |
+| POST | `/api/v1/catalog/reconcile-sequels` | Reconciliación automática por tmdb_id |
+| POST | `/api/v1/catalog/reset-sample` | Eliminar TODOS los registros |
+
+### Reproducción
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/play/:episode_id` | Resolver streams JIT para un episodio |
+| GET | `/api/v1/play-multi/:media_item_id` | Cascada multi-fuente (todos los SourceLinks) |
+| GET | `/api/v1/proxy/stream` | Proxy anti-CORS para HLS/MP4 |
+| GET | `/api/v1/proxy/image` | Proxy de imágenes |
+| GET | `/api/v1/stream/mega` | Streaming nativo MEGA (descifrado AES) |
+| POST | `/api/v1/resolve-embed` | Resolución híbrida de embeds |
+| POST | `/api/v1/extract` | Extractor universal de streams |
+
+### Metadata
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/v1/metadata/backfill` | Enqueue backfill de metadatos |
+| GET | `/api/v1/metadata/backfill` | Estado del backfill worker |
+| GET | `/api/v1/genres` | Géneros (DB + Jikan, cache 5min) |
+
+### Workers
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/worker/jobs` | Listar jobs (cache 2s) |
+| GET | `/api/v1/worker/settings` | Config + estado anti-bot |
+| POST | `/api/v1/worker/settings` | Actualizar config |
+| POST | `/api/v1/worker/jobs/:job_id/pause` | Pausar job |
+| POST | `/api/v1/worker/jobs/:job_id/resume` | Reanudar job |
+| POST | `/api/v1/worker/jobs/:job_id/cancel` | Cancelar job |
+| POST | `/api/v1/worker/jobs/:job_id/start` | Iniciar ahora |
+| DELETE | `/api/v1/worker/jobs/:job_id` | Eliminar job |
+| POST | `/api/v1/worker/clear-finished` | Limpiar jobs terminados |
+| GET | `/api/v1/tasks/:task_id` | Monitor de logs en vivo |
+
+### Plataformas
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/sites/ratings` | Ratings de sitio |
+| POST | `/api/v1/sites/ratings` | Upsert rating |
+| GET | `/api/v1/platforms/:platform/works` | Works de una plataforma |
+| POST | `/api/v1/platforms/:platform/test-servers` | Probar servidores |
+| GET | `/api/v1/platforms/:platform/server-priorities` | Prioridades |
+| POST | `/api/v1/platforms/:platform/server-priorities` | Guardar prioridades |
+| POST | `/api/v1/platforms/:platform/server-priorities/move` | Mover servidor ↑↓ |
+
+### Verificación
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/verification` | Estado + config |
+| POST | `/api/v1/verification/config` | Actualizar config |
+| POST | `/api/v1/verification/run` | Ejecutar verificación |
+
+### Watchdog
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/watchdog` | Estado |
+| GET/POST | `/api/v1/watchdog/config` | Config |
+| POST | `/api/v1/watchdog/run` | Ejecutar ahora |
+| GET | `/api/v1/watchdog/reports` | Reportes recientes |
+| GET | `/api/v1/watchdog/alert` | Alertas críticas |
+
+### Red / Telemetría
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/v1/network/stats` | Estadísticas agregadas |
+| POST | `/api/v1/network/player-event` | Eventos de player |
+| GET/DELETE | `/api/v1/network/logs` | Logs |
+
+### Sistema
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/health`, `/api/v1/health` | Health check |
+| POST | `/api/v1/admin/login` | Login admin |
+| GET | `/api/v1/write-buffer` | Estado del write buffer |
+| GET | `/api/v1/scraper/presets` | Presets de scraper |
+| POST | `/api/v1/scraper/presets/:id` | Guardar preset |
+| POST | `/api/v1/scraper/presets/:id/reset` | Reset preset |
+| GET | `/api/v1/media` | Legacy compatibility |
+
+---
+
+## Schema de base de datos
+
+### Show (catálogo legacy)
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | String (cuid) | PK |
+| `mal_id` | Int? | Unique, MyAnimeList ID |
+| `anilist_id` | String? | AniList ID |
+| `tmdb_id` | Int? | The Movie Database ID |
+| `title` | String | Título display |
+| `original_title` | String? | Título original |
+| `japanese_title` | String? | Título en japonés |
+| `english_title` | String? | Título en inglés |
+| `normalized_title` | String | Clave de dedup (slug) |
+| `base_normalized_title` | String? | Título sin marcador de temporada |
+| `description` | String | Descripción |
+| `poster_url` / `banner_url` | String? | URLs de imágenes |
+| `poster_path` / `backdrop_path` | String? | Rutas relativas TMDB |
+| `category` | String | "anime", "movie", "series" |
+| `rating` | Float | Rating 0-10 |
+| `year` | Int | Año de estreno |
+| `status` | String | "Finalizado", "En emisión", etc. |
+| `genres` | String | Separados por coma |
+| `source` | String | Plataforma de origen (lamovie, tioanime, etc.) |
+
+### Episode
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | String (cuid) | PK |
+| `show_id` | String | FK → Show (cascade delete) |
+| `title` | String | Título del episodio |
+| `episode_number` | Float | Número (soporta 0.5, 1.5, etc.) |
+| `source_url` | String | URL del episodio en la plataforma fuente |
+
+### MediaItem (arquitectura multi-fuente)
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | String (cuid) | PK |
+| `normalized_title` | String | Clave de dedup |
+| `title` | String | Título |
+| `tmdb_id` | Int? | TMDB ID |
+| `kind` | String | "movie", "series" |
+| `year` | Int? | Año |
+| `@@unique` | — | `[normalized_title, kind, year]` |
+
+### MediaEpisode
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | String (cuid) | PK |
+| `media_item_id` | String | FK → MediaItem (cascade) |
+| `season_number` | Int | Default 1 |
+| `episode_number` | Float | Número de episodio |
+| `@@unique` | — | `[media_item_id, season_number, episode_number]` |
+
+### SourceLink
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | String (cuid) | PK |
+| `media_episode_id` | String | FK → MediaEpisode (cascade) |
+| `source_site` | String | Dominio de la plataforma |
+| `url` | String | URL del stream |
+| `link_type` | String | "direct", "embed", etc. |
+| `host` | String? | Hostname del CDN |
+| `priority_tier` | Int? | Tier de prioridad |
+| `is_verified` | Boolean | Si fue verificado |
+| `@@unique` | — | `[media_episode_id, source_site, url]` |
+
+### SiteRating
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `site` | String | Unique, dominio |
+| `rating` | Float | 0-10, default 5.0 |
+| `enabled` | Boolean | Si está habilitada |
+
+### CrawlTask / WorkerSettingsStore
+
+Tablas de soporte para jobs de rastreo y configuración del worker.
+
+---
+
+## Técnicas de rendimiento
+
+### Backend
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| Write-Buffer RAM | `server/writeBuffer.ts` | Cola en memoria, writer secuencial 5ms |
+| Endpoint lite | `?lite=true` | Shows sin episodios (~2MB vs ~15MB) |
+| Full-Text Search | PostgreSQL tsvector + GIN | Búsqueda por texto en milisegundos |
+| Fuzzy matching | pg_trgm | Tolerancia a typos |
+| Paginación server-side | `?page=1&limit=500` | Evita traer 20K+ registros |
+| MVCC PostgreSQL | Workers paralelos | Hasta 5 workers sin locks |
+
+### Frontend
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| Catálogo en memoria | App.tsx | Carga una vez, filtra localmente |
+| Búsqueda local | filteredShows useMemo | Array.filter() = instantáneo |
+| Debounce 300ms | UnifiedHeader | Evita filtrar en cada tecla |
+| Episodios bajo demanda | MediaDetailsModal | Solo carga al abrir título |
+| Lazy loading imágenes | SmartImage | Cargan cuando entran en viewport |
+
+### Scraping
+
+| Técnica | Dónde | Qué hace |
+|---------|-------|----------|
+| Adaptadores Strategy | adapters/ | Cada sitio tiene su adaptador |
+| Rate limiting + jitter | taskWorker.ts | Delay + jitter aleatorio |
+| Anti-bot detection | antiBot.ts | Cloudflare, 429s, auto-throttle |
+| Deduplicación | showService.ts | Por mal_id o título normalizado |
+| Write buffer | writeBuffer.ts | Buffer JSONL → DB |
+
+---
+
+## Decisiones de arquitectura (NO TOCAR sin entender)
+
+### 1. Write-Buffer: los workers NUNCA tocan la DB
+
+```
+Worker → enqueueWrite() → Cola RAM → Writer secuencial → DB
+```
+
+Evita carreras de escritura. Si varios workers escriben a la vez, PostgreSQL puede deadlockear.
+
+**Si modificás:** Nunca pongas `prisma.show.create()` directo en un worker. Usá `enqueueShowCreate()`, `enqueueShowUpdate()`, `enqueueWrite()`.
+
+### 2. Endpoint lite SIN episodios
+
+```
+Frontend → /shows?lite=true → shows sin episodes → filtro local
+Modal → /shows/:id → show CON episodes → solo cuando se abre
+```
+
+19,954 shows × ~6 episodios promedio = ~120K registros. Traerlos todos es lento e inútil.
+
+### 3. Búsqueda local vs server-side
+
+```
+Frontend: Array.filter() en memoria (instantáneo)
+Backend: tsvector + GIN (fallback si el catálogo crece a 100K+)
+```
+
+### 4. Schema Prisma: campos calculados NO van en el schema
+
+`search_vector` se maneja con raw SQL + trigger, NO en `schema.prisma`. Prisma no soporta tsvector.
+
+### 5. IDs generados por el worker
+
+Los IDs se generan EN EL WORKER antes de encolar, no en el writer. El worker necesita el ID para referencias cruzadas.
 
 ---
 
@@ -279,163 +784,27 @@ cat backup.sql | docker exec -i voidstream-pg psql -U voidstream -d voidstream
 1. Verificá que la fuente tenga streams activos
 2. Probá con otro servidor (el failover automático debería funcionar)
 3. Revisá la consola del navegador (F12) para errores
+4. Verificá si el CDN está bloqueado (ver pestaña Ajustes del Worker)
 
 ### La búsqueda es lenta
 
-No debería serlo desde v6.0. Si lo es:
+No debería serlo. Si lo es:
 1. Verificá que el catálogo se cargó con `?lite=true`
-2. Abrí DevTools > Network y fijate cuánto pesa la respuesta de `/api/v1/shows`
+2. Abrí DevTools > Network y fijate cuánto pesa `/api/v1/shows`
 
 ### El crawler no avanza
 
 1. Verificá que la URL fuente esté online
 2. Revisá los logs en la pestaña "Jobs" del admin
 3. Pausá y reanudá el trabajo
-
----
-
-## Técnicas de rendimiento aplicadas
-
-### Backend
-
-| Técnica | Dónde | Qué hace |
-|---------|-------|----------|
-| **Write-Buffer RAM** | `server/writeBuffer.ts` | Todas las escrituras a DB van a una cola en memoria. Un writer secuencial las aplica cada 5ms. Los workers NUNCA tocan la DB directamente |
-| **Endpoint lite** | `GET /api/v1/shows?lite=true` | Devuelve shows SIN episodios. Payload ~2MB vs ~15MB |
-| **Full-Text Search** | PostgreSQL tsvector + GIN | Búsqueda por texto en milisegundos. El trigger auto-actualiza el campo de búsqueda |
-| **Fuzzy matching** | pg_trgm | Tolerancia a typos: "narut" todavía encuentra "Naruto" |
-| **Paginación server-side** | `?page=1&limit=500` | Evita traer 12K+ registros de una |
-| **MVCC PostgreSQL** | Workers paralelos | Hasta 5 workers simultáneos sin locks ni bloqueos |
-| **PRAGMAs eliminados** | `server.ts` | Ya no se usan WAL/busy_timeout de SQLite |
-
-### Frontend
-
-| Técnica | Dónde | Qué hace |
-|---------|-------|----------|
-| **Catálogo en memoria** | `App.tsx` | Carga UNA VEZ al montar (~2MB), filtra localmente |
-| **Búsqueda local** | `filteredShows` useMemo | `Array.filter()` en memoria = instantáneo, cero API calls |
-| **Debounce 300ms** | `UnifiedHeader.tsx` | Evita filtrar en cada tecla, espera a que deje de escribir |
-| **Episodios bajo demanda** | `MediaDetailsModal.tsx` | Solo carga episodios cuando el usuario abre un título |
-| **Lazy loading de imágenes** | `SmartImage.tsx` | Las imágenes cargan cuando entran en viewport |
-
-### Scraping
-
-| Técnica | Dónde | Qué hace |
-|---------|-------|----------|
-| **Adaptadores Strategy** | `server/scrapers/adapters/` | Cada sitio tiene su adaptador. Si uno falla, el genérico toma el relevo |
-| **Rate limiting + jitter** | `server/taskWorker.ts` | Delay entre requests + jitter aleatorio para no ser bloqueado |
-| **Anti-bot detection** | `server/utils/antiBot.ts` | Detecta Cloudflare, 429s. Auto-throttle por dominio |
-| **Deduplicación** | `server/showService.ts` | Por mal_id o título normalizado. Fusiona episodios, no crea duplicados |
-| **Write buffer** | `server/writeBuffer.ts` | Las escrituras van a un buffer JSONL y se aplican cuando la DB responde |
-
----
-
-## Decisiones de arquitectura (NO TOCAR sin entender)
-
-### 1. Write-Buffer: los workers NUNCA tocan la DB
-
-```
-Worker → enqueueWrite() → Cola RAM → Writer secuencial → DB
-```
-
-**Por qué:** Evita carreras de escritura. Si varios workers escriben a la vez, PostgreSQL puede deadlockear o SQLite puede corromperse.
-
-**Si querés modificar:** Nunca pongas `prisma.show.create()` directo en un worker. Usá `enqueueShowCreate()`, `enqueueShowUpdate()`, `enqueueWrite()`.
-
-### 2. Endpoint lite SIN episodios
-
-```
-Frontend → /shows?lite=true → shows sin episodes → filtro local
-Modal → /shows/:id → show CON episodes → solo cuando se abre
-```
-
-**Por qué:** 12K shows × ~6 episodios promedio = ~72K registros. Traerlos todos en cada búsqueda es lento e inútil.
-
-**Si querés modificar:** No agregues `include: { episodes }` al endpoint lite. Si necesitas episodios, usá el endpoint `/shows/:id`.
-
-### 3. Búsqueda local vs server-side
-
-```
-Frontend: Array.filter() en memoria (instantáneo)
-Backend: tsvector + GIN (fallback si el catálogo crece a 100K+)
-```
-
-**Por qué:** La búsqueda local es instantánea (<1ms). La de PostgreSQL es rápida (~5ms) pero requiere round-trip a la DB.
-
-**Si querés modificar:** No deshabilites la búsqueda local. Si agregás más campos de búsqueda, actualizá el `filteredShows` en `App.tsx`.
-
-### 4. Schema Prisma: campos calculados NO van en el schema
-
-El campo `search_vector` se maneja con raw SQL + trigger, NO en el schema.prisma.
-
-**Por qué:** Prisma no soporta tsvector. Si lo ponés en el schema, Prisma intentará manejarlo y fallará.
-
-**Si querés modificar:** Si agregás campos de PostgreSQL avanzados (JSONB, arrays, hstore), usá raw SQL para crearlos e initelos con `$executeRawUnsafe`.
-
-### 5. IDs generados por el worker
-
-Los IDs de show/episode se generan EN EL WORKER antes de encolar, no en el writer.
-
-**Por qué:** El worker necesita el ID para referencias cruzadas (episodes necesitan show_id).
-
-**Si querés cambiar el ID scheme:** Actualizá `generateId()` en el worker y verificá que no haya unique constraints que se rompan.
-
----
-
-## Consideraciones al modificar la app
-
-### Si agregás una nueva tabla
-
-1. Agregar al `prisma/schema.prisma`
-2. Ejecutar `npx prisma db push`
-3. Si la tabla tiene text search, agregar índice GIN manualmente con `$executeRawUnsafe`
-4. Actualizar `tools/fast-migrate-pg.ts` si querés que la migración la incluya
-
-### Si agregás un nuevo endpoint
-
-1. Agregarlo en `server.ts`
-2. Si escribe a la DB, usar el write-buffer (no prisma directo)
-3. Si es de solo lectura, pode prisma directo
-4. Documentarlo en el README sección "API REST Endpoints"
-
-### Si agregás un adaptador de scraping
-
-1. Crear `server/scrapers/adapters/MiAdapter.ts`
-2. Extender `BaseAdapter`
-3. Implementar `canHandle(url)` y `scrape(url)`
-4. Registrarlo en `ScraperManager.ts`
-5. Probarlo con `npm test`
-
-### Si modificás el reproductor
-
-1. `src/components/HLSPlayerModal.tsx` es el reproductor principal
-2. Usa Hls.js para streams .m3u8
-3. El proxy anti-CORS está en `/api/v1/proxy/stream`
-4. Los streams se resuelven Just-In-Time al dar play
-
-### Si cambiás la base de datos
-
-**De PostgreSQL a SQLite:**
-1. Cambiar `prisma/schema.prisma`: `provider = "sqlite"`
-2. Quitar `.env` (o poner `DATABASE_URL="file:./dev.db"`)
-3. Ejecutar `npx prisma db push`
-4. Quitar full-text search (no existe en SQLite)
-5. Los workers vuelven a ser 1 solo (SQLite tiene locks)
-
-**De PostgreSQL a Turso/libSQL:**
-1. Cambiar `DATABASE_URL` a `libsql://...`
-2. Configurar `TURSO_AUTH_TOKEN`
-3. Ejecutar `npx prisma db push`
+4. Revisá si hay bloqueos anti-bot (banner rojo en Ajustes)
 
 ---
 
 ## Portear a otras plataformas
 
-### Android (React Native o Capacitor)
+### Android (Capacitor)
 
-La app usa React + Vite. Para portear a Android:
-
-**Opción 1: Capacitor (recomendado)**
 ```bash
 npm install @capacitor/core @capacitor/cli
 npx cap init nitiflix com.nitiflix.app
@@ -444,43 +813,20 @@ npm run build
 npx cap sync
 npx cap open android
 ```
-- El backend corre en un servidor remoto (no en el celular)
+
+- El backend corre en un servidor remoto
 - Cambiar `localhost:3000` por la IP del servidor en `app.config.ts`
-- El reproductor HLS funciona nativo en Android via ExoPlayer
-
-**Opción 2: PWA (más fácil)**
-- Agregar un `manifest.json` con iconos y colores
-- Service worker para caché offline
-- Se "instala" desde Chrome en Android
-
-**Cosas a tener en cuenta:**
-- El proxy anti-CORS (`/api/v1/proxy/stream`) DEBE correr en el servidor, no en el celular
-- PostgreSQL debe estar en el servidor (no en Docker local del celular)
-- Los scrapers hacen fetch a sitios externos: necesitan internet
-- El reproductor HLS funciona nativo, pero MP4 puede necesitar configuración extra
-
-### iOS (React Native o Capacitor)
-
-Mismas opciones que Android. Consideraciones:
-- HLS funciona nativo en iOS (es su formato preferido)
-- CORS es menos estricto en WKWebView
+- El proxy anti-CORS DEBE correr en el servidor
 
 ### Deploy en servidor (producción)
 
 ```bash
-# 1. Compilar
 npm run build
-
-# 2. Configurar .env con PostgreSQL de producción
-DATABASE_URL="postgresql://user:pass@your-pg-host:5432/voidstream"
-
-# 3. Iniciar
-npm start
+npm start  # o node dist/server.cjs
 ```
 
-**Recomendaciones:**
-- Usar PM2 o systemd para mantener el proceso vivo
-- PostgreSQL en RDS (AWS), Cloud SQL (GCP) o DigitalOcean
+- PM2 o systemd para mantener el proceso vivo
+- PostgreSQL en RDS / Cloud SQL / DigitalOcean
 - nginx como reverse proxy con SSL
 - El dominio ngrok es solo para desarrollo
 
@@ -488,40 +834,34 @@ npm start
 
 ## Escalabilidad
 
-### Cuánto aguanta la configuración actual
-
 | Métrica | Capacidad actual |
 |---------|-----------------|
-| Shows en catálogo | 12,000+ (probado) |
+| Shows en catálogo | 20,000+ |
 | Búsqueda local | Instantánea hasta 50K shows |
 | Workers paralelos | 5 simultáneos |
 | Escrituras/segundo | ~200 (write buffer) |
-| Conexiones DB | Pool de Prisma (~10) |
-
-### Cuándo escalar
-
-| Si necesitás... | Hacer... |
-|-----------------|----------|
-| 50K+ shows | La búsqueda local sigue funcionando, pero considerar paginación |
-| 100K+ shows | Mover búsqueda a server-side (tsvector ya está configurado) |
-| 1000+ usuarios simultáneos | Escalar PostgreSQL (read replicas) |
-| Scraping masivo | Aumentar `max_concurrent_jobs` en WorkerSettings |
-| Deploy global | Mover a Turso/libSQL (SQLite distribuido) o PlanetScale |
+| Episodios | 116,000+ |
 
 ---
 
-## Tecnologías usadas
+## Comandos útiles de PostgreSQL
 
-| Componente | Tecnología |
-|------------|-----------|
-| Backend | Node.js + Express + TypeScript |
-| Frontend | React 18 + TypeScript + Vite |
-| Base de datos | PostgreSQL 16 (Docker) |
-| ORM | Prisma 5.22 |
-| Estilos | Tailwind CSS |
-| Reproductor | Hls.js + Plyr |
-| Tests | Vitest |
-| Scraping | Cheerio + adaptadores custom |
+```bash
+# Verificar que está corriendo
+docker ps | grep voidstream-pg
+
+# Conectar a la base
+docker exec -it voidstream-pg psql -U voidstream -d voidstream
+
+# Ver shows
+docker exec voidstream-pg psql -U voidstream -d voidstream -c "SELECT COUNT(*) FROM \"Show\";"
+
+# Backup
+docker exec voidstream-pg pg_dump -U voidstream voidstream > backup.sql
+
+# Restaurar
+cat backup.sql | docker exec -i voidstream-pg psql -U voidstream -d voidstream
+```
 
 ---
 

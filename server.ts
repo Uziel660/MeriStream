@@ -1,3 +1,4 @@
+import net from "net";
 import dns from "dns/promises";
 import express, { Request, Response } from "express";
 import cors from "cors";
@@ -386,24 +387,29 @@ async function startServer() {
       }
 
       let isPrivate = false;
-      if (
-        resolvedIp === "localhost" ||
-        resolvedIp === "::1" ||
-        resolvedIp === "::" ||
-        resolvedIp.startsWith("::ffff:") ||
-        resolvedIp.startsWith("fc00:") ||
-        resolvedIp.startsWith("fd") ||
-        resolvedIp.startsWith("fe80:") ||
-        resolvedIp.startsWith("127.") ||
-        resolvedIp.startsWith("10.") ||
-        resolvedIp.startsWith("192.168.") ||
-        resolvedIp.startsWith("169.254.") ||
-        resolvedIp.startsWith("0.")
-      ) {
-        isPrivate = true;
-      } else if (resolvedIp.startsWith("172.")) {
-        const p = parseInt(resolvedIp.split(".")[1], 10);
-        if (p >= 16 && p <= 31) {
+      if (net.isIPv4(resolvedIp)) {
+        const parts = resolvedIp.split('.').map(Number);
+        if (
+          parts[0] === 127 || // Loopback
+          parts[0] === 10 || // Class A private
+          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // Class B private
+          (parts[0] === 192 && parts[1] === 168) || // Class C private
+          (parts[0] === 169 && parts[1] === 254) || // Link-local
+          parts[0] === 0 || // Current network
+          parts[0] >= 224 // Multicast and Reserved
+        ) {
+          isPrivate = true;
+        }
+      } else if (net.isIPv6(resolvedIp)) {
+        const lower = resolvedIp.toLowerCase();
+        if (
+          lower === '::1' || // Loopback
+          lower === '::' || // Unspecified
+          lower.startsWith('fc00:') || // Unique local address
+          lower.startsWith('fd') || // Unique local address
+          lower.startsWith('fe80:') || // Link-local
+          lower.startsWith('::ffff:') // IPv4-mapped IPv6
+        ) {
           isPrivate = true;
         }
       }

@@ -329,7 +329,26 @@ async function startServer() {
         });
         media_item_id = item?.id ?? null;
       }
-      res.json({ ...(show as any), media_item_id });
+      // Plataformas REALES donde vive la obra: dominio de los source_url de
+      // cada episodio (lamovie.org → lamovie). Cubre obras sin MediaItem.
+      const eps = await prisma.episode.findMany({
+        where: { show_id: showId },
+        select: { source_url: true },
+      });
+      const platCounts = new Map<string, number>();
+      for (const e of eps) {
+        try {
+          const host = new URL(e.source_url).hostname.replace(/^www\./, "").split(".")[0];
+          if (!host) continue;
+          platCounts.set(host, (platCounts.get(host) || 0) + 1);
+        } catch {
+          /* source_url vacío o inválido */
+        }
+      }
+      const episode_platforms = Array.from(platCounts.entries())
+        .map(([domain, episodes]) => ({ domain, episodes }))
+        .sort((a, b) => b.episodes - a.episodes);
+      res.json({ ...(show as any), media_item_id, episode_platforms });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1745,6 +1764,7 @@ async function startServer() {
           return {
             url,
             host,
+            hostFamily: familyKeyOfStreamUrl(url),
             status,
             ok: status === 200 || status === 206,
             latency_ms: Date.now() - started,

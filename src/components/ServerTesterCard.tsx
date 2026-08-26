@@ -10,6 +10,7 @@ import { FlaskConical, Loader2, RefreshCw } from 'lucide-react';
 interface TestResult {
   url: string;
   host: string;
+  hostFamily: string;
   status: number;
   ok: boolean;
   latency_ms: number;
@@ -95,7 +96,7 @@ const ServerTesterCard: React.FC = () => {
         const data = await res.json();
         setResults((prev) =>
           prev
-            .map((r) => ({ ...r, priority: data.priorities[r.host] ?? undefined }))
+            .map((r) => ({ ...r, priority: data.priorities[r.hostFamily] ?? undefined }))
             .sort((a, b) => {
               const na = a.priority ?? Number.MAX_SAFE_INTEGER;
               const nb = b.priority ?? Number.MAX_SAFE_INTEGER;

@@ -28,6 +28,7 @@ model Show {
   year                 Int       @default(2024)
   status               String    @default("Finalizado")
   genres               String    @default("Multimedia")
+  source               String    @default("")
   created_at           DateTime  @default(now())
   updated_at           DateTime  @updatedAt
   episodes             Episode[]

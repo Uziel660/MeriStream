@@ -101,7 +101,6 @@ const ServerTesterCard: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        const fam = hostFamily(host);
         setResults((prev) =>
           prev
             .map((r) => ({ ...r, priority: data.priorities[hostFamily(r.host)] ?? data.priorities[r.hostFamily] ?? undefined }))

@@ -2,7 +2,7 @@
 // Pipeline de verificación automática: paso a paso configurable y extensible.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, Play, Loader2, CheckCircle2, XCircle, AlertTriangle, SkipForward, Settings2 } from 'lucide-react';
+import { ShieldCheck, Play, Loader2, CheckCircle2, XCircle, SkipForward, Settings2 } from 'lucide-react';
 
 interface PipelineStep {
   id: string;
@@ -242,7 +242,7 @@ const VerificationPanel: React.FC = () => {
             );
           })}
         </div>
-        {selectedSteps.length > 0 && !pipeline.running && (
+        {selectedSteps.length > 0 && !pipeline?.running && (
           <p className="mt-2 text-[10px] text-zinc-500">{selectedSteps.length} paso(s) seleccionado(s)</p>
         )}
       </div>

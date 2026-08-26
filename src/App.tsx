@@ -5,6 +5,7 @@ import { UnifiedHeader } from './components/UnifiedHeader';
 import { AllCategoriesModal } from './components/AllCategoriesModal';
 import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
+import { CatalogFilters, type SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
 import { HLSPlayerModal } from './components/HLSPlayerModal';
@@ -38,6 +39,9 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [gridPageSize, setGridPageSize] = useState(100);
+  const [yearFilter, setYearFilter] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<SortMode>('recientes');
+  const [catalogPageSize, setCatalogPageSize] = useState(100);
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
 
@@ -393,6 +397,11 @@ export function App() {
       });
     }
 
+    // Filtro por año
+    if (yearFilter !== null) {
+      result = result.filter((s) => Number(s.year) === yearFilter);
+    }
+
     // Búsqueda local instantánea (sin pegar a la API)
     if (searchQuery && searchQuery.trim().length >= 2) {
       const q = searchQuery.toLowerCase().trim();
@@ -405,22 +414,62 @@ export function App() {
       });
     }
 
+    // Orden (recientes = orden de ingesta tal cual llega)
+    if (sortBy !== 'recientes') {
+      const sorted = [...result];
+      if (sortBy === 'rating') sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      else if (sortBy === 'anio') sorted.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
+      else if (sortBy === 'az') sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'es'));
+      result = sorted;
+    }
+
     return result;
-  }, [shows, activeFilter, searchQuery]);
+  }, [shows, activeFilter, searchQuery, yearFilter, sortBy]);
+
+  // Años disponibles para el filtro (de más nuevo a más viejo)
+  const availableYears = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of shows) {
+      const y = Number(s.year);
+      if (y >= 1940 && y <= new Date().getFullYear() + 1) set.add(y);
+    }
+    return [...set].sort((a, b) => b - a);
+  }, [shows]);
 
   // Secciones divididas para la pantalla de inicio
-  const animeShows = useMemo(
-    () => shows.filter((s) => (s.category || '').toLowerCase().includes('anime')).slice(0, 50),
-    [shows]
-  );
-  const otherShows = useMemo(
-    () => shows.filter((s) => !(s.category || '').toLowerCase().includes('anime')).slice(0, 50),
-    [shows]
-  );
   const topRatedShows = useMemo(
     () => [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 10),
     [shows]
   );
+
+  // Filas por GÉNERO: los géneros más comunes del catálogo, cada uno ordenado
+  // por rating. Reemplaza las viejas filas "por recencia" (anime/internacional).
+  const genreRows = useMemo(() => {
+    if (shows.length === 0) return [];
+    const toList = (g: unknown): string[] =>
+      Array.isArray(g) ? g.map(String) : String(g || '').split(',');
+    const counts = new Map<string, number>();
+    for (const s of shows) {
+      for (const g of toList(s.genres)) {
+        const clean = g.trim();
+        if (!clean) continue;
+        const low = clean.toLowerCase();
+        if (low === 'multimedia' || low === 'anime' || low === 'película' || low === 'serie') continue;
+        counts.set(clean, (counts.get(clean) || 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([genre]) => ({
+        genre,
+        items: shows
+          .filter((s) => toList(s.genres).map((x) => x.trim()).includes(genre))
+          .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+          .slice(0, 40),
+      }))
+      .filter((r) => r.items.length >= 8);
+  }, [shows]);
 
   // Algoritmo de Recomendación Inteligente basado en el historial de Continue Watching
   const { recommendedShows, topGenre } = useMemo(() => {
@@ -481,7 +530,19 @@ export function App() {
     };
   }, [continueWatchingItems, shows]);
 
-  const featuredShow = filteredShows.length > 0 ? filteredShows[0] : (shows.length > 0 ? shows[0] : null);
+  // HERO: selección aleatoria entre obras con buena imagen y rating decente
+  // (algoritmo de recomendación real queda para más adelante).
+  const featuredShow = useMemo(() => {
+    if (shows.length === 0) return null;
+    const pool = shows.filter(
+      (s) =>
+        (s.rating || 0) >= 7 &&
+        ((s as any).banner_url || (s as any).poster_url)
+    );
+    const source = pool.length > 0 ? pool : shows;
+    return source[Math.floor(Math.random() * source.length)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shows]);
 
   return (
     <div className="relative min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-x-hidden">
@@ -539,6 +600,14 @@ export function App() {
                       {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
                     </span>
                   </div>
+
+                  <CatalogFilters
+                    years={availableYears}
+                    year={yearFilter}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    sort={sortBy}
+                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
+                  />
 
                   {filteredShows.length === 0 ? (
                     <div className="py-20 text-center space-y-3">
@@ -610,6 +679,15 @@ export function App() {
                     />
                   )}
 
+                  {/* RECÉN AGREGADOS (por fecha de ingesta, lo más nuevo primero) */}
+                  <MediaRow
+                    title="Recién Agregados"
+                    items={shows.slice(0, 50)}
+                    onSelectMedia={handleOpenDetails}
+                    onHoverMedia={handleHoverMedia}
+                    isLoading={isLoading}
+                  />
+
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
                   {topRatedShows.length >= 3 && (
                     <BentoCollection
@@ -620,34 +698,65 @@ export function App() {
                     />
                   )}
 
-                  {/* FILAS DE CATÁLOGO */}
-                  <MediaRow
-                    title="Novedades & Tendencias"
-                    items={shows.slice(0, 50)}
-                    onSelectMedia={handleOpenDetails}
-                    onHoverMedia={handleHoverMedia}
-                    isLoading={isLoading}
-                  />
-
-                  {animeShows.length > 0 && (
+                  {/* FILAS POR GÉNERO (ordenadas por rating dentro de cada una) */}
+                  {genreRows.map((row) => (
                     <MediaRow
-                      title="Anime & Animación Japonesa"
-                      items={animeShows}
+                      key={row.genre}
+                      title={row.genre}
+                      items={row.items}
                       onSelectMedia={handleOpenDetails}
                       onHoverMedia={handleHoverMedia}
                       isLoading={isLoading}
                     />
-                  )}
+                  ))}
 
-                  {otherShows.length > 0 && (
-                    <MediaRow
-                      title="Series & Cine Internacional"
-                      items={otherShows}
-                      onSelectMedia={handleOpenDetails}
-                      onHoverMedia={handleHoverMedia}
-                      isLoading={isLoading}
+                  {/* EXPLORAR CATÁLOGO COMPLETO (filtros de año + orden + grid paginado) */}
+                  <section className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
+                      <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
+                        Explorar Catálogo
+                      </h3>
+                      <span className="font-mono text-xs text-zinc-500">
+                        {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
+                      </span>
+                    </div>
+                    <CatalogFilters
+                      years={availableYears}
+                      year={yearFilter}
+                      onYear={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                      sort={sortBy}
+                      onSort={(s) => { setSortBy(s); setCatalogPageSize(100); }}
                     />
-                  )}
+                    {filteredShows.length === 0 ? (
+                      <div className="py-12 text-center text-sm text-zinc-500">
+                        No hay obras con estos filtros.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+                          {filteredShows.slice(0, catalogPageSize).map((item) => (
+                            <MediaCard
+                              key={item.id}
+                              media={item}
+                              onSelectMedia={handleOpenDetails}
+                              onHover={handleHoverMedia}
+                            />
+                          ))}
+                        </div>
+                        {filteredShows.length > catalogPageSize && (
+                          <div className="flex justify-center pt-4">
+                            <button
+                              type="button"
+                              onClick={() => setCatalogPageSize((prev) => prev + 100)}
+                              className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
+                            >
+                              Cargar más ({filteredShows.length - catalogPageSize} restantes)
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </section>
                 </>
               )}
             </div>

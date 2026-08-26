@@ -1997,44 +1997,6 @@ async function startServer() {
     return res.status(401).json({ ok: false, detail: "Credenciales incorrectas" });
   });
 
-  // ==========================================
-  // Vite Middleware & Static Frontend Serving
-  // ==========================================
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true, host: "0.0.0.0", port: PORT },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  // Red de seguridad: un rechazo no capturado NO debe tumbar el servidor
-  // (Node 24 los trata como fatales). Se registran y se sigue vivo.
-  process.on("unhandledRejection", (reason) => {
-    console.error("[Proceso] Promesa rechazada sin catch (servidor se mantiene vivo):", reason);
-  });
-  process.on("uncaughtException", (err) => {
-    console.error("[Proceso] ExcepciÃ³n no capturada (servidor se mantiene vivo):", err);
-  });
-
-  // PostgreSQL: no PRAGMAs needed (those were SQLite-specific).
-  // PostgreSQL handles concurrency natively with MVCC.
-  try {
-    await prisma.$queryRawUnsafe("SELECT 1 as alive");
-    console.log("[DB] PostgreSQL connection OK");
-  } catch (e) {
-    console.warn("[DB] PostgreSQL connection failed:", e?.message || e);
-  }
-
-  // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).
-  startWriteBufferDrainer();
-
   // =========================================================================
   // VERIFICATION PIPELINE — Paso a paso configurable y extensible
   // =========================================================================
@@ -2059,7 +2021,6 @@ async function startServer() {
     if (pipelineLog.length > 200) pipelineLog.length = 200;
   }
 
-  // Step runners
   async function stepMetadata(): Promise<{ found: number; fixed: number }> {
     const shows = await prisma.show.findMany({
       where: { OR: [{ poster_path: null }, { description: 'Obra multimedia indexada.' }] },
@@ -2086,7 +2047,6 @@ async function startServer() {
   }
 
   async function stepDuplicates(): Promise<{ found: number; fixed: number }> {
-    // Find shows with same base_normalized_title
     const dupes = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
       `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
        FROM "Show" WHERE base_normalized_title != '' GROUP BY base_normalized_title HAVING COUNT(*) > 1`
@@ -2095,7 +2055,6 @@ async function startServer() {
     for (const d of dupes) {
       const ids = d.ids || [];
       if (ids.length < 2) continue;
-      // Keep first, merge rest
       const [keepId, ...mergeIds] = ids;
       for (const mergeId of mergeIds) {
         try {
@@ -2109,7 +2068,6 @@ async function startServer() {
   }
 
   async function stepSeasons(): Promise<{ found: number; fixed: number }> {
-    // Find shows with same base title but different seasons (e.g., "Show Temporada 2")
     const seasonShows = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
       `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
        FROM "Show" WHERE base_normalized_title != '' AND title ~* 'temporada|season|tp[0-9]'
@@ -2223,7 +2181,6 @@ async function startServer() {
     stuck: stepStuck,
   };
 
-  // GET /api/v1/verify/pipeline — status
   app.get("/api/v1/verify/pipeline", (_req: Request, res: Response) => {
     res.json({
       running: pipelineRunning,
@@ -2235,7 +2192,6 @@ async function startServer() {
     });
   });
 
-  // POST /api/v1/verify/pipeline/run — execute selected steps
   app.post("/api/v1/verify/pipeline/run", async (req: Request, res: Response) => {
     if (pipelineRunning) {
       return res.json({ started: false, reason: 'Pipeline ya en ejecución' });
@@ -2246,7 +2202,6 @@ async function startServer() {
     pipelineLog = [];
     res.json({ started: true, steps: selectedSteps });
 
-    // Run in background
     (async () => {
       for (const stepId of selectedSteps) {
         const step = VERIFICATION_STEPS.find(s => s.id === stepId);
@@ -2271,6 +2226,44 @@ async function startServer() {
       pipelineLogMsg('pipeline', 'info', 'Pipeline completado');
     })();
   });
+
+  // ==========================================
+  // Vite Middleware & Static Frontend Serving
+  // ==========================================
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true, host: "0.0.0.0", port: PORT },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  // Red de seguridad: un rechazo no capturado NO debe tumbar el servidor
+  // (Node 24 los trata como fatales). Se registran y se sigue vivo.
+  process.on("unhandledRejection", (reason) => {
+    console.error("[Proceso] Promesa rechazada sin catch (servidor se mantiene vivo):", reason);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("[Proceso] ExcepciÃ³n no capturada (servidor se mantiene vivo):", err);
+  });
+
+  // PostgreSQL: no PRAGMAs needed (those were SQLite-specific).
+  // PostgreSQL handles concurrency natively with MVCC.
+  try {
+    await prisma.$queryRawUnsafe("SELECT 1 as alive");
+    console.log("[DB] PostgreSQL connection OK");
+  } catch (e) {
+    console.warn("[DB] PostgreSQL connection failed:", e?.message || e);
+  }
+
+  // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).
+  startWriteBufferDrainer();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[VoidStream] Servidor PostgreSQL ejecutÃ¡ndose en http://0.0.0.0:${PORT}`);

@@ -19,6 +19,8 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [platforms, setPlatforms] = useState<Array<{ site: string; count: number }> | null>(null);
+  const [serversByPlatform, setServersByPlatform] = useState<Map<string, Map<string, number>> | null>(null);
+  const [episodePlatforms, setEpisodePlatforms] = useState<Array<{ domain: string; episodes: number }> | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -29,22 +31,34 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
         const fresh = await res.json();
         if (!alive) return;
         setForm((f: any) => ({ ...f, ...fresh }));
+        setEpisodePlatforms(Array.isArray(fresh.episode_platforms) ? fresh.episode_platforms : []);
         const mid = fresh.media_item_id ?? null;
         if (mid) {
           const pmRes = await fetch(`/api/v1/play-multi/${mid}`);
           if (pmRes.ok) {
             const pm = await pmRes.json();
             const bySite = new Map<string, number>();
+            // Jerarquía plataforma → servidores (host de video dentro de cada plataforma)
+            const servers = new Map<string, Map<string, number>>();
             for (const c of pm.cascade || []) {
               const site = String(c.source_site || c.host || 'unknown');
               bySite.set(site, (bySite.get(site) || 0) + 1);
+              const host = String(c.host || 'directo');
+              if (!servers.has(site)) servers.set(site, new Map());
+              const inner = servers.get(site)!;
+              inner.set(host, (inner.get(host) || 0) + 1);
             }
-            if (alive) setPlatforms(Array.from(bySite.entries()).map(([site, count]) => ({ site, count })));
+            if (alive) {
+              setPlatforms(Array.from(bySite.entries()).map(([site, count]) => ({ site, count })));
+              setServersByPlatform(servers);
+            }
           } else if (alive) {
             setPlatforms([]);
+            setServersByPlatform(new Map());
           }
         } else if (alive) {
           setPlatforms([]);
+          setServersByPlatform(new Map());
         }
       } catch {
         /* silencio */
@@ -212,6 +226,26 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
             <Globe size={13} className="text-emerald-400" />
             Plataformas donde está disponible
           </div>
+          {form.source ? (
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[10px] text-zinc-500">Origen del catálogo:</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 font-semibold">
+                {form.source}
+              </span>
+            </div>
+          ) : null}
+          {episodePlatforms && episodePlatforms.length > 0 && (
+            <div className="mb-2">
+              <div className="text-[10px] text-zinc-500 mb-1">Por episodios extraídos:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {episodePlatforms.map((p) => (
+                  <span key={p.domain} className="text-[10px] px-2 py-0.5 rounded-lg bg-sky-500/10 text-sky-300 border border-sky-500/20 font-semibold">
+                    {p.domain} ({p.episodes} {p.episodes === 1 ? 'episodio' : 'episodios'})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {platforms === null ? (
             <div className="flex items-center gap-2 text-[11px] text-zinc-500">
               <Loader2 size={12} className="animate-spin" /> Consultando fuentes...
@@ -219,12 +253,30 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
           ) : platforms.length === 0 ? (
             <p className="text-[11px] text-zinc-500">Sin fuentes multi-plataforma registradas para este título.</p>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {platforms.map((p) => (
-                <span key={p.site} className="text-[10px] px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">
-                  {p.site} ({p.count} {p.count === 1 ? 'fuente' : 'fuentes'})
-                </span>
-              ))}
+            <div className="space-y-2">
+              {platforms.map((p) => {
+                const servers = serversByPlatform?.get(p.site);
+                return (
+                  <div key={p.site} className="rounded-lg bg-zinc-900/60 border border-zinc-800 p-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">
+                        {p.site}
+                      </span>
+                      <span className="text-[10px] text-zinc-500">{p.count} {p.count === 1 ? 'fuente' : 'fuentes'}</span>
+                    </div>
+                    {servers && servers.size > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5 pl-2">
+                        <span className="text-[10px] text-zinc-600 self-center mr-1">Servers:</span>
+                        {Array.from(servers.entries()).map(([host, n]) => (
+                          <span key={host} className="text-[9px] px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-300 border border-zinc-700">
+                            {host} ({n})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

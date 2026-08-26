@@ -1239,6 +1239,24 @@ async function startServer() {
     }
   });
 
+  // POST /api/v1/sites/ratings/swap - Swap ratings between two sites atomically
+  app.post("/api/v1/sites/ratings/swap", async (req: Request, res: Response) => {
+    try {
+      const { siteA, ratingA, siteB, ratingB } = req.body ?? {};
+      if (!siteA || !siteB || typeof ratingA !== "number" || typeof ratingB !== "number") {
+        return res.status(400).json({ detail: "siteA, siteB, ratingA, ratingB requeridos." });
+      }
+      await Promise.all([
+        upsertSiteRating(String(siteA), ratingA),
+        upsertSiteRating(String(siteB), ratingB),
+      ]);
+      const ratings = await getAllSiteRatings();
+      res.json({ ok: true, ratings });
+    } catch (e: any) {
+      res.status(500).json({ detail: e.message });
+    }
+  });
+
   // POST /api/v1/catalog/import-show - Save media item into PostgreSQL with Deduplication
   app.post("/api/v1/catalog/import-show", async (req: Request, res: Response) => {
     const showData = req.body?.show_data;

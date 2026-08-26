@@ -7,6 +7,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FlaskConical, Loader2, RefreshCw } from 'lucide-react';
 
+/** Extrae la "familia" de un hostname: "s12.vimeos.net" → "vimeos" */
+function hostFamily(host: string): string {
+  const h = host.toLowerCase().replace(/^www\./, '');
+  const labels = h.split('.').filter(Boolean);
+  return labels.length >= 2 ? labels[labels.length - 2] : h;
+}
+
 interface TestResult {
   url: string;
   host: string;
@@ -94,9 +101,10 @@ const ServerTesterCard: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
+        const fam = hostFamily(host);
         setResults((prev) =>
           prev
-            .map((r) => ({ ...r, priority: data.priorities[r.hostFamily] ?? undefined }))
+            .map((r) => ({ ...r, priority: data.priorities[hostFamily(r.host)] ?? data.priorities[r.hostFamily] ?? undefined }))
             .sort((a, b) => {
               const na = a.priority ?? Number.MAX_SAFE_INTEGER;
               const nb = b.priority ?? Number.MAX_SAFE_INTEGER;

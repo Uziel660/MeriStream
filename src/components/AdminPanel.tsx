@@ -96,6 +96,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   // Reordenar prioridad premium de plataformas: intercambia el rating con el
   // vecino en la lista ordenada (rating DESC = prioridad). Empates: empuja 0.5.
+  // Usa endpoint batch /swap para evitar race condition entre dos saves separados.
   const moveSitePriority = async (site: string, dir: -1 | 1) => {
     const sorted = [...siteRatings].sort((a, b) => b.rating - a.rating || a.site.localeCompare(b.site));
     const idx = sorted.findIndex((s) => s.site === site);
@@ -103,12 +104,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
     const a = sorted[idx];
     const b = sorted[swapIdx];
-    if (a.rating === b.rating) {
-      const nudged = Math.min(10, Math.max(0, a.rating + (dir === -1 ? 0.5 : -0.5)));
-      await handleSaveSiteRating(a.site, { rating: nudged });
-    } else {
-      await handleSaveSiteRating(a.site, { rating: b.rating });
-      await handleSaveSiteRating(b.site, { rating: a.rating });
+    try {
+      let newA: number, newB: number;
+      if (a.rating === b.rating) {
+        newA = Math.min(10, Math.max(0, a.rating + (dir === -1 ? 0.5 : -0.5)));
+        newB = b.rating;
+      } else {
+        newA = b.rating;
+        newB = a.rating;
+      }
+      const res = await fetch('/api/v1/sites/ratings/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteA: a.site, ratingA: newA, siteB: b.site, ratingB: newB }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSiteRatings(Array.isArray(data.ratings) ? data.ratings : []);
+      }
+    } catch (e) {
+      console.error('Error moviendo prioridad:', e);
     }
   };
 

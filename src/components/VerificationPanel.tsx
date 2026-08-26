@@ -1,142 +1,133 @@
 // src/components/VerificationPanel.tsx
-// Apartado de Verificación: recorre el catálogo obra por obra re-colectando
-// metadatos y detectando novedades en las plataformas seleccionadas.
-// Timer configurable (minutos/horas/días/meses) con ON/OFF persistente.
+// Pipeline de verificación automática: paso a paso configurable y extensible.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, Play, Save, Loader2 } from 'lucide-react';
+import { ShieldCheck, Play, Loader2, CheckCircle2, XCircle, AlertTriangle, SkipForward, Settings2 } from 'lucide-react';
+
+interface PipelineStep {
+  id: string;
+  name: string;
+  description: string;
+  status?: 'pending'|'running'|'done'|'error'|'skipped';
+  found?: number;
+  fixed?: number;
+  error?: string;
+}
+
+interface PipelineStatus {
+  running: boolean;
+  steps: PipelineStep[];
+  recent: Array<{ at: string; step: string; level: string; message: string }>;
+}
+
+// Timer config (sección existente)
+const UNITS = [
+  { label: 'Min', factor: 1 },
+  { label: 'Horas', factor: 60 },
+  { label: 'Días', factor: 1440 },
+];
 
 interface VerificationStatus {
   enabled: boolean;
   interval_minutes: number;
-  scope_mode: 'all' | 'platforms' | 'category';
-  platforms: string[];
-  category: string | null;
-  metadata_only: boolean;
-  sync_known_episodes?: boolean;
   running: boolean;
   phase: string;
-  current_item: string | null;
-  progress: {
-    total: number;
-    done: number;
-    new_works: number;
-    new_sources: number;
-    known: number;
-    known_without_episodes: number;
-    new_episodes: number;
-    updated_metadata: number;
-    errors: number;
-  };
+  progress: any;
   next_run_at: string | null;
   recent: Array<{ at: string; level: string; message: string }>;
   config: any;
 }
 
-const UNITS = [
-  { label: 'Minutos', factor: 1 },
-  { label: 'Horas', factor: 60 },
-  { label: 'Días', factor: 1440 },
-  { label: 'Meses', factor: 43200 },
-];
-
 const VerificationPanel: React.FC = () => {
-  const [status, setStatus] = useState<VerificationStatus | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState<VerificationStatus | null>(null);
+  const [selectedSteps, setSelectedSteps] = useState<string[]>([]);
+  const [showConfig, setShowConfig] = useState(false);
+  const [intervalValue, setIntervalValue] = useState(1);
+  const [intervalUnit, setIntervalUnit] = useState(1440);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [intervalValue, setIntervalValue] = useState<number>(1);
-  const [intervalUnit, setIntervalUnit] = useState<number>(1440); // días por defecto
-  const [knownPlatforms, setKnownPlatforms] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
+  const loadPipeline = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/verification');
-      if (res.ok) {
-        const data: VerificationStatus = await res.json();
-        setStatus(data);
-        setKnownPlatforms(Object.keys(data.config?.catalog_urls_by_platform || {}));
+      const r = await fetch('/api/v1/verify/pipeline');
+      if (r.ok) setPipeline(await r.json());
+    } catch {}
+  }, []);
+
+  const loadVerify = useCallback(async () => {
+    try {
+      const r = await fetch('/api/v1/verification');
+      if (r.ok) {
+        const d: VerificationStatus = await r.json();
+        setVerifyStatus(d);
+        const total = d.interval_minutes || 1440;
+        const unit = [...UNITS].reverse().find(u => total % u.factor === 0) || UNITS[0];
+        setIntervalUnit(unit.factor);
+        setIntervalValue(Math.max(1, total / unit.factor));
       }
-    } catch {
-      /* silencio */
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
+    loadPipeline();
+    loadVerify();
+    const t = setInterval(() => { loadPipeline(); loadVerify(); }, 4000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [loadPipeline, loadVerify]);
 
-  // Sincroniza el input del intervalo cuando llega el estado
-  useEffect(() => {
-    if (status) {
-      const total = status.interval_minutes || 1440;
-      // Elige la unidad más legible que divida exacto
-      const unit = [...UNITS].reverse().find((u) => total % u.factor === 0) || UNITS[0];
-      setIntervalUnit(unit.factor);
-      setIntervalValue(Math.max(1, total / unit.factor));
-    }
-  }, [status?.interval_minutes]);
-
-  const saveConfig = async (patch: Record<string, unknown>) => {
-    setSaving(true);
+  const runPipeline = async () => {
     setFeedback(null);
     try {
-      const res = await fetch('/api/v1/verification/config', {
+      const steps = selectedSteps.length > 0 ? selectedSteps : pipeline?.steps.map(s => s.id) || [];
+      const r = await fetch('/api/v1/verify/pipeline/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps }),
+      });
+      const d = await r.json();
+      setFeedback(d.started ? 'Pipeline iniciado' : d.reason || 'Error');
+      await loadPipeline();
+    } catch (e: any) {
+      setFeedback(e?.message || 'Error');
+    }
+  };
+
+  const toggleStep = (id: string) => {
+    setSelectedSteps(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  };
+
+  const selectAll = () => setSelectedSteps(pipeline?.steps.map(s => s.id) || []);
+  const selectNone = () => setSelectedSteps([]);
+
+  const saveTimerConfig = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    try {
+      await fetch('/api/v1/verification/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        setFeedback('Configuración guardada');
-        await load();
-      } else {
-        setFeedback(data.detail || 'Error de validación');
-      }
-    } catch (e: any) {
-      setFeedback(e?.message || 'Error de conexión');
-    } finally {
-      setSaving(false);
+      await loadVerify();
+    } catch {} finally { setSaving(false); }
+  };
+
+  const statusIcon = (s?: string) => {
+    switch (s) {
+      case 'running': return <Loader2 size={14} className="animate-spin text-blue-400" />;
+      case 'done': return <CheckCircle2 size={14} className="text-emerald-400" />;
+      case 'error': return <XCircle size={14} className="text-red-400" />;
+      case 'skipped': return <SkipForward size={14} className="text-zinc-500" />;
+      default: return <div className="w-3.5 h-3.5 rounded-full border border-zinc-600" />;
     }
   };
 
-  const runNow = async () => {
-    setFeedback(null);
-    try {
-      const res = await fetch('/api/v1/verification/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await res.json();
-      setFeedback(data.started ? 'Verificación iniciada' : data.reason || 'Ya hay una pasada en curso');
-      await load();
-    } catch (e: any) {
-      setFeedback(e?.message || 'Error al iniciar');
-    }
-  };
-
-  const toggleTimer = (enabled: boolean) => {
-    saveConfig({ enabled, interval_minutes: intervalValue * intervalUnit });
-  };
-
-  const changeInterval = (value: number, unitFactor: number) => {
-    setIntervalValue(value);
-    setIntervalUnit(unitFactor);
-    // Guarda solo si el timer está activo (si no, se guardará al activarlo)
-    if (status?.enabled) saveConfig({ interval_minutes: Math.max(1, value) * unitFactor });
-  };
-
-  const setScope = (mode: string) => saveConfig({ scope_mode: mode });
-  const togglePlatform = (p: string) => {
-    const current = status?.platforms || [];
-    const next = current.includes(p) ? current.filter((x) => x !== p) : [...current, p];
-    saveConfig({ platforms: next });
-  };
-  const setMetadataOnly = (v: boolean) => saveConfig({ metadata_only: v });
-
-  const p = status?.progress;
+  const p = verifyStatus?.progress;
+  const anyRunning = pipeline?.running || verifyStatus?.running;
 
   return (
     <div className="space-y-4">
-      {/* Estado general + Ejecutar ahora */}
+      {/* Header principal */}
       <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -146,37 +137,40 @@ const VerificationPanel: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-white">Verificación del Catálogo</h3>
               <p className="text-[11px] text-zinc-400">
-                {status?.running
-                  ? `En curso: fase ${status.phase} — ${status.current_item || ''} (${p?.done || 0}/${p?.total || 0})`
-                  : status?.enabled
-                  ? `Automática activa · próxima: ${status.next_run_at ? new Date(status.next_run_at).toLocaleString() : '—'}`
-                  : 'Automática desactivada'}
+                {anyRunning
+                  ? pipeline?.running ? 'Pipeline en ejecución...' : `Fase: ${verifyStatus?.phase || '...'}`
+                  : 'Listo para ejecutar — selecciona pasos y ejecuta'}
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={runNow}
-            disabled={status?.running}
-            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-          >
-            {status?.running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            {status?.running ? 'Verificando...' : 'Ejecutar ahora'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowConfig(!showConfig)}
+              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <Settings2 size={13} />
+              Timer
+            </button>
+            <button
+              type="button"
+              onClick={runPipeline}
+              disabled={anyRunning}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              {anyRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              {anyRunning ? 'Ejecutando...' : 'Ejecutar'}
+            </button>
+          </div>
         </div>
 
+        {/* Progress resumen */}
         {p && (p.total > 0 || p.new_works > 0 || p.updated_metadata > 0) && (
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {[
-              ['Progreso', `${p.done}/${p.total}`],
-              ['Metadatos actualizados', p.updated_metadata],
-              ['Obras nuevas', p.new_works],
-              ['Episodios nuevos', p.new_episodes],
-              ['Errores', p.errors],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="px-2.5 py-2 rounded-lg bg-zinc-950/60 border border-zinc-800">
-                <div className="text-[10px] text-zinc-500 uppercase">{label}</div>
-                <div className="text-sm font-bold text-white font-mono">{String(value)}</div>
+            {[['Progreso', `${p.done}/${p.total}`], ['Metadatos', p.updated_metadata], ['Nuevos', p.new_works], ['Episodios', p.new_episodes], ['Errores', p.errors]].map(([l, v]) => (
+              <div key={String(l)} className="px-2.5 py-2 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                <div className="text-[10px] text-zinc-500 uppercase">{l}</div>
+                <div className="text-sm font-bold text-white font-mono">{String(v)}</div>
               </div>
             ))}
           </div>
@@ -184,157 +178,87 @@ const VerificationPanel: React.FC = () => {
         {feedback && <p className="mt-2 text-[11px] text-amber-400">{feedback}</p>}
       </div>
 
-      {/* Configuración */}
-      <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-4">
-        <h4 className="text-xs font-bold text-white">Configuración</h4>
-
-        {/* Timer */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer shrink-0">
-            <input
-              type="checkbox"
-              checked={Boolean(status?.enabled)}
-              onChange={(e) => toggleTimer(e.target.checked)}
-              disabled={saving}
-              className="accent-emerald-500"
-            />
-            Verificación automática
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400">Cada</span>
-            <input
-              type="number"
-              min={1}
-              value={intervalValue}
-              onChange={(e) => changeInterval(parseInt(e.target.value, 10) || 1, intervalUnit)}
-              className="w-20 px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-            />
-            <select
-              value={intervalUnit}
-              onChange={(e) => changeInterval(intervalValue, parseInt(e.target.value, 10))}
-              className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-            >
-              {UNITS.map((u) => (
-                <option key={u.label} value={u.factor}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Alcance */}
-        <div>
-          <label className="text-xs font-semibold text-zinc-300 block mb-1.5">Alcance</label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              ['all', 'Todo el catálogo'],
-              ['platforms', 'Por plataformas'],
-              ['category', 'Por categoría'],
-            ].map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setScope(mode)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  status?.scope_mode === mode
-                    ? 'bg-zinc-800 text-white border border-zinc-600'
-                    : 'bg-zinc-950 text-zinc-400 border border-zinc-800 hover:text-zinc-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {status?.scope_mode === 'platforms' && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(knownPlatforms.length > 0 ? knownPlatforms : status.platforms).map((plat) => {
-                const active = (status.platforms || []).includes(plat);
-                return (
-                  <button
-                    key={plat}
-                    type="button"
-                    onClick={() => togglePlatform(plat)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
-                      active
-                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-zinc-950 text-zinc-500 border border-zinc-800 hover:text-zinc-300'
-                    }`}
-                  >
-                    {plat}
-                  </button>
-                );
-              })}
-              {knownPlatforms.length === 0 && status.platforms.length === 0 && (
-                <p className="text-[11px] text-zinc-500">No hay plataformas configuradas en catalog_urls_by_platform.</p>
-              )}
+      {/* Timer config (colapsable) */}
+      {showConfig && (
+        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+          <h4 className="text-xs font-bold text-white">Configuración del Timer</h4>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer shrink-0">
+              <input type="checkbox" checked={Boolean(verifyStatus?.enabled)} onChange={e => saveTimerConfig({ enabled: e.target.checked })} disabled={saving} className="accent-emerald-500" />
+              Verificación automática
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-400">Cada</span>
+              <input type="number" min={1} value={intervalValue} onChange={e => { const v = parseInt(e.target.value) || 1; setIntervalValue(v); if (verifyStatus?.enabled) saveTimerConfig({ interval_minutes: v * intervalUnit }); }} className="w-20 px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-emerald-500/60" />
+              <select value={intervalUnit} onChange={e => { const f = parseInt(e.target.value); setIntervalUnit(f); if (verifyStatus?.enabled) saveTimerConfig({ interval_minutes: intervalValue * f }); }} className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-emerald-500/60">
+                {UNITS.map(u => <option key={u.label} value={u.factor}>{u.label}</option>)}
+              </select>
             </div>
-          )}
-
-          {status?.scope_mode === 'category' && (
-            <input
-              type="text"
-              key={status.category || 'cat'}
-              defaultValue={status.category || ''}
-              onBlur={(e) => saveConfig({ category: e.target.value })}
-              placeholder="anime, series, movie..."
-              className="mt-2 w-full max-w-xs px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-            />
-          )}
+          </div>
         </div>
+      )}
 
-        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={status?.metadata_only}
-            onChange={(e) => setMetadataOnly(e.target.checked)}
-            disabled={saving}
-            className="accent-emerald-500"
-          />
-          Solo metadatos (sin buscar novedades en plataformas)
-        </label>
-
-        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={status?.sync_known_episodes !== false}
-            onChange={(e) => saveConfig({ sync_known_episodes: e.target.checked })}
-            disabled={saving}
-            className="accent-emerald-500"
-          />
-          Detectar episodios nuevos en obras conocidas (re-escaneo ligero por índice)
-        </label>
-
-        <button
-          type="button"
-          onClick={() => saveConfig({ interval_minutes: intervalValue * intervalUnit })}
-          disabled={saving}
-          className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <Save size={13} />
-          {saving ? 'Guardando...' : 'Guardar configuración'}
-        </button>
-        <p className="text-[10px] text-zinc-500">
-          Nota: los cambios de alcance/plataformas/metadata_only se guardan al instante; el botón es para reconfirmar.
-        </p>
+      {/* Pipeline steps */}
+      <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-white">Pasos de Verificación</h4>
+          <div className="flex gap-2">
+            <button type="button" onClick={selectAll} className="text-[10px] text-zinc-400 hover:text-zinc-200 underline">Todos</button>
+            <button type="button" onClick={selectNone} className="text-[10px] text-zinc-400 hover:text-zinc-200 underline">Ninguno</button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          {pipeline?.steps.map(step => {
+            const isSelected = selectedSteps.includes(step.id);
+            return (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => toggleStep(step.id)}
+                disabled={pipeline.running}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                  isSelected
+                    ? 'bg-emerald-500/10 border border-emerald-500/30'
+                    : 'bg-zinc-950/40 border border-zinc-800 hover:border-zinc-700'
+                } ${pipeline.running ? 'opacity-60' : ''}`}
+              >
+                {statusIcon(step.status)}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-white truncate">{step.name}</div>
+                  <div className="text-[10px] text-zinc-500 truncate">{step.description}</div>
+                </div>
+                {step.status === 'done' && (
+                  <div className="text-[10px] text-zinc-400 shrink-0">
+                    <span className="text-emerald-400 font-mono">{step.fixed}</span> / <span className="font-mono">{step.found}</span>
+                  </div>
+                )}
+                {step.status === 'error' && (
+                  <span className="text-[10px] text-red-400 shrink-0 truncate max-w-[120px]">{step.error}</span>
+                )}
+                {isSelected && !pipeline.running && (
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {selectedSteps.length > 0 && !pipeline.running && (
+          <p className="mt-2 text-[10px] text-zinc-500">{selectedSteps.length} paso(s) seleccionado(s)</p>
+        )}
       </div>
 
       {/* Log reciente */}
-      {status?.recent && status.recent.length > 0 && (
+      {pipeline?.recent && pipeline.recent.length > 0 && (
         <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
-          <h4 className="text-xs font-bold text-white mb-2">Actividad reciente</h4>
+          <h4 className="text-xs font-bold text-white mb-2">Actividad del Pipeline</h4>
           <div className="space-y-1 max-h-48 overflow-y-auto">
-            {status.recent.map((r, i) => (
+            {pipeline.recent.map((r, i) => (
               <div key={i} className="text-[11px] font-mono flex gap-2">
-                <span className="text-zinc-600">{new Date(r.at).toLocaleTimeString()}</span>
-                <span
-                  className={
-                    r.level === 'error' ? 'text-red-400' : r.level === 'warn' ? 'text-amber-400' : 'text-zinc-400'
-                  }
-                >
-                  {r.message}
+                <span className="text-zinc-600 shrink-0">{new Date(r.at).toLocaleTimeString()}</span>
+                <span className={`shrink-0 w-20 truncate ${r.level === 'error' ? 'text-red-400' : r.level === 'warn' ? 'text-amber-400' : 'text-zinc-500'}`}>
+                  {r.step}
                 </span>
+                <span className={r.level === 'error' ? 'text-red-400' : 'text-zinc-400'}>{r.message}</span>
               </div>
             ))}
           </div>

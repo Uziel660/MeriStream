@@ -2035,6 +2035,243 @@ async function startServer() {
   // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).
   startWriteBufferDrainer();
 
+  // =========================================================================
+  // VERIFICATION PIPELINE — Paso a paso configurable y extensible
+  // =========================================================================
+  const VERIFICATION_STEPS = [
+    { id: 'metadata', name: 'Rellenar metadatos faltantes', description: 'Busca poster, descripción, géneros y año via TMDB/AniList/TVMaze' },
+    { id: 'duplicates', name: 'Detectar duplicados', description: 'Agrupa obras por título normalizado y reporta conflictos' },
+    { id: 'seasons', name: 'Consolidar temporadas', description: 'Fusiona entradas de temporada dividida (misma obra, mismo tmdb_id)' },
+    { id: 'sequels', name: 'Reconciliar secuelas', description: 'Merge S2/S3 guardados como tarjetas separadas con mismo tmdb_id' },
+    { id: 'empty', name: 'Limpiar obras vacías', description: 'Elimina shows con 0 episodios' },
+    { id: 'sources', name: 'Reparar fuentes CDN', description: 'Busca páginas originales para shows con links CDN directos' },
+    { id: 'titles', name: 'Normalizar títulos', description: 'Detecta títulos basura/placeholder y restaura desde base_normalized_title' },
+    { id: 'stuck', name: 'Recuperar jobs trabados', description: 'Resetea CrawlTasks stuck en "running" por >30 minutos' },
+  ];
+
+  // Pipeline state (en memoria, se reinicia con el server)
+  let pipelineRunning = false;
+  let pipelineProgress: Record<string, { status: 'pending'|'running'|'done'|'error'|'skipped'; found: number; fixed: number; error?: string }> = {};
+  let pipelineLog: Array<{ at: string; step: string; level: string; message: string }> = [];
+
+  function pipelineLogMsg(step: string, level: string, message: string) {
+    pipelineLog.unshift({ at: new Date().toISOString(), step, level, message });
+    if (pipelineLog.length > 200) pipelineLog.length = 200;
+  }
+
+  // Step runners
+  async function stepMetadata(): Promise<{ found: number; fixed: number }> {
+    const shows = await prisma.show.findMany({
+      where: { OR: [{ poster_path: null }, { description: 'Obra multimedia indexada.' }] },
+      take: 100,
+    });
+    let fixed = 0;
+    for (const s of shows) {
+      try {
+        if (!s.tmdb_id) continue;
+        const key = process.env.TMDB_API_KEY;
+        if (!key) break;
+        const raw = await fetch(`https://api.themoviedb.org/3/movie/${s.tmdb_id}?api_key=${key}&language=es-MX`).then(r => r.ok ? r.json() : null);
+        if (!raw) continue;
+        const updates: any = {};
+        if (!s.poster_path && raw.poster_path) updates.poster_path = raw.poster_path;
+        if ((s.description === 'Obra multimedia indexada.' || !s.description) && raw.overview) updates.description = raw.overview;
+        if (Object.keys(updates).length > 0) {
+          await prisma.show.update({ where: { id: s.id }, data: updates });
+          fixed++;
+        }
+      } catch {}
+    }
+    return { found: shows.length, fixed };
+  }
+
+  async function stepDuplicates(): Promise<{ found: number; fixed: number }> {
+    // Find shows with same base_normalized_title
+    const dupes = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
+      `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
+       FROM "Show" WHERE base_normalized_title != '' GROUP BY base_normalized_title HAVING COUNT(*) > 1`
+    );
+    let fixed = 0;
+    for (const d of dupes) {
+      const ids = d.ids || [];
+      if (ids.length < 2) continue;
+      // Keep first, merge rest
+      const [keepId, ...mergeIds] = ids;
+      for (const mergeId of mergeIds) {
+        try {
+          await prisma.episode.updateMany({ where: { show_id: mergeId }, data: { show_id: keepId } });
+          await prisma.show.delete({ where: { id: mergeId } });
+          fixed++;
+        } catch {}
+      }
+    }
+    return { found: dupes.length, fixed };
+  }
+
+  async function stepSeasons(): Promise<{ found: number; fixed: number }> {
+    // Find shows with same base title but different seasons (e.g., "Show Temporada 2")
+    const seasonShows = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
+      `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
+       FROM "Show" WHERE base_normalized_title != '' AND title ~* 'temporada|season|tp[0-9]'
+       GROUP BY base_normalized_title HAVING COUNT(*) > 1`
+    );
+    let fixed = 0;
+    for (const d of seasonShows) {
+      const ids = d.ids || [];
+      if (ids.length < 2) continue;
+      const [keepId, ...mergeIds] = ids;
+      for (const mergeId of mergeIds) {
+        try {
+          const eps = await prisma.episode.findMany({ where: { show_id: mergeId } });
+          for (const ep of eps) {
+            const exists = await prisma.episode.findFirst({ where: { show_id: keepId, episode_number: ep.episode_number } });
+            if (!exists) {
+              await prisma.episode.update({ where: { id: ep.id }, data: { show_id: keepId } });
+            }
+          }
+          await prisma.show.delete({ where: { id: mergeId } });
+          fixed++;
+        } catch {}
+      }
+    }
+    return { found: seasonShows.length, fixed };
+  }
+
+  async function stepEmpty(): Promise<{ found: number; fixed: number }> {
+    const empty = await prisma.show.findMany({ where: { episodes: { none: {} } }, take: 500 });
+    let fixed = 0;
+    for (const s of empty) {
+      try {
+        await prisma.show.delete({ where: { id: s.id } });
+        fixed++;
+      } catch {}
+    }
+    return { found: empty.length, fixed };
+  }
+
+  async function stepSources(): Promise<{ found: number; fixed: number }> {
+    const cdnShows = await prisma.show.findMany({
+      where: { source: '', episodes: { some: { source_url: { contains: '.m3u8' } } } },
+      include: { episodes: true },
+      take: 100,
+    });
+    let fixed = 0;
+    for (const s of cdnShows) {
+      const slug = s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      for (const baseUrl of [`https://www.cinecalidad.am/ver-pelicula/${slug}/`, `https://lamovie.org/peliculas/${slug}/`]) {
+        try {
+          const r = await fetch(baseUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) });
+          if (r.ok) {
+            const html = await r.text();
+            if (html.includes('embed') || html.includes('player')) {
+              const platform = baseUrl.includes('cinecalidad') ? 'cinecalidad' : 'lamovie';
+              const epId = s.episodes[0]?.id;
+              if (epId) {
+                await prisma.episode.update({ where: { id: epId }, data: { source_url: baseUrl } });
+                await prisma.show.update({ where: { id: s.id }, data: { source: platform } });
+                fixed++;
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+    return { found: cdnShows.length, fixed };
+  }
+
+  async function stepTitles(): Promise<{ found: number; fixed: number }> {
+    const garbage = await prisma.show.findMany({
+      where: { OR: [
+        { title: { contains: 'test', mode: 'insensitive' } },
+        { title: { contains: 'placeholder', mode: 'insensitive' } },
+        { description: 'Obra multimedia indexada.' },
+      ]},
+      take: 100,
+    });
+    let fixed = 0;
+    for (const s of garbage) {
+      if (s.base_normalized_title && s.base_normalized_title !== s.title) {
+        await prisma.show.update({ where: { id: s.id }, data: { title: s.base_normalized_title } });
+        fixed++;
+      }
+    }
+    return { found: garbage.length, fixed };
+  }
+
+  async function stepStuck(): Promise<{ found: number; fixed: number }> {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const stuck = await prisma.crawlTask.findMany({
+      where: { status: 'running', created_at: { lt: cutoff } },
+      take: 50,
+    });
+    let fixed = 0;
+    for (const t of stuck) {
+      await prisma.crawlTask.update({ where: { id: t.id }, data: { status: 'pending' } });
+      fixed++;
+    }
+    return { found: stuck.length, fixed };
+  }
+
+  const STEP_RUNNERS: Record<string, () => Promise<{ found: number; fixed: number }>> = {
+    metadata: stepMetadata,
+    duplicates: stepDuplicates,
+    seasons: stepSeasons,
+    empty: stepEmpty,
+    sources: stepSources,
+    titles: stepTitles,
+    stuck: stepStuck,
+  };
+
+  // GET /api/v1/verify/pipeline — status
+  app.get("/api/v1/verify/pipeline", (_req: Request, res: Response) => {
+    res.json({
+      running: pipelineRunning,
+      steps: VERIFICATION_STEPS.map(s => ({
+        ...s,
+        ...pipelineProgress[s.id],
+      })),
+      recent: pipelineLog.slice(0, 50),
+    });
+  });
+
+  // POST /api/v1/verify/pipeline/run — execute selected steps
+  app.post("/api/v1/verify/pipeline/run", async (req: Request, res: Response) => {
+    if (pipelineRunning) {
+      return res.json({ started: false, reason: 'Pipeline ya en ejecución' });
+    }
+    const selectedSteps: string[] = Array.isArray(req.body?.steps) ? req.body.steps : VERIFICATION_STEPS.map(s => s.id);
+    pipelineRunning = true;
+    pipelineProgress = {};
+    pipelineLog = [];
+    res.json({ started: true, steps: selectedSteps });
+
+    // Run in background
+    (async () => {
+      for (const stepId of selectedSteps) {
+        const step = VERIFICATION_STEPS.find(s => s.id === stepId);
+        if (!step) continue;
+        pipelineProgress[stepId] = { status: 'running', found: 0, fixed: 0 };
+        pipelineLogMsg(stepId, 'info', `Iniciando: ${step.name}`);
+        try {
+          const runner = STEP_RUNNERS[stepId];
+          if (!runner) {
+            pipelineProgress[stepId] = { status: 'skipped', found: 0, fixed: 0 };
+            continue;
+          }
+          const result = await runner();
+          pipelineProgress[stepId] = { status: 'done', ...result };
+          pipelineLogMsg(stepId, 'info', `${step.name}: ${result.found} encontrados, ${result.fixed} corregidos`);
+        } catch (e: any) {
+          pipelineProgress[stepId] = { status: 'error', found: 0, fixed: 0, error: e.message };
+          pipelineLogMsg(stepId, 'error', `Error en ${step.name}: ${e.message}`);
+        }
+      }
+      pipelineRunning = false;
+      pipelineLogMsg('pipeline', 'info', 'Pipeline completado');
+    })();
+  });
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[VoidStream] Servidor PostgreSQL ejecutÃ¡ndose en http://0.0.0.0:${PORT}`);
   });

@@ -31,9 +31,18 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   return (
     <article
       id={`card-${media.id}`}
+      role="button"
+      tabIndex={0}
+      aria-label={media.title}
       onClick={() => onSelectMedia && onSelectMedia(media)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelectMedia && onSelectMedia(media);
+        }
+      }}
       onMouseEnter={() => onHover && onHover(media)}
-      className="group/card relative flex flex-col cursor-pointer select-none text-left w-full"
+      className="group/card relative flex flex-col cursor-pointer select-none text-left w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 rounded-xl"
     >
       {/* POSTER CONTAINER WITH CLEAN ELEVATION */}
       <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 shadow-sm transition-all duration-300 group-hover/card:border-zinc-700">

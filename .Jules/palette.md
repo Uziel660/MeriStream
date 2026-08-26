@@ -1,0 +1,3 @@
+## 2024-05-24 - Interactive Cards Need Keyboard Support
+**Learning:** Various clickable cards across the app (like `MediaCard` and potentially others) use standard `onClick` handlers on non-interactive semantic tags (`article`, `div`) without implementing proper keyboard support or roles, making them inaccessible to keyboard users and screen readers.
+**Action:** When making custom non-interactive elements (like `article`, `div`, `span`) clickable, always add `role="button"`, `tabIndex={0}`, an appropriate `aria-label`, and an `onKeyDown` handler to capture 'Enter' and 'Space' keystrokes to ensure they remain accessible.

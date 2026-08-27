@@ -21,6 +21,8 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "./db";
 import { normalizeTitleKey } from "./utils/titleNormalizer";
+import { cleanDescription, isAnomalousDescription } from "./utils/textCleaner";
+import { backfillShow } from "./metadataBackfill";
 
 // ── Tipos ────────────────────────────────────────────────────────
 
@@ -218,7 +220,7 @@ async function scanMetadata(): Promise<WatchdogFinding[]> {
     if (!show.genres || show.genres.trim().length === 0) missing.push("géneros");
 
     if (missing.length > 0) {
-      findings.push({
+      const finding: WatchdogFinding = {
         id: `meta-${show.id}`,
         timestamp: new Date().toISOString(),
         severity: "info",
@@ -228,7 +230,60 @@ async function scanMetadata(): Promise<WatchdogFinding[]> {
         entity_title: show.title,
         detail: `Metadatos incompletos: falta ${missing.join(", ")}`,
         fixed: false,
-      });
+      };
+
+      if (state.config.auto_fix) {
+        try {
+          const res = await backfillShow(show.id);
+          if (res.changed.length > 0) {
+            finding.fixed = true;
+            finding.fix_action = `Metadatos recapturados desde TMDB/AniList: ${res.changed.join(", ")}`;
+          }
+        } catch (e) {
+          finding.detail += ` (Fallo de recaptura)`;
+        }
+      }
+
+      findings.push(finding);
+    } else if (isAnomalousDescription(show.description, show.title)) {
+      // Detección de descripción anómala (entidades HTML &nbsp;, título duplicado al inicio, mojibake)
+      const finding: WatchdogFinding = {
+        id: `desc-anomaly-${show.id}`,
+        timestamp: new Date().toISOString(),
+        severity: "warn",
+        category: "metadata",
+        entity_type: "show",
+        entity_id: show.id,
+        entity_title: show.title,
+        detail: `Sinopsis anómala o corrupta detectada (&nbsp;, título duplicado o formato sucio)`,
+        fixed: false,
+      };
+
+      if (state.config.auto_fix) {
+        try {
+          const cleaned = cleanDescription(show.description, show.title);
+          if (cleaned && cleaned.length >= 10 && cleaned !== show.description) {
+            await prisma.show.update({
+              where: { id: show.id },
+              data: { description: cleaned },
+            });
+            finding.fixed = true;
+            finding.fix_action = "Sinopsis limpiada y normalizada sin entidades ni duplicados";
+          }
+
+          // Hacer recaptura completa de metadatos (portadas HD, géneros, etc) para reparar la obra de raíz
+          const res = await backfillShow(show.id);
+          if (res.changed.length > 0) {
+            finding.fixed = true;
+            finding.fix_action = (finding.fix_action ? finding.fix_action + ". " : "") + 
+              `Metadatos en alta definición recapturados: ${res.changed.join(", ")}`;
+          }
+        } catch (e) {
+          // Si falla, se queda el fix de la limpieza si lo hubo
+        }
+      }
+
+      findings.push(finding);
     }
   }
 
@@ -308,9 +363,9 @@ async function scanEmptyShows(): Promise<WatchdogFinding[]> {
 async function scanDuplicates(): Promise<WatchdogFinding[]> {
   const findings: WatchdogFinding[] = [];
 
-  // Find shows with same normalized_title (SQLite-compatible)
+  // Find shows with same normalized_title
   const allNormalized = await prisma.show.findMany({
-    where: { base_normalized_title: { not: null, not: "" } },
+    where: { base_normalized_title: { not: null, notIn: [""] } },
     select: { id: true, base_normalized_title: true },
   });
   const titleCounts = new Map<string, string[]>();

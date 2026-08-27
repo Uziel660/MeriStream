@@ -1,4 +1,4 @@
-# VoidStream / Nitiflix: Contexto del proyecto
+# MeriStream: Contexto del proyecto
 
 > ⚠️ **ACTUALIZACIÓN 2026-08-25**: las secciones 1-8 de este documento fueron
 > REESCRITAS — describían el prototipo histórico Python/FastAPI que ya no existe.

@@ -18,6 +18,7 @@ import { enqueueWrite } from "./writeBuffer";
 import { enrichUniversalMetadata } from "./metadataEngine";
 import { endsWithTruncationEllipsis } from "./metadataMerge";
 import { normalizeTitleKey, parseRawTitle, isPlausibleTitle } from "./utils/titleNormalizer";
+import { cleanDescription, isAnomalousDescription } from "./utils/textCleaner";
 import type { ContentKind } from "./types";
 
 interface BackfillResult {
@@ -37,7 +38,20 @@ const state = {
   timer: null as ReturnType<typeof setInterval> | null,
 };
 
-/** true si a la obra le faltan metadatos que valga la pena completar. */
+function isLowQualityImage(url?: string | null): boolean {
+  if (!url) return true;
+  const u = url.toLowerCase();
+  return (
+    u.includes("veranimes.net") ||
+    u.includes("images.unsplash.com") ||
+    u.includes("placeholder") ||
+    u.includes("default_poster") ||
+    u.includes("no-image") ||
+    u.length < 10
+  );
+}
+
+/** true si a la obra le faltan metadatos o tiene portadas/sinopsis de baja calidad que valga la pena corregir. */
 export function showNeedsBackfill(show: {
   title?: string | null;
   description?: string | null;
@@ -50,6 +64,14 @@ export function showNeedsBackfill(show: {
   if (show.title) {
     const parsed = parseRawTitle(show.title);
     if (parsed.canonical !== show.title && isPlausibleTitle(parsed.canonical)) return true;
+  }
+  // Descripción anómala (HTML entities como &nbsp;, mojibake, título duplicado al inicio)
+  if (isAnomalousDescription(show.description, show.title)) {
+    return true;
+  }
+  // Portada de baja calidad (VerAnimes CDN o Unsplash) o banner duplicado del poster
+  if (isLowQualityImage(show.poster_url) || isLowQualityImage(show.banner_url) || show.banner_url === show.poster_url) {
+    return true;
   }
   return (
     !show.description ||
@@ -152,7 +174,15 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
     enriched = null;
   }
 
-  // Sin enrichment igual se aplica la reparación de título (flush temprano).
+  // Limpieza directa de la descripción actual si contiene anomalías (&nbsp;, mojibake, título duplicado)
+  const currentTitle = String(data.title ?? show.title ?? "");
+  const currentDesc = (show.description || "").trim();
+  const cleanedCurrentDesc = cleanDescription(currentDesc, currentTitle);
+  if (cleanedCurrentDesc && cleanedCurrentDesc !== currentDesc) {
+    data.description = cleanedCurrentDesc;
+  }
+
+  // Sin enrichment igual se aplica la reparación de título y descripción (flush temprano).
   if (!enriched) {
     if (Object.keys(data).length > 0) {
       await prisma.show.update({ where: { id: showId }, data });
@@ -163,31 +193,36 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
   }
   if (!showNeedsBackfill(show) && Object.keys(data).length === 0) return result;
 
-  const currentDesc = (show.description || "").trim();
   const currentDescTruncated = endsWithTruncationEllipsis(currentDesc);
+  const rawEnrichedDesc = enriched.description ? cleanDescription(String(enriched.description), currentTitle) : "";
   const enrichedDescOk =
-    !isPlaceholderDescription(enriched.description) &&
-    !endsWithTruncationEllipsis(String(enriched.description));
-  if (currentDesc === "" && enrichedDescOk) {
-    data.description = String(enriched.description).trim();
+    !isPlaceholderDescription(rawEnrichedDesc) &&
+    !endsWithTruncationEllipsis(rawEnrichedDesc);
+
+  if ((!currentDesc || isPlaceholderDescription(currentDesc)) && enrichedDescOk) {
+    data.description = rawEnrichedDesc;
   } else if (
-    // Reparación de truncados: SOLO si la descripción actual termina en elipsis
-    // y el enrichment trae una NO truncada y más larga se reemplaza.
+    // Reparación de truncados o anomalías severas
     currentDesc !== "" &&
-    currentDescTruncated &&
+    (currentDescTruncated || isAnomalousDescription(currentDesc, currentTitle)) &&
     enrichedDescOk &&
-    String(enriched.description).trim().length > currentDesc.length
+    rawEnrichedDesc.length > currentDesc.length
   ) {
-    data.description = String(enriched.description).trim();
+    data.description = rawEnrichedDesc;
   }
-  if (!show.poster_url && enriched.poster_path) {
+  // Sustituir poster si falta o si es de baja calidad (VerAnimes/Unsplash)
+  if ((!show.poster_url || isLowQualityImage(show.poster_url)) && enriched.poster_path) {
     data.poster_url = `https://image.tmdb.org/t/p/w780${enriched.poster_path}`;
-  } else if (!show.poster_url && enriched.poster_url) {
+    data.poster_path = enriched.poster_path;
+  } else if ((!show.poster_url || isLowQualityImage(show.poster_url)) && enriched.poster_url) {
     data.poster_url = enriched.poster_url;
   }
-  if (!show.banner_url && enriched.backdrop_path) {
+
+  // Sustituir banner si falta, si es idéntico al poster vertical o si es de baja calidad
+  if ((!show.banner_url || show.banner_url === show.poster_url || isLowQualityImage(show.banner_url)) && enriched.backdrop_path) {
     data.banner_url = `https://image.tmdb.org/t/p/w1280${enriched.backdrop_path}`;
-  } else if (!show.banner_url && enriched.banner_url) {
+    data.backdrop_path = enriched.backdrop_path;
+  } else if ((!show.banner_url || show.banner_url === show.poster_url || isLowQualityImage(show.banner_url)) && enriched.banner_url) {
     data.banner_url = enriched.banner_url;
   }
   if ((!show.genres || show.genres === "Multimedia") && Array.isArray(enriched.genres) && enriched.genres.length > 0) {

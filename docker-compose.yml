@@ -1,55 +1,41 @@
-# docker-compose.yml
-# ══════════════════════════════════════════════════════════════════
-# VoidStream con PostgreSQL (máxima velocidad para escrituras)
-#
-# Uso:
-#   docker-compose up -d                    (arrancar)
-#   docker-compose logs -f app              (ver logs)
-#   docker-compose exec app npx tsx tools/migrate-sqlite-to-pg.ts  (migrar datos)
-#   docker-compose down                     (parar)
-#
-# Para volver a SQLite:
-#   1. Comentar la sección "postgres" en este archivo
-#   2. En .env: DATABASE_URL="file:./dev.db"
-#   3. docker-compose up -d
-# ══════════════════════════════════════════════════════════════════
+version: '3.8'
 
 services:
-  postgres:
+  meristream-db:
     image: postgres:16-alpine
-    container_name: voidstream-db
-    restart: unless-stopped
+    container_name: meristream-db
+    restart: always
     environment:
-      POSTGRES_DB: voidstream
       POSTGRES_USER: voidstream
-      POSTGRES_PASSWORD: voidstream_secret_2026
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: voidstream123
+      POSTGRES_DB: voidstream
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./backups:/backups
+      - meristream_pgdata:/var/lib/postgresql/data
+      - ./meristream_db.dump:/tmp/meristream_db.dump:ro
+    ports:
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U voidstream -d voidstream"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    container_name: voidstream-app
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+  meristream-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meristream-app
+    restart: always
     environment:
-      DATABASE_URL: "postgresql://voidstream:voidstream_secret_2026@postgres:5432/voidstream?schema=public"
-      NODE_ENV: production
-      PORT: 3000
+      DATABASE_URL: "postgresql://voidstream:voidstream123@meristream-db:5432/voidstream?schema=public"
+      TMDB_API_KEY: "4598f607660f5c4eb423d868da148981"
+      PORT: "3010"
+      NODE_ENV: "production"
     ports:
-      - "3000:3000"
-    volumes:
-      - ./backups:/app/backups
-      - ./data:/app/data
+      - "3010:3010"
+    depends_on:
+      meristream-db:
+        condition: service_healthy
 
 volumes:
-  pgdata:
+  meristream_pgdata:

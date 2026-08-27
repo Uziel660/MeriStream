@@ -1,7 +1,7 @@
-// src/components/UnifiedHeader.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clapperboard, ChevronRight, Grid } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Search, X, Clapperboard, ChevronRight, Grid, LogOut, LogIn, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface FilterItem {
   id: string;
@@ -19,9 +19,17 @@ export const MAIN_QUICK_FILTERS: FilterItem[] = [
   { id: 'Ciencia Ficción', label: 'Sci-Fi' },
   { id: 'Suspenso', label: 'Suspenso' },
   { id: 'Shounen', label: 'Shounen' },
-  { id: 'Seinen', label: 'Seinen' },
   { id: 'Romance', label: 'Romance' },
 ];
+
+const AVATAR_BG_MAP: Record<string, string> = {
+  amber: 'bg-amber-500 text-black',
+  emerald: 'bg-emerald-500 text-black',
+  crimson: 'bg-red-600 text-white',
+  indigo: 'bg-indigo-600 text-white',
+  rose: 'bg-pink-600 text-white',
+  cyan: 'bg-cyan-500 text-black',
+};
 
 interface UnifiedHeaderProps {
   onSearchChange: (query: string) => void;
@@ -36,8 +44,11 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
   onSelectCategory,
   onOpenAllCategories,
 }) => {
+  const { user, isAuthenticated, openAuthModal, logout, updateAvatar } = useAuth();
   const [query, setQuery] = useState('');
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Monitor scroll for navbar background blur elevation
@@ -49,6 +60,17 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Close user menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Search debounce
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -56,6 +78,8 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
     }, 250);
     return () => clearTimeout(timer);
   }, [query, onSearchChange]);
+
+  const avatarBg = user?.avatar && AVATAR_BG_MAP[user.avatar] ? AVATAR_BG_MAP[user.avatar] : 'bg-amber-500 text-black';
 
   return (
     <header
@@ -68,7 +92,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-8 space-y-2.5">
 
-        {/* ROW 1: BRAND LOGO + INTEGRATED COMPACT SEARCH + ADMIN PANEL */}
+        {/* ROW 1: BRAND LOGO + INTEGRATED COMPACT SEARCH + USER PROFILE */}
         <div className="flex items-center justify-between gap-3 sm:gap-6">
 
           {/* LOGO & BRAND */}
@@ -85,7 +109,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
             </div>
             <div className="flex flex-col">
               <span className="text-lg font-bold tracking-tight text-white leading-none">
-                NITI<span className="text-amber-400">FLIX</span>
+                MERI<span className="text-amber-400">STREAM</span>
               </span>
               <span className="text-[10px] tracking-wider text-zinc-400 font-medium mt-0.5">
                 Cinema & Anime
@@ -93,7 +117,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
             </div>
           </a>
 
-          {/* SEARCH BAR (INTEGRADA EN LA MISMA BARRA) */}
+          {/* SEARCH BAR */}
           <div className="relative flex-1 max-w-md">
             <Search
               size={14}
@@ -118,9 +142,91 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({
             )}
           </div>
 
-          {/* El panel de administración ya NO se accede desde la página principal:
-              vive exclusivamente en /admin (con login). */}
-          <div className="flex items-center gap-2 shrink-0"></div>
+          {/* USER PROFILE & AUTH */}
+          <div className="flex items-center gap-2 shrink-0 relative" ref={userMenuRef}>
+            {isAuthenticated && user ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 p-1.5 pr-3 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 transition shadow-sm text-left group"
+                >
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center font-bold text-xs shadow ${avatarBg}`}>
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="hidden sm:flex flex-col">
+                    <span className="text-xs font-semibold text-zinc-200 group-hover:text-white max-w-[100px] truncate leading-tight">
+                      {user.username}
+                    </span>
+                    <span className="text-[9px] text-amber-400 font-mono">En línea</span>
+                  </div>
+                  <ChevronDown size={14} className={`text-zinc-500 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* USER DROPDOWN MENU */}
+                <AnimatePresence>
+                  {isUserMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-56 rounded-2xl bg-zinc-950/95 border border-zinc-800 shadow-2xl p-2 z-50 backdrop-blur-xl"
+                    >
+                      <div className="p-3 border-b border-zinc-850">
+                        <p className="text-xs font-semibold text-white truncate">{user.username}</p>
+                        <p className="text-[10px] text-zinc-500">Miembro MeriStream</p>
+                      </div>
+
+                      {/* Color Selector */}
+                      <div className="p-2.5">
+                        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-2">
+                          Color de Perfil
+                        </span>
+                        <div className="flex gap-2">
+                          {Object.keys(AVATAR_BG_MAP).map((colorKey) => (
+                            <button
+                              key={colorKey}
+                              type="button"
+                              onClick={() => {
+                                updateAvatar(colorKey);
+                              }}
+                              className={`h-5 w-5 rounded-full ${AVATAR_BG_MAP[colorKey].split(' ')[0]} transition-transform ${
+                                user.avatar === colorKey ? 'ring-2 ring-white scale-110' : 'opacity-60 hover:opacity-100'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-zinc-850 my-1" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          logout();
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-950/30 rounded-xl transition"
+                      >
+                        <LogOut size={14} />
+                        <span>Cerrar Sesión</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openAuthModal}
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-semibold text-xs shadow-md shadow-amber-500/20 transition-all hover:scale-105 active:scale-95"
+              >
+                <LogIn size={14} className="stroke-[2.5]" />
+                <span>Ingresar</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ROW 2: CATEGORY & GENRES PILL BAR (INTEGRADA DIRECTAMENTE EN LA BARRA SUPERIOR) */}

@@ -1,26 +1,18 @@
-FROM node:20-slim
+FROM node:22-slim
+RUN apt-get update -y && apt-get install -y openssl
 
 WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3010
 
-# Instalar dependencias del sistema para better-sqlite3
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+COPY package*.json ./
+COPY prisma ./prisma/
 
-# Copiar package.json e instalar
-COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci --omit=dev && npx prisma generate
 
-# Copiar código
-COPY . .
+COPY dist ./dist
+COPY app.config.ts ./app.config.ts
 
-# Generar cliente Prisma
-RUN npx prisma generate
+EXPOSE 3010
 
-# Puerto
-EXPOSE 3000
-
-# Comando: arrancar server + auto-queue de jobs
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx tsx tools/fast-start.ts && npx tsx server.ts"]
+CMD ["node", "dist/server.cjs"]

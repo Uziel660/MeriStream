@@ -6,6 +6,7 @@ import type { Show } from '../types';
 
 interface MediaRowProps {
   title: string;
+  subtitle?: string;
   items: Show[];
   onSelectMedia?: (media: Show) => void;
   onHoverMedia?: (media: Show) => void;
@@ -15,6 +16,7 @@ interface MediaRowProps {
 
 export const MediaRow: React.FC<MediaRowProps> = ({
   title,
+  subtitle,
   items = [],
   onSelectMedia,
   onHoverMedia,
@@ -36,10 +38,15 @@ export const MediaRow: React.FC<MediaRowProps> = ({
   return (
     <section className="relative space-y-3 select-none" id={`row-${title.toLowerCase().replace(/\s+/g, '-')}`}>
       {/* HEADER DE FILA LIMPIO */}
-      <div className="flex items-center justify-between px-1">
-        <h3 className="font-display text-lg sm:text-xl font-bold text-zinc-100 tracking-tight">
-          {title}
-        </h3>
+      <div className="flex items-end justify-between px-1">
+        <div>
+          <h3 className="font-display text-lg sm:text-xl font-bold text-zinc-100 tracking-tight">
+            {title}
+          </h3>
+          {subtitle && (
+            <p className="text-xs text-zinc-400 font-normal mt-0.5">{subtitle}</p>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
           <span className="font-mono text-[11px] text-zinc-500">
             {items.length} {items.length === 1 ? 'título' : 'títulos'}

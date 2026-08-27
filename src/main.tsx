@@ -1,9 +1,9 @@
-// src/main.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AdminGate } from './components/AdminGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthProvider } from './contexts/AuthContext';
 import './index.css';
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin (con login).
@@ -12,6 +12,10 @@ const isAdminRoute = window.location.pathname.startsWith('/admin');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>{isAdminRoute ? <AdminGate /> : <App />}</ErrorBoundary>
+    <ErrorBoundary>
+      <AuthProvider>
+        {isAdminRoute ? <AdminGate /> : <App />}
+      </AuthProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

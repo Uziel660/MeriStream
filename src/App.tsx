@@ -13,11 +13,13 @@ import { AdminPanel } from './components/AdminPanel';
 import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
+import { AuthModal } from './components/AuthModal';
+import { useAuth } from './contexts/AuthContext';
 import { extractDominantColor, getFallbackColor } from './utils/colorExtractor';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
-import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
+import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -34,6 +36,7 @@ function safeEpisodeTitle(episode: { title?: string; episode_number?: number }):
 }
 
 export function App() {
+  const { user, isAuthenticated } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,13 +61,66 @@ export function App() {
     }
   });
 
+  // Recommendation Rails & Ultimate Hero Pick from Backend
+  const [recommendationRails, setRecommendationRails] = useState<Array<{
+    id: string;
+    title: string;
+    subtitle?: string;
+    reason?: string;
+    shows: Show[];
+  }>>([]);
+  const [heroRecommendation, setHeroRecommendation] = useState<Show | null>(null);
+  const [isLoadingRecs, setIsLoadingRecs] = useState<boolean>(false);
+
   // Modal States
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
   const [playingStreamData, setPlayingStreamData] = useState<any | null>(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [orphanNotice, setOrphanNotice] = useState<string | null>(null);
 
-  // Eliminar un item de "Seguir Viendo" del estado y del storage (persistente)
+  // Sincronizar progreso desde el servidor si el usuario está autenticado
+  useEffect(() => {
+    const syncProgress = async () => {
+      if (isAuthenticated && user) {
+        try {
+          const res = await api.getProgress();
+          if (Array.isArray(res?.items)) {
+            setContinueWatchingItems(res.items);
+            try {
+              localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(res.items));
+            } catch {}
+          }
+        } catch (e) {
+          console.warn('Error sincronizando progreso con servidor:', e);
+        }
+      }
+    };
+    syncProgress();
+  }, [isAuthenticated, user]);
+
+  // Cargar rieles de recomendación personalizadas del algoritmo y el Hero Pick
+  const fetchRecommendations = useCallback(async () => {
+    setIsLoadingRecs(true);
+    try {
+      const res = await api.getRecommendations();
+      if (res?.hero) {
+        setHeroRecommendation(res.hero);
+      }
+      if (Array.isArray(res?.rails)) {
+        setRecommendationRails(res.rails);
+      }
+    } catch (e) {
+      console.warn('Error cargando recomendaciones:', e);
+    } finally {
+      setIsLoadingRecs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecommendations();
+  }, [fetchRecommendations, user]);
+
+  // Eliminar un item de "Seguir Viendo" del estado, storage y servidor
   const removeContinueWatchingItem = useCallback((episodeId: string) => {
     setContinueWatchingItems((prev) => {
       const next = prev.filter((p) => p.episodeId !== episodeId);
@@ -73,7 +129,11 @@ export function App() {
       } catch {}
       return next;
     });
-  }, []);
+
+    if (isAuthenticated) {
+      api.deleteProgressItem(episodeId).catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   // Actualizar en sitio un item de "Seguir Viendo" (reparación de metadatos)
   const updateContinueWatchingItem = useCallback((item: WatchProgress) => {
@@ -471,78 +531,100 @@ export function App() {
       .filter((r) => r.items.length >= 8);
   }, [shows]);
 
-  // Algoritmo de Recomendación Inteligente basado en el historial de Continue Watching
-  const { recommendedShows, topGenre } = useMemo(() => {
-    if (!continueWatchingItems || continueWatchingItems.length === 0 || shows.length === 0) {
-      return { recommendedShows: [], topGenre: null };
+
+
+  // SELECCIÓN INTELIGENTE DEL HERO BANNER (Máxima Calidad Visual + Máxima Afinidad)
+  const featuredShow = useMemo(() => {
+    if (shows.length === 0) return null;
+
+    // 1. Si el servidor nos dio un Hero Pick personalizado con buena imagen, usarlo
+    if (heroRecommendation) {
+      const matchInCatalog = shows.find((s) => s.id === heroRecommendation.id);
+      const target = matchInCatalog || heroRecommendation;
+      const hasVisuals = Boolean((target as any).backdrop_path || (target as any).banner_url || target.poster_url);
+      if (hasVisuals) {
+        return target;
+      }
     }
 
-    // 1. Contar frecuencia de géneros vistos recientemente
+    // 2. Extraer afinidad de géneros basada en el historial del usuario
     const genreScore: Record<string, number> = {};
-    const watchedShowIds = new Set(continueWatchingItems.map((item) => item.showId));
+    const watchedIds = new Set(continueWatchingItems.map((i) => i.showId));
 
-    continueWatchingItems.forEach((item) => {
-      const show = shows.find((s) => s.id === item.showId);
-      if (show && Array.isArray(show.genres)) {
-        show.genres.forEach((g) => {
-          const clean = g.trim();
-          if (
-            clean &&
-            clean.toLowerCase() !== 'anime' &&
-            clean.toLowerCase() !== 'película' &&
-            clean.toLowerCase() !== 'serie'
-          ) {
-            genreScore[clean] = (genreScore[clean] || 0) + 1;
+    continueWatchingItems.forEach((it, idx) => {
+      const show = shows.find((s) => s.id === it.showId);
+      if (show && show.genres) {
+        const weight = Math.max(1, 5 - idx);
+        const list = Array.isArray(show.genres) ? show.genres : String(show.genres).split(/[,/|•]+/);
+        list.forEach((g) => {
+          const clean = g.trim().toLowerCase();
+          if (clean && !/multimedia|general/i.test(clean)) {
+            genreScore[clean] = (genreScore[clean] || 0) + weight;
           }
         });
       }
     });
 
-    // Encontrar el género dominante
-    let maxGenre = '';
-    let maxCount = 0;
-    for (const [genre, count] of Object.entries(genreScore)) {
-      if (count > maxCount) {
-        maxCount = count;
-        maxGenre = genre;
+    const topGenres = Object.entries(genreScore)
+      .sort((a, b) => b[1] - a[1])
+      .map(([g]) => g);
+
+    // 3. Puntuar cada obra para elegir la opción definitiva con backdrop épico
+    let bestShow: Show | null = null;
+    let bestScore = -Infinity;
+
+    for (const s of shows) {
+      let score = 0;
+
+      // A. Calidad visual de backdrop / poster
+      const hasBackdrop = Boolean((s as any).backdrop_path && (s as any).backdrop_path.startsWith('/'));
+      const hasBanner = Boolean((s as any).banner_url && (s as any).banner_url.startsWith('http'));
+      const hasPoster = Boolean((s as any).poster_path || (s.poster_url && s.poster_url.startsWith('http')));
+
+      if (!hasBackdrop && !hasBanner && !hasPoster) continue;
+
+      if (hasBackdrop) score += 90; // Backdrop TMDB panorámico en alta definición
+      else if (hasBanner) score += 65; // Banner oficial
+      else if (hasPoster) score += 25;
+
+      if (s.poster_url && /unsplash|placeholder|default/i.test(s.poster_url)) {
+        score -= 120;
+      }
+
+      // B. Calidad de sinopsis
+      if (s.description && s.description.length > 70 && !/contenido indexado en/i.test(s.description)) {
+        score += 40;
+      } else if (s.description && s.description.length > 25) {
+        score += 15;
+      }
+
+      // C. Valoración de la crítica (Rating)
+      const rating = typeof s.rating === 'number' ? s.rating : 7.0;
+      score += rating * 12; // 8.5 -> +102 pts
+
+      // D. Afinidad de géneros
+      if (topGenres.length > 0) {
+        const genresStr = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
+        topGenres.forEach((g, idx) => {
+          if (genresStr.includes(g)) {
+            score += Math.max(15, 60 - idx * 15);
+          }
+        });
+      }
+
+      // E. Si ya fue visto completamente, aplicar leve penalización para favorecer el descubrimiento
+      if (watchedIds.has(s.id)) {
+        score -= 30;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestShow = s;
       }
     }
 
-    if (!maxGenre) {
-      return { recommendedShows: [], topGenre: null };
-    }
-
-    // 2. Filtrar shows que compartan ese género y que no hayan sido vistos aún
-    const recommendations = shows.filter((s) => {
-      if (watchedShowIds.has(s.id)) return false;
-      const genresStr = Array.isArray(s.genres)
-        ? s.genres.join(' ').toLowerCase()
-        : String(s.genres || '').toLowerCase();
-      return genresStr.includes(maxGenre.toLowerCase());
-    });
-
-    // Ordenar por rating
-    const sorted = [...recommendations].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-
-    return {
-      recommendedShows: sorted.slice(0, 10),
-      topGenre: maxGenre,
-    };
-  }, [continueWatchingItems, shows]);
-
-  // HERO: selección aleatoria entre obras con buena imagen y rating decente
-  // (algoritmo de recomendación real queda para más adelante).
-  const featuredShow = useMemo(() => {
-    if (shows.length === 0) return null;
-    const pool = shows.filter(
-      (s) =>
-        (s.rating || 0) >= 7 &&
-        ((s as any).banner_url || (s as any).poster_url)
-    );
-    const source = pool.length > 0 ? pool : shows;
-    return source[Math.floor(Math.random() * source.length)];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shows]);
+    return bestShow || shows[0] || null;
+  }, [shows, heroRecommendation, continueWatchingItems]);
 
   return (
     <div className="relative min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-x-hidden">
@@ -587,8 +669,57 @@ export function App() {
 
             <div className={`max-w-7xl mx-auto px-4 sm:px-8 space-y-12 ${featuredShow && !searchQuery && activeFilter === 'all' ? '-mt-12 sm:-mt-16' : 'pt-8'}`}>
 
-              {/* CASO A: SI HAY UN FILTRO ESPECÍFICO O BÚSQUEDA ACTIVA, MOSTRAR GRID DINÁMICO */}
-              {searchQuery || activeFilter !== 'all' ? (
+              {/* CASO A: SI LA PESTAÑA ACTIVA ES 'RECOMMENDATIONS', MOSTRAR RIELES INTELIGENTES */}
+              {activeFilter === 'recommendations' ? (
+                <section className="space-y-10">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-2">
+                        <Sparkles size={13} />
+                        <span>Algoritmo de Recomendación Nitiflix</span>
+                      </div>
+                      <h3 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                        {isAuthenticated && user ? `Recomendaciones para ${user.username}` : 'Recomendaciones y Tendencias'}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+                        {isAuthenticated
+                          ? 'Seleccionado inteligentemente según tu historial y hábitos de reproducción.'
+                          : 'Inicia sesión para que el algoritmo aprenda tus gustos exactos con el tiempo.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchRecommendations}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-xs font-medium text-zinc-300 border border-zinc-800 transition shadow-sm hover:border-zinc-700"
+                    >
+                      <RefreshCw size={13} className={isLoadingRecs ? 'animate-spin text-amber-400' : ''} />
+                      <span>Actualizar Recomendaciones</span>
+                    </button>
+                  </div>
+
+                  {/* RIELES DE RECOMENDACIÓN GENERADOS POR EL ALGORITMO */}
+                  {recommendationRails.map((rail) => (
+                    <MediaRow
+                      key={rail.id}
+                      title={rail.title}
+                      subtitle={rail.subtitle}
+                      items={rail.shows}
+                      onSelectMedia={handleOpenDetails}
+                      onHoverMedia={handleHoverMedia}
+                      isLoading={isLoadingRecs}
+                    />
+                  ))}
+
+                  {recommendationRails.length === 0 && !isLoadingRecs && (
+                    <div className="py-16 text-center space-y-3">
+                      <Sparkles size={36} className="mx-auto text-amber-400/50" />
+                      <p className="text-sm text-zinc-400 font-medium">
+                        Empieza a reproducir contenido para que el algoritmo aprenda tus gustos.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              ) : searchQuery || activeFilter !== 'all' ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
                     <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
@@ -654,7 +785,7 @@ export function App() {
                   )}
                 </section>
               ) : (
-                /* CASO B: VISTA PRINCIPAL CON ESTRUCTURA DIVERSIFICADA (SEGUIR VIENDO + BENTO BOX + FILAS) */
+                /* CASO C: VISTA PRINCIPAL CON ESTRUCTURA DIVERSIFICADA (SEGUIR VIENDO + RECOMENDACIONES + BENTO BOX + FILAS) */
                 <>
                   {/* SECCIÓN SEGUIR VIENDO (TARJETAS 16:9 HORIZONTALES CON BARRA DE 4PX) */}
                   {continueWatchingItems.length > 0 && (
@@ -668,16 +799,18 @@ export function App() {
                     />
                   )}
 
-                  {/* RECOMENDACIONES PERSONALIZADAS POR GÉNERO CONSUMIDO */}
-                  {recommendedShows.length > 0 && topGenre && (
+                  {/* RIELES DE RECOMENDACIÓN PERSONALIZADA INTELIGENTE */}
+                  {recommendationRails.slice(0, 2).map((rail) => (
                     <MediaRow
-                      title={`Porque te gusta ${topGenre}`}
-                      items={recommendedShows}
+                      key={rail.id}
+                      title={rail.title}
+                      subtitle={rail.subtitle}
+                      items={rail.shows}
                       onSelectMedia={handleOpenDetails}
                       onHoverMedia={handleHoverMedia}
-                      isLoading={isLoading}
+                      isLoading={isLoadingRecs}
                     />
-                  )}
+                  ))}
 
                   {/* RECÉN AGREGADOS (por fecha de ingesta, lo más nuevo primero) */}
                   <MediaRow
@@ -697,6 +830,19 @@ export function App() {
                       onHover={handleHoverMedia}
                     />
                   )}
+
+                  {/* RIELES DE RECOMENDACIÓN RESTANTES (ej. Descubrimientos o Género Favorito) */}
+                  {recommendationRails.slice(2).map((rail) => (
+                    <MediaRow
+                      key={rail.id}
+                      title={rail.title}
+                      subtitle={rail.subtitle}
+                      items={rail.shows}
+                      onSelectMedia={handleOpenDetails}
+                      onHoverMedia={handleHoverMedia}
+                      isLoading={isLoadingRecs}
+                    />
+                  ))}
 
                   {/* FILAS POR GÉNERO (ordenadas por rating dentro de cada una) */}
                   {genreRows.map((row) => (
@@ -871,9 +1017,31 @@ export function App() {
             if (duration > 0 && currentTime > 0) {
               const progressPercent = Math.round((currentTime / duration) * 100);
 
+              const newProgress: WatchProgress = {
+                showId: playingStreamData.showId,
+                showTitle: playingStreamData.showTitle,
+                showPoster: playingStreamData.showPoster,
+                episodeId: playingStreamData.episodeId,
+                episodeNumber: playingStreamData.episodeNumber,
+                episodeTitle: playingStreamData.episodeTitle,
+                progressPercent,
+                currentTime,
+                duration,
+                lastWatchedAt: Date.now(),
+              };
+
               setContinueWatchingItems((prev) => {
                 const filtered = prev.filter((p) => p.showId !== playingStreamData.showId);
-                const newProgress: WatchProgress = {
+                const updated = [newProgress, ...filtered].slice(0, 12);
+                try {
+                  localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(updated));
+                } catch {}
+                return updated;
+              });
+
+              // Guardar en base de datos para sincronización y algoritmo de recomendación
+              if (isAuthenticated) {
+                api.saveProgress({
                   showId: playingStreamData.showId,
                   showTitle: playingStreamData.showTitle,
                   showPoster: playingStreamData.showPoster,
@@ -883,19 +1051,17 @@ export function App() {
                   progressPercent,
                   currentTime,
                   duration,
-                  lastWatchedAt: Date.now(),
-                };
-
-                const updated = [newProgress, ...filtered].slice(0, 8);
-                try {
-                  localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(updated));
-                } catch {}
-                return updated;
-              });
+                }).catch((err) => {
+                  console.warn('Error guardando progreso en servidor:', err);
+                });
+              }
             }
           }}
         />
       )}
+
+      {/* MODAL DE AUTENTICACIÓN / REGISTRO / LOGIN */}
+      <AuthModal />
 
       {/* PANEL DE ADMINISTRACIÓN, INGESTA Y WORKERS */}
       <AdminPanel

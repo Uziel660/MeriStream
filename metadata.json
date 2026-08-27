@@ -1,5 +1,5 @@
 {
-  "name": "VoidStream",
+  "name": "MeriStream",
   "description": "Plataforma de streaming y catálogo multimedia con reproductor HLS Just-In-Time, panel de ingesta inteligente y proxy de video.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

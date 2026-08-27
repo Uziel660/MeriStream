@@ -4,6 +4,7 @@ import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalo
 import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
 import { orderStreamsByHealth } from "../hostHealth";
+import { cleanDescription } from "../../utils/textCleaner";
 
 const BASE_URL = "https://wwv.veranimes.net";
 
@@ -121,16 +122,23 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
 
     const ogTitle = $('meta[property="og:title"]').attr("content") || "";
     const h1Title = $("h1").first().text().trim();
-    const title =
-      ogTitle.replace(/\s*[-–—]\s*VerAnime\s*$/i, "").trim() ||
-      h1Title ||
-      "Anime VerAnimes";
+    
+    let rawTitle = ogTitle || h1Title || "";
+    // Limpiar ruido típico de VerAnimes: "Ver X Anime Online Gratis", "Ver X Sub Español", etc.
+    rawTitle = rawTitle
+      .replace(/^Ver\s+/i, "")
+      .replace(/\s*[-–—|•]\s*VerAnime[s]?\s*$/i, "")
+      .replace(/\s*(?:Anime\s+)?(?:Sub\s+Español|Audio\s+Latino|Latino|Castellano)?\s*(?:Online)?\s*(?:Gratis)?\s*(?:en\s+HD)?\s*$/i, "")
+      .replace(/\s*\((?:TV|Movie|OVA|ONA)\)\s*/gi, " ")
+      .trim();
+
+    const title = rawTitle || h1Title || "Anime VerAnimes";
 
     const ogImage = $('meta[property="og:image"]').attr("content");
     const poster_url = ogImage ? this.resolveRelativeUrl(ogImage, url) : undefined;
 
-    const description =
-      $('meta[property="og:description"]').attr("content")?.trim() || "";
+    const rawDescription = $('meta[property="og:description"]').attr("content")?.trim() || "";
+    const description = cleanDescription(rawDescription, title);
 
     const genres: string[] = [];
     $("ul.gn li a, .gn a").each((_, el) => {
@@ -142,15 +150,13 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       html.match(/Año[\s:]*(\d{4})/i)?.[1] ||
       html.match(/\b(19[5-9]\d|20[0-2]\d)\b/)?.[0] ||
       url.match(/-(19\d{2}|20[0-2]\d)(?:\/|$|\?)/i)?.[1]; // fallback: año en el slug
-    // Defecto #16/#24: desconocido -> 0; el año corriente solo es un default
-    // engañoso que termina en BD como "year=2026".
     const year = yearMatch ? parseInt(yearMatch, 10) : 0;
 
     return {
       title,
       description,
       poster_url,
-      banner_url: poster_url,
+      banner_url: undefined, // Dejar que el enriquecedor TMDB/AniList asigne un backdrop 16:9 real
       genres,
       year,
       content_type: "anime",

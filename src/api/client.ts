@@ -62,12 +62,43 @@ function normalizeMediaItem(item: any): MediaItemOut {
   };
 }
 
+export const AUTH_TOKEN_KEY = "nitiflix_auth_token_v1";
+
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string | null) {
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  } catch {}
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = path.startsWith("/api/") ? path : `${BASE_URL}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+
+  const token = getAuthToken();
+  if (token && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    res = await fetch(url, {
       ...init,
+      headers,
     });
   } catch (err) {
     const apiErr: ApiError = { status: 0, message: "No se pudo conectar con el servidor. Verifica tu conexión." };
@@ -78,7 +109,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `Error ${res.status}`;
     try {
       const body = await res.json();
-      message = body.detail ?? body.message ?? message;
+      message = body.detail ?? body.message ?? body.error ?? message;
     } catch {
       // respuesta sin cuerpo JSON
     }
@@ -417,6 +448,107 @@ export const api = {
     } catch {
       // Ignorar fallos de telemetría para no afectar la UI
     }
+  },
+
+  // ==========================================
+  // Auth API
+  // ==========================================
+  async register(username: string, password: string, avatar?: string): Promise<{ user: any; token: string }> {
+    const res = await request<{ user: any; token: string }>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password, avatar }),
+    });
+    if (res.token) {
+      setAuthToken(res.token);
+    }
+    return res;
+  },
+
+  async login(username: string, password: string): Promise<{ user: any; token: string }> {
+    const res = await request<{ user: any; token: string }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    if (res.token) {
+      setAuthToken(res.token);
+    }
+    return res;
+  },
+
+  async getMe(): Promise<{ user: any }> {
+    return request<{ user: any }>("/api/auth/me");
+  },
+
+  async updateAvatar(avatar: string): Promise<{ user: any }> {
+    return request<{ user: any }>("/api/auth/avatar", {
+      method: "PATCH",
+      body: JSON.stringify({ avatar }),
+    });
+  },
+
+  logout() {
+    setAuthToken(null);
+  },
+
+  // ==========================================
+  // Watch Progress API ("Seguir Viendo")
+  // ==========================================
+  async getProgress(): Promise<{ items: any[] }> {
+    return request<{ items: any[] }>("/api/progress");
+  },
+
+  async saveProgress(data: {
+    showId: string;
+    showTitle: string;
+    showPoster?: string;
+    episodeId: string;
+    episodeNumber: number;
+    episodeTitle: string;
+    progressPercent: number;
+    currentTime?: number;
+    duration?: number;
+  }): Promise<{ success: boolean; item?: any }> {
+    return request<{ success: boolean; item?: any }>("/api/progress", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteProgressItem(episodeId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/progress/${episodeId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async deleteProgressShow(showId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/progress/show/${showId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // ==========================================
+  // Recommendations API
+  // ==========================================
+  async getRecommendations(): Promise<{
+    hero?: Show | null;
+    rails: Array<{
+      id: string;
+      title: string;
+      subtitle?: string;
+      reason?: string;
+      shows: Show[];
+    }>;
+  }> {
+    return request<{
+      hero?: Show | null;
+      rails: Array<{
+        id: string;
+        title: string;
+        subtitle?: string;
+        reason?: string;
+        shows: Show[];
+      }>;
+    }>("/api/recommendations");
   },
 };
 

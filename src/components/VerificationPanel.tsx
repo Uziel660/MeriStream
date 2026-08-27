@@ -150,7 +150,7 @@ const VerificationPanel: React.FC = () => {
               className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               <Settings2 size={13} />
-              Timer
+              Ajustes Automáticos
             </button>
             <button
               type="button"
@@ -159,8 +159,25 @@ const VerificationPanel: React.FC = () => {
               className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               {anyRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-              {anyRunning ? 'Ejecutando...' : 'Ejecutar'}
+              {anyRunning ? 'Ejecutando...' : 'Forzar Ejecución'}
             </button>
+          </div>
+        </div>
+
+        {/* Explicación del sistema y estatus del próximo escaneo */}
+        <div className="mt-3 p-3 rounded-lg bg-zinc-950/40 border border-zinc-800 flex flex-col gap-2">
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            <strong className="text-emerald-400">¿Cómo funciona?</strong> Este panel controla los guardianes en segundo plano del servidor (Watchdog y Verification Worker). Estos revisan silenciosamente que los enlaces de video funcionen, corrigen sinopsis contaminadas por scrapers (ej. VerAnimes) y solicitan a TMDB/AniList recapturar en Alta Definición las portadas de mala calidad.
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <div className={`w-2 h-2 rounded-full ${verifyStatus?.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-[11px] font-mono text-zinc-300">
+              {verifyStatus?.enabled 
+                ? (verifyStatus.next_run_at 
+                    ? `Próximo escaneo automático: ${new Date(verifyStatus.next_run_at).toLocaleString()}` 
+                    : 'Escaneo automático activado (esperando ciclo...)')
+                : 'Escaneo automático APAGADO. Solo se ejecutará si presionas "Forzar Ejecución".'}
+            </span>
           </div>
         </div>
 

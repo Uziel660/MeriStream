@@ -5,6 +5,7 @@ import { X, Play, Loader2, AlertCircle, Search, Calendar, Star } from 'lucide-re
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { thumbBackdropUrl } from '../utils/imageSizes';
+import { cleanDescription } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import type { ShowDetail, Episode } from '../types';
 
@@ -135,17 +136,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const hasWideHeader = Boolean((show as any)?.backdrop_path || show?.banner_url || show?.backdrop_url);
   const headerImage = headerBackdrop ?? show?.poster_url ?? undefined;
 
-  // ADVERTENCIA DE CONTENIDO SIN FUENTES (#19): obras importadas solo por
-  // metadatos (ej. TVMaze) no tienen ningún stream reproducible. Avisar en la
-  // UI antes de que el usuario dé play y reciba un error crudo.
-  const playableEpisodes = episodes.filter((ep) => {
-    const src = ep.source_url || '';
-    if (!src) return false;
-    // Las páginas HTML de episodios (tvmaze.com/episodes/...) no son media
-    if (/tvmaze\.com\/episodes\//i.test(src)) return false;
-    return /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(src) || /\/ver\//i.test(src);
-  });
-  const hasNoSources = !isLoading && !error && Boolean(show) && playableEpisodes.length === 0;
+  // ADVERTENCIA DE CONTENIDO SIN FUENTES (#19):
+  // Solo se alerta si realmente no existe ningún episodio con fuente válida
+  // ni enlaces directos a stream en la obra.
+  const isMetadataOnlyUrl = (url?: string | null): boolean => {
+    if (!url || typeof url !== 'string') return true;
+    const clean = url.trim().toLowerCase();
+    if (!clean) return true;
+    return /tvmaze\.com\/episodes\/|themoviedb\.org|anidb\.net|myanimelist\.net/i.test(clean);
+  };
+
+  const hasDirectSource = Boolean(
+    ((show as any)?.source_url && !isMetadataOnlyUrl((show as any).source_url)) ||
+    (show?.sources?.master_m3u8 && !isMetadataOnlyUrl(show.sources.master_m3u8))
+  );
+
+  const playableEpisodes = episodes.filter((ep) => !isMetadataOnlyUrl(ep.source_url));
+  const hasNoSources = !isLoading && !error && Boolean(show) && playableEpisodes.length === 0 && !hasDirectSource;
 
   return (
     <AnimatePresence>
@@ -279,7 +286,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       Sinopsis
                     </h4>
                     <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed font-normal">
-                      {show.description || 'Sin descripción disponible para esta obra.'}
+                      {cleanDescription(show.description, show.title) || 'Sin descripción disponible para esta obra.'}
                     </p>
                   </div>
 

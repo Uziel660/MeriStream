@@ -74,7 +74,7 @@ export const AdminGate: React.FC = () => {
             <Shield size={18} />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white">VoidStream · Admin</h1>
+            <h1 className="text-sm font-bold text-white">MeriStream · Admin</h1>
             <p className="text-[11px] text-zinc-500">Acceso restringido</p>
           </div>
         </div>

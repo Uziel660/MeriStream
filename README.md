@@ -1,4 +1,4 @@
-# NITIFLIX / VOIDSTREAM — Plataforma de Streaming Personal
+# MERISTREAM — Plataforma de Streaming Personal
 
 **Versión 7.1** | Node.js + Express + TypeScript + React 18 + PostgreSQL 16
 
@@ -656,6 +656,30 @@ POST /api/v1/catalog/merge-works
 | POST | `/api/v1/scraper/presets/:id` | Guardar preset |
 | POST | `/api/v1/scraper/presets/:id/reset` | Reset preset |
 | GET | `/api/v1/media` | Legacy compatibility |
+
+### Autenticación
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/auth/register` | Registro de usuario (username + password) |
+| POST | `/api/auth/login` | Inicio de sesión (devuelve JWT, 30 días) |
+| GET | `/api/auth/me` | Verificar sesión activa (requiere Bearer token) |
+| PATCH | `/api/auth/avatar` | Cambiar avatar del usuario |
+
+### Progreso de Visualización
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/progress` | Obtener progreso del usuario autenticado |
+| POST | `/api/progress` | Guardar/actualizar progreso de un episodio |
+| DELETE | `/api/progress/:episodeId` | Eliminar progreso de un episodio |
+| DELETE | `/api/progress/show/:showId` | Eliminar progreso de todos los episodios de un show |
+
+### Recomendaciones
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/recommendations` | Recomendaciones personalizadas (opcional auth) |
 
 ---
 

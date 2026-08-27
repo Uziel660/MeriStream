@@ -1,0 +1,7 @@
+node_modules
+.git
+.agents
+.gemini
+*.log
+meristream_db.dump
+.env

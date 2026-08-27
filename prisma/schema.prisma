@@ -4,7 +4,8 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 model Show {
@@ -29,6 +30,7 @@ model Show {
   status               String    @default("Finalizado")
   genres               String    @default("Multimedia")
   source               String    @default("")
+  search_vector        Unsupported("tsvector")?
   created_at           DateTime  @default(now())
   updated_at           DateTime  @updatedAt
   episodes             Episode[]
@@ -138,4 +140,36 @@ model SourceLink {
   last_checked   DateTime?
 
   @@unique([media_episode_id, source_site, url])
+}
+
+model User {
+  id            String          @id @default(cuid())
+  username      String          @unique
+  password_hash String
+  avatar        String?         @default("amber")
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @updatedAt
+  watch_history WatchProgress[]
+}
+
+model WatchProgress {
+  id               String   @id @default(cuid())
+  user_id          String
+  user             User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  show_id          String
+  show_title       String
+  show_poster      String?
+  episode_id       String
+  episode_number   Float
+  episode_title    String
+  progress_percent Float    @default(0)
+  current_time     Float?   @default(0)
+  duration         Float?   @default(0)
+  last_watched_at  DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@unique([user_id, show_id, episode_id])
+  @@index([user_id])
+  @@index([show_id])
+  @@index([last_watched_at])
 }

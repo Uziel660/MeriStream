@@ -1,8 +1,7 @@
-﻿import dns from "dns/promises";
+import dns from "dns/promises";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import {
   analyzeUniversalUrl,
   extractStreamFromUrl,
@@ -60,6 +59,9 @@ import {
   checkWatchdogAlert,
   clearWatchdogAlert,
 } from "./server/watchdog";
+import { authRouter } from "./server/auth";
+import { progressRouter } from "./server/progress";
+import { recommendationsRouter } from "./server/recommendations";
 
 // Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
 const stealthClient = new ImpitHttpClient({
@@ -146,6 +148,17 @@ async function buildMultiSourceCascade(sourceLinks: Array<{ url: string; source_
 async function startServer() {
   const app = express();
   const PORT = APP_CONFIG.port;
+
+  app.set("trust proxy", true);
+
+  app.use((req, res, next) => {
+    if (req.headers["x-forwarded-proto"] === "http") {
+      return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
+    next();
+  });
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
@@ -2228,9 +2241,17 @@ async function startServer() {
   });
 
   // ==========================================
+  // Auth, Progress & Recommendations Routers
+  // ==========================================
+  app.use("/api/auth", authRouter);
+  app.use("/api/progress", progressRouter);
+  app.use("/api/recommendations", recommendationsRouter);
+
+  // ==========================================
   // Vite Middleware & Static Frontend Serving
   // ==========================================
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true, host: "0.0.0.0", port: PORT },
       appType: "spa",
@@ -2239,7 +2260,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req: Request, res: Response) => {
+    app.use((req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

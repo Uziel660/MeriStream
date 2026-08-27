@@ -1,5 +1,5 @@
 FROM node:22-slim
-RUN apt-get update -y && apt-get install -y openssl
+RUN apt-get update -y && apt-get install -y openssl ca-certificates libssl-dev
 
 WORKDIR /app
 ENV NODE_ENV=production

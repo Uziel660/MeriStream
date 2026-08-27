@@ -21,7 +21,7 @@ services:
       - meristream_pgdata:/var/lib/postgresql/data
       - ./meristream_db.dump:/tmp/meristream_db.dump:ro
     ports:
-      - "127.0.0.1:5433:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U voidstream -d voidstream"]
       interval: 5s
@@ -29,6 +29,9 @@ services:
       retries: 5
 
   meristream-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: meristream-app:latest
     container_name: meristream-app
     restart: always
@@ -37,6 +40,7 @@ services:
       TMDB_API_KEY: "4598f607660f5c4eb423d868da148981"
       PORT: "3010"
       NODE_ENV: "production"
+      PRISMA_CLIENT_ENGINE_TYPE: "library"
     volumes:
       - /opt/meristream/dist:/app/dist
       - /var/log/meristream_deploy.log:/var/log/meristream_deploy.log

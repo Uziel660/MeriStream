@@ -8,7 +8,6 @@ import { LaMovieAdapter } from "./adapters/LaMovieAdapter";
 import { LatAnimeAdapter } from "./adapters/LatAnimeAdapter";
 import { TioAnimeAdapter } from "./adapters/TioAnimeAdapter";
 import { TioPlusAdapter } from "./adapters/TioPlusAdapter";
-import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
 import { CinecalidadAdapter } from "./adapters/CinecalidadAdapter";
 import { VerAnimesAdapter } from "./adapters/VerAnimesAdapter";
 
@@ -31,7 +30,10 @@ export class ScraperManager {
     this.registerAdapter(new LatAnimeAdapter());
     this.registerAdapter(new TioAnimeAdapter());
     this.registerAdapter(new TioPlusAdapter());
-    this.registerAdapter(new TubePelisAdapter());
+    // TubePelis deshabilitado: el sitio está caído (404/500 en detalle y home).
+    // No se registra para evitar fetches muertos; los 5 shows remanentes en BD
+    // quedan sin fuente válida y se re-derivarán desde otra plataforma.
+    // this.registerAdapter(new TubePelisAdapter());
     this.registerAdapter(new CinecalidadAdapter());
     this.registerAdapter(new VerAnimesAdapter());
   }

@@ -5,6 +5,7 @@ import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { heroBackdropUrl } from '../utils/imageSizes';
 import { SmartImage } from './SmartImage';
+import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { Show } from '../types';
 
 interface HeroBannerProps {
@@ -15,6 +16,7 @@ interface HeroBannerProps {
 
 export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInfo }) => {
   const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
+  const { isGenreHidden } = useHiddenGenres();
 
   const image = heroBackdropUrl(media ?? {});
   const synopsis = media?.description || media?.synopsis || 'Sin sinopsis disponible para este título.';
@@ -27,14 +29,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
 
   if (!media) return null;
 
-  // Safe genres list
+  // Safe genres list (filtrando ocultos)
   const getGenresList = (): string[] => {
+    let genres: string[];
     if (!media.genres) return [contentLabel(media.category)];
-    if (Array.isArray(media.genres)) return media.genres;
-    if (typeof media.genres === 'string') {
-      return media.genres.split(',').map((g: string) => g.trim()).filter(Boolean);
-    }
-    return [contentLabel(media.category)];
+    if (Array.isArray(media.genres)) genres = media.genres;
+    else if (typeof media.genres === 'string') genres = media.genres.split(',').map((g: string) => g.trim()).filter(Boolean);
+    else return [contentLabel(media.category)];
+    return genres.filter((g) => !isGenreHidden(g));
   };
 
   const genres = getGenresList();

@@ -345,9 +345,47 @@ export class EmbedResolvers {
       return rawUrl;
     }
 
+    // 11b. HQQ.AC / DIVXPLAYER (reproductor embed de VerAnimes): el m3u8 va
+    // incrustado en el HTML del player (og:video / var). Se extrae con regex
+    // directo; si el video está protegido por captcha (need_captcha=1) el HTML
+    // trae un m3u8 placeholder → se descarta y se devuelve el embed como fallback.
+    if (rawUrl.includes("hqq.") || rawUrl.includes("waaw") || rawUrl.includes("divxplayer") || rawUrl.includes("cvary.org")) {
+      const hqq = await this.resolveHqq(rawUrl);
+      if (hqq) return hqq;
+    }
+
     // 12. Genérico: intentar extraer .m3u8 o .mp4 del HTML del iframe
     const generic = await this.resolveGeneric(rawUrl);
     return generic || rawUrl;
+  }
+
+  /**
+   * Resuelve el embed de hqq.ac / divxplayer (reproductor "raro" de VerAnimes).
+   * El m3u8 maestro va directamente en el HTML del /e/{id}, en:
+   *   - meta og:video / og:video:url
+   *   - atributos data-*/var del player
+   * Descarta m3u8 placeholder (el reproductor sirve el mismo video de demo
+   * "TenchiMuyo_18" cuando el video real está tras captcha).
+   */
+  private static async resolveHqq(url: string): Promise<string | null> {
+    try {
+      const html = await this.fetchHtml(url);
+      if (!html) return null;
+
+      // Si requiere captcha, no hay m3u8 real alcanzable server-side.
+      if (/need_captcha\s*=\s*1/i.test(html)) return null;
+
+      const m3u8Regex = /https?:\/\/[^\s"'<>\\]+\.(?:mp4\.)?m3u8(?:\?[^\s"'<>\\]*)?/gi;
+      const matches = html.match(m3u8Regex) || [];
+      const urls = matches.map((m) => m.replace(/\\/g, "").replace(/["']/g, ""));
+      if (urls.length === 0) return null;
+
+      // Filtrar placeholders (video demo genérico del player)
+      const real = urls.filter((u) => !u.includes("153311550983uua"));
+      return (real[0] || urls[0]);
+    } catch {
+      return null;
+    }
   }
 
   /**

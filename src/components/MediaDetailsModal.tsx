@@ -7,6 +7,7 @@ import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { thumbBackdropUrl } from '../utils/imageSizes';
 import { cleanDescription } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
+import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { ShowDetail, Episode } from '../types';
 
 interface MediaDetailsModalProps {
@@ -117,14 +118,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     );
   }, [seasonData, selectedSeason, episodeSearch]);
 
+  const { isGenreHidden } = useHiddenGenres();
+
   const genresList: string[] = useMemo(() => {
+    let genres: string[];
     if (!show?.genres) return [show?.category || 'Anime'];
-    if (Array.isArray(show.genres)) return show.genres;
-    if (typeof show.genres === 'string') {
-      return show.genres.split(',').map((g) => g.trim()).filter(Boolean);
-    }
-    return [show.category || 'Anime'];
-  }, [show?.genres, show?.category]);
+    if (Array.isArray(show.genres)) genres = show.genres;
+    else if (typeof show.genres === 'string') genres = show.genres.split(',').map((g) => g.trim()).filter(Boolean);
+    else return [show.category || 'Anime'];
+    return genres.filter((g) => !isGenreHidden(g));
+  }, [show?.genres, show?.category, isGenreHidden]);
 
   const accentColor = rgbToRgbaString(accentRgb, 1);
   const glowStyle = rgbToRgbaString(accentRgb, 0.2);

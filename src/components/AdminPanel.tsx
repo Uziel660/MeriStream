@@ -28,13 +28,15 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
-  Star
+  Star,
+  ListFilter
 } from 'lucide-react';
 import type { Show, ScraperPreset, UniversalAnalysisResult, BackgroundWorkerJob, WorkerSettings } from '../types';
 import WorkerSettingsCard from './WorkerSettingsCard';
 import ShowEditModal from './ShowEditModal';
 import VerificationPanel from './VerificationPanel';
 import ServerTesterCard from './ServerTesterCard';
+import { GenresManager } from './GenresManager';
 
 export interface AdminPlayStreamResult {
   title?: string;
@@ -56,7 +58,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const { isOpen = true, onClose } = props;
   const onPlayHandler = props.onPlayDirect || props.onPlay || props.onPlayStream;
 
-  const [activeTab, setActiveTab] = useState<'smart' | 'batch' | 'worker_tasks' | 'stream_tester' | 'sources' | 'library' | 'verification'>('smart');
+  const [activeTab, setActiveTab] = useState<'smart' | 'batch' | 'worker_tasks' | 'stream_tester' | 'sources' | 'library' | 'verification' | 'genres'>('smart');
   const [editingShow, setEditingShow] = useState<any>(null);
 
   // --- Fuentes: ratings de sitios + toggle del selector de servidores ---
@@ -827,6 +829,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           >
             <Database size={14} />
             Catálogo ({libraryShows.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('genres')}
+            type="button"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              activeTab === 'genres'
+                ? 'bg-zinc-800 text-white border border-zinc-700'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
+            }`}
+          >
+            <ListFilter size={14} />
+            Géneros
           </button>
         </div>
 
@@ -2285,6 +2300,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           )}
 
           {activeTab === 'verification' && <VerificationPanel />}
+
+          {/* ========================================================================= */}
+          {/* PESTAÑA: GESTIÓN DE GÉNEROS — MOSTRAR / OCULTAR EN TODA LA PLATAFORMA */}
+          {/* ========================================================================= */}
+          {activeTab === 'genres' && (
+            <GenresManager shows={libraryShows} />
+          )}
         </div>
       </div>
     </div>

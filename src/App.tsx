@@ -2,7 +2,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 
 import { UnifiedHeader } from './components/UnifiedHeader';
-import { AllCategoriesModal } from './components/AllCategoriesModal';
 import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
 import { CatalogFilters, type SortMode } from './components/CatalogFilters';
@@ -14,11 +13,13 @@ import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
 import { AuthModal } from './components/AuthModal';
+import { ExploreCatalogView } from './components/ExploreCatalogView';
 import { useAuth } from './contexts/AuthContext';
 import { extractDominantColor, getFallbackColor } from './utils/colorExtractor';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
+import { searchShows } from './utils/searchUtils';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
@@ -46,7 +47,7 @@ export function App() {
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
   const [catalogPageSize, setCatalogPageSize] = useState(100);
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
-  const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
+  const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
 
   // Ambient Glow State
   const [ambientRgb, setAmbientRgb] = useState<[number, number, number]>([245, 158, 11]);
@@ -346,8 +347,8 @@ export function App() {
     }
   };
 
-  const handleHoverMedia = (show: Show) => {
-    setAmbientRgb(getFallbackColor(show.title));
+  const handleHoverMedia = (show: Show | null) => {
+    if (show) setAmbientRgb(getFallbackColor(show.title));
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
@@ -462,16 +463,9 @@ export function App() {
       result = result.filter((s) => Number(s.year) === yearFilter);
     }
 
-    // Búsqueda local instantánea (sin pegar a la API)
+    // Búsqueda con scoring: prioriza coincidencias exactas y normaliza tildes
     if (searchQuery && searchQuery.trim().length >= 2) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter((s) => {
-        const title = (s.title || '').toLowerCase();
-        const eng = (s as any).english_title?.toLowerCase() || '';
-        const jpn = (s as any).japanese_title?.toLowerCase() || '';
-        const genres = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
-        return title.includes(q) || eng.includes(q) || jpn.includes(q) || genres.includes(q);
-      });
+      result = searchShows(result, searchQuery);
     }
 
     // Orden (recientes = orden de ingesta tal cual llega)
@@ -636,7 +630,6 @@ export function App() {
         onSearchChange={setSearchQuery}
         activeFilter={activeFilter}
         onSelectCategory={(f) => { setActiveFilter(f); setGridPageSize(100); }}
-        onOpenAllCategories={() => setIsCategoriesModalOpen(true)}
       />
 
       <main className="relative z-10 flex-1 pb-24">
@@ -719,6 +712,24 @@ export function App() {
                     </div>
                   )}
                 </section>
+              ) : activeFilter === 'explore' ? (
+                /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
+                <ExploreCatalogView
+                  shows={shows}
+                  allGenresList={allGenresList}
+                  showsCountByGenre={showsCountByGenre}
+                  genreFilter={exploreGenreFilter}
+                  onGenreFilter={setExploreGenreFilter}
+                  yearFilter={yearFilter}
+                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                  sortBy={sortBy}
+                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
+                  catalogPageSize={catalogPageSize}
+                  onLoadMore={() => setCatalogPageSize((prev) => prev + 100)}
+                  availableYears={availableYears}
+                  onSelectMedia={handleOpenDetails}
+                  onHoverMedia={handleHoverMedia}
+                />
               ) : searchQuery || activeFilter !== 'all' ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
@@ -985,20 +996,6 @@ export function App() {
         isOpen={Boolean(selectedShowId)}
         onClose={() => setSelectedShowId(null)}
         onSelectEpisode={(ep, title) => handleSelectEpisode(ep, title)}
-      />
-
-      {/* MODAL DE TODAS LAS CATEGORÍAS Y GÉNEROS (DESDE APIS DE ANIME, CINE Y SERIES) */}
-      <AllCategoriesModal
-        isOpen={isCategoriesModalOpen}
-        onClose={() => setIsCategoriesModalOpen(false)}
-        allGenres={allGenresList}
-        activeFilter={activeFilter}
-        onSelectCategory={(category) => {
-          setActiveFilter(category);
-          setGridPageSize(100);
-          setIsCategoriesModalOpen(false);
-        }}
-        showsCountByGenre={showsCountByGenre}
       />
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}

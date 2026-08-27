@@ -4,6 +4,7 @@ import App from './App';
 import { AdminGate } from './components/AdminGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
+import { HiddenGenresProvider } from './hooks/useHiddenGenres';
 import './index.css';
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin (con login).
@@ -14,7 +15,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        {isAdminRoute ? <AdminGate /> : <App />}
+        <HiddenGenresProvider>
+          {isAdminRoute ? <AdminGate /> : <App />}
+        </HiddenGenresProvider>
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>

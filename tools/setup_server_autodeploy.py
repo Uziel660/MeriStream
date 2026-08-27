@@ -20,11 +20,13 @@ GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git reset --hard origi
 echo "[AutoDeploy] Compilando dist..." >> "$LOG_FILE"
 docker run --rm -v /opt/meristream:/app -w /app node:22-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
 
+if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
+
 echo "[AutoDeploy] Reconstruyendo imagen..." >> "$LOG_FILE"
-docker-compose build --no-cache meristream-app >> "$LOG_FILE" 2>&1
+$COMPOSE build --no-cache meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] Reiniciando contenedor..." >> "$LOG_FILE"
-docker-compose up -d meristream-app >> "$LOG_FILE" 2>&1
+$COMPOSE up -d meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 """

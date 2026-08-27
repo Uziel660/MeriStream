@@ -1,0 +1,45 @@
+name: Deploy MeriStream
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Create deploy package
+        run: |
+          zip -r meristream_deploy.zip \
+            package.json package-lock.json app.config.ts Dockerfile docker-compose.yml .dockerignore \
+            dist prisma public server src tools
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASS }}
+          script: |
+            cd /opt/meristream
+            echo ">>> Pulling latest code..."
+            git pull origin main || true
+            echo ">>> Rebuilding containers..."
+            docker-compose down || docker compose down
+            docker-compose up -d --build || docker compose up -d --build
+            echo ">>> Deploy complete!"
+            docker ps | grep meristream

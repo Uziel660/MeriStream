@@ -287,6 +287,12 @@ export class EmbedResolvers {
       if (voeDirect) return voeDirect;
     }
 
+    // 6a. PRIMELOAD.CO: Extraer .m3u8 maestro desde la API interna /api/v1/player/{code}
+    if (rawUrl.includes("primeload.co")) {
+      const primeDirect = await this.resolvePrimeload(rawUrl);
+      if (primeDirect) return primeDirect;
+    }
+
     // 6b. BYSE (SPA con playback cifrado AES-GCM, ej. byseqekaho.com): la página /e/{code}
     // es un shell React vacío; el m3u8 firmado vive en /api/videos/{code}/ dentro de
     // playback.payload, descifrable con key_parts + version (lógica pública del player).
@@ -525,6 +531,24 @@ export class EmbedResolvers {
         return streamUrl;
       }
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resuelve reproductor de Primeload.co a su .m3u8 maestro vía /api/v1/player/{code}
+   */
+  private static async resolvePrimeload(url: string): Promise<string | null> {
+    try {
+      const codeMatch = url.match(/\/embed\/([a-zA-Z0-9_-]+)/);
+      if (!codeMatch) return null;
+      const code = codeMatch[1];
+      const apiUrl = `https://primeload.co/api/v1/player/${code}`;
+      const jsonText = await this.fetchHtml(apiUrl);
+      if (!jsonText) return null;
+      const data = JSON.parse(jsonText);
+      return data.master_manifest || data.sources?.[0]?.src || null;
     } catch {
       return null;
     }

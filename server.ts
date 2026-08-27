@@ -34,7 +34,7 @@ import { pipeline } from "node:stream/promises";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
 import { APP_CONFIG, localAllowedOrigins } from "./app.config";
-import { backfillMissingMetadata, getBackfillStatus } from "./server/metadataBackfill";
+import { backfillMissingMetadata, getBackfillStatus, backfillShow, showNeedsBackfill } from "./server/metadataBackfill";
 import { reconcileSequelsByTmdb, mergeTwoShows } from "./server/reconcileCatalog";
 import { startWriteBufferDrainer, drainWriteBuffer } from "./server/writeBuffer";
 import { getVerificationStatus, updateVerificationConfig, runVerification } from "./server/verificationWorker";
@@ -2101,28 +2101,32 @@ async function startServer() {
   }
 
   async function stepMetadata(): Promise<{ found: number; fixed: number }> {
-    const shows = await prisma.show.findMany({
-      where: { OR: [{ poster_path: null }, { description: 'Obra multimedia indexada.' }] },
-      take: 100,
+    const allShows = await prisma.show.findMany({
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        poster_url: true,
+        banner_url: true,
+        genres: true,
+        year: true,
+      },
+      take: 500,
+      orderBy: { updated_at: "asc" }
     });
+
+    const needyShows = allShows.filter((s) => showNeedsBackfill(s));
     let fixed = 0;
-    for (const s of shows) {
+
+    for (const s of needyShows.slice(0, 50)) {
       try {
-        if (!s.tmdb_id) continue;
-        const key = process.env.TMDB_API_KEY;
-        if (!key) break;
-        const raw = await fetch(`https://api.themoviedb.org/3/movie/${s.tmdb_id}?api_key=${key}&language=es-MX`).then(r => r.ok ? r.json() : null);
-        if (!raw) continue;
-        const updates: any = {};
-        if (!s.poster_path && raw.poster_path) updates.poster_path = raw.poster_path;
-        if ((s.description === 'Obra multimedia indexada.' || !s.description) && raw.overview) updates.description = raw.overview;
-        if (Object.keys(updates).length > 0) {
-          await prisma.show.update({ where: { id: s.id }, data: updates });
+        const res = await backfillShow(s.id);
+        if (res.changed.length > 0) {
           fixed++;
         }
       } catch {}
     }
-    return { found: shows.length, fixed };
+    return { found: needyShows.length, fixed };
   }
 
   async function stepDuplicates(): Promise<{ found: number; fixed: number }> {

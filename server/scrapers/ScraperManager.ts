@@ -10,6 +10,7 @@ import { TioAnimeAdapter } from "./adapters/TioAnimeAdapter";
 import { TioPlusAdapter } from "./adapters/TioPlusAdapter";
 import { CinecalidadAdapter } from "./adapters/CinecalidadAdapter";
 import { VerAnimesAdapter } from "./adapters/VerAnimesAdapter";
+import { DoramasflixAdapter } from "./adapters/DoramasflixAdapter";
 
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
 
@@ -36,6 +37,7 @@ export class ScraperManager {
     // this.registerAdapter(new TubePelisAdapter());
     this.registerAdapter(new CinecalidadAdapter());
     this.registerAdapter(new VerAnimesAdapter());
+    this.registerAdapter(new DoramasflixAdapter());
   }
 
   public static getInstance(): ScraperManager {

@@ -38,16 +38,49 @@ const state = {
   timer: null as ReturnType<typeof setInterval> | null,
 };
 
-function isLowQualityImage(url?: string | null): boolean {
+export function isLandscapePosterUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return (
+    u.includes("w454_and_h254") ||
+    u.includes("w500_and_h282") ||
+    u.includes("w1280_and_h720") ||
+    u.includes("backdrop") ||
+    u.includes("fanart") ||
+    u.includes("banner") ||
+    u.includes("/still/") ||
+    u.includes("still_path") ||
+    u.includes("horizontal") ||
+    u.includes("_landscape") ||
+    u.includes("cover_land")
+  );
+}
+
+export function isLowQualityImage(url?: string | null): boolean {
   if (!url) return true;
   const u = url.toLowerCase();
   return (
-    u.includes("veranimes.net") ||
-    u.includes("images.unsplash.com") ||
+    u.length < 15 ||
+    u.startsWith("data:") ||
     u.includes("placeholder") ||
     u.includes("default_poster") ||
     u.includes("no-image") ||
-    u.length < 10
+    u.includes("noposter") ||
+    u.includes("no_poster") ||
+    u.includes("nopic") ||
+    u.includes("no-cover") ||
+    u.includes("blank.png") ||
+    u.includes("dummyimage") ||
+    u.includes("veranimes.net") ||
+    u.includes("images.unsplash.com") ||
+    u.includes("/w92/") ||
+    u.includes("/w154/") ||
+    u.includes("/w185/") ||
+    u.includes("thumb_small") ||
+    u.includes("_preview") ||
+    u.includes("mini_") ||
+    u.includes("100x") ||
+    u.includes("150x")
   );
 }
 
@@ -65,12 +98,12 @@ export function showNeedsBackfill(show: {
     const parsed = parseRawTitle(show.title);
     if (parsed.canonical !== show.title && isPlausibleTitle(parsed.canonical)) return true;
   }
-  // Descripción anómala (HTML entities como &nbsp;, mojibake, título duplicado al inicio)
+  // Descripción anómala (HTML entities como &nbsp;, mojibake, marcas de scrapers)
   if (isAnomalousDescription(show.description, show.title)) {
     return true;
   }
-  // Portada de baja calidad (VerAnimes CDN o Unsplash) o banner duplicado del poster
-  if (isLowQualityImage(show.poster_url) || isLowQualityImage(show.banner_url) || show.banner_url === show.poster_url) {
+  // Portada horizontal en lugar de poster vertical, o imagen de baja calidad/placeholder
+  if (isLandscapePosterUrl(show.poster_url) || isLowQualityImage(show.poster_url) || isLowQualityImage(show.banner_url) || show.banner_url === show.poster_url) {
     return true;
   }
   return (
@@ -210,11 +243,11 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
   ) {
     data.description = rawEnrichedDesc;
   }
-  // Sustituir poster si falta o si es de baja calidad (VerAnimes/Unsplash)
-  if ((!show.poster_url || isLowQualityImage(show.poster_url)) && enriched.poster_path) {
+  // Sustituir poster si falta, si es horizontal (portada/backdrop) o de baja calidad
+  if ((!show.poster_url || isLowQualityImage(show.poster_url) || isLandscapePosterUrl(show.poster_url)) && enriched.poster_path) {
     data.poster_url = `https://image.tmdb.org/t/p/w780${enriched.poster_path}`;
     data.poster_path = enriched.poster_path;
-  } else if ((!show.poster_url || isLowQualityImage(show.poster_url)) && enriched.poster_url) {
+  } else if ((!show.poster_url || isLowQualityImage(show.poster_url) || isLandscapePosterUrl(show.poster_url)) && enriched.poster_url && !isLandscapePosterUrl(enriched.poster_url)) {
     data.poster_url = enriched.poster_url;
   }
 

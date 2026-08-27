@@ -47,6 +47,9 @@ const HTML_ENTITY_MAP: Record<string, string> = {
   "&yen;": "¥",
 };
 
+// Lista de marcas y dominios de adaptadores/scrapers para limpieza y detección automática
+export const SCRAPER_BRAND_REGEX = /\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|lat-anime|doramasflix|cuevana\d*|pelisplus|monoschinos|animesonline|tvmaze)\b/i;
+
 /**
  * Limpia y normaliza una descripción de obra o episodio.
  */
@@ -100,8 +103,13 @@ export function cleanDescription(rawDescription?: string | null, title?: string 
     .replace(/â€œ|â€ /g, '"')
     .replace(/â€˜|â€™/g, "'");
 
-  // 5. Quitar prefijos comunes de scrapers ("Sinopsis:", "Ver online:", "Descripción:", etc.)
-  text = text.replace(/^(?:sinopsis|descripci[oó]n|resumen|overview|summary)\s*:\s*/i, "");
+  // 5. Quitar frases promocionales de scrapers (ej. "Ver en VerAnimes", "Ver dorama ... online sub español en Doramasflix")
+  text = text
+    .replace(/^(?:sinopsis|descripci[oó]n|resumen|overview|summary)\s*:\s*/i, "")
+    .replace(/(?:ver|mira|disfruta)\s+(?:dorama|pel[ií]cula|anime|serie)?\s*[^.]*?\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|doramasflix|cuevana|pelisplus)\b[^.]*?\./gi, "")
+    .replace(/ver\s+(?:dorama|anime|pel[ií]cula)?\s+.*?sub\s+español\s+online\s+.*?doramasflix/gi, "")
+    .replace(/💖\s*Doramasflix/gi, "")
+    .replace(/💓\s*dorama/gi, "");
 
   // 6. Si el título está duplicado al principio ("The Sneak Over Es el verano..."), removerlo limpiamente
   if (title) {
@@ -126,6 +134,9 @@ export function isAnomalousDescription(text?: string | null, title?: string | nu
   if (!text) return true;
   const t = text.trim();
   if (t.length < 15) return true;
+
+  // Marcas/Nombres de adaptadores o scrapers presentes en la sinopsis (ej. VerAnimes, Cinecalidad, Doramasflix)
+  if (SCRAPER_BRAND_REGEX.test(t)) return true;
 
   // Entidades HTML con nombre o numéricas
   if (/&(?:[a-z]{2,8}|#\d+|#x[0-9a-f]+);/i.test(t)) return true;

@@ -31,6 +31,11 @@ services:
       TMDB_API_KEY: "4598f607660f5c4eb423d868da148981"
       PORT: "3010"
       NODE_ENV: "production"
+    volumes:
+      - /root/.ssh:/root/.ssh:ro          # SSH keys para git fetch desde GitHub
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket para docker restart
+      - /var/log:/var/log                 # Log de auto-deploy
+      - /opt/meristream:/opt/meristream   # Repositorio del proyecto
     ports:
       - "3010:3010"
     depends_on:

@@ -5,3 +5,8 @@ node_modules
 *.log
 meristream_db.dump
 .env
+docs/
+informes/
+tests/
+tools/
+*.zip

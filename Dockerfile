@@ -11,7 +11,7 @@ ENV PORT=3010
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --omit=dev && npx prisma generate
+RUN npm ci && npx prisma generate
 
 COPY dist ./dist
 COPY app.config.ts ./app.config.ts

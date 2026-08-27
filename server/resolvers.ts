@@ -363,7 +363,7 @@ export class EmbedResolvers {
    * Resuelve el embed de hqq.ac / divxplayer (reproductor "raro" de VerAnimes).
    * El m3u8 maestro va directamente en el HTML del /e/{id}, en:
    *   - meta og:video / og:video:url
-   *   - atributos data-*/var del player
+   *   - atributos data-* / var del player
    * Descarta m3u8 placeholder (el reproductor sirve el mismo video de demo
    * "TenchiMuyo_18" cuando el video real está tras captcha).
    */

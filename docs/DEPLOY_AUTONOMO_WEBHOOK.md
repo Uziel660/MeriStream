@@ -85,15 +85,15 @@ echo "[AutoDeploy] Compilando dist..." >> "$LOG_FILE"
 docker run --rm -v /opt/meristream:/app -w /app node:22-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] Reconstruyendo imagen..." >> "$LOG_FILE"
-docker compose build --no-cache meristream-app >> "$LOG_FILE" 2>&1
+docker-compose build --no-cache meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] Reiniciando contenedor..." >> "$LOG_FILE"
-docker compose up -d meristream-app >> "$LOG_FILE" 2>&1
+docker-compose up -d meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 ```
 
-> **Nota importante de arquitectura**: el contenedor `meristream-app` (basado en `node:22-slim`) recibe el webhook y ejecuta `update_server.sh` directamente. Para ello la imagen incluye `git` y `docker.io` (cliente Docker), y monta el socket de Docker (`/var/run/docker.sock`), el repositorio (`/opt/meristream`), las claves SSH (`/root/.ssh`) y los logs (`/var/log`). Así el script corre `git fetch`/`reset`, compila con `docker run node:22-alpine`, reconstruye la imagen y reinicia el contenedor contra el **host**.
+> **Nota importante de arquitectura**: el contenedor `meristream-app` (basado en `node:22-slim`) recibe el webhook y ejecuta `update_server.sh` directamente. Para ello la imagen incluye `git`, `docker.io` (cliente Docker) y `docker-compose` (v1, que usa el comando `docker-compose`), y monta el socket de Docker (`/var/run/docker.sock`), el repositorio (`/opt/meristream`), las claves SSH (`/root/.ssh`) y los logs (`/var/log`). Así el script corre `git fetch`/`reset`, compila con `docker run node:22-alpine`, reconstruye la imagen y reinicia el contenedor contra el **host**.
 
 ---
 

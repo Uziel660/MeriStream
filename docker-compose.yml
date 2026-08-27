@@ -36,6 +36,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket para docker restart
       - /var/log:/var/log                 # Log de auto-deploy
       - /opt/meristream:/opt/meristream   # Repositorio del proyecto
+      - /opt/meristream/dist:/app/dist:ro  # dist compilado en el host -> codigo en vivo
     ports:
       - "3010:3010"
     depends_on:

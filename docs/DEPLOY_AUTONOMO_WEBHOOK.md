@@ -46,9 +46,8 @@ Se eliminó por completo el runner del host (0 MB de consumo de RAM en reposo) y
                                                └──────────┬───────────┘
                                                           │
 1. git fetch & reset (git en la imagen de la app)
-                                               2. Build efímero (Node 22 Alpine)
-                                               3. docker compose build (reconstruye imagen)
-                                               4. docker compose up -d (recrea contenedor)
+                                               2. Build efímero (Node 22 Alpine) -> dist en host
+                                               3. docker restart (recarga dist del bind mount)
 ```
 
 ---
@@ -84,18 +83,13 @@ GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git reset --hard origi
 echo "[AutoDeploy] Compilando dist..." >> "$LOG_FILE"
 docker run --rm -v /opt/meristream:/app -w /app node:22-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
 
-if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
-
-echo "[AutoDeploy] Reconstruyendo imagen..." >> "$LOG_FILE"
-$COMPOSE build meristream-app >> "$LOG_FILE" 2>&1
-
 echo "[AutoDeploy] Reiniciando contenedor..." >> "$LOG_FILE"
-$COMPOSE up -d meristream-app >> "$LOG_FILE" 2>&1
+docker restart meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 ```
 
-> **Nota importante de arquitectura**: el contenedor `meristream-app` (basado en `node:22-slim`) recibe el webhook y ejecuta `update_server.sh` directamente. Para ello la imagen incluye `git`, `docker.io` (cliente Docker) y `docker-compose` (v1, que usa el comando `docker-compose`), y monta el socket de Docker (`/var/run/docker.sock`), el repositorio (`/opt/meristream`), las claves SSH (`/root/.ssh`) y los logs (`/var/log`). Así el script corre `git fetch`/`reset`, compila con `docker run node:22-alpine`, reconstruye la imagen y reinicia el contenedor contra el **host**.
+> **Nota importante de arquitectura**: el contenedor `meristream-app` (basado en `node:22-slim`) recibe el webhook y ejecuta `update_server.sh` directamente. La imagen incluye `git` y `docker.io` (cliente Docker), y monta el socket de Docker (`/var/run/docker.sock`), el repositorio (`/opt/meristream`), las claves SSH (`/root/.ssh`), los logs (`/var/log`) y **el `dist` compilado** (`/opt/meristream/dist:/app/dist:ro`). El script hace `git fetch`/`reset`, compila con `docker run node:22-alpine` (escribe el `dist` en el host) y reinicia el contenedor con `docker restart`. Al correr el código desde el mount de `dist`, el `restart` basta para cargar el código nuevo, sin reconstruir la imagen.
 
 ---
 

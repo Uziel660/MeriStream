@@ -893,7 +893,12 @@ npx cap open android
 - Cambiar `localhost:3000` por la IP del servidor en `app.config.ts`
 - El proxy anti-CORS DEBE correr en el servidor
 
-### Deploy en servidor (producción)
+### Deploy en servidor (producción) y Auto-Despliegue CI/CD
+
+MeriStream cuenta con un pipeline de auto-despliegue continuo (CI/CD) de 0 MB de consumo en reposo mediante **GitHub Webhooks + Docker**. Consulta la guía detallada de arquitectura en:
+👉 [`docs/DEPLOY_AUTONOMO_WEBHOOK.md`](docs/DEPLOY_AUTONOMO_WEBHOOK.md)
+
+Para ejecución directa en servidor:
 
 ```bash
 npm run build

@@ -1,5 +1,5 @@
 FROM node:22-slim
-RUN apt-get update -y && apt-get install -y openssl ca-certificates wget && \
+RUN apt-get update -y && apt-get install -y openssl ca-certificates wget git docker.io && \
     wget -q http://ftp.debian.org/debian/pool/main/o/openssl/libssl1.1_1.1.1w-0+deb11u1_amd64.deb && \
     dpkg -i libssl1.1_1.1.1w-0+deb11u1_amd64.deb && \
     rm -f libssl1.1_1.1.1w-0+deb11u1_amd64.deb

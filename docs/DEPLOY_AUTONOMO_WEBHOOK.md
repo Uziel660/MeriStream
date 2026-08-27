@@ -45,7 +45,7 @@ Se eliminó por completo el runner del host (0 MB de consumo de RAM en reposo) y
                                                │ update_server.sh     │
                                                └──────────┬───────────┘
                                                           │
-1. git fetch & reset (runner docker:cli-git)
+1. git fetch & reset (git en la imagen de la app)
                                                2. Build efímero (Node 22 Alpine)
                                                3. docker compose build (reconstruye imagen)
                                                4. docker compose up -d (recrea contenedor)
@@ -93,7 +93,7 @@ docker compose up -d meristream-app >> "$LOG_FILE" 2>&1
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 ```
 
-> **Nota importante de arquitectura**: el contenedor `meristream-app` es `node:22-slim` y **NO tiene `git`**. El endpoint del webhook (que corre dentro de ese contenedor) lanza un runner efímero con la imagen `docker:cli` (que sí incluye git + docker CLI), montando el socket de Docker, el repo y las claves SSH. Ese runner ejecuta `update_server.sh` contra el **host**.
+> **Nota importante de arquitectura**: el contenedor `meristream-app` (basado en `node:22-slim`) recibe el webhook y ejecuta `update_server.sh` directamente. Para ello la imagen incluye `git` y `docker.io` (cliente Docker), y monta el socket de Docker (`/var/run/docker.sock`), el repositorio (`/opt/meristream`), las claves SSH (`/root/.ssh`) y los logs (`/var/log`). Así el script corre `git fetch`/`reset`, compila con `docker run node:22-alpine`, reconstruye la imagen y reinicia el contenedor contra el **host**.
 
 ---
 

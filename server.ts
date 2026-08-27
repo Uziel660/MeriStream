@@ -233,18 +233,7 @@ async function startServer() {
     res.status(200).json({ ok: true, message: "Despliegue automático iniciado en el servidor." });
 
     import("child_process").then(({ exec }) => {
-      const deployCommand = [
-        "docker", "run", "--rm", "-i",
-        "-v", "/var/run/docker.sock:/var/run/docker.sock",
-        "-v", "/opt/meristream:/opt/meristream",
-        "-v", "/root/.ssh:/root/.ssh:ro",
-        "-v", "/var/log:/var/log",
-        "-w", "/opt/meristream",
-        "docker:cli",
-        "/bin/sh", "/opt/meristream/update_server.sh",
-      ].join(" ");
-
-      exec(deployCommand, { timeout: 600000 }, (err, stdout, stderr) => {
+      exec("/bin/sh /opt/meristream/update_server.sh", { timeout: 900000 }, (err, stdout, stderr) => {
         if (err) console.error("[DeployWebhook] Error al actualizar:", err, stderr);
         else console.log("[DeployWebhook] Despliegue completado:", stdout);
       });

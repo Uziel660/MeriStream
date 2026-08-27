@@ -3,7 +3,7 @@ import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
-import { orderStreamsByHealth } from "../hostHealth";
+import { probeStream, orderStreamsByHealth } from "../hostHealth";
 import { cleanDescription } from "../../utils/textCleaner";
 
 const BASE_URL = "https://wwv.veranimes.net";
@@ -15,7 +15,6 @@ const DEAD_OR_BLOCKED_HOST_PATTERNS = [
   /dsvplay\.com/i,
   /savefiles\.com/i,
   /d-s\.io/i,
-  /a\d+\.mp4upload\.com/i,
   /vidcache\.net/i,
   /my\.mail\.ru/i,
   /v\.tioanime\.com/i,
@@ -571,16 +570,19 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
     // Sondeo de salud de streams directos: los CDNs con hotlink-protection pueden
     // estar caídos o lentos (ej. a3.mp4upload.com:183 tarda 10-36s en handshake TLS).
     // Sin sondeo, un MP4 muerto encabeza la lista y el player falla antes del failover.
-    let healthyDirects = directStreams;
-    if (directStreams.length > 1) {
+    let healthyDirects: string[] = [];
+    if (directStreams.length > 0) {
       healthyDirects = await this.probeAndOrderDirectStreams(directStreams);
     }
+    const failedDirects = directStreams.filter((d) => !healthyDirects.includes(d));
 
+    const isUnreliableEmbed = (u: string) => /hqq\.|waaw|cvary\.org|divxplayer/i.test(u);
     const embedStreams = all_available_streams.filter((s) => !directStreams.includes(s));
-    const ordered =
-      directStreams.length > 0
-        ? [...healthyDirects, ...embedStreams, ...directStreams.filter((d) => !healthyDirects.includes(d))]
-        : all_available_streams;
+    const reliableEmbeds = embedStreams.filter((s) => !isUnreliableEmbed(s));
+    const lowPriorityEmbeds = embedStreams.filter((s) => isUnreliableEmbed(s));
+    const sortedEmbeds = [...reliableEmbeds, ...lowPriorityEmbeds];
+
+    const ordered = [...healthyDirects, ...sortedEmbeds, ...failedDirects];
 
     // Validación final con MediaValidator
     const validStreams = await MediaValidator.validateUrls(ordered);
@@ -600,7 +602,11 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
    * responden a tiempo.
    */
   private async probeAndOrderDirectStreams(urls: string[]): Promise<string[]> {
-    return orderStreamsByHealth(urls, { playerReferer: "https://wwv.veranimes.net/" });
+    if (urls.length === 0) return [];
+    const results = await Promise.all(
+      urls.map((url) => probeStream(url, { playerReferer: "https://wwv.veranimes.net/", timeoutMs: 4000 }))
+    );
+    return results.filter((r) => r.ok).map((r) => r.url);
   }
 
   /**

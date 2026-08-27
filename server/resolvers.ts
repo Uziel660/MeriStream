@@ -387,8 +387,8 @@ export class EmbedResolvers {
       if (urls.length === 0) return null;
 
       // Filtrar placeholders (video demo genérico del player)
-      const real = urls.filter((u) => !u.includes("153311550983uua"));
-      return (real[0] || urls[0]);
+      const real = urls.filter((u) => !u.includes("153311550983uua") && !u.includes("cfglobalcdn.com"));
+      return real.length > 0 ? real[0] : null;
     } catch {
       return null;
     }

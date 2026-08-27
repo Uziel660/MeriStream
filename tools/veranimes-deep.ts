@@ -1,45 +1,48 @@
-// Investigar qué servidores devuelve VerAnimes realmente (fluxo /process)
 import { VerAnimesAdapter } from "../server/scrapers/adapters/VerAnimesAdapter";
 
 const a = new VerAnimesAdapter();
 
-async function hexToAscii(hex: string) {
-  let s = "";
-  for (let i = 0; i < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-  return s;
-}
-
 (async () => {
-  const url = "https://wwv.veranimes.net/ver/kuroneko-to-majo-no-kyoushitsu-1";
-  console.log("URL:", url);
+  console.log("=== START VERANIMES TEST ===");
 
-  const html = await (a as any).fetchHtml(url, 15000);
-  console.log("HTML length:", html?.length || 0);
-
-  // Ver data-encrypt
-  const encMatches = html.match(/data-encrypt="([^"]+)"/gi) || [];
-  console.log("\ndata-encrypt encontrados:", encMatches.length);
-  encMatches.forEach((m) => console.log("  ", m));
-
-  // Ver <ul opt> con data-encrypt
-  const opt = html.match(/<ul[^>]+class="opt"[^>]*data-encrypt="([^"]+)"/i);
-  console.log("\n<ul class=opt data-encrypt>: ", opt ? opt[1] : "NO");
-
-  // Decodificar
-  if (opt) {
-    const idHex = opt[1];
-    console.log("  idHex:", idHex, "→ ascii:", hexToAscii(idHex));
+  console.log("\n[1] BÚSQUEDA ('naruto')");
+  const searchRes = await a.search("naruto");
+  console.log(`Encontrados: ${searchRes.length}`);
+  for (const item of searchRes.slice(0, 5)) {
+    console.log(`  - [${item.title}] (${item.url}) img: ${item.image_url}`);
   }
 
-  // Llamar resolveServerButtons
-  const buttons = await a.resolveServerButtons(url);
-  console.log("\nresolveServerButtons devolvió", buttons.length, "URLs:");
-  buttons.forEach((b) => console.log("  ", b.slice(0, 120)));
+  console.log("\n[2] CATÁLOGO (/animes)");
+  const catRes = await a.analyze("https://wwv.veranimes.net/animes", "catalog");
+  console.log(`Items en catálogo: ${catRes.catalog_items.length}`);
+  for (const item of catRes.catalog_items.slice(0, 3)) {
+    console.log(`  - [${item.title}] (${item.url}) img: ${item.image_url}`);
+  }
 
-  // extractStream final
-  const r = await a.extractStream(url);
-  console.log("\nextractStream:");
-  console.log("  stream_url:", r.stream_url);
-  console.log("  todos:", r.all_available_streams.length);
-  r.all_available_streams.forEach((s) => console.log("    ", s.slice(0, 120)));
+  const testDetailUrls = [
+    "https://wwv.veranimes.net/anime/naruto-shippuden",
+    "https://wwv.veranimes.net/anime/one-piece",
+    "https://wwv.veranimes.net/anime/dragon-ball-super",
+    "https://wwv.veranimes.net/anime/solo-leveling"
+  ];
+
+  for (const dUrl of testDetailUrls) {
+    console.log(`\n[3] DETALLE (${dUrl})`);
+    const detailRes = await a.analyze(dUrl, "detail");
+    console.log(`  Título: "${detailRes.title}"`);
+    console.log(`  Status: ${detailRes.status}`);
+    console.log(`  Episodios: ${detailRes.episodes.length}`);
+    if (detailRes.episodes.length > 0) {
+      console.log(`    Ep 1: ${detailRes.episodes[0].title} -> ${detailRes.episodes[0].url}`);
+      console.log(`    Ep Ultimo: ${detailRes.episodes[detailRes.episodes.length - 1].title} -> ${detailRes.episodes[detailRes.episodes.length - 1].url}`);
+      
+      console.log(`  [4] STREAM para primer episodio: ${detailRes.episodes[0].url}`);
+      const st = await a.extractStream(detailRes.episodes[0].url);
+      console.log(`    stream_url: ${st.stream_url}`);
+      console.log(`    all streams (${st.all_available_streams.length}):`);
+      st.all_available_streams.forEach(s => console.log(`      * ${s}`));
+    }
+  }
+
+  console.log("\n=== END VERANIMES TEST ===");
 })();

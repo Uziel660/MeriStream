@@ -123,11 +123,15 @@ export async function probeStream(url: string, opts: ProbeOptions = {}): Promise
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const isMedia = /\.(mp4|m3u8|webm)(\?|$)/i.test(url);
+    const fetchHeaders = { ...headers };
+    if (isMedia) fetchHeaders["Range"] = "bytes=0-100";
+
     const res = await fetch(url, {
-      method: "HEAD",
+      method: isMedia ? "GET" : "HEAD",
       signal: controller.signal,
       redirect: "follow",
-      headers,
+      headers: fetchHeaders,
     });
     res.body?.cancel().catch(() => {});
     const ok = res.status >= 200 && res.status < 400;

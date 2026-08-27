@@ -5,6 +5,30 @@ import { ScraperManager } from "./scrapers/ScraperManager";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
+    id: "doramas-doramasflix",
+    name: "Doramasflix (Doramas / K-Dramas)",
+    category: "series",
+    description: "Catálogo completo de doramas, K-Dramas y series asiáticas con servidores Primeload/Filemoon/VOE.",
+    example_url: "https://doramasflix.io/doramas",
+    icon: "Tv",
+  },
+  {
+    id: "movies-doramasflix",
+    name: "Doramasflix Películas",
+    category: "movies",
+    description: "Películas asiáticas en español latino y sub español.",
+    example_url: "https://doramasflix.io/peliculas",
+    icon: "Film",
+  },
+  {
+    id: "variety-doramasflix",
+    name: "Doramasflix Variedades",
+    category: "series",
+    description: "Programas de variedad y TV shows asiáticos.",
+    example_url: "https://doramasflix.io/variedades",
+    icon: "Layers",
+  },
+  {
     id: "anime-animeflv",
     name: "AnimeFLV Catálogo (Anime Español)",
     category: "anime",

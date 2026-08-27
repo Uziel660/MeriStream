@@ -121,6 +121,9 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   latanime: "https://latanime.org/animes",
   cinecalidad: "https://www.cinecalidad.am/",
   tioplus: "https://tioplus.app/peliculas",
+  doramasflix: "https://doramasflix.io/doramas",
+  doramasflix_peliculas: "https://doramasflix.io/peliculas",
+  doramasflix_variedades: "https://doramasflix.io/variedades",
   lamovie_movies: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
   lamovie_series: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24",
   lamovie_animes: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24",
@@ -136,9 +139,9 @@ const SCOPE_MODES = ["all", "platforms", "category"] as const;
 /** Plataformas típicas por categoría (scope_mode="category", fase novedades). */
 const CATEGORY_PLATFORM_MAP: Record<string, string[]> = {
   anime: ["animeflv", "tioanime", "latanime", "lamovie_animes"],
-  movie: ["cinecalidad", "tioplus", "lamovie_movies"],
-  movies: ["cinecalidad", "tioplus", "lamovie_movies"],
-  series: ["lamovie_series"],
+  movie: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
+  movies: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
+  series: ["lamovie_series", "doramasflix", "doramasflix_variedades"],
 };
 
 function defaultConfig(): VerificationConfig {

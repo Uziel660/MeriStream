@@ -177,8 +177,12 @@ async function startServer() {
       allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'X-Media-Title', 'X-Media-Provider', 'Accept', 'Origin', 'X-Requested-With'],
       exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Type']
     })
-  );
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({
+    limit: "10mb",
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // ==========================================
@@ -190,12 +194,34 @@ async function startServer() {
     res.json({ status: "ok", service: "VoidStream Core API (PostgreSQL Enabled)" });
   });
 
-  const handleDeployWebhook = (req: Request, res: Response) => {
-    const secret = (req.headers["x-webhook-secret"] || req.query.secret || req.headers["x-hub-signature-256"] || "") as string;
-    const configuredSecret = process.env.DEPLOY_WEBHOOK_SECRET;
+  const handleDeployWebhook = async (req: Request, res: Response) => {
+    const rawSecret = (req.headers["x-webhook-secret"] || req.query.secret || "") as string;
+    const hubSignature = (req.headers["x-hub-signature-256"] || "") as string;
+    const configuredSecret = process.env.DEPLOY_WEBHOOK_SECRET || "uziel20082";
 
-    if (configuredSecret && secret !== configuredSecret) {
-      return res.status(403).json({ error: "Unauthorized webhook secret" });
+    let isValid = false;
+
+    // 1. Coincidencia directa de token
+    if (rawSecret && rawSecret === configuredSecret) {
+      isValid = true;
+    }
+
+    // 2. Verificación de firma HMAC SHA-256 de GitHub
+    if (hubSignature && hubSignature.startsWith("sha256=")) {
+      try {
+        const crypto = await import("crypto");
+        const rawBuf = (req as any).rawBody || Buffer.from(JSON.stringify(req.body || {}));
+        const expected = "sha256=" + crypto.createHmac("sha256", configuredSecret).update(rawBuf).digest("hex");
+        if (crypto.timingSafeEqual(Buffer.from(hubSignature), Buffer.from(expected))) {
+          isValid = true;
+        }
+      } catch (err) {
+        console.warn("[DeployWebhook] Error verificando firma HMAC:", err);
+      }
+    }
+
+    if (!isValid) {
+      return res.status(403).json({ error: "Unauthorized webhook signature or secret" });
     }
 
     const ref = req.body?.ref;

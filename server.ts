@@ -177,6 +177,7 @@ async function startServer() {
       allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'X-Media-Title', 'X-Media-Provider', 'Accept', 'Origin', 'X-Requested-With'],
       exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Type']
     })
+  );
   app.use(express.json({
     limit: "10mb",
     verify: (req: any, res, buf) => {

@@ -179,6 +179,7 @@ async function startServer() {
     })
   );
   app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // ==========================================
   // API Routes
@@ -187,6 +188,44 @@ async function startServer() {
   // Health
   app.get(["/health", "/api/v1/health"], (req: Request, res: Response) => {
     res.json({ status: "ok", service: "VoidStream Core API (PostgreSQL Enabled)" });
+  });
+
+  const handleDeployWebhook = (req: Request, res: Response) => {
+    const secret = (req.headers["x-webhook-secret"] || req.query.secret || req.headers["x-hub-signature-256"] || "") as string;
+    const configuredSecret = process.env.DEPLOY_WEBHOOK_SECRET;
+
+    if (configuredSecret && secret !== configuredSecret) {
+      return res.status(403).json({ error: "Unauthorized webhook secret" });
+    }
+
+    const ref = req.body?.ref;
+    if (ref && ref !== "refs/heads/main") {
+      return res.json({ skipped: true, message: `Ignored push to branch ${ref}` });
+    }
+
+    res.status(200).json({ ok: true, message: "Despliegue automático iniciado en el servidor." });
+
+    import("child_process").then(({ exec }) => {
+      exec("/bin/sh /opt/meristream/update_server.sh", (err, stdout, stderr) => {
+        if (err) console.error("[DeployWebhook] Error al actualizar:", err, stderr);
+        else console.log("[DeployWebhook] Despliegue completado:", stdout);
+      });
+    });
+  };
+
+  app.post("/api/v1/webhook/github", handleDeployWebhook);
+  app.post("/api/v1/webhook/deploy", handleDeployWebhook);
+
+  // Consultar logs del último despliegue
+  app.get("/api/v1/webhook/deploy/status", async (req: Request, res: Response) => {
+    try {
+      const fs = await import("fs/promises");
+      const content = await fs.readFile("/var/log/meristream_deploy.log", "utf-8").catch(() => "Sin logs de despliegue aún.");
+      const lines = content.split("\n").slice(-60).join("\n");
+      res.type("text/plain").send(lines);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Genres cache (TTL 5 minutes)

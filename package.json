@@ -12,6 +12,7 @@
     "test": "vitest run",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
+    "deploy": "python tools/deploy_fast.py",
     "fast-start": "npx tsx tools/fast-start.ts",
     "merge-dbs": "npx tsx tools/merge-dbs.ts"
   },

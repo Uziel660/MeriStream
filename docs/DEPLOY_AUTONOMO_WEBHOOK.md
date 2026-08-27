@@ -45,9 +45,10 @@ Se eliminó por completo el runner del host (0 MB de consumo de RAM en reposo) y
                                                │ update_server.sh     │
                                                └──────────┬───────────┘
                                                           │
-                                              1. git fetch & reset
-                                              2. Build efímero (Node Alpine)
-                                              3. docker restart meristream-app
+1. git fetch & reset (runner docker:cli-git)
+                                               2. Build efímero (Node 22 Alpine)
+                                               3. docker compose build (reconstruye imagen)
+                                               4. docker compose up -d (recrea contenedor)
 ```
 
 ---
@@ -81,11 +82,18 @@ GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git fetch origin main 
 GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git reset --hard origin/main >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] Compilando dist..." >> "$LOG_FILE"
-docker run --rm -v /opt/meristream:/app -w /app node:20-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
-docker restart meristream-app >> "$LOG_FILE" 2>&1
+docker run --rm -v /opt/meristream:/app -w /app node:22-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
+
+echo "[AutoDeploy] Reconstruyendo imagen..." >> "$LOG_FILE"
+docker compose build --no-cache meristream-app >> "$LOG_FILE" 2>&1
+
+echo "[AutoDeploy] Reiniciando contenedor..." >> "$LOG_FILE"
+docker compose up -d meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 ```
+
+> **Nota importante de arquitectura**: el contenedor `meristream-app` es `node:22-slim` y **NO tiene `git`**. El endpoint del webhook (que corre dentro de ese contenedor) lanza un runner efímero con la imagen `docker:cli` (que sí incluye git + docker CLI), montando el socket de Docker, el repo y las claves SSH. Ese runner ejecuta `update_server.sh` contra el **host**.
 
 ---
 

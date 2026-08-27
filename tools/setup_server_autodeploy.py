@@ -18,8 +18,13 @@ GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git fetch origin main 
 GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git reset --hard origin/main >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] Compilando dist..." >> "$LOG_FILE"
-docker run --rm -v /opt/meristream:/app -w /app node:20-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
-docker restart meristream-app >> "$LOG_FILE" 2>&1
+docker run --rm -v /opt/meristream:/app -w /app node:22-alpine sh -c "npm install --include=dev && npm run build" >> "$LOG_FILE" 2>&1
+
+echo "[AutoDeploy] Reconstruyendo imagen..." >> "$LOG_FILE"
+docker compose build --no-cache meristream-app >> "$LOG_FILE" 2>&1
+
+echo "[AutoDeploy] Reiniciando contenedor..." >> "$LOG_FILE"
+docker compose up -d meristream-app >> "$LOG_FILE" 2>&1
 
 echo "[AutoDeploy] $(date): Despliegue completado con exito!" >> "$LOG_FILE"
 """

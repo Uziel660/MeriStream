@@ -122,7 +122,8 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     const seen = new Set<string>();
 
     const processCard = ($card: cheerio.Cheerio<any>) => {
-      const $link = $card.is("a") ? $card : $card.find("a").first();
+      let $link = $card.find("a[href*='/pelicula/'], a[href*='/anime/'], a[href*='/serie/'], a[href*='/dorama/']").first();
+      if ($link.length === 0) $link = $card.is("a") ? $card : $card.find("a").first();
       const href = ($link.attr("href") || "").trim();
       if (!href) return;
       const fullUrl = this.resolveRelativeUrl(href, BASE_URL);
@@ -403,7 +404,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
         poster_url: catalogItems[0]?.image_url || null,
         banner_url: catalogItems[0]?.image_url || null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "tioplus.app",
@@ -421,7 +422,8 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     if (explicitType === "catalog" || isCatalogPath) {
       const catalogUrl = this.resolveRelativeUrl(cleanUrl, BASE_URL);
       const html = await this.fetchHtml(catalogUrl, 10000);
-      const catalogItems = html ? this.extractCatalogItems(html) : [];
+      if (!html) throw new Error(`FETCH_FAILED: ${catalogUrl}`);
+      const catalogItems = this.extractCatalogItems(html);
 
       return {
         page_type: "catalog",
@@ -431,7 +433,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
         poster_url: catalogItems[0]?.image_url || null,
         banner_url: catalogItems[0]?.image_url || null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "tioplus.app",
@@ -451,7 +453,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "tioplus.app",
@@ -578,10 +580,20 @@ export class TioPlusAdapter extends BaseScraperAdapter {
         ? validated.filter((s) => !this.isUnplayablePlayerUrl(s))
         : all_available_streams.filter((s) => !this.isUnplayablePlayerUrl(s));
 
-    const direct = finalBase.filter((s) => /\.(m3u8|mp4|webm)(\?|$)/i.test(s));
+    const direct = finalBase.filter((s) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(s));
+    // Probe barato de alcanzabilidad (HEAD barato); no garantiza reproducción,
+    // solo ordena candidatos. La decisión final de reproducción es de Chromium en E2E.
+    let rankedDirect = direct;
+    if (direct.length > 1) {
+      try {
+        rankedDirect = await this.rankDirectByProbe(direct);
+      } catch {
+        rankedDirect = direct;
+      }
+    }
     const ordered =
-      direct.length > 0
-        ? [...direct, ...finalBase.filter((s) => !direct.includes(s))]
+      rankedDirect.length > 0
+        ? [...rankedDirect, ...finalBase.filter((s) => !rankedDirect.includes(s))]
         : finalBase;
 
     return {
@@ -589,6 +601,53 @@ export class TioPlusAdapter extends BaseScraperAdapter {
       all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
       title,
     };
+  }
+
+  /**
+   * Probe barato de alcanzabilidad para ordenar directos.
+   * HEAD (fallback GET Range) con timeout corto; no garantiza que
+   * playlists/segmentos internos reproduzcan — solo evita priorizar
+   * hosts muertos. La reproducción real la decide Chromium en E2E.
+   */
+  private async rankDirectByProbe(direct: string[]): Promise<string[]> {
+    const probe = await Promise.all(
+      direct.map(async (url) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        try {
+          let res = await fetch(url, {
+            method: "HEAD",
+            signal: controller.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              Referer: `${BASE_URL}/`,
+            },
+          });
+          if (res.status === 405 || res.status === 501) {
+            res = await fetch(url, {
+              method: "GET",
+              signal: controller.signal,
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                Referer: `${BASE_URL}/`,
+                Range: "bytes=0-1",
+              },
+            });
+          }
+          return { url, ok: res.ok };
+        } catch {
+          return { url, ok: false };
+        } finally {
+          clearTimeout(timer);
+        }
+      })
+    );
+    const reachable = probe.filter((r) => r.ok).map((r) => r.url);
+    const unreachable = probe.filter((r) => !r.ok).map((r) => r.url);
+    if (reachable.length === 0) return direct;
+    return [...reachable, ...unreachable];
   }
 
   /** kind según span.typeItem del sitio: clases movie | anime | (serie) */

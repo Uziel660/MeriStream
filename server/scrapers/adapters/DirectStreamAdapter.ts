@@ -40,7 +40,7 @@ export class DirectStreamAdapter extends BaseScraperAdapter {
       poster_url: null,
       banner_url: null,
       rating: 8.5,
-      year: new Date().getFullYear(),
+      year: 0,
       status: "Directo",
       genres: ["Stream HLS", "Video HD"],
       detected_streams: [streamUrl],

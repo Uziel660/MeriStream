@@ -187,6 +187,13 @@ describe("isPlausibleTitle / guard anti-basura (FIX título 'pe')", () => {
     expect(isPlausibleTitle("Una")).toBe(false);
   });
 
+  it("rechaza placeholders de detalle cuando un scraper no pudo cargar la ficha", () => {
+    expect(isPlausibleTitle("Contenido Cinecalidad")).toBe(false);
+    expect(isPlausibleTitle("Contenido LaMovie")).toBe(false);
+    expect(isPlausibleTitle("Película TubePelis")).toBe(false);
+    expect(isPlausibleTitle("Anime TioAnime")).toBe(false);
+  });
+
   it("acepta títulos cortos conocidos y normales", () => {
     expect(isPlausibleTitle("Up")).toBe(true);
     expect(isPlausibleTitle("It")).toBe(true);

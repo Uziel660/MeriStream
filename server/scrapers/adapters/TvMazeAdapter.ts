@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
 import { UniversalAnalysisResult, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
+import { cleanQueryTitle, enrichUniversalMetadata } from "../../metadataEngine";
 
 /**
  * Defecto #18: TVMaze numera `number` intra-temporada (T1E1..T5E1 todos number=1).
@@ -48,7 +49,7 @@ export class TvMazeAdapter extends BaseScraperAdapter {
           const desc = (data.summary || "").replace(/<[^>]+>/g, "").trim() || "Serie internacional indexada desde TVMaze.";
           const poster = data.image?.original || data.image?.medium || null;
           const rating = data.rating?.average ? Number(data.rating.average) : 8.5;
-          const year = data.premiered ? parseInt(data.premiered.substring(0, 4), 10) : 2024;
+          const year = data.premiered ? parseInt(data.premiered.substring(0, 4), 10) : 0;
           const genres = Array.isArray(data.genres) && data.genres.length > 0 ? data.genres : ["Drama", "Serie"];
 
           return {
@@ -85,7 +86,7 @@ export class TvMazeAdapter extends BaseScraperAdapter {
         poster_url: enriched.poster_url || null,
         banner_url: enriched.banner_url || null,
         rating: enriched.rating || 8.0,
-        year: enriched.year || 2024,
+        year: enriched.year || 0,
         status: "Finalizado",
         genres: ["Series"],
         episodes: [{ number: 1, title: "Episodio 1", url: cleanUrl }],
@@ -126,7 +127,7 @@ export class TvMazeAdapter extends BaseScraperAdapter {
       poster_url: catalogItems[0]?.image_url || null,
       banner_url: catalogItems[0]?.image_url || null,
       rating: 8.5,
-      year: 2024,
+      year: 0,
       status: "Activo",
       genres: ["Series", "TV"],
       source_domain: "tvmaze.com",

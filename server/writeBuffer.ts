@@ -30,7 +30,14 @@ type BufferedOp =
   | { kind: "mediaItem.update"; id: string; data: Record<string, unknown>; fp: string; attempts: number; at: string }
   | { kind: "episode.createMany"; showId: string; data: Array<Record<string, unknown>>; fp: string; attempts: number; at: string }
   | { kind: "mediaEpisode.upsert"; where: Record<string, unknown>; create: Record<string, unknown>; fp: string; attempts: number; at: string }
-  | { kind: "sourceLink.create"; data: Record<string, unknown>; fp: string; attempts: number; at: string }
+  | {
+      kind: "sourceLink.create";
+      episodeRef: { media_item_id: string; season_number: number; episode_number: number };
+      data: Record<string, unknown>;
+      fp: string;
+      attempts: number;
+      at: string;
+    }
   | { kind: "crawlTask.update"; id: string; data: Record<string, unknown>; fp: string; attempts: number; at: string };
 
 // �─ Cola en RAM ─────────────────────────────────────────────────
@@ -215,23 +222,17 @@ async function applyOp(op: BufferedOp): Promise<boolean> {
     }
     case "sourceLink.create": {
       try {
-        const d = op.data as any;
-        if (d.media_episode_id && !d._episode_resolved) {
-          const ep = await prisma.mediaEpisode.findFirst({
-            where: { media_item_id: d.media_episode_id },
-            orderBy: { episode_number: "asc" },
-          });
-          if (ep) {
-            d.media_episode_id = ep.id;
-          } else {
-            const created = await prisma.mediaEpisode.create({
-              data: { media_item_id: d.media_episode_id, season_number: 1, episode_number: 1 },
-            });
-            d.media_episode_id = created.id;
-          }
-          d._episode_resolved = true;
-        }
-        await prisma.sourceLink.create({ data: d });
+        const ref = op.episodeRef;
+        const episode = await prisma.mediaEpisode.upsert({
+          where: {
+            media_item_id_season_number_episode_number: ref,
+          },
+          create: ref,
+          update: {},
+        });
+        await prisma.sourceLink.create({
+          data: { ...op.data, media_episode_id: episode.id } as any,
+        });
       } catch (e: any) {
         if (e?.code === "P2002") return true;
         throw e;

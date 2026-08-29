@@ -292,7 +292,7 @@ function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: Cont
     poster_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
     banner_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&q=80",
     rating: 8.0,
-    year: new Date().getFullYear(),
+    year: 0,
     status: "Finalizado",
     genres,
     content_type: hintKind || "anime",
@@ -311,7 +311,7 @@ function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: Cont
       poster_url: poster,
       banner_url: cover,
       rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
-      year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+      year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 0,
       status: status === "current" ? "En emisión" : "Finalizado",
       genres: ["Anime"],
       content_type: "anime" as ContentKind,
@@ -477,7 +477,7 @@ async function fetchTMDBMetadata(
             const banner = backdropPath ? `https://image.tmdb.org/t/p/w1280${backdropPath}` : poster;
 
             const yearStr = bestResult.release_date || bestResult.first_air_date || "";
-            const year = yearStr ? parseInt(yearStr.substring(0, 4), 10) : new Date().getFullYear();
+            const year = yearStr ? parseInt(yearStr.substring(0, 4), 10) : 0;
 
             const rating = bestResult.vote_average ? Math.round(bestResult.vote_average * 10) / 10 : 8.0;
 
@@ -711,7 +711,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           poster_url: poster,
           banner_url: banner,
           rating: media.averageScore ? Math.round((media.averageScore / 10) * 10) / 10 : 8.2,
-          year: media.startDate?.year || 2024,
+          year: media.startDate?.year || 0,
           status: media.status === "RELEASING" ? "En emisión" : "Finalizado",
           // AniList devuelve géneros en inglés (Action, Comedy...): traducir.
           genres: translateGenresToEs(Array.isArray(media.genres) ? media.genres : []).length > 0
@@ -754,7 +754,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           poster_url: poster,
           banner_url: cover,
           rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
-          year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 2024,
+          year: attr.startDate ? Number.parseInt(attr.startDate.slice(0, 4), 10) : 0,
           status: attr.status === "current" ? "En emisión" : "Finalizado",
           genres: ["Anime"],
           content_type: "anime",
@@ -793,7 +793,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
-          year: item.year || item.aired?.prop?.from?.year || 2024,
+          year: item.year || item.aired?.prop?.from?.year || 0,
           status: item.status === "Currently Airing" ? "En emisión" : "Finalizado",
           genres,
           content_type: "anime",
@@ -824,7 +824,7 @@ async function fetchTVMazeMetadata(query: string): Promise<EnrichedMetadata | nu
       if (show && show.name) {
         const poster = show.image?.original || show.image?.medium || null;
         const cleanSummary = await cleanAndTranslateDescription(show.summary || "");
-        const year = show.premiered ? Number.parseInt(show.premiered.slice(0, 4), 10) : 2023;
+        const year = show.premiered ? Number.parseInt(show.premiered.slice(0, 4), 10) : 0;
         const isAnime = (show.type || "").toLowerCase() === "animation" && (show.genres || []).includes("Anime");
 
         const suggested_episodes = (show._embedded?.episodes || []).map((ep: any) => {
@@ -925,7 +925,7 @@ async function fetchWikipediaMetadata(query: string): Promise<EnrichedMetadata |
           poster_url: page.thumbnail?.source || page.originalimage?.source || null,
           banner_url: page.originalimage?.source || page.thumbnail?.source || null,
           rating: 8.0,
-          year: new Date().getFullYear(),
+          year: 0,
           status: "Finalizado",
           genres: ["Película / Obra"],
           content_type: "movie",

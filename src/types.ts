@@ -177,6 +177,7 @@ export interface UniversalAnalysisResult {
   content_type: string;
   title: string;
   original_title?: string | null;
+  tmdb_id?: number | null;
   japanese_title?: string | null;
   english_title?: string | null;
   description: string;

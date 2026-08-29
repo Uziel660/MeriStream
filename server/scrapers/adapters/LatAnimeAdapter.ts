@@ -59,10 +59,14 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const items: ExtractedCatalogItem[] = [];
     const seen = new Set<string>();
 
-    $(`a[href^='${BASE_URL}/anime/']`).each((_, el) => {
+    $("a[href*='/anime/']").each((_, el) => {
       const href = $(el).attr("href");
-      if (!href || seen.has(href)) return;
-      seen.add(href);
+      if (!href) return;
+      const url = this.resolveRelativeUrl(href, BASE_URL);
+      // Solo enlaces absolutos con origen exacto latanime.org y ruta de ficha /anime/
+      if (!url || !url.startsWith(`${BASE_URL}/anime/`)) return;
+      if (seen.has(url)) return;
+      seen.add(url);
 
       const $link = $(el);
       const $h3 = $link.find("h3").first();
@@ -224,7 +228,8 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       // ruta usa BASE_URL tal cual.
       const target = path === "/" ? BASE_URL : `${url.origin}${url.pathname}${url.search}`;
       const html = await this.fetchHtml(target, 10000);
-      const catalogItems = html ? this.extractCatalogItems(html) : [];
+      if (!html) throw new Error(`FETCH_FAILED: ${target}`);
+      const catalogItems = this.extractCatalogItems(html);
 
       return {
         page_type: "catalog",
@@ -234,7 +239,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "latanime.org",
@@ -254,7 +259,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "latanime.org",

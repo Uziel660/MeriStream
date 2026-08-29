@@ -178,3 +178,86 @@ describe("CinecalidadAdapter - integración real contra cinecalidad.am", () => {
     240000
   );
 });
+
+describe("CinecalidadAdapter - extracción offline de streams (sin red)", () => {
+  const adapter = new CinecalidadAdapter();
+  const pageUrl = "https://www.cinecalidad.am/ver-pelicula/bolt/";
+
+  const sampleHtml = `
+    <html><body data-nonce="ABC123">
+      <iframe data-src="https://fembed.com/embed/xyz123"></iframe>
+      <iframe src="https://www.youtube.com/embed/abc"></iframe>
+      <li data-post="555" data-type="movie" data-nume="1">Fembed</li>
+      <li data-post="555" data-type="movie" data-nume="2">Uqload</li>
+      <a href="#aHR0cHM6Ly9tZWdhLm56L2VtYmVkL2Zvbw==">Mega</a>
+      <div data-option="https://uqload.com/embed/foo"></div>
+      <div data-option="/zopass/?zopass=aHR0cHM6Ly92aW1lb3MubmV0L2VtYmVkLWFiYy5odG1s"></div>
+      <script>var x="https://uqload.to/play/bar";</script>
+    </body></html>`;
+
+  it("extrae identidad TMDB y no inventa el año actual cuando la ficha no lo publica", () => {
+    const metadata = adapter.extractMetadata(
+      `<html><head><meta property="og:title" content="Ver Está Detrás De Ti Online Gratis HD - Cinecalidad"></head><body>
+        <span><strong>Títulos:</strong> It Follows</span>
+        <li data-option="https://videoapp.zip/e/movie/270303">Videoapp</li>
+      </body></html>`,
+      "https://www.cinecalidad.am/ver-pelicula/esta-detras-de-ti/"
+    );
+
+    expect(metadata.original_title).toBe("It Follows");
+    expect(metadata.tmdb_id).toBe(270303);
+    expect(metadata.year).toBe(0);
+  });
+
+  it("conserva el año completo cuando aparece en el título", () => {
+    const metadata = adapter.extractMetadata(
+      `<meta property="og:title" content="Película de prueba 2015">`,
+      "https://www.cinecalidad.am/ver-pelicula/prueba/"
+    );
+
+    expect(metadata.year).toBe(2015);
+  });
+
+  it("extractIframeEmbeds encuentra el iframe con data-src y excluye youtube", () => {
+    const embeds = (adapter as any).extractIframeEmbeds(sampleHtml, pageUrl) as string[];
+    expect(embeds.some((u) => u.includes("fembed.com/embed/xyz123"))).toBe(true);
+    expect(embeds.some((u) => u.includes("youtube.com"))).toBe(false);
+  });
+
+  it("extractKnownServerUrls detecta Fembed/Uqload por regex", () => {
+    const urls = (adapter as any).extractKnownServerUrls(sampleHtml) as string[];
+    expect(urls.some((u) => u.includes("uqload.to/play/bar"))).toBe(true);
+  });
+
+  it("decodeHashLinks decodifica anclas base64 a URLs http válidas", () => {
+    const links = (adapter as any).decodeHashLinks(sampleHtml) as string[];
+    expect(links).toContain("https://mega.nz/embed/foo");
+  });
+
+  it("extractPlayerOptions decodifica data-option zopass del DOM actual", () => {
+    const options = (adapter as any).extractPlayerOptions(sampleHtml, pageUrl) as string[];
+    expect(options).toContain("https://vimeos.net/embed-abc.html");
+    expect(options).toContain("https://uqload.com/embed/foo");
+  });
+
+  it("extractDooplayServerEmbeds POSTea a admin-ajax y devuelve embed_url", async () => {
+    const fakeFetch = async (url: string, init: any) => {
+      expect(url).toContain("/wp-admin/admin-ajax.php");
+      expect(init.method).toBe("POST");
+      expect(init.body).toContain("action=doo_player_ajax");
+      expect(init.body).toContain("nonce=ABC123");
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ embed_url: "https://fembed.com/embed/server1" }),
+      };
+    };
+    const original = global.fetch;
+    (global as any).fetch = fakeFetch;
+    try {
+      const embeds = await (adapter as any).extractDooplayServerEmbeds(pageUrl, sampleHtml);
+      expect(embeds).toContain("https://fembed.com/embed/server1");
+    } finally {
+      (global as any).fetch = original;
+    }
+  });
+});

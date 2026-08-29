@@ -19,7 +19,7 @@
  * resolvers.ts).
  */
 const TIERS: ReadonlyArray<{ tier: number; tokens: readonly string[] }> = [
-  { tier: 1, tokens: ["ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos.net"] },
+  { tier: 1, tokens: ["ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos."] },
   // Genéricos AnimeFLV verificados sin 403 en validador + doodstream
   { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream"] },
   { tier: 3, tokens: ["vidhide"] },

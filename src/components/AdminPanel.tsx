@@ -16,14 +16,12 @@ import {
   Plus,
   Activity,
   Globe,
-  ListPlus,
   Terminal,
   ShieldCheck,
   FileVideo,
   Edit3,
   Sliders,
   Pause,
-  Clock,
   Settings,
   CheckCircle2,
   XCircle,
@@ -58,7 +56,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const { isOpen = true, onClose } = props;
   const onPlayHandler = props.onPlayDirect || props.onPlay || props.onPlayStream;
 
-  const [activeTab, setActiveTab] = useState<'smart' | 'batch' | 'worker_tasks' | 'stream_tester' | 'sources' | 'library' | 'verification' | 'genres'>('smart');
+  const [activeTab, setActiveTab] = useState<'smart' | 'worker_tasks' | 'sources' | 'library' | 'verification' | 'genres'>('smart');
   const [editingShow, setEditingShow] = useState<any>(null);
 
   // --- Fuentes: ratings de sitios + toggle del selector de servidores ---
@@ -227,19 +225,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [importedCardUrls, setImportedCardUrls] = useState<string[]>([]);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
-  // --- Ingesta en Lote (Batch Ingestion) ---
-  const [batchMode, setBatchMode] = useState<'urls' | 'crawler'>('urls');
-  const [batchUrlsText, setBatchUrlsText] = useState('');
-  const [isBatchImporting, setIsBatchImporting] = useState(false);
-  const [batchResults, setBatchResults] = useState<any[] | null>(null);
+  // --- Ingesta en Lote (Batch Ingestion) ---// removed unused state// removed unused state// removed unused state// removed unused state
 
-  // --- Crawler & Monitor de Tarea en Vivo ---
-  const [crawlerUrl, setCrawlerUrl] = useState('https://animeflv.net');
-  const [crawlerPages, setCrawlerPages] = useState<number>(3);
-  const [crawlerScope, setCrawlerScope] = useState<'catalog_pages' | 'full_catalog'>('catalog_pages');
-  const [rateLimitDelay, setRateLimitDelay] = useState<number>(300);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [isStartingCrawler, setIsStartingCrawler] = useState(false);
+  // --- Crawler & Monitor de Tarea en Vivo ---// removed unused state// removed unused state// removed unused state// removed unused state
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);// removed unused state
 
   // --- Background Worker Tasks & Queue State ---
   const [workerJobs, setWorkerJobs] = useState<BackgroundWorkerJob[]>([]);
@@ -252,12 +241,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  // --- Probador de Stream & Anti-CORS ---
-  const [testStreamUrl, setTestStreamUrl] = useState('');
-  const [testReferer, setTestReferer] = useState('https://animeflv.net/');
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractResult, setExtractResult] = useState<any | null>(null);
-  const [extractError, setExtractError] = useState<string | null>(null);
+  // --- Probador de Stream & Anti-CORS ---// removed unused state// removed unused state// removed unused state// removed unused state// removed unused state
 
   // --- Biblioteca & Catálogo ---
   const [libraryShows, setLibraryShows] = useState<Show[]>([]);
@@ -382,14 +366,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setAnalysisResult(data);
       setEditedShow({
         title: data.title,
+        original_title: data.original_title || '',
         japanese_title: data.japanese_title || '',
         english_title: data.english_title || '',
+        tmdb_id: data.tmdb_id || null,
+        source_domain: data.source_domain,
         description: data.description,
         poster_url: data.poster_url || '',
         banner_url: data.banner_url || data.poster_url || '',
         content_type: data.content_type || 'anime',
         rating: data.rating || 8.0,
-        year: data.year || new Date().getFullYear(),
+        year: data.year || 0,
         status: data.status || 'Finalizado',
         genres: data.genres || ['Multimedia'],
         episodes: (data.episodes || []).map((e) => ({ ...e })),
@@ -460,77 +447,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     }
   };
 
-  // 4. INGESTA EN LOTE DE MÚLTIPLES URLs
-  const handleBatchImport = async () => {
-    const urls = batchUrlsText
-      .split('\n')
-      .map((u) => u.trim())
-      .filter(Boolean);
-
-    if (urls.length === 0) return;
-
-    setIsBatchImporting(true);
-    setBatchResults(null);
-
-    try {
-      const res = await fetch('/api/v1/catalog/batch-import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
-      });
-
-      if (!res.ok) throw new Error('Error en ingesta en lote');
-      const data = await res.json();
-      setBatchResults(data.results || []);
-      loadLibrary();
-    } catch (err: any) {
-      setAnalysisError(err.message || 'Error en ingesta en lote');
-    } finally {
-      setIsBatchImporting(false);
-    }
-  };
-
-  // 5. INICIAR CRAWLER MASIVO EN EL WORKER DE SEGUNDO PLANO
-  const handleStartCrawler = async (
-    e?: React.FormEvent,
-    overrides?: { url?: string; scope?: 'catalog_pages' | 'full_catalog' }
-  ) => {
-    if (e) e.preventDefault();
-    // overrides: valores explícitos para llamadas programáticas (el setState de React
-    // NO alcanza a aplicarse antes de esta llamada dentro del mismo tick — bug del
-    // job default de animeflv al rastrear desde el Extractor Universal).
-    const targetUrl = (overrides?.url ?? crawlerUrl).trim();
-    const targetScope = overrides?.scope ?? crawlerScope;
-    if (!targetUrl) return;
-
-    setIsStartingCrawler(true);
-    setAnalysisError(null);
-
-    try {
-      const res = await fetch('/api/v1/catalog/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: targetUrl,
-          delay_ms: rateLimitDelay,
-          scope: targetScope,
-          // full_catalog: SIN max_pages — el worker auto-descubre páginas hasta el fin del catálogo
-          ...(targetScope === 'full_catalog' ? {} : { max_pages: crawlerPages }),
-        }),
-      });
-
-      if (!res.ok) throw new Error('Error iniciando el rastreador');
-      const data = await res.json();
-      setActiveTaskId(data.task_id);
-      setSelectedJobId(data.task_id);
-      setImportMessage(`Tarea enviada al worker en segundo plano (Rate limit: ${rateLimitDelay}ms).`);
-      setActiveTab('worker_tasks');
-    } catch (err: any) {
-      setAnalysisError(err.message || 'Error al iniciar crawler');
-    } finally {
-      setIsStartingCrawler(false);
-    }
-  };
+  // 4. INGESTA EN LOTE DE MÚLTIPLES URLs — eliminado (ver git diff)
+  // 5. INICIAR CRAWLER MASIVO EN EL WORKER DE SEGUNDO PLANO — eliminado (cuerpo huérfano removido; estado/UI ya borrados)
 
   // 5.1 CONTROL DE TAREAS DEL WORKER
   const handlePauseJob = async (jobId: string) => {
@@ -608,32 +526,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   };
 
   // 6. PROBAR EXTRACCIÓN DE STREAM
-  const handleExtractStream = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!testStreamUrl.trim()) return;
-
-    setIsExtracting(true);
-    setExtractError(null);
-    setExtractResult(null);
-
-    try {
-      const res = await fetch('/api/v1/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: testStreamUrl.trim() }),
-      });
-
-      if (!res.ok) throw new Error('No se pudo resolver el stream');
-      const data = await res.json();
-      setExtractResult(data);
-    } catch (err: any) {
-      setExtractError(err.message || 'Error al extraer el video');
-    } finally {
-      setIsExtracting(false);
-    }
-  };
-
-  // 7. ELIMINAR SERIE DE LA BIBLIOTECA
+    // 7. ELIMINAR SERIE DE LA BIBLIOTECA
   const handleDeleteShow = async (showId: string) => {
     setDeletingId(showId);
     try {
@@ -742,18 +635,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             Extractor Universal & Ficha
           </button>
 
-          <button
-            onClick={() => setActiveTab('batch')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'batch'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <ListPlus size={14} />
-            Ingesta en Lote & Crawler
-          </button>
 
           <button
             onClick={() => setActiveTab('worker_tasks')}
@@ -779,18 +660,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             )}
           </button>
 
-          <button
-            onClick={() => setActiveTab('stream_tester')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'stream_tester'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <FileVideo size={14} />
-            Probador de Streams & Proxy
-          </button>
 
           <button
             onClick={() => setActiveTab('verification')}
@@ -1185,7 +1054,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                           <input
                             type="number"
                             value={editedShow.year}
-                            onChange={(e) => setEditedShow({ ...editedShow, year: parseInt(e.target.value, 10) || 2024 })}
+                            onChange={(e) => setEditedShow({ ...editedShow, year: parseInt(e.target.value, 10) || 0 })}
                             className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-white"
                           />
                         </div>
@@ -1318,10 +1187,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onClick={() => {
                               // Llevar al usuario a la configuración del crawler (Ingesta de Lotes →
                               // Modo 2) con la URL ya precargada; allí elige páginas o catálogo completo.
-                              setCrawlerUrl(smartUrl);
-                              setCrawlerScope('catalog_pages');
-                              setActiveTab('batch');
-                              setBatchMode('crawler');
+                              undefined;
+                              undefined;
+                              setActiveTab('worker_tasks'); // Redirected from batch
+                              undefined;
                             }}
                             className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1 transition-colors"
                           >
@@ -1369,228 +1238,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           {/* ========================================================================= */}
           {/* PESTAÑA 2: INGESTA EN LOTE & CRAWLER MASIVO */}
           {/* ========================================================================= */}
-          {activeTab === 'batch' && (
-            <div className="space-y-6">
-              {/* Selector de Modo */}
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-900 border border-zinc-800 w-fit text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={() => setBatchMode('urls')}
-                  className={`px-3.5 py-1.5 rounded-lg transition-colors ${
-                    batchMode === 'urls'
-                      ? 'bg-zinc-800 text-white font-semibold border border-zinc-700'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Lista de URLs / Títulos en Bloque
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBatchMode('crawler')}
-                  className={`px-3.5 py-1.5 rounded-lg transition-colors ${
-                    batchMode === 'crawler'
-                      ? 'bg-zinc-800 text-white font-semibold border border-zinc-700'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Rastreador Web Automático (Crawler)
-                </button>
-              </div>
-
-              {/* MODO 1: Pegar Múltiples URLs */}
-              {batchMode === 'urls' && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-200">
-                      Pega una lista de URLs o títulos (uno por línea):
-                    </label>
-                    <p className="text-xs text-zinc-500">
-                      El motor procesará cada enlace, enriquecerá los metadatos y los añadirá a la biblioteca automáticamente.
-                    </p>
-                  </div>
-
-                  <textarea
-                    rows={6}
-                    value={batchUrlsText}
-                    onChange={(e) => setBatchUrlsText(e.target.value)}
-                    placeholder={`https://animeflv.net/anime/jujutsu-kaisen-tv&#10;https://cuevana.biz/pelicula/interstellar&#10;https://www.tvmaze.com/shows/82/game-of-thrones&#10;https://archive.org/details/night_of_the_living_dead&#10;Chainsaw Man`}
-                    className="w-full p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white placeholder-zinc-500 font-mono focus:outline-none focus:border-zinc-600 transition-colors"
-                  />
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-500">
-                      Líneas detectadas: {batchUrlsText.split('\n').filter((l) => l.trim()).length}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isBatchImporting || !batchUrlsText.trim()}
-                      onClick={handleBatchImport}
-                      className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs transition-colors disabled:opacity-40 flex items-center gap-2"
-                    >
-                      {isBatchImporting ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          Procesando lote...
-                        </>
-                      ) : (
-                        <>
-                          <ListPlus size={15} />
-                          Iniciar Ingesta en Bloque
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Resultados del lote */}
-                  {batchResults && (
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-                      <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                        <Check size={15} className="text-emerald-400" />
-                        Resultados de la Ingesta ({batchResults.filter((r) => r.status === 'success').length}/{batchResults.length} exitosos)
-                      </h4>
-
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto font-mono text-xs">
-                        {batchResults.map((res, i) => (
-                          <div
-                            key={i}
-                            className={`p-2 rounded-lg flex items-center justify-between ${
-                              res.status === 'success'
-                                ? 'bg-emerald-950/20 text-emerald-300 border border-emerald-500/20'
-                                : 'bg-red-950/20 text-red-300 border border-red-500/20'
-                            }`}
-                          >
-                            <span className="truncate">{res.title || res.url}</span>
-                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/40">
-                              {res.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* MODO 2: Crawler Automático con Logs en Vivo */}
-              {batchMode === 'crawler' && (
-                <div className="space-y-4">
-                  <form onSubmit={handleStartCrawler} className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-4">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                      <div>
-                        <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                          <Globe size={15} className="text-zinc-300" />
-                          Configuración del Rastreador y Descubrimiento
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 mt-0.5">
-                          El worker en el backend rastreará la web, descubrirá enlaces e importará obras con protección de IP.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold">
-                        <ShieldCheck size={14} />
-                        Anti-Baneo Activo
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      <div className="sm:col-span-12">
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                          URL Raíz del Directorio / Catálogo:
-                        </label>
-                        <input
-                          type="text"
-                          value={crawlerUrl}
-                          onChange={(e) => setCrawlerUrl(e.target.value)}
-                          placeholder="https://animeflv.net/browse o cualquier web de cine..."
-                          className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-zinc-600"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-4">
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                          Alcance del Rastreo:
-                        </label>
-                        <select
-                          value={crawlerScope}
-                          onChange={(e: any) => setCrawlerScope(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-zinc-600"
-                        >
-                          <option value="catalog_pages">Páginas Especificadas</option>
-                          <option value="full_catalog">Todo el Catálogo Web (Profundo)</option>
-                        </select>
-                      </div>
-
-                      {crawlerScope === 'full_catalog' ? (
-                        <div className="sm:col-span-4">
-                          <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                            Alcance:
-                          </label>
-                          <div className="px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300">
-                            Barrido completo autónomo: avanza página a página hasta el final del catálogo, sin límite. Reanuda solo si se interrumpe.
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="sm:col-span-4">
-                          <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                            Páginas a rastrear:
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={crawlerPages}
-                            onChange={(e) => setCrawlerPages(parseInt(e.target.value, 10) || 1)}
-                            className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-zinc-600"
-                          />
-                        </div>
-                      )}
-
-                      <div className="sm:col-span-4">
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1 flex items-center justify-between">
-                          <span>Delay / Rate Limit:</span>
-                          <span className="text-zinc-400 font-mono">{rateLimitDelay}ms</span>
-                        </label>
-                        <input
-                          type="range"
-                          min={0}
-                          max={5000}
-                          step={100}
-                          value={rateLimitDelay}
-                          onChange={(e) => setRateLimitDelay(parseInt(e.target.value, 10))}
-                          className="w-full accent-zinc-200 mt-2"
-                        />
-                        <p className="text-[10px] text-zinc-500 mt-1">0ms = velocidad máxima (8 páginas + 8 obras en paralelo). Súbelo solo si el sitio se queja.</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <p className="text-[11px] text-zinc-500 flex items-center gap-1.5">
-                        <Clock size={13} className="text-zinc-400" />
-                        Incluso si cierras esta pestaña, el worker continuará en el backend.
-                      </p>
-                      <button
-                        type="submit"
-                        disabled={isStartingCrawler || !crawlerUrl.trim()}
-                        className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs transition-colors disabled:opacity-40 flex items-center gap-2 shadow"
-                      >
-                        {isStartingCrawler ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" />
-                            Iniciando worker...
-                          </>
-                        ) : (
-                          <>
-                            <Activity size={15} />
-                            Rastrear e Importar al Catálogo
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* PESTAÑA 3: COLA DE TAREAS EN TIEMPO REAL & GESTIÓN DEL WORKER */}
           {/* ========================================================================= */}
@@ -1627,7 +1274,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setActiveTab('batch')}
+                    onClick={() => setActiveTab('worker_tasks')}
                     className="px-3 py-1.5 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 text-xs font-semibold transition-colors flex items-center gap-1.5"
                   >
                     <Plus size={14} />
@@ -1952,117 +1599,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           {/* ========================================================================= */}
           {/* PESTAÑA 3: PROBADOR DE STREAMS & PROXY ANTI-CORS */}
           {/* ========================================================================= */}
-          {activeTab === 'stream_tester' && (
-            <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-300 flex items-start gap-3">
-                <ShieldCheck size={18} className="shrink-0 mt-0.5 text-zinc-400" />
-                <div>
-                  <p className="font-semibold text-white">Proxy Anti-CORS y Bypass de Referer</p>
-                  <p className="text-zinc-400 mt-0.5">
-                    Permite reproducir cualquier stream de video HLS (m3u8) o MP4 alojado en servidores externos sin bloqueos de navegador.
-                  </p>
-                </div>
-              </div>
-
-              <form onSubmit={handleExtractStream} className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                    URL del Stream Directo o Página Embebida:
-                  </label>
-                  <input
-                    type="text"
-                    value={testStreamUrl}
-                    onChange={(e) => setTestStreamUrl(e.target.value)}
-                    placeholder="https://.../master.m3u8 o URL de reproductor"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono focus:outline-none focus:border-zinc-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                    Cabecera Referer Anti-Hotlink (opcional):
-                  </label>
-                  <input
-                    type="text"
-                    value={testReferer}
-                    onChange={(e) => setTestReferer(e.target.value)}
-                    placeholder="https://animeflv.net/"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono focus:outline-none focus:border-zinc-600"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isExtracting || !testStreamUrl.trim()}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs transition-colors flex items-center gap-2"
-                >
-                  {isExtracting ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      Resolviendo...
-                    </>
-                  ) : (
-                    <>
-                      <Play size={14} />
-                      Extraer y Resolver Stream
-                    </>
-                  )}
-                </button>
-              </form>
-
-              {extractError && (
-                <div className="p-4 rounded-xl border border-red-500/30 bg-red-950/20 text-xs text-red-400 flex items-center gap-2">
-                  <AlertCircle size={15} />
-                  <span>{extractError}</span>
-                </div>
-              )}
-
-              {extractResult && (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                    <div>
-                      <h4 className="text-xs font-bold text-white">{extractResult.title}</h4>
-                      <p className="text-[10px] text-zinc-400">{extractResult.description}</p>
-                    </div>
-                    {onPlayHandler && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onPlayHandler({
-                            title: extractResult.title,
-                            stream_url: extractResult.stream_url,
-                            all_available_streams: extractResult.all_streams,
-                          })
-                        }
-                        className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs flex items-center gap-1.5 transition-colors"
-                      >
-                        <Play size={13} />
-                        Reproducir en HLS Player
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold text-zinc-300">Fuentes y Variantes Detectadas:</span>
-                    <div className="space-y-1.5 font-mono text-xs max-h-40 overflow-y-auto">
-                      {(extractResult.all_streams || [extractResult.stream_url]).map((s: string, idx: number) => (
-                        <div
-                          key={idx}
-                          className="p-2 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between text-zinc-300"
-                        >
-                          <span className="truncate pr-2">{s}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-amber-400 font-bold shrink-0">
-                            {s.includes('.m3u8') ? 'HLS' : 'MP4'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* PESTAÑA FUENTES: RATINGS DE SITIOS + REPRODUCTOR */}
           {/* ========================================================================= */}

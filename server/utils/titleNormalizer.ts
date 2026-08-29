@@ -144,6 +144,15 @@ const KNOWN_SHORT_TITLES = new Set(['up', 'it', 'x', 'us', 'we', 'ox', 'yo']);
  * Los títulos puramente numéricos cortos ("9", "21") son legítimos.
  */
 const JUNK_STANDALONE_WORDS = new Set(['un', 'una', 'de', 'del', 'y', 'o']);
+const SCRAPER_PLACEHOLDER_TITLES = new Set([
+  'contenido cinecalidad',
+  'contenido lamovie',
+  'pelicula tubepelis',
+  'anime tioanime',
+  'anime latanime',
+  'anime veranimes',
+  'contenido no disponible veranimes',
+]);
 
 export function isPlausibleTitle(title: string | null | undefined): boolean {
   const t = String(title ?? '').replace(/\s+/g, ' ').trim();
@@ -152,6 +161,13 @@ export function isPlausibleTitle(title: string | null | undefined): boolean {
   if (/^g[eé]nero\b/i.test(t)) return false;
   if (/g[eé]nero\s*:/i.test(t)) return false;
   if (JUNK_STANDALONE_WORDS.has(t.toLowerCase())) return false;
+  const normalizedWords = t
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (SCRAPER_PLACEHOLDER_TITLES.has(normalizedWords)) return false;
 
   const compact = t.replace(/[^a-zA-Z0-9]/g, '');
   if (!compact) return false;

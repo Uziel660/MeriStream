@@ -10,7 +10,7 @@ import {
   saveCustomPresetOverride,
   resetCustomPresetOverride,
 } from "./server/universalScraper";
-import { cleanQueryTitle } from "./server/metadataEngine";
+import { cleanQueryTitle, parseTitleQuery } from "./server/metadataEngine";
 import { taskWorker } from "./server/taskWorker";
 import {
   saveShowWithDeduplication,
@@ -34,7 +34,7 @@ import { pipeline } from "node:stream/promises";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
 import { APP_CONFIG, localAllowedOrigins } from "./app.config";
-import { backfillMissingMetadata, getBackfillStatus, backfillShow, showNeedsBackfill } from "./server/metadataBackfill";
+import { backfillMissingMetadata, getBackfillStatus, backfillShow, showNeedsBackfill, forceShowMetadata } from "./server/metadataBackfill";
 import { reconcileSequelsByTmdb, mergeTwoShows } from "./server/reconcileCatalog";
 import { startWriteBufferDrainer, drainWriteBuffer } from "./server/writeBuffer";
 import { getVerificationStatus, updateVerificationConfig, runVerification } from "./server/verificationWorker";
@@ -152,11 +152,13 @@ async function startServer() {
   app.set("trust proxy", true);
 
   app.use((req, res, next) => {
-    if (req.headers["x-forwarded-proto"] === "http") {
-      return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    if (process.env.NODE_ENV === "production") {
+      if (req.headers["x-forwarded-proto"] === "http") {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+      }
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+      res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
     }
-    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-    res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
     next();
   });
 
@@ -519,6 +521,22 @@ async function startServer() {
     }
   });
 
+  // POST /api/v1/shows/:show_id/force-metadata - Fuerza metadatos de TMDB con un título específico
+  app.post("/api/v1/shows/:show_id/force-metadata", async (req: Request, res: Response) => {
+    try {
+      const showId = req.params.show_id;
+      const { query } = req.body;
+      if (!query || typeof query !== "string") {
+        return res.status(400).json({ error: "Se requiere un 'query' de tipo string" });
+      }
+
+      const updated = await forceShowMetadata(showId, query);
+      res.json({ ok: true, updated_show: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Error al forzar metadatos" });
+    }
+  });
+
   // GET /api/v1/media (Legacy compatibility)
   app.get("/api/v1/media", async (req: Request, res: Response) => {
     try {
@@ -561,39 +579,73 @@ async function startServer() {
     if (!primaryShow?.title) return result;
 
     try {
-      // Buscar otros episodios de la misma obra (por título) en diferentes plataformas
+      const epNum = primaryEpisode.episode_number ?? primaryEpisode.number ?? 1;
+      const season = parseTitleQuery(primaryShow.title).season ?? 1;
+      const kind = primaryShow.category || "anime";
+      const platformMap = new Map<string, string>();
+
+      // La UI todavía reproduce con Episode.id legacy. Recuperar primero los
+      // SourceLink del MediaItem espejo para no perder las demás plataformas.
+      const mediaItems = await prisma.mediaItem.findMany({
+        where: primaryShow.tmdb_id
+          ? { tmdb_id: primaryShow.tmdb_id, kind }
+          : {
+              kind,
+              OR: [
+                { base_normalized_title: primaryShow.base_normalized_title || primaryShow.normalized_title },
+                { normalized_title: primaryShow.normalized_title },
+              ],
+            },
+        select: { id: true },
+        orderBy: { created_at: "asc" },
+      });
+      if (mediaItems.length > 0) {
+        const sourceLinks = await prisma.sourceLink.findMany({
+          where: {
+            media_episode: {
+              media_item_id: { in: mediaItems.map((item) => item.id) },
+              season_number: season,
+              episode_number: epNum,
+            },
+          },
+          select: { url: true, source_site: true },
+          orderBy: [{ priority_tier: "asc" }, { last_checked: "desc" }],
+        });
+        for (const link of sourceLinks) {
+          const site = siteFromDomain(link.source_site) || siteFromDomain(hostOfStreamUrl(link.url));
+          if (!site || site === primarySite) continue;
+          const current = platformMap.get(site);
+          const isOriginPage = siteFromDomain(hostOfStreamUrl(link.url)) === site;
+          const currentIsOriginPage = current
+            ? siteFromDomain(hostOfStreamUrl(current)) === site
+            : false;
+          if (!current || (isOriginPage && !currentIsOriginPage)) platformMap.set(site, link.url);
+        }
+      }
+
+      // Compatibilidad para filas antiguas que todavía no tienen SourceLink.
       const sameTitleEpisodes = await prisma.episode.findMany({
         where: {
-          show: { title: primaryShow.title },
+          show: primaryShow.tmdb_id ? { tmdb_id: primaryShow.tmdb_id } : { title: primaryShow.title },
+          episode_number: epNum,
           id: { not: primaryEpisode.id },
           source_url: { not: "" },
         },
-        include: { show: true },
         take: 30,
       });
-
-      // Agrupar por dominio (plataforma), quedarse con el más cercano al episodio actual
-      const epNum = primaryEpisode.number ?? 1;
-      const platformMap = new Map<string, typeof sameTitleEpisodes[0]>();
       for (const ep of sameTitleEpisodes) {
-        const domain = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
-        if (!domain || domain === primarySite) continue;
-        if (!platformMap.has(domain)) {
-          platformMap.set(domain, ep);
-        } else {
-          const existing = platformMap.get(domain)!;
-          const existingDist = Math.abs((existing.number ?? 1) - epNum);
-          const newDist = Math.abs((ep.number ?? 1) - epNum);
-          if (newDist < existingDist) platformMap.set(domain, ep);
+        const site = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
+        if (site && site !== primarySite && !platformMap.has(site)) {
+          platformMap.set(site, ep.source_url);
         }
       }
 
       // Tomar solo las plataformas con mejor rating
       const entries = Array.from(platformMap.entries());
       const rated = await Promise.all(
-        entries.map(async ([site, ep]) => ({
+        entries.map(async ([site, url]) => ({
           site,
-          ep,
+          url,
           rating: await getSiteRating(site),
         }))
       );
@@ -602,20 +654,24 @@ async function startServer() {
 
       // Resolver en paralelo con timeout
       const resolutions = await Promise.allSettled(
-        topPlatforms.map(async ({ site, ep }) => {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
+        topPlatforms.map(async ({ site, url }) => {
+          let timer: NodeJS.Timeout | undefined;
           try {
-            const extracted = await extractStreamFromUrl(ep.source_url);
-            clearTimeout(timer);
+            const extracted = await Promise.race([
+              extractStreamFromUrl(url),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+              }),
+            ]);
             const streams = Array.from(
               new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
             );
             const ranked = rankStreams(streams, getServerPriorities(site));
             return { site, ranked };
           } catch {
-            clearTimeout(timer);
             return { site, ranked: [] as Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }> };
+          } finally {
+            if (timer) clearTimeout(timer);
           }
         })
       );
@@ -631,12 +687,85 @@ async function startServer() {
     return result;
   }
 
-  // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver
+  // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver (Multi-source v2)
   app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
     const targetId = req.params.episode_id;
     const _playResolveStart = Date.now();
 
     try {
+      // 1. Intentar resolver por esquema Multi-fuente v2 (MediaEpisode + SourceLink)
+      const mediaEpisode = await prisma.mediaEpisode.findUnique({
+        where: { id: targetId },
+        include: { media_item: true, links: true },
+      });
+
+      if (mediaEpisode && mediaEpisode.links.length > 0) {
+        // Agrupar links por sitio y mantener solo el de mayor prioridad por sitio
+        const siteLinks = new Map<string, typeof mediaEpisode.links[0]>();
+        for (const link of mediaEpisode.links) {
+          const site = link.source_site;
+          if (!siteLinks.has(site) || (link.priority_tier || 99) < (siteLinks.get(site)?.priority_tier || 99)) {
+            siteLinks.set(site, link);
+          }
+        }
+
+        // Ordenar por SiteRating de la plataforma
+        const ratedLinks = await Promise.all(
+          Array.from(siteLinks.values()).map(async (link) => ({
+            link,
+            rating: await getSiteRating(link.source_site),
+          }))
+        );
+        ratedLinks.sort((a, b) => b.rating - a.rating);
+        const topLinks = ratedLinks.slice(0, 4).map(r => r.link); // Máx 4 extractores paralelos
+
+        let title = `${mediaEpisode.media_item.title} - Episodio ${mediaEpisode.episode_number}`;
+
+        // Extraer streams JIT de cada página origen en paralelo
+        const resolutions = await Promise.allSettled(
+          topLinks.map(async (link) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            try {
+              const extracted = await extractStreamFromUrl(link.url);
+              clearTimeout(timer);
+              const streams = Array.from(
+                new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+              );
+              const ranked = rankStreams(streams, getServerPriorities(link.source_site));
+              return { site: link.source_site, ranked, sourceUrl: link.url };
+            } catch {
+              clearTimeout(timer);
+              return { site: link.source_site, ranked: [], sourceUrl: link.url };
+            }
+          })
+        );
+
+        const ranked: Array<{ url: string; type: string; tier: number; host: string | null; source_site: string }> = [];
+        const allMergedStreams: string[] = [];
+        const primarySourceUrl = topLinks[0]?.url || "";
+
+        for (const r of resolutions) {
+          if (r.status === "fulfilled" && r.value.ranked.length > 0) {
+            const streamsWithSite = r.value.ranked.map(s => ({ ...s, source_site: r.value.site }));
+            ranked.push(...streamsWithSite);
+            allMergedStreams.push(...streamsWithSite.map(s => s.url));
+          }
+        }
+
+        // Prioridad: El mejor de los rankeados, o la página origen si falló todo
+        const streamUrl = ranked[0]?.url || primarySourceUrl;
+
+        return res.json({
+          episode_id: mediaEpisode.id,
+          stream_url: streamUrl,
+          title,
+          all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [primarySourceUrl],
+          ranked_streams: ranked,
+        });
+      }
+
+      // 2. Fallback Legacy: esquema antiguo (Show / Episode)
       let foundEpisode = await prisma.episode.findUnique({
         where: { id: targetId },
         include: { show: true },
@@ -644,7 +773,6 @@ async function startServer() {
 
       let targetShow = foundEpisode?.show || null;
 
-      // Si no es ID de episodio, buscar si es el ID de una pelÃ­cula u obra (Show)
       if (!foundEpisode) {
         const foundShow = await prisma.show.findUnique({
           where: { id: targetId },
@@ -664,7 +792,6 @@ async function startServer() {
         return res.status(404).json({ detail: "Episodio u obra no encontrada en la base de datos." });
       }
 
-      // Just-in-time extraction: if the source_url is a web page, resolve actual video servers in real time
       const extracted = await extractStreamFromUrl(sourceUrl);
       const allStreams = Array.from(
         new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
@@ -672,29 +799,7 @@ async function startServer() {
 
       const title = foundEpisode?.title
         ? `${targetShow?.title || ""} - ${foundEpisode.title}`
-        : targetShow?.title || extracted.title || "ReproducciÃ³n";
-
-      const durationMs = Date.now() - _playResolveStart;
-
-      if (allStreams.length === 0) {
-        logPlayerEvent({
-          eventType: "scraper_failed",
-          serverUrl: sourceUrl,
-          mediaTitle: title,
-          episodeTitle: foundEpisode?.title || "",
-          durationBeforeErrorMs: durationMs,
-          details: `El scraper no encontrÃ³ ningÃºn stream o servidor reproducible para ${sourceUrl}`,
-        });
-      } else {
-        logPlayerEvent({
-          eventType: "scraper_resolution",
-          serverUrl: sourceUrl,
-          mediaTitle: title,
-          episodeTitle: foundEpisode?.title || "",
-          durationBeforeErrorMs: durationMs,
-          details: `Scraper resolviÃ³ ${allStreams.length} servidores en ${durationMs}ms: [${allStreams.map(s => s.slice(0, 35)).join(', ')}]`,
-        });
-      }
+        : targetShow?.title || extracted.title || "Reproducción";
 
       const platformSite = siteFromDomain(hostOfStreamUrl(sourceUrl));
       const primaryRanked = rankStreams(allStreams, getServerPriorities(platformSite)).map((r) => ({
@@ -702,7 +807,6 @@ async function startServer() {
         source_site: platformSite || undefined,
       }));
 
-      // Resolver streams de OTRAS plataformas en paralelo (máx 3 extra, 8s timeout)
       const crossPlatform = await resolveCrossPlatformStreams(
         foundEpisode,
         targetShow,
@@ -711,7 +815,6 @@ async function startServer() {
         8000
       );
 
-      // Merge: plataforma primaria primero, luego las demás ordenadas por rating
       const extraEntries = Array.from(crossPlatform.entries());
       const extraRanked: typeof primaryRanked = [];
       if (extraEntries.length > 0) {
@@ -728,12 +831,34 @@ async function startServer() {
         }
       }
 
-      const ranked = [...primaryRanked, ...extraRanked];
-
+      const combinedRanked = [...primaryRanked, ...extraRanked];
+      const rankedSites = Array.from(
+        new Set(combinedRanked.map((entry) => entry.source_site).filter(Boolean) as string[])
+      );
+      const rankedRatings = new Map(
+        await Promise.all(
+          rankedSites.map(async (site) => [site, await getSiteRating(site)] as const)
+        )
+      );
+      const seenRankedUrls = new Set<string>();
+      const ranked = combinedRanked
+        .sort((a, b) => {
+          const ratingDiff =
+            (rankedRatings.get(b.source_site || "") ?? 5) -
+            (rankedRatings.get(a.source_site || "") ?? 5);
+          if (ratingDiff !== 0) return ratingDiff;
+          if (a.tier !== b.tier) return a.tier - b.tier;
+          if (a.type !== b.type) return a.type === "direct" ? -1 : 1;
+          return 0;
+        })
+        .filter((entry) => {
+          if (seenRankedUrls.has(entry.url)) return false;
+          seenRankedUrls.add(entry.url);
+          return true;
+        });
       const allMergedStreams = Array.from(
         new Set([
-          ...allStreams,
-          ...extraRanked.map((r) => r.url),
+          ...ranked.map((r) => r.url),
         ].filter(Boolean))
       );
 
@@ -1489,7 +1614,10 @@ async function startServer() {
     }
 
     try {
-      const result = await saveShowWithDeduplication(showData);
+      const result = await saveShowWithDeduplication({
+        ...showData,
+        source_site: showData.source_site || showData.source_domain,
+      });
 
       if (result.isDuplicate) {
         res.json({
@@ -1529,8 +1657,10 @@ async function startServer() {
         const analysis = await analyzeUniversalUrl(cleanUrl);
         const result = await saveShowWithDeduplication({
           title: analysis.title,
+          original_title: analysis.original_title,
           japanese_title: analysis.japanese_title,
           english_title: analysis.english_title,
+          tmdb_id: analysis.tmdb_id,
           description: analysis.description,
           poster_url: analysis.poster_url,
           banner_url: analysis.banner_url,
@@ -1539,6 +1669,7 @@ async function startServer() {
           year: analysis.year,
           status: analysis.status,
           genres: analysis.genres,
+          source_site: analysis.source_domain || siteFromDomain(hostOfStreamUrl(cleanUrl)),
           episodes: analysis.episodes,
           detected_streams: analysis.detected_streams,
         });

@@ -1,6 +1,6 @@
 // Tests unitarios del enrutador de calidad de streams (telemetría QA).
 // Jerarquía usuario 2026-08-23: TIER 1 ugc-cdn-caching/goodstream/acek-cdn/uqload
-// (+ vimeos.net heredado), TIER 2 genéricos AnimeFLV + doodstream,
+// (+ dominios vimeos.*), TIER 2 genéricos AnimeFLV + doodstream,
 // TIER 3 vidhide, TIER 4 mega.nz/mp4upload. Blacklist: voe/mixdrop/filemoon.
 
 import { describe, it, expect } from "vitest";
@@ -17,8 +17,8 @@ const stream = (host: string) => ({
 });
 
 describe("getStreamTier", () => {
-  it("asigna TIER 1 a todos sus hosts (incluido vimeos.net heredado)", () => {
-    for (const h of ["ugc-cdn-caching", "vimeos.net", "goodstream", "acek-cdn", "uqload"]) {
+  it("asigna TIER 1 a todos sus hosts (incluidos los dominios vimeos actuales)", () => {
+    for (const h of ["ugc-cdn-caching", "vimeos.net", "vimeos.zip", "goodstream", "acek-cdn", "uqload"]) {
       expect(getStreamTier(stream(h).url)).toBe(1);
     }
   });

@@ -5,10 +5,12 @@
 // con pools de concurrencia configurables y tolerancia a fallos por página/item.
 
 import { analyzeUniversalUrl, extractCatalogListingsBatch } from "./universalScraper";
+import { UniversalAnalysisResult } from "./types";
 import { saveShowWithDeduplication, quickSyncKnownShow } from "./showService";
 import { prisma } from "./db";
 import { parseTitleQuery } from "./metadataEngine";
 import { normalizeTitleKey } from "./utils/titleNormalizer";
+import { isPlausibleYear } from "./metadataMerge";
 import {
   detectAntiBot,
   recordAntiBotHit,
@@ -769,7 +771,26 @@ class BackgroundCrawlerWorker {
         const checkJob = await this.getJob(job.id);
         if (checkJob?.status !== "running") return;
 
-        const analysis = await analyzeUniversalUrl(job.target_url);
+        let analysis: UniversalAnalysisResult | null = null;
+        try {
+          analysis = await analyzeUniversalUrl(job.target_url);
+        } catch (err: any) {
+          await this.addLog(job.id, "warn", `No se pudo analizar la página inicial: ${String(err?.message || err)}. Se reintentará vía descubrimiento de páginas.`);
+          analysis = {
+            page_type: "catalog",
+            content_type: "movie",
+            title: "",
+            description: "",
+            poster_url: null,
+            banner_url: null,
+            rating: 0,
+            year: 0,
+            status: "Publicado",
+            genres: [],
+            episodes: [],
+            catalog_items: [],
+          } as UniversalAnalysisResult;
+        }
 
         if (analysis.page_type === "catalog" && analysis.catalog_items.length > 0) {
           isCatalogFlow = true;
@@ -881,10 +902,18 @@ class BackgroundCrawlerWorker {
           // conocido pasa de ~10-30s/obra a ~2-4s/obra.
           const titleKey = normalizeTitleKey(item.title || "");
           if (titleKey.length >= 2) {
-            const knownShow = await prisma.show.findFirst({
+            const knownCandidates = await prisma.show.findMany({
               where: { OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }] },
-              select: { id: true, title: true },
+              select: { id: true, title: true, year: true },
+              orderBy: { created_at: "asc" },
+              take: 20,
             });
+            const itemYear = isPlausibleYear(item.year) ? item.year! : null;
+            const knownShow = itemYear
+              ? knownCandidates.find((show) => show.year === itemYear) ??
+                knownCandidates.find((show) => !isPlausibleYear(show.year)) ??
+                null
+              : knownCandidates[0] ?? null;
             if (knownShow) {
               // Modo "detail": SOLO lista de episodios — sin extracción de streams
               // (los nuevos se resuelven Just-In-Time al reproducir). Full fast.
@@ -928,9 +957,6 @@ class BackgroundCrawlerWorker {
           // no repita la cascada TMDB/AniList/TVMaze (ahorro ~40-70% por show).
           const result = await saveShowWithDeduplication({
             title: itemAnalysis.title || parsedItemTitle.baseTitle || item.title,
-            // FULL FAST: guardar YA con los datos básicos del sitio; el TMDB/enrichment
-            // lo hace después el backfill worker EN PARALELO (hasta 50 rps disponibles).
-            _skipEnrichment: true,
             season: parsedItemTitle.season,
             japanese_title: itemAnalysis.japanese_title,
             english_title: itemAnalysis.english_title,

@@ -97,12 +97,8 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
     $("article").each((_, el) => {
       const $article = $(el);
 
-      // href: buscar primer anchor con href dentro del article
-      let href = $article.find("a").first().attr("href") || $article.attr("href") || "";
-      // Algunos themes ponen el link en el propio article o en h3 > a
-      if (!href) {
-        href = $article.find("a[href]").first().attr("href") || "";
-      }
+      // href: priorizar el anchor de ficha (/anime/); fallback al primer anchor
+      let href = $article.find("a[href*='/anime/']").first().attr("href") || $article.find("a").first().attr("href") || $article.attr("href") || "";
       if (!href || seen.has(href)) return;
 
       // Normalizar URL relativa
@@ -520,7 +516,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
           poster_url: catalogItems[0]?.image_url || null,
           banner_url: catalogItems[0]?.image_url || null,
           rating: 0,
-          year: new Date().getFullYear(),
+          year: 0,
           status: "Publicado",
           genres: [],
           source_domain: "tioanime.com",
@@ -537,7 +533,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "tioanime.com",
@@ -563,7 +559,8 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       let html: string | null = isCatalogRoot ? null : await this.fetchHtml(cleanUrl, 10000);
       if (!html) html = await this.fetchHtml(`${BASE_URL}/directorio`, 10000);
       if (!html) html = await this.fetchHtml(BASE_URL, 10000);
-      const catalogItems = html ? this.extractCatalogItems(html) : [];
+      if (!html) throw new Error(`FETCH_FAILED: ${cleanUrl}`);
+      const catalogItems = this.extractCatalogItems(html);
 
       return {
         page_type: "catalog",
@@ -573,7 +570,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         poster_url: catalogItems[0]?.image_url || null,
         banner_url: catalogItems[0]?.image_url || null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "tioanime.com",
@@ -593,7 +590,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "tioanime.com",
@@ -612,7 +609,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "No encontrado",
         genres: [],
         source_domain: "tioanime.com",
@@ -682,11 +679,46 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
     return false;
   }
 
+  private isDeadHost(url: string): boolean {
+    return DEAD_HOST_PATTERNS.some((p) => p.test(url));
+  }
+
+  /**
+   * Criterio estricto de media directa reproducible para E2E:
+   * .m3u8/.mp4/.webm/.mkv (incluye variantes con ?/#) o lo que detecte
+   * EmbedResolvers como directo, excluyendo placeholders del host
+   * (Big Buck Bunny demo) y hosts muertos documentados.
+   */
+  private isDirectMedia(url: string): boolean {
+    if (!url) return false;
+    if (this.isDeadHost(url)) return false;
+    if (EmbedResolvers.isPlaceholderUrl(url)) return false;
+    if (EmbedResolvers.isDirectMediaUrl(url)) return true;
+    return /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url);
+  }
+
+  /**
+   * Ordena streams priorizando media directa reproducible.
+   * Mantiene orden relativo dentro de cada grupo (directos primero, embeds después).
+   * Elimina placeholders y hosts muertos documentados que puedan colarse tras
+   * EmbedResolvers.resolve (ej. hqq devuelve .m3u8 cfglobalcdn placeholder).
+   * Respeta deduplicación previa.
+   */
+  private orderDirectFirst(streams: string[]): string[] {
+    // Filtrar muertos y placeholders antes de ordenar; si todo es muerto, devolver vacío para que caller haga fallback
+    const alive = streams.filter((u) => !this.isDeadHost(u) && !EmbedResolvers.isPlaceholderUrl(u));
+    const base = alive.length > 0 ? alive : streams.filter((u) => !EmbedResolvers.isPlaceholderUrl(u));
+    const direct = base.filter((u) => this.isDirectMedia(u));
+    const embed = base.filter((u) => !direct.includes(u));
+    return [...direct, ...embed];
+  }
+
   /**
    * Extrae streams de video de una página de episodio:
    * 1. Busca `var videos = [[...]]` y parsea JSON
-   * 2. Resuelve cada URL con EmbedResolvers
-   * 3. Valida con MediaValidator y retorna directo + fallback embed
+   * 2. Resuelve cada URL con EmbedResolvers (VOE directo vía resolveVoeDirect + genérico)
+   * 3. Valida con MediaValidator y ORDENA priorizando directo reproducible (.m3u8/.mp4/.webm/.mkv)
+   *    por sobre embeds (mega.nz/embed etc.). El E2E exige media directa, nunca embed como stream_url.
    */
   public async extractStream(
     targetUrl: string
@@ -723,13 +755,32 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       const { resolved, originals } = await this.sanitizeAndResolve(rawStreams);
 
       const combined = [...resolved, ...originals];
-      const validStreams = await MediaValidator.validateUrls(combined);
-      const finalStreams =
-        validStreams.length > 0 ? validStreams : combined.length > 0 ? combined : [cleanUrl];
+      // Resolver embeds también en este branch (paridad con branch principal)
+      const withEmbedResolution = await Promise.all(
+        combined.map(async (url) => {
+          try {
+            const r = await EmbedResolvers.resolve(url);
+            return r || url;
+          } catch {
+            return url;
+          }
+        })
+      );
+      const merged: string[] = [];
+      for (const url of withEmbedResolution) {
+        if (!merged.includes(url)) merged.push(url);
+      }
+      for (const url of combined) {
+        if (!merged.includes(url)) merged.push(url);
+      }
+      const validated = await MediaValidator.validateUrls(merged);
+      const base = validated.length > 0 ? validated : merged;
+      // Priorizar directo reproducible sobre embeds (mega queda como fallback)
+      const ordered = this.orderDirectFirst(base);
 
       return {
-        stream_url: finalStreams[0] || cleanUrl,
-        all_available_streams: finalStreams,
+        stream_url: ordered[0] || cleanUrl,
+        all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
         title,
       };
     }
@@ -766,10 +817,12 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       if (!merged.includes(url)) merged.push(url);
     }
 
-    // Los streams "directos" heredados del sitio (cfglobalcdn/vidcache) ya se descartaron
-    // arriba; lo que queda son embeds reproducibles y HLS resueltos (VOE/ok.ru).
     const validated = await MediaValidator.validateUrls(merged);
-    const ordered = validated.length > 0 ? validated : merged;
+    const base = validated.length > 0 ? validated : merged;
+    // Corrección crítica: priorizar media directa real sobre embeds.
+    // Antes se conservaba el orden original (Mega primero aunque existiera VOE->.m3u8 o
+    // ok.ru->.m3u8 resuelto), por lo que E2E fallaba con stream_url = mega.nz/embed.
+    const ordered = this.orderDirectFirst(base);
 
     return {
       stream_url: ordered[0] || cleanUrl,

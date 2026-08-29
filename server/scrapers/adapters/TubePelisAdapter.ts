@@ -174,7 +174,8 @@ export class TubePelisAdapter extends BaseScraperAdapter {
       html.match(/[（(](19|20)(\d{2})[)）]/) ||
       titleTag.match(/(19|20)(\d{2})/) ||
       ogDesc.match(/(19|20)(\d{2})/);
-    const year = ldYear || (yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear());
+    const matchedYear = yearMatch?.[0].match(/(?:19|20)\d{2}/)?.[0];
+    const year = ldYear || (matchedYear ? parseInt(matchedYear, 10) : 0);
 
     // Géneros: JSON-LD genre; fallback a keywords excluyendo términos SEO genéricos
     const genres: string[] = [];
@@ -266,6 +267,36 @@ export class TubePelisAdapter extends BaseScraperAdapter {
   }
 
   /**
+   * Recolecta los embeds jugables del HTML del reproductor:
+   * 1. iframes del player (atributo data-src o src) que apuntan al proxy
+   *    interno reproductor.php?v=... → decodifica el Base64 a su embed real.
+   * 2. iframes del player con embed directo (mp4/HLS/host externo) sin proxy.
+   * 3. fallback: escaneo de todo el HTML por reproductor.php (scripts/otros attrs).
+   */
+  private extractPlayerEmbeds(html: string): string[] {
+    const $ = cheerio.load(html);
+    const embeds: string[] = [];
+
+    $("iframe").each((_, el) => {
+      const src = ($(el).attr("data-src") || $(el).attr("src") || "").trim();
+      if (!/^https?:\/\//i.test(src)) return;
+      if (/reproductor\.php/i.test(src)) {
+        for (const decoded of this.decodeReproductorParam(src)) {
+          if (!embeds.includes(decoded)) embeds.push(decoded);
+        }
+      } else if (!embeds.includes(src)) {
+        embeds.push(src);
+      }
+    });
+
+    for (const decoded of this.decodeReproductorParam(html)) {
+      if (!embeds.includes(decoded)) embeds.push(decoded);
+    }
+
+    return embeds;
+  }
+
+  /**
    * Núcleo puro (sin fetch) de extracción de streams desde un HTML:
    * decodifica reproductor.php?v= → resuelve embeds → valida con MediaValidator.
    */
@@ -273,7 +304,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
     stream_url: string;
     all_available_streams: string[];
   }> {
-    const embedUrls = this.decodeReproductorParam(html);
+    const embedUrls = this.extractPlayerEmbeds(html);
 
     if (embedUrls.length === 0) {
       return { stream_url: "", all_available_streams: [] };
@@ -325,7 +356,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "tubepelis.com",
@@ -349,7 +380,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "tubepelis.com",
@@ -369,7 +400,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "tubepelis.com",

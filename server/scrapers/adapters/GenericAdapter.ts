@@ -28,6 +28,7 @@ export class GenericAdapter extends BaseScraperAdapter {
 
       const html = await this.fetchHtml(urlOrQuery);
       if (!html) {
+        if (explicitType === "catalog") throw new Error(`FETCH_FAILED: ${urlOrQuery}`);
         return this.handleSearchTerm(urlOrQuery);
       }
 
@@ -145,6 +146,27 @@ export class GenericAdapter extends BaseScraperAdapter {
         });
       });
 
+      if (catalogItems.length === 0) {
+        const anchorSeen = new Set<string>();
+        $("a[href]").each((_, el) => {
+          const $a = $(el);
+          const showUrl = this.extractShowUrlFromAnchors($, $a, urlOrQuery, domain);
+          if (!showUrl || anchorSeen.has(showUrl)) return;
+          anchorSeen.add(showUrl);
+          const imgUrl = this.extractCardImgUrl($, el, urlOrQuery);
+          const cardTitle = this.extractCatalogCardTitle($, el, $a, showUrl);
+          if (!cardTitle) return;
+          if (["inicio", "home", "directorio anime", "dmca", "contacto", "login"].some((b) => cardTitle.toLowerCase().includes(b))) return;
+          seenCatalogUrls.add(showUrl);
+          catalogItems.push({
+            title: cleanQueryTitle(cardTitle),
+            url: showUrl,
+            image_url: imgUrl,
+            kind: detectedKind,
+          });
+        });
+      }
+
       const classifiedType = PageClassifier.classify(urlOrQuery, $);
       const isCatalog = explicitType === "catalog" || (explicitType !== "detail" && (classifiedType === "collection" || (catalogItems.length >= 3 && extractedEpisodes.length === 0)));
       const pageType: UniversalAnalysisResult["page_type"] = isCatalog ? "catalog" : "detail";
@@ -164,7 +186,7 @@ export class GenericAdapter extends BaseScraperAdapter {
           poster_url: catalogPoster,
           banner_url: catalogPoster,
           rating: 8.5,
-          year: new Date().getFullYear(),
+          year: 0,
           status: "Catálogo",
           genres: ["Directorio", "Catálogo"],
           source_domain: domain,
@@ -200,7 +222,7 @@ export class GenericAdapter extends BaseScraperAdapter {
         poster_url: enriched.poster_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
         banner_url: enriched.banner_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
         rating: enriched.rating || 8.0,
-        year: enriched.year || 2024,
+        year: enriched.year || 0,
         status: enriched.status || "Finalizado",
         genres: enriched.genres.length > 0 ? enriched.genres : ["Multimedia"],
         source_domain: domain,
@@ -253,7 +275,7 @@ export class GenericAdapter extends BaseScraperAdapter {
       poster_url: enriched.poster_url || null,
       banner_url: enriched.banner_url || null,
       rating: enriched.rating || 8.0,
-      year: enriched.year || 2024,
+      year: enriched.year || 0,
       status: enriched.status || "Finalizado",
       genres: enriched.genres || ["Multimedia"],
       episodes: defaultEpisodes,

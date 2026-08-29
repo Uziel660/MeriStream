@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
-import { EmbedResolvers } from "../../resolvers";
+import { EmbedResolvers, isSupportedServer } from "../../resolvers";
 import { MediaValidator } from "../../validator";
 import { probeStream, orderStreamsByHealth } from "../hostHealth";
 import { cleanDescription } from "../../utils/textCleaner";
@@ -70,8 +70,8 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
 
     $("article").each((_, el) => {
       const $art = $(el);
-      const $link = $art.find("a[href]").first();
-      const href = $link.attr("href");
+      const $link = $art.find("a[href*='/anime/']").first();
+      const href = ($link.attr("href") || $art.find("a[href]").first().attr("href") || "").trim();
       if (!href || seen.has(href)) return;
       seen.add(href);
 
@@ -362,7 +362,8 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
     if (explicitType === "catalog" || path === "/" || path.startsWith("/animes")) {
       const fetchUrl = path === "/" ? BASE_URL : cleanUrl;
       const html = await this.fetchHtml(fetchUrl, 10000);
-      const catalogItems = html ? this.extractCatalogItems(html) : [];
+      if (!html) throw new Error(`FETCH_FAILED: ${fetchUrl}`);
+      const catalogItems = this.extractCatalogItems(html);
 
       return {
         page_type: "catalog",
@@ -372,7 +373,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [],
         source_domain: "wwv.veranimes.net",
@@ -393,7 +394,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
           poster_url: null,
           banner_url: null,
           rating: 0,
-          year: new Date().getFullYear(),
+          year: 0,
           status: "No encontrado",
           genres: [],
           source_domain: "wwv.veranimes.net",
@@ -403,7 +404,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       }
       const metadata = html
         ? this.extractMetadata(html, cleanUrl)
-        : { title: "Episodio VerAnimes", description: "", poster_url: undefined, banner_url: undefined, genres: [] as string[], year: new Date().getFullYear(), content_type: "anime" as ContentKind };
+        : { title: "Episodio VerAnimes", description: "", poster_url: undefined, banner_url: undefined, genres: [] as string[], year: 0, content_type: "anime" as ContentKind };
 
       let detectedStreams: string[] | undefined;
       if (!explicitType || explicitType === "stream" || explicitType === "auto") {
@@ -444,7 +445,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "No encontrado",
         genres: [],
         source_domain: "wwv.veranimes.net",
@@ -540,9 +541,36 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       return { ...genericStreams, title };
     }
 
+    // Priorizar servidores soportados (resolvers.ts); ignorar ofuscados/raros.
+    const alive = iframeUrls.filter((u) => !isDeadOrBlocked(u));
+    const supported = alive.filter((u) => isSupportedServer(u));
+
+    let candidates: string[] = supported;
+    let deobfuscated: string[] = [];
+
+    if (supported.length === 0) {
+      // Único disponible es un servidor ofuscado: intentar desofuscar bysesukior.
+      for (const u of alive) {
+        try {
+          const d = await EmbedResolvers.resolve(u);
+          if (d && /\.(m3u8|mp4|webm)(\?|$)/i.test(d) && !deobfuscated.includes(d)) {
+            deobfuscated.push(d);
+          }
+        } catch {}
+      }
+    }
+
+    const finalCandidates = candidates.length > 0 ? candidates : deobfuscated;
+
+    if (finalCandidates.length === 0) {
+      // Sin servidores soportados ni desofuscables: no alimentar el frontend con
+      // iframes no renderizables. Dejar que el caller pruebe alternativas.
+      return { stream_url: "", all_available_streams: [], title };
+    }
+
     // Resolver todos los iframes en paralelo
     const resolutions = await Promise.all(
-      iframeUrls.map(async (iframeUrl) => {
+      finalCandidates.map(async (iframeUrl) => {
         try {
           return { iframeUrl, resolved: await EmbedResolvers.resolve(iframeUrl) };
         } catch {
@@ -555,16 +583,18 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
     const directStreams: string[] = [];
 
     for (const { iframeUrl, resolved } of resolutions) {
-      if (resolved && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
-        all_available_streams.push(resolved);
+      const finalUrl = resolved && !isDeadOrBlocked(resolved) ? resolved : "";
+      if (!finalUrl) continue;
+
+      const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(finalUrl);
+      if (isDirectMedia) {
+        if (!directStreams.includes(finalUrl)) directStreams.push(finalUrl);
+        if (!all_available_streams.includes(finalUrl)) all_available_streams.push(finalUrl);
+      } else if (isSupportedServer(finalUrl) || isSupportedServer(iframeUrl)) {
+        // Embed jugable por el frontend (mega, ok.ru, etc.) — no un ofuscado raro.
+        if (!all_available_streams.includes(finalUrl)) all_available_streams.push(finalUrl);
       }
-      const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(resolved) && resolved !== iframeUrl;
-      if (isDirectMedia && !isDeadOrBlocked(resolved) && !directStreams.includes(resolved)) {
-        directStreams.push(resolved);
-      }
-      if (!isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
-        all_available_streams.push(iframeUrl);
-      }
+      // else: servidor ofuscado no soportado -> ignorado
     }
 
     // Sondeo de salud de streams directos: los CDNs con hotlink-protection pueden

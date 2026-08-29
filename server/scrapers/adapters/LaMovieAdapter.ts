@@ -95,7 +95,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const sitemapUrl = `https://lamovie.org/wp-sitemap-posts-${sitemapType}-${page}.xml`;
 
     const xml = await this.fetchHtml(sitemapUrl, 10000);
-    if (!xml) return [];
+    if (!xml) return null;
 
     const $ = cheerio.load(xml, { xmlMode: true });
     const items: ExtractedCatalogItem[] = [];
@@ -142,7 +142,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const fichaPrefix = postType === "movies" ? "peliculas" : postType === "tvshows" ? "series" : "animes";
     const apiUrl = `https://lamovie.org/wp-api/v1/listing/movies?page=${page}&postType=${postType}&postsPerPage=24`;
     const raw = await this.fetchHtml(apiUrl, 10000);
-    if (!raw) return [];
+    if (!raw) return null;
     try {
       const json = JSON.parse(raw);
       const posts: any[] = json?.data?.posts || [];
@@ -418,7 +418,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         parenYear ||
         html.match(/Año[\s:]*(\d{4})/i)?.[1] ||
         html.match(/release_date[\s:]*["'](\d{4})/i)?.[1];
-      year = yearMatch ? parseInt(yearMatch, 10) : new Date().getFullYear();
+      year = yearMatch ? parseInt(yearMatch, 10) : 0;
     }
 
     // Título original: API > patrón legacy del og:title
@@ -696,9 +696,14 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     if (isCatalog) {
       // API de listado primero: trae overview/genres/imdb_rating por item
       // (imports pre-enriquecidos). Sitemap como respaldo si el API falla.
-      let catalogItems = await this.extractCatalogFromListingApi(contentType, pageNum);
+      const fromApi = await this.extractCatalogFromListingApi(contentType, pageNum);
+      let catalogItems = fromApi || [];
       if (catalogItems.length === 0) {
-        catalogItems = await this.extractCatalogFromSitemap(contentType, pageNum);
+        catalogItems = (await this.extractCatalogFromSitemap(contentType, pageNum)) || [];
+      }
+      // Solo es fallo de fetch (no fin de catálogo) si AMBOS endpoints fallaron.
+      if (catalogItems.length === 0 && fromApi === null && explicitType === "catalog") {
+        throw new Error(`FETCH_FAILED: ${cleanUrl}`);
       }
       const titleType = contentType === "movie" ? "Películas" : contentType === "series" ? "Series" : "Animes";
       return {
@@ -709,7 +714,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 8.0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Publicado",
         genres: [titleType, "Directorio"],
         source_domain: "lamovie.org",
@@ -720,8 +725,8 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
     // 2. Si es una URL de detalle (página individual)
     const html = await this.fetchHtml(cleanUrl, 10000);
-    if (!html) {
-      return {
+      if (!html) {
+        return {
         page_type: "detail",
         content_type: contentType as ContentKind,
         title: "Contenido LaMovie",
@@ -729,7 +734,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Desconocido",
         genres: [],
         source_domain: "lamovie.org",

@@ -31,6 +31,7 @@ import { backfillShow, showNeedsBackfill } from "./metadataBackfill";
 import { extractCatalogListing, analyzeUniversalUrl } from "./universalScraper";
 import { saveShowWithDeduplication, quickSyncKnownShow } from "./showService";
 import { normalizeTitleKey } from "./utils/titleNormalizer";
+import { isPlausibleYear } from "./metadataMerge";
 import type { ContentKind, ExtractedCatalogItem } from "./types";
 
 // ── Contrato público ─────────────────────────────────────────────
@@ -494,10 +495,9 @@ async function metadataPhase(cfg: VerificationConfig, opts: VerificationRunOptio
   state.progress.total += limited.length;
   log("info", `Fase metadatos: ${limited.length} obra(s) en cola (scope=${cfg.scope_mode}).`);
 
-  // POOL PARALELO (5 slots): TMDB tolera 40-50 req/s — el sleep serial de 2.5s
-  // por obra era el cuello (1000 obras = 42+ min). Las obras COMPLETAS se
-  // descartan sin llamar a TMDB (check por índice, sin espera).
-  const CONCURRENCY = 5;
+  // POOL PARALELO (20 slots): TMDB tolera 40-50 req/s.
+  // Reducimos cuellos de botella para que la fase de metadatos vuele.
+  const CONCURRENCY = 20;
   let cursor = 0;
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -516,8 +516,8 @@ async function metadataPhase(cfg: VerificationConfig, opts: VerificationRunOptio
             runCounters.metaUpdated++;
             log("info", `Metadatos completados en '${result.title}': ${result.changed.join(", ")}`);
           }
-          // Stagger corto: TMDB sobra de ancho de banda.
-          await sleep(120 + Math.random() * 120);
+          // Stagger cortísimo para no saturar la red local.
+          await sleep(10 + Math.random() * 20);
         }
         // Obra completa → sin TMDB, sin espera: siguiente.
       } catch (e: any) {
@@ -545,22 +545,41 @@ function inferKindForPlatform(platformKey: string, itemKind?: ContentKind | null
   return "movie";
 }
 
-async function findKnownWork(titleKey: string): Promise<{ id: string; title: string; episodeCount: number } | null> {
+async function findKnownWork(titleKey: string, year?: number | null, kind?: ContentKind): Promise<{ id: string; title: string; episodeCount: number } | null> {
   if (!titleKey) return null;
-  const show = await prisma.show.findFirst({
-    where: { OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }] },
+  const showCandidates = await prisma.show.findMany({
+    where: {
+      OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }],
+      ...(kind ? { category: kind } : {}),
+    },
     orderBy: { created_at: "asc" },
-    select: { id: true, title: true, _count: { select: { episodes: true } } },
+    select: { id: true, title: true, year: true, _count: { select: { episodes: true } } },
+    take: 20,
   });
+  const requestedYear = isPlausibleYear(year) ? year! : null;
+  const show = requestedYear
+    ? showCandidates.find((candidate) => candidate.year === requestedYear) ??
+      showCandidates.find((candidate) => !isPlausibleYear(candidate.year)) ??
+      null
+    : showCandidates[0] ?? null;
   if (show) {
     return { id: show.id, title: show.title, episodeCount: show._count.episodes };
   }
   // Paridad multi-fuente: puede existir MediaItem sin espejo legacy aún.
-  const mediaItem = await prisma.mediaItem.findFirst({
-    where: { OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }] },
+  const mediaItems = await prisma.mediaItem.findMany({
+    where: {
+      OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }],
+      ...(kind ? { kind } : {}),
+    },
     orderBy: { created_at: "asc" },
-    select: { id: true, title: true },
+    select: { id: true, title: true, year: true },
+    take: 20,
   });
+  const mediaItem = requestedYear
+    ? mediaItems.find((candidate) => candidate.year === requestedYear) ??
+      mediaItems.find((candidate) => !isPlausibleYear(candidate.year)) ??
+      null
+    : mediaItems[0] ?? null;
   if (mediaItem) return { id: mediaItem.id, title: mediaItem.title, episodeCount: -1 };
   return null;
 }
@@ -616,7 +635,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       const key = normalizeTitleKey(item.title);
 
       try {
-        const existing = await findKnownWork(key);
+        const itemKind = inferKindForPlatform(platform, item.kind);
+        const existing = await findKnownWork(key, item.year, itemKind);
         if (existing) {
           known++;
           state.progress.known++;
@@ -644,8 +664,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
                 state.progress.new_episodes += added;
                 log("info", `[${platform}] '${existing.title}': +${added} episodio(s) nuevo(s) detectado(s) por índice.`);
               }
-              // Cortesía por el fetch de la ficha.
-              await sleep(600 + Math.random() * 300);
+              // Cortesía mínima.
+              await sleep(50 + Math.random() * 50);
             } catch (e: any) {
               log("warn", `[${platform}] re-escaneo ligero de '${existing.title}': ${e?.message || e}`);
             }
@@ -653,7 +673,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
         } else {
           newDetected++;
           state.progress.new_sources++;
-          const kind = inferKindForPlatform(platform, item.kind);
+          const kind = itemKind;
           const result = await saveShowWithDeduplication({
             title: item.title,
             poster_url: item.image_url || undefined,
@@ -671,8 +691,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
             state.progress.new_works++;
             log("info", `[${platform}] Nueva obra importada: '${result.show.title}'.`);
           }
-          // El import dispara cascada TMDB/AniList: pausa extra cortés.
-          await sleep(500 + Math.random() * 300);
+          // El import dispara cascada TMDB/AniList: pausa ligera.
+          await sleep(100 + Math.random() * 100);
         }
       } catch (e: any) {
         state.progress.errors++;
@@ -682,7 +702,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       }
 
       state.progress.done++;
-      await sleep(40 + Math.random() * 60); // lookups locales por índice: casi gratis
+      await sleep(10 + Math.random() * 10); // lookups locales por índice súper rápidos
     }
   }
 

@@ -75,8 +75,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly name = "AnimeFLV / Anime Streaming";
   readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
 
-  /** Límite de páginas consultadas al AJAX de episodios de jkanime (16 eps/página). */
-  private static readonly JK_PAGES = 2;
+  /** Tope de páginas del AJAX de episodios de jkanime; se detiene antes en last_page. */
+  private static readonly JK_PAGES = 1000;
 
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
@@ -92,8 +92,9 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const domain = urlObj.hostname.toLowerCase();
     const isJkanime = domain.includes("jkanime");
 
-    const html = await this.fetchHtml(urlOrQuery);
+    const html = await this.fetchHtml(urlOrQuery, isJkanime ? 12000 : 7500);
     if (!html) {
+      if (explicitType === "catalog") throw new Error(`FETCH_FAILED: ${urlOrQuery}`);
       return this.fallbackSearch(urlOrQuery);
     }
 
@@ -119,6 +120,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
 
     const cardSelectors = [
       "ul.ListAnimes > li",
+      "ul.ListAnimes li",
       "article.anime",
       "article",
       ".anime-card",
@@ -189,7 +191,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         poster_url: catalogPoster,
         banner_url: catalogPoster,
         rating: 8.8,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "Catálogo",
         genres: ["Anime", "Catálogo"],
         source_domain: domain,
@@ -239,11 +241,12 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       original_title: enriched.original_title,
       japanese_title: enriched.japanese_title,
       english_title: enriched.english_title,
+      tmdb_id: enriched.tmdb_id,
       description: wpSynopsis || enriched.description || ogDesc || "Serie de anime indexada desde AnimeFLV.",
       poster_url: wpPoster || enriched.poster_url || this.resolveRelativeUrl(ogImage, urlOrQuery),
       banner_url: enriched.banner_url || wpPoster || this.resolveRelativeUrl(ogImage, urlOrQuery),
       rating: wpRating || enriched.rating || 8.5,
-      year: enriched.year || 2024,
+      year: enriched.year || 0,
       status: enriched.status || "En emisión",
       genres: wpGenres.length > 0 ? wpGenres : (enriched.genres.length > 0 ? enriched.genres : ["Anime", "Animación"]),
       source_domain: domain,
@@ -530,11 +533,13 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       } catch {}
     }
 
-    // 2. Iframes reales del DOM
+    // 2. Iframes reales del DOM (filtra plantilla jkplayer/c1?u= vacía igual que en JS)
     const $ = cheerio.load(html);
     $("iframe").each((_, el) => {
       const src = $(el).attr("src") || $(el).attr("data-src");
-      if (src) push(src);
+      if (!src) return;
+      if (/jkanime\.net\/jkplayer\/[^"']*?\?(?:[^"']*&)?u=$/i.test(src)) return;
+      push(src);
     });
 
     // 3. Iframes dentro de strings JS (video[0] = '<iframe src="...">') y wrappers jkplayer.
@@ -897,11 +902,15 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       page_type: "detail",
       content_type: "anime",
       title: enriched.title || cleaned,
+      original_title: enriched.original_title,
+      japanese_title: enriched.japanese_title,
+      english_title: enriched.english_title,
+      tmdb_id: enriched.tmdb_id,
       description: enriched.description || `Búsqueda para '${query}'`,
       poster_url: enriched.poster_url || null,
       banner_url: enriched.banner_url || null,
       rating: enriched.rating || 8.0,
-      year: enriched.year || 2024,
+      year: enriched.year || 0,
       status: enriched.status || "Finalizado",
       genres: enriched.genres || ["Anime"],
       episodes: [{ number: 1, title: "Episodio 1", url: `https://www3.animeflv.net/browse?q=${encodeURIComponent(cleaned)}` }],

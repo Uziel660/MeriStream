@@ -5,7 +5,9 @@ import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
 
 const BASE_URL = "https://doramasflix.io";
-const NEXT_ACTION_ID = "40c3671ad750012fd1bcbcb050c7894f427d37a8b1";
+// Nuevo Next-Action vigente (descubierto live 2026-08-29 via Playwright intercept: getEpisodeLinks)
+const NEXT_ACTION_ID = "406bdec544eeb53cbefa09322cbda67963eb850496";
+const NEXT_ACTION_FALLBACK = "40c3671ad750012fd1bcbcb050c7894f427d37a8b1";
 
 export class DoramasflixAdapter extends BaseScraperAdapter {
   readonly id = "doramasflix";
@@ -31,7 +33,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "ongoing",
         genres: ["Dorama"],
         detected_streams: streamRes.all_available_streams,
@@ -52,7 +54,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         poster_url: null,
         banner_url: null,
         rating: 0,
-        year: new Date().getFullYear(),
+        year: 0,
         status: "ongoing",
         genres: ["Dorama"],
         episodes: [],
@@ -69,35 +71,42 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    */
   private async extractCatalog(url: string): Promise<ExtractedCatalogItem[]> {
     const html = await this.fetchHtml(url);
-    if (!html) return [];
+    if (!html) throw new Error(`FETCH_FAILED: ${url}`);
 
     const $ = cheerio.load(html);
     const items: ExtractedCatalogItem[] = [];
     const seen = new Set<string>();
 
-    $("a[href*='/doramas/'], a[href*='/peliculas/'], a[href*='/variedades/']").each((_, el) => {
+    const sel = "a[href*='/doramas/'], a[href*='/peliculas/'], a[href*='/variedades/'], a[href*='/pelicula/'], a[href*='/serie/'], a[href*='/anime/']";
+    $(sel).each((_, el) => {
       const href = $(el).attr("href");
       if (!href || href === "/doramas" || href === "/peliculas" || href === "/variedades" || seen.has(href)) return;
 
       const fullUrl = this.resolveRelativeUrl(href, BASE_URL);
+      if (!fullUrl || seen.has(fullUrl)) return;
+      seen.add(fullUrl);
+
       const $parent = $(el).closest("div, article");
-      const title = $parent.find("h2, h3, .title, .name").first().text().trim() || $(el).attr("title")?.trim() || "";
-      const img = $parent.find("img").attr("src") || $parent.find("img").attr("data-src") || "";
+      const title =
+        $parent.find("h2, h3, .title, .name").first().text().trim() ||
+        $(el).attr("title")?.trim() ||
+        $parent.find("img").attr("alt")?.trim() ||
+        this.titleFromUrl(fullUrl);
+      const img =
+        $parent.find("img").attr("src") ||
+        $parent.find("img").attr("data-src") ||
+        $(el).find("img").attr("src") ||
+        "";
 
       let kind: ContentKind = "series";
-      if (url.includes("/peliculas") || href.includes("/peliculas/")) {
-        kind = "movie";
-      }
+      if (url.includes("/peliculas") || href.includes("/pelicula") || href.includes("/peliculas/")) kind = "movie";
 
-      if (title && fullUrl) {
-        seen.add(href);
-        items.push({
-          title,
-          url: fullUrl,
-          image_url: img ? this.resolveRelativeUrl(img, BASE_URL) : null,
-          kind,
-        });
-      }
+      items.push({
+        title: title || this.titleFromUrl(fullUrl),
+        url: fullUrl,
+        image_url: img ? this.resolveRelativeUrl(img, BASE_URL) : null,
+        kind,
+      });
     });
 
     return items;
@@ -156,7 +165,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       poster_url: poster_url ? this.resolveRelativeUrl(poster_url, BASE_URL) : null,
       banner_url: null,
       rating: 0,
-      year: new Date().getFullYear(),
+      year: 0,
       status: "ongoing",
       genres: ["Dorama"],
       episodes,
@@ -165,10 +174,133 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
   }
 
   /**
+   * Extrae episode_id tolerando HTML escapado de React Flight (\", \\u0022).
+   */
+  private extractEpisodeId(html: string): string | null {
+    // Normaliza escapes más comunes de Next Flight
+    const normalized = html.replace(/\\u0022/g, '"').replace(/\\"/g, '"');
+    const candidates = [
+      /"episode"\s*:\s*\{[^}]*?"_id"\s*:\s*"([a-f0-9]{24})"/i,
+      /'episode'\s*:\s*\{[^}]*?'_id'\s*:\s*['"]([a-f0-9]{24})['"]/i,
+      /"_id"\s*:\s*"([a-f0-9]{24})"/i,
+    ];
+    for (const re of candidates) {
+      const m = normalized.match(re) || html.match(re);
+      if (m) return m[1];
+    }
+    // Último fallback: cualquier 24hex con prefijo 6a (formato doramas)
+    const fallback = normalized.match(/"([a-f0-9]{24})"/i) || html.match(/([a-f0-9]{24})/);
+    // validar que sea plausible (24 hex)
+    if (fallback && /^[a-f0-9]{24}$/i.test(fallback[1] || fallback[0])) {
+      // prioriza ids que aparecen cerca de "episode"
+      const episodeNear = normalized.match(/episode[^]{0,400}([a-f0-9]{24})/i);
+      if (episodeNear) return episodeNear[1];
+      return fallback[1] || fallback[0];
+    }
+    return null;
+  }
+
+  /**
+   * Construye el header Next-Router-State-Tree para POST Server Action.
+   * Formato capturado live para /capitulos/<slug>.
+   */
+  private buildNextRouterStateTree(targetUrl: string): string {
+    try {
+      const slug = new URL(targetUrl).pathname.split("/").filter(Boolean).pop() || "unknown";
+      const fullTree = `["",{` +
+        `"children":[["locale","es","d",null],{"children":["capitulos",{"children":[["slug","${slug}","d",null],{"children":["__PAGE__",{},null,null,0]}]}]}],"modal":["__DEFAULT__",{},null,null,0]},null,null,16]`;
+      return encodeURIComponent(fullTree);
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Intenta descubrir el Next-Action vigente para getEpisodeLinks escaneando chunks.
+   * Acotado y paralelo con cleanup garantizado. Si falla, devuelve el fallback conocido.
+   */
+  private async discoverNextActionId(html: string): Promise<string> {
+    const chunkRegex = /\/_next\/static\/chunks\/[^"']+\.js/g;
+    const chunks = [...new Set(html.match(chunkRegex) || [])].slice(0, 8);
+    if (chunks.length === 0) return NEXT_ACTION_ID;
+
+    const controllers: AbortController[] = [];
+    const timers: NodeJS.Timeout[] = [];
+    try {
+      const results = await Promise.all(
+        chunks.map(async (c) => {
+          const controller = new AbortController();
+          controllers.push(controller);
+          const timer = setTimeout(() => controller.abort(), 3500);
+          timers.push(timer);
+          try {
+            const full = new URL(c, BASE_URL).href;
+            const res = await fetch(full, { signal: controller.signal, headers: COMMON_HEADERS });
+            if (!res.ok) return null;
+            const text = await res.text();
+            const m = text.match(/createServerReference\("([a-f0-9]{40,64})"[^)]*"getEpisodeLinks"/);
+            return m ? m[1] : null;
+          } catch {
+            return null;
+          } finally {
+            clearTimeout(timer);
+          }
+        })
+      );
+      const found = results.find((v): v is string => !!v);
+      if (found) return found;
+    } finally {
+      for (const t of timers) clearTimeout(t);
+      for (const c of controllers) try { c.abort(); } catch {}
+    }
+    const hexInHtml = html.match(/[a-f0-9]{40,42}/gi);
+    if (hexInHtml?.includes(NEXT_ACTION_ID)) return NEXT_ACTION_ID;
+    return NEXT_ACTION_ID;
+  }
+
+  /**
+   * Parsea la respuesta de Next-Action sin asumir solo "1:".
+   * Busca líneas que contengan JSON con links de embedshortener.
+   */
+  private parseActionServers(actionText: string): any[] | null {
+    const lines = actionText.split("\n");
+    // 1) Intentar líneas con prefijo "n:"
+    for (const line of lines) {
+      const colon = line.indexOf(":");
+      if (colon === -1) continue;
+      const payload = line.slice(colon + 1);
+      if (!payload.trim().startsWith("[") && !payload.trim().startsWith("{")) continue;
+      try {
+        const parsed = JSON.parse(payload);
+        if (Array.isArray(parsed) && parsed.some((s: any) => s && s.link)) return parsed;
+        if (parsed && typeof parsed === "object") {
+          const str = JSON.stringify(parsed);
+          if (str.includes("embedshortener") || str.includes("link")) {
+            if (Array.isArray(parsed)) return parsed;
+            for (const v of Object.values(parsed as any)) {
+              if (Array.isArray(v) && (v as any[]).some((x: any) => x?.link)) return v as any[];
+            }
+          }
+        }
+      } catch {}
+    }
+    // 2) Fallback: buscar directamente array con embedshortener en todo el texto
+    const fallback = actionText.match(/\[\{[^]*?embedshortener[^]*?\}\]/);
+    if (fallback) {
+      try {
+        const parsed = JSON.parse(fallback[0]);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return null;
+  }
+
+  /**
    * Extrae y desencripta los servidores/embeds reales de un episodio mediante Next-Action + JWT decoding
    */
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const cleanUrl = targetUrl.trim();
+    const fetchTimerMap: NodeJS.Timeout[] = [];
     try {
       const html = await this.fetchHtml(cleanUrl, 8000);
       if (!html) {
@@ -178,67 +310,106 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       const $ = cheerio.load(html);
       const pageTitle = $("title").text().trim() || undefined;
 
-      // Extraer episode_id del HTML
-      const episodeMatch = html.match(/episode\\?"\s*:\s*\{[^}]*?\\?"_id\\?"\s*:\s*\\?"([a-f0-9]{24})\\?"/i) ||
-                           html.match(/\\?"_id\\?"\s*:\s*\\?"(6a[a-f0-9]{22})\\?"/i);
-
-      if (!episodeMatch) {
+      const episodeId = this.extractEpisodeId(html);
+      if (!episodeId) {
         return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
       }
 
-      const episodeId = episodeMatch[1];
+      // Descubrir acción vigente (resiliente a rotación)
+      let actionId = NEXT_ACTION_ID;
+      try {
+        const discovered = await this.discoverNextActionId(html);
+        if (discovered && /^[a-f0-9]{40,64}$/i.test(discovered)) actionId = discovered;
+      } catch {}
 
-      // Ejecutar Next-Action POST
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
+      const tryActions = [actionId, NEXT_ACTION_FALLBACK].filter((v, i, a) => v && a.indexOf(v) === i);
 
-      const actionRes = await fetch(cleanUrl, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          ...COMMON_HEADERS,
-          "Next-Action": NEXT_ACTION_ID,
-          "Content-Type": "text/plain;charset=UTF-8",
-          "Accept": "text/x-component"
-        },
-        body: JSON.stringify([{ episode_id: episodeId }])
-      });
-      clearTimeout(timer);
-
-      if (!actionRes.ok) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
-      }
-
-      const actionText = await actionRes.text();
-      const line1 = actionText.split("\n").find((l) => l.startsWith("1:"));
-      if (!line1) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
-      }
-
-      const rawServers = JSON.parse(line1.slice(2));
-      const embedUrls: string[] = [];
-
-      for (const s of rawServers) {
-        if (!s.link) continue;
-        const decoded = this.decodeEmbedShortenerLink(s.link);
-        if (decoded) {
-          embedUrls.push(decoded);
+      let finalReachable: string[] = [];
+      // Reintentos por variación aleatoria de servidores devueltos
+      for (let attempt = 0; attempt < 3 && finalReachable.length === 0; attempt++) {
+        let actionText: string | null = null;
+        for (const cand of tryActions) {
+          let controller: AbortController | null = null;
+          let timer: NodeJS.Timeout | null = null;
+          try {
+            controller = new AbortController();
+            timer = setTimeout(() => controller!.abort(), 8000);
+            if (timer) fetchTimerMap.push(timer);
+            const tree = this.buildNextRouterStateTree(cleanUrl);
+            const actionRes = await fetch(cleanUrl, {
+              method: "POST",
+              signal: controller.signal,
+              headers: {
+                ...COMMON_HEADERS,
+                Referer: cleanUrl,
+                "Next-Action": cand,
+                "Next-Router-State-Tree": tree,
+                "Content-Type": "text/plain;charset=UTF-8",
+                Accept: "text/x-component",
+              },
+              body: JSON.stringify([{ episode_id: episodeId }]),
+            });
+            if (!actionRes.ok) continue;
+            actionText = await actionRes.text();
+            if (actionText.includes("Server action not found")) continue;
+            if (actionText.includes("embedshortener") || actionText.includes("link")) break;
+            break;
+          } catch {
+            continue;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
         }
+
+        if (!actionText) continue;
+        const rawServers = this.parseActionServers(actionText);
+        if (!rawServers || !Array.isArray(rawServers) || rawServers.length === 0) continue;
+
+        const embedUrls: string[] = [];
+        for (const s of rawServers) {
+          if (!s.link) continue;
+          const decoded = this.decodeEmbedShortenerLink(s.link);
+          if (decoded) embedUrls.push(decoded);
+        }
+        if (embedUrls.length === 0) continue;
+
+        const resolvedStreams: string[] = [];
+        for (const embedUrl of embedUrls) {
+          const resolved = await EmbedResolvers.resolve(embedUrl);
+          const candidate = resolved || embedUrl;
+          if (candidate.toLowerCase() === cleanUrl.toLowerCase()) continue;
+          resolvedStreams.push(candidate);
+        }
+        if (resolvedStreams.length === 0) continue;
+
+        const validStreams = await MediaValidator.validateUrls(resolvedStreams);
+        const filteredValid = validStreams.filter((u) => u.toLowerCase() !== cleanUrl.toLowerCase());
+        const filteredResolved = resolvedStreams.filter((u) => u.toLowerCase() !== cleanUrl.toLowerCase() && !u.includes("embedshortener.co"));
+        const candidates = filteredValid.length > 0 ? filteredValid : filteredResolved.length > 0 ? filteredResolved : resolvedStreams;
+
+        const directCandidates = candidates.filter((u) => this.isDirectMediaUrl(u));
+        if (directCandidates.length === 0) continue;
+
+        const reachable: string[] = [];
+        for (const u of directCandidates) {
+          // eslint-disable-next-line no-await-in-loop
+          if (await this.isDirectReachable(u)) reachable.push(u);
+        }
+        if (reachable.length > 0) {
+          finalReachable = reachable;
+          break;
+        }
+        // si no hay reachable, reintentar con nueva lista aleatoria
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 300));
       }
 
-      // Resolver embeds a stream directo / iframe limpio
-      const resolvedStreams: string[] = [];
-      for (const embedUrl of embedUrls) {
-        const resolved = await EmbedResolvers.resolve(embedUrl);
-        resolvedStreams.push(resolved || embedUrl);
+      if (finalReachable.length === 0) {
+        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
       }
-
-      const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-      const finalStreams = validStreams.length > 0 ? validStreams : (resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl]);
 
       return {
-        stream_url: finalStreams[0],
-        all_available_streams: finalStreams,
+        stream_url: finalReachable[0],
+        all_available_streams: finalReachable,
         title: pageTitle,
       };
     } catch {
@@ -246,6 +417,9 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         stream_url: cleanUrl,
         all_available_streams: [cleanUrl],
       };
+    } finally {
+      // Limpiar timers pendientes
+      for (const t of fetchTimerMap) clearTimeout(t);
     }
   }
 
@@ -277,11 +451,60 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     }
   }
 
+  private isDirectMediaUrl(url: string): boolean {
+    return /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url) || url.includes("/m3u8/") || url.includes("hls-vod");
+  }
+
+  /**
+   * Verifica que un stream directo responde 200/206 y no es HTML.
+   * Solo se considera éxito si es medio directo y reachable.
+   */
+  private async isDirectReachable(url: string): Promise<boolean> {
+    if (!this.isDirectMediaUrl(url)) return false;
+    let controller: AbortController | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), 3500);
+      let res = await fetch(url, {
+        method: "HEAD",
+        signal: controller.signal,
+        headers: { "User-Agent": COMMON_HEADERS["User-Agent"] },
+      });
+      if (res.status === 405 || res.status === 501) {
+        res = await fetch(url, {
+          method: "GET",
+          signal: controller.signal,
+          headers: { "User-Agent": COMMON_HEADERS["User-Agent"], Range: "bytes=0-1" },
+        });
+      }
+      if (res.status === 200 || res.status === 206) {
+        const ct = (res.headers.get("content-type") || "").toLowerCase();
+        if (ct.includes("text/html")) return false;
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   private resolveRelativeUrl(relative: string, base: string): string {
     try {
       return new URL(relative, base).href;
     } catch {
       return relative;
+    }
+  }
+
+  private titleFromUrl(url: string): string {
+    try {
+      const slug = new URL(url).pathname.split("/").filter(Boolean).pop() || "";
+      return slug.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()).trim() || "Doramasflix";
+    } catch {
+      return "Doramasflix";
     }
   }
 }

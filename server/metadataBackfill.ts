@@ -127,8 +127,7 @@ export function enqueueShowBackfill(showId: string): void {
   startWorker();
 }
 
-const BACKFILL_POOL = 8; // TMDB tolera 40-50 rps: 8 en paralelo ni lo roza
-
+const BACKFILL_POOL = 20; // Aumentado a 20 workers simultáneos (TMDB permite 40-50 req/s)
 function startWorker(): void {
   if (state.timer) return;
   // POOL PARALELO: hasta 8 backfills simultáneos (antes: 1 cada 2.5s serial
@@ -159,7 +158,7 @@ function startWorker(): void {
           state.activeWorkers--;
         });
     }
-  }, 250);
+  }, 100);
 }
 
 /** Placeholder típico de scrapers/TMDB vacío: nunca debe guardarse como dato. */
@@ -339,6 +338,28 @@ export function getBackfillStatus(): {
     processed: state.processed,
     failed: state.failed,
     activeWorkers: state.activeWorkers,
-    recent: state.recent,
   };
+}
+
+export async function forceShowMetadata(showId: string, customTitle: string) {
+  const show = await prisma.show.findUnique({ where: { id: showId } });
+  if (!show) throw new Error("Serie no encontrada");
+
+  const kind = (show.category || "anime") as ContentKind;
+  const enriched = await enrichUniversalMetadata(customTitle, kind);
+  if (!enriched) throw new Error("No se encontraron metadatos en TMDB para este título");
+
+  const data: any = { title: customTitle };
+  if (enriched.description) data.description = enriched.description;
+  if (enriched.poster_path) data.poster_url = `https://image.tmdb.org/t/p/w780${enriched.poster_path}`;
+  else if (enriched.poster_url) data.poster_url = enriched.poster_url;
+  if (enriched.backdrop_path) data.banner_url = `https://image.tmdb.org/t/p/w1280${enriched.backdrop_path}`;
+  else if (enriched.banner_url) data.banner_url = enriched.banner_url;
+
+  if (Array.isArray(enriched.genres) && enriched.genres.length > 0) data.genres = enriched.genres.join(", ");
+  if (Number.isFinite(enriched.year) && enriched.year! > 0) data.year = enriched.year;
+  if (enriched.tmdb_id) data.tmdb_id = enriched.tmdb_id;
+
+  const updated = await prisma.show.update({ where: { id: showId }, data });
+  return updated;
 }

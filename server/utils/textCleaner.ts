@@ -138,6 +138,9 @@ export function isAnomalousDescription(text?: string | null, title?: string | nu
   // Marcas/Nombres de adaptadores o scrapers presentes en la sinopsis (ej. VerAnimes, Cinecalidad, Doramasflix)
   if (SCRAPER_BRAND_REGEX.test(t)) return true;
 
+  // Frases basura típicas ("ver peliculas", "ver anime", etc.)
+  if (/(?:ver pel[ií]culas|ver anime|ver series|online gratis|sub espa[nñ]ol|cap[ií]tulo|audio latino)/i.test(t)) return true;
+
   // Entidades HTML con nombre o numéricas
   if (/&(?:[a-z]{2,8}|#\d+|#x[0-9a-f]+);/i.test(t)) return true;
 
@@ -154,7 +157,7 @@ export function isAnomalousDescription(text?: string | null, title?: string | nu
   }
 
   // Placeholder
-  if (/^(?:sin descripci|contenido indexado|obra multimedia indexada|placeholder|ver anime\s)/i.test(t)) return true;
+  if (/^(?:sin descripci|contenido indexado|obra multimedia indexada|placeholder|ver anime|ver peliculas)/i.test(t)) return true;
 
   return false;
 }

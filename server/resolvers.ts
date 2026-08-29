@@ -30,6 +30,53 @@ export function isValidProvider(url: string): boolean {
   return true;
 }
 
+// ── Whitelist de servidores que SÍ podemos resolver a media nativo ───────────
+// Usado por los adaptadores (ej. VerAnimes) para PRIORIZAR estos servidores e
+// IGNORAR los ofuscados/raros no soportados. Debe mantenerse en sincronía con
+// las ramas de EmbedResolvers.resolve().
+export const SUPPORTED_SERVER_HOST_PATTERNS: ReadonlyArray<RegExp> = [
+  /mega\.nz/i,
+  /vimeos\.[a-z]+/i,
+  /mp4upload\.com/i,
+  /yourupload\.com/i,
+  /ok\.ru/i,
+  /voe\.sx/i,
+  /voe\./i,
+  /byselapuix/i,
+  /primeload\.co/i,
+  /byseqekaho\.com/i,
+  /bysekoze\.com/i,
+  /hexload/i,
+  /streamtape\.(?:com|to)/i,
+  /streamwish/i,
+  /filemoon/i,
+  /vidmoly/i,
+  /upstream/i,
+  /fastre/i,
+  /streamhide/i,
+  /swhoi/i,
+  /dood/i,
+  /dsvplay/i,
+  /ds2play/i,
+  /do7go/i,
+  /d000d/i,
+  /uqload/i,
+  /vidhide/i,
+  /vixhide/i,
+  /hqq\./i,
+  /waaw/i,
+  /divxplayer/i,
+  /cvary\.org/i,
+  /zilla-networks\.com/i,
+];
+
+/** true si la URL pertenece a un servidor que EmbedResolvers puede resolver a media renderable. */
+export function isSupportedServer(url: string): boolean {
+  const u = (url || "").toLowerCase();
+  if (!u) return false;
+  return SUPPORTED_SERVER_HOST_PATTERNS.some((p) => p.test(u));
+}
+
 // ── VimeosResolver: extractor del m3u8 maestro ──────────────────────────────
 // Fetch al HTML del embed (https://vimeos.net/embed-xyz.html) + regex sobre el
 // script de configuración del player (objeto sources, plano o Packed Dean Edwards).
@@ -308,6 +355,15 @@ export class EmbedResolvers {
       const hexload = await resolveHexload(rawUrl);
       if (hexload.type === "direct") return hexload.url;
       return rawUrl;
+    }
+
+    // 6d. BYSESUKIOR.COM: variante del ecosistema Byse (SPA React con playback
+    // AES-GCM). El .mp4/.m3u8 firmado vive en /api/videos/{code}/ dentro de
+    // playback.payload, descifrable con key_parts + version. Cuando es el único
+    // servidor disponible, lo desofuscamos para entregar media nativo al frontend.
+    if (this.isBysesukiorHost(rawUrl)) {
+      const bs = await this.resolveBysesukior(rawUrl);
+      if (bs) return bs;
     }
 
     // 7. STREAMTAPE: Extraer token y enlace directo
@@ -617,6 +673,75 @@ export class EmbedResolvers {
 
       const m3u8 = (inner.sources || []).map((s) => s.url || "").find((u) => u.startsWith("http") && u.includes(".m3u8"));
       return m3u8 || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detecta bysesukior.com (variante Byse con playback cifrado, sirve .mp4 firmado).
+   */
+  private static isBysesukiorHost(url: string): boolean {
+    return /bysesukior\.com/i.test(url);
+  }
+
+  /**
+   * Desofusca bysesukior.com /e/{code} a su .mp4/.m3u8 real:
+   * 1. GET {origin}/api/videos/{code}/ → JSON con playback {algorithm, iv, payload, key_parts, version}
+   * 2. key = concat(base64url(key_parts[i])) según permutación de `version` (N^0, 31-N^0)
+   * 3. AES-256-GCM decrypt (tag = últimos 16 bytes) → JSON con sources[].url
+   * Si el backend no responde al patrón Byse, cae al extractor genérico de .mp4.
+   */
+  private static async resolveBysesukior(url: string): Promise<string | null> {
+    try {
+      const match = url.match(/\/e\/([a-zA-Z0-9]+)/i);
+      if (!match) return null;
+
+      const origin = new URL(url).origin;
+      const apiUrl = `${origin}/api/videos/${match[1]}/`;
+      const json = await this.fetchHtml(apiUrl);
+      if (!json) return await this.resolveGeneric(url);
+
+      const data = JSON.parse(json) as {
+        playback?: {
+          algorithm?: string;
+          iv: string;
+          payload: string;
+          key_parts?: string[];
+          version?: string | number;
+        };
+      };
+      const pb = data.playback;
+      if (!pb || pb.algorithm !== "AES-256-GCM" || !Array.isArray(pb.key_parts)) {
+        return await this.resolveGeneric(url);
+      }
+
+      const b64url = (s: string) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+
+      const v = parseInt(String(pb.version ?? ""), 10);
+      const parts = Number.isInteger(v) ? [v ^ 0, 31 - (v ^ 0)] : [];
+      const keyParts = pb.key_parts;
+      const picked = parts
+        .filter((i) => i >= 1 && i <= keyParts.length)
+        .map((i) => keyParts[i - 1])
+        .filter((s): s is string => typeof s === "string" && s.length > 0);
+      const keyStr = picked.length > 0 ? picked : keyParts;
+
+      const key = Buffer.concat(keyStr.map(b64url));
+      const iv = b64url(pb.iv);
+      const full = b64url(pb.payload);
+      const tag = full.subarray(full.length - 16);
+      const body = full.subarray(0, full.length - 16);
+
+      const dec = crypto.createDecipheriv("aes-256-gcm", key, iv);
+      dec.setAuthTag(tag);
+      const plain = Buffer.concat([dec.update(body), dec.final()]).toString("utf8");
+      const inner = JSON.parse(plain) as { sources?: Array<{ url?: string }> };
+
+      const media = (inner.sources || [])
+        .map((s) => s.url || "")
+        .find((u) => u.startsWith("http") && (u.includes(".mp4") || u.includes(".m3u8")));
+      return media || await this.resolveGeneric(url);
     } catch {
       return null;
     }

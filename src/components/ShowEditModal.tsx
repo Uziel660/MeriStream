@@ -18,6 +18,7 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [forcingTmdb, setForcingTmdb] = useState(false);
   const [platforms, setPlatforms] = useState<Array<{ site: string; count: number }> | null>(null);
   const [serversByPlatform, setServersByPlatform] = useState<Map<string, Map<string, number>> | null>(null);
   const [episodePlatforms, setEpisodePlatforms] = useState<Array<{ domain: string; episodes: number }> | null>(null);
@@ -107,6 +108,37 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
       setRefreshMsg(e?.message || 'Error al refrescar');
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const forceTmdbMatch = async () => {
+    const customTitle = window.prompt('Introduce el título exacto a buscar en TMDB:', form.title);
+    if (!customTitle) return;
+
+    setForcingTmdb(true);
+    setSavedMsg(null);
+    try {
+      // Usamos el endpoint genérico de refetch/enriquecimiento que ya existe en el backend
+      // Si no existe, usamos la API universal de catalog/analyze pero forzando que tome metadata y la inyecte.
+      // O podemos enviar un simple POST al servidor indicando un backfill forzado con este título.
+      const res = await fetch(`/api/v1/shows/${show.id}/force-metadata`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: customTitle })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setForm((f: any) => ({ ...f, ...data.updated_show }));
+        setSavedMsg('Metadatos forzados desde TMDB con éxito.');
+        if (onSaved) onSaved(data.updated_show);
+      } else {
+        const err = await res.json();
+        setSavedMsg(err.detail || err.error || 'Error al forzar metadatos');
+      }
+    } catch (e: any) {
+      setSavedMsg(e?.message || 'Error al forzar metadatos');
+    } finally {
+      setForcingTmdb(false);
     }
   };
 
@@ -301,6 +333,16 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
           >
             <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refrescando...' : 'Refrescar streams'}
+          </button>
+          <button
+            type="button"
+            onClick={forceTmdbMatch}
+            disabled={forcingTmdb}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Fuerza la coincidencia y relleno de metadatos usando un título específico para TMDB"
+          >
+            <Globe size={13} className={forcingTmdb ? 'animate-spin' : ''} />
+            {forcingTmdb ? 'Buscando...' : 'Forzar TMDB Match'}
           </button>
           {savedMsg && <span className="text-[11px] text-emerald-400">{savedMsg}</span>}
           {refreshMsg && <span className="text-[11px] text-sky-400">{refreshMsg}</span>}

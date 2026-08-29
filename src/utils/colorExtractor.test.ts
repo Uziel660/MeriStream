@@ -7,6 +7,7 @@ describe('extractDominantColor', () => {
   let mockGetContext: any;
   let mockCreateElement: any;
   let currentImageInstance: any;
+  let imageInstances: any[] = [];
 
   beforeEach(() => {
     mockGetImageData = vi.fn().mockReturnValue({
@@ -33,6 +34,7 @@ describe('extractDominantColor', () => {
       createElement: mockCreateElement
     } as any;
 
+    imageInstances = [];
     global.Image = class {
       crossOrigin = '';
       src = '';
@@ -40,6 +42,7 @@ describe('extractDominantColor', () => {
       onerror: any = null;
       constructor() {
         currentImageInstance = this;
+        imageInstances.push(this);
       }
     } as any;
   });
@@ -57,15 +60,26 @@ describe('extractDominantColor', () => {
   });
 
   it('returns fallback color on image load error', async () => {
-    const promise = extractDominantColor('error-url.jpg', 'fallback');
+    const originalUrl = 'error-url.jpg';
+    const promise = extractDominantColor(originalUrl, 'fallback');
     expect(currentImageInstance).toBeDefined();
-    expect(currentImageInstance.src).toBe('error-url.jpg');
+    expect(currentImageInstance.src).toBe(originalUrl);
+    expect(imageInstances).toHaveLength(1);
     currentImageInstance.onerror();
     // Flush: la primera falla dispara el reintento vía proxy (nueva instancia Image)
     await new Promise((r) => setTimeout(r, 0));
-    expect(currentImageInstance.src).toContain('/api/v1/proxy/stream?url=');
-    currentImageInstance.onerror();
+    expect(imageInstances).toHaveLength(2);
+    expect(currentImageInstance.src).toBe(`/api/v1/proxy/image?url=${encodeURIComponent(originalUrl)}`);
+    expect(currentImageInstance.src).toContain('/api/v1/proxy/image?url=');
+    // URL debe estar codificada (encodeURIComponent)
+    expect(currentImageInstance.src).toContain(encodeURIComponent(originalUrl));
+    const retryInstance = currentImageInstance;
+    retryInstance.onerror();
     const color = await promise;
+    // Solo un retry: no se crea una tercera instancia
+    expect(imageInstances).toHaveLength(2);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(imageInstances).toHaveLength(2);
     expect(color).toBeDefined();
     expect(color.length).toBe(3);
   });
@@ -80,13 +94,25 @@ describe('extractDominantColor', () => {
     }
     mockGetImageData.mockReturnValue({ data });
 
-    const promise = extractDominantColor('https://s4.anilist.co/cover.jpg');
+    const originalUrl = 'https://s4.anilist.co/cover.jpg';
+    const promise = extractDominantColor(originalUrl);
+    expect(imageInstances).toHaveLength(1);
+    expect(currentImageInstance.src).toBe(originalUrl);
     currentImageInstance.onerror();
     await new Promise((r) => setTimeout(r, 0));
-    expect(currentImageInstance.src).toContain('/api/v1/proxy/stream?url=');
+    expect(imageInstances).toHaveLength(2);
+    expect(currentImageInstance.src).toBe(`/api/v1/proxy/image?url=${encodeURIComponent(originalUrl)}`);
+    expect(currentImageInstance.src).toContain('/api/v1/proxy/image?url=');
+    // Verifica codificación correcta de URL externa
+    expect(currentImageInstance.src).toContain(encodeURIComponent(originalUrl));
+    expect(currentImageInstance.src).toContain('https%3A%2F%2Fs4.anilist.co');
     currentImageInstance.onload();
 
     const color = await promise;
+    // Solo hubo un retry; no se crean más instancias tras éxito
+    expect(imageInstances).toHaveLength(2);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(imageInstances).toHaveLength(2);
     expect(color).toEqual([0, 0, 255]);
   });
 

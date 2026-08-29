@@ -52,31 +52,62 @@ describe("LaMovieAdapter - integracion real contra lamovie.org", () => {
   let allStreams: string[] = [];
 
   it(
-    "catalogo: analyze('https://lamovie.org/peliculas','catalog') -> catalog_items.length > 500",
+    "catalogo: analyze('https://lamovie.org/peliculas','catalog') -> page_type catalog con lote paginado valido",
     async () => {
       const result = await adapter.analyze("https://lamovie.org/peliculas", "catalog");
       console.log(`page_type: ${result.page_type}`);
       console.log(`title: ${result.title}`);
       console.log(`catalog_items: ${result.catalog_items.length}`);
       expect(result.page_type).toBe("catalog");
-      expect(result.catalog_items.length).toBeGreaterThan(500);
+      // Contrato actual verificado E2E (wp-api/v1/listing/movies?postsPerPage=24):
+      // una sola pagina retorna un lote, no el catalogo completo agregado.
+      expect(result.catalog_items.length).toBeGreaterThanOrEqual(10);
+      expect(result.catalog_items.length).toBeLessThanOrEqual(30);
 
       catalogItems = result.catalog_items;
+
+      // Validar contrato de cada item: titulo no vacio, URL real de LaMovie y sin duplicados
+      const seen = new Set<string>();
+      for (const item of catalogItems) {
+        expect(item.title.trim().length).toBeGreaterThan(0);
+        expect(item.url).toMatch(/^https:\/\/lamovie\.org\/(peliculas|series|animes)\/.+\/$/);
+        expect(seen.has(item.url)).toBe(false);
+        seen.add(item.url);
+      }
+
       const first = catalogItems[0];
       console.log(`primer item: ${first.title} -> ${first.url}`);
       expect(first.title.trim().length).toBeGreaterThan(0);
-      expect(first.url.startsWith("http")).toBe(true);
+      expect(first.url.startsWith("https://lamovie.org/")).toBe(true);
     },
     240000
   );
 
   it(
-    "paginacion: analyze('https://lamovie.org/peliculas?page=2','catalog') -> items > 0",
+    "paginacion: analyze('https://lamovie.org/peliculas?page=2','catalog') -> lote valido sin solapamiento con page=1",
     async () => {
       const result = await adapter.analyze("https://lamovie.org/peliculas?page=2", "catalog");
       console.log(`pagina 2 items: ${result.catalog_items.length}`);
       expect(result.page_type).toBe("catalog");
-      expect(result.catalog_items.length).toBeGreaterThan(0);
+      expect(result.catalog_items.length).toBeGreaterThanOrEqual(10);
+      expect(result.catalog_items.length).toBeLessThanOrEqual(30);
+
+      // Validar contrato de items de pagina 2
+      const seen2 = new Set<string>();
+      for (const item of result.catalog_items) {
+        expect(item.title.trim().length).toBeGreaterThan(0);
+        expect(item.url).toMatch(/^https:\/\/lamovie\.org\/(peliculas|series|animes)\/.+\/$/);
+        expect(seen2.has(item.url)).toBe(false);
+        seen2.add(item.url);
+      }
+
+      // Sin duplicados entre page=1 y page=2 (paginacion real)
+      if (catalogItems.length > 0) {
+        const page1Urls = new Set(catalogItems.map((c) => c.url));
+        const overlap = result.catalog_items.filter((c) => page1Urls.has(c.url));
+        console.log(`overlap p1-p2: ${overlap.length}`);
+        expect(overlap.length).toBe(0);
+      }
     },
     240000
   );

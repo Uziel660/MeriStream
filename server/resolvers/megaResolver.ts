@@ -71,6 +71,20 @@ export function parseMegaUrl(url: string): MegaFileLink | null {
     return buildLink("file", segments[1], fragment || queryKey);
   }
 
+  // ── Embed legacy con "!" en path: /embed/!{ID}!{KEY} (usado por TioAnime) ──
+  // Ej: https://mega.nz/embed/!BTU1DKKR!RLPNcC8ohIh769HwlEZUPfJLH5n3Xsd2CiIZeEU0cBk
+  // El fileId/key van en el segmento, no en fragment.
+  if (segments[0] === "embed" && segments[1] && segments[1].startsWith("!")) {
+    const embMatch = /^!([^!]+)!([^!]+)$/.exec(segments[1]);
+    if (embMatch) return buildLink("file", embMatch[1], embMatch[2]);
+  }
+
+  // ── Formato con "!" en pathname sin embed (raro): /!{ID}!{KEY}
+  if (segments.length === 1 && segments[0].startsWith("!")) {
+    const m = /^!([^!]+)!([^!]+)$/.exec(segments[0]);
+    if (m) return buildLink("file", m[1], m[2]);
+  }
+
   return null;
 }
 

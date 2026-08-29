@@ -181,7 +181,7 @@ describe('streamOptimizer', () => {
       const directUrls = [
         'https://example.com/video.mp4',
         'https://example.com/stream.m3u8',
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+        'https://cdn.example.com/content/movie.mp4',
         'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
         'https://example.com/video?quality=1080p'
       ];
@@ -241,28 +241,56 @@ describe('streamOptimizer', () => {
         'https://mega.nz/file/1234',
         'https://example.com/video-480p.mp4',
         'https://example.com/video-4k.m3u8',
-        'https://voe.sx/embed/123',
+        'https://byselapuix.com/embed/123',
         'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
       ];
 
       const result = rankAndSortServers(urls);
 
-      expect(result).toHaveLength(5);
+      // Big Buck Bunny / demo / sample nunca es video real -> debe quedar excluido
+      expect(result).toHaveLength(4);
+      expect(result.some((s) => s.url.toLowerCase().includes('bigbuckbunny') || s.url.toLowerCase().includes('/sample/'))).toBe(false);
 
       expect(result[0].url).toBe('https://example.com/video-4k.m3u8');
-      expect(result[1].url).toBe('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
-      expect(result[2].url).toBe('https://voe.sx/embed/123');
-      expect(result[3].url).toBe('https://mega.nz/embed/1234');
-      expect(result[4].url).toBe('https://example.com/video-480p.mp4');
+      expect(result[1].url).toBe('https://byselapuix.com/embed/123');
+      expect(result[2].url).toBe('https://mega.nz/embed/1234');
+      expect(result[3].url).toBe('https://example.com/video-480p.mp4');
 
       expect(result[0].quality).toBe('4K');
       expect(result[0].isEmbed).toBe(false);
 
       expect(result[1].quality).toBe('1080p');
-      expect(result[1].isEmbed).toBe(false);
+      expect(result[1].isEmbed).toBe(true);
+      expect(result[1].health).toBe('buena');
+    });
 
-      expect(result[2].isEmbed).toBe(true);
-      expect(result[2].health).toBe('buena');
+    it('does not filter legitimate URLs that contain demo as substring inside another word', () => {
+      const legit = [
+        'https://cdn.example.com/demonstration/video-1080p.mp4',
+        'https://demo.example.com/content/movie-720p.mp4',
+        'https://example.com/videos/mydemo123.mp4',
+        'https://cdn.example.com/content/sampled/clip-1080p.mp4',
+      ];
+      // Ninguna debe marcarse como placeholder por contener "demo"/"sample" dentro de otra palabra o en dominio
+      legit.forEach((u) => {
+        const s = scoreServer(u, 0);
+        expect(s.notPlayable).toBeFalsy();
+        expect(s.score).toBeGreaterThan(0);
+      });
+      const ranked = rankAndSortServers([...legit, 'https://example.com/video-4k.m3u8']);
+      // demo/sample como segmento real sí se filtraría; estas no, deben permanecer
+      expect(ranked).toHaveLength(5);
+      expect(ranked.some((s) => s.url.includes('demonstration'))).toBe(true);
+      expect(ranked.some((s) => s.url.includes('demo.example.com'))).toBe(true);
+
+      // En cambio, segmento delimitado sí debe filtrarse
+      const placeholderDemo = scoreServer('https://cdn.example.com/demo/video-1080p.mp4', 0);
+      expect(placeholderDemo.notPlayable).toBe(true);
+      expect(placeholderDemo.score).toBe(-1000);
+      const placeholderSample = scoreServer('https://cdn.example.com/sample/clip.m3u8', 0);
+      expect(placeholderSample.notPlayable).toBe(true);
+      const withBunny = scoreServer('https://cdn.example.com/content/BigBuckBunny.mp4', 0);
+      expect(withBunny.notPlayable).toBe(true);
     });
   });
 

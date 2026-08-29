@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { TioPlusAdapter } from "../../server/scrapers/adapters/TioPlusAdapter";
+import { EmbedResolvers } from "../../server/resolvers";
+import { MediaValidator } from "../../server/validator";
 import type { ExtractedCatalogItem, UniversalAnalysisResult } from "../../server/types";
 
 const TEST_TIMEOUT = 240000;
@@ -45,7 +47,7 @@ function isKnownEmbed(url: string): boolean {
   const lower = url.toLowerCase();
   return (
     KNOWN_EMBED_HOSTS.some((h) => lower.includes(h)) ||
-    /\.(m3u8|mp4|webm)(\?|$)/i.test(lower)
+    /\.(m3u8|mp4|webm)(\?|#|$)/i.test(lower)
   );
 }
 
@@ -150,7 +152,7 @@ describe("TioPlusAdapter (tioplus.app)", () => {
       const main = streamResult!.stream_url;
       expect(main.startsWith("http")).toBe(true);
       const anyValid = streamResult!.all_available_streams.some(
-        (s) => isKnownEmbed(s) || /\.(m3u8|mp4|webm)(\?|$)/i.test(s)
+        (s) => isKnownEmbed(s) || /\.(m3u8|mp4|webm)(\?|#|$)/i.test(s)
       );
       expect(anyValid).toBe(true);
     }
@@ -179,4 +181,67 @@ describe("TioPlusAdapter (tioplus.app)", () => {
     },
     TEST_TIMEOUT
   );
+
+  describe("regresión determinista: orden de candidatos (sin red)", () => {
+    it("ordena streams directos .m3u8/.mp4 primero (direct-first)", async () => {
+      const html = `
+        <div data-video="${Buffer.from("https://vidhideplus.com/v/abc123").toString("base64")}"></div>
+        <div data-server="${Buffer.from("https://cdn.example.com/video.m3u8").toString("base64")}"></div>
+      `;
+      const localAdapter = new TioPlusAdapter();
+      const originalFetch = global.fetch;
+      vi.spyOn(localAdapter as any, "fetchHtml").mockImplementation(async (url: string) => {
+        if (url.includes("/player/")) {
+          return `<script>window.location.href='https://vidhideplus.com/v/abc123'</script>`;
+        }
+        return html;
+      });
+      vi.spyOn(EmbedResolvers, "resolve").mockImplementation(async (u: string) => u);
+      vi.spyOn(MediaValidator, "validateUrls").mockImplementation(async (urls: string[]) => urls);
+      // Mock global fetch para rankDirectByProbe: forzar fallback a orden original
+      // @ts-ignore
+      global.fetch = vi.fn(async () => {
+        throw new Error("mock network off");
+      }) as any;
+
+      try {
+        const result = await localAdapter.extractStream("https://tioplus.app/pelicula/test-mock");
+        expect(result.all_available_streams.length).toBeGreaterThanOrEqual(2);
+        expect(result.stream_url).toMatch(/\.m3u8/);
+        expect(result.all_available_streams[0]).toMatch(/\.m3u8/);
+        const firstIsDirect = /\.(m3u8|mp4|webm)(\?|#|$)/i.test(result.all_available_streams[0]);
+        expect(firstIsDirect).toBe(true);
+      } finally {
+        vi.restoreAllMocks();
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("filtra players SPA no reproducibles antes de resolver", async () => {
+      const localAdapter = new TioPlusAdapter();
+      // @ts-ignore acceso a método privado para verificar filtro
+      const isUnplayable = (localAdapter as any).isUnplayablePlayerUrl.bind(localAdapter);
+      expect(isUnplayable("https://strp2p.com/e/abc#token")).toBe(true);
+      expect(isUnplayable("https://4meplayer.pro/embed/xyz")).toBe(true);
+      expect(isUnplayable("https://upns.pro/player/123")).toBe(true);
+      expect(isUnplayable("https://vidhideplus.com/v/abc")).toBe(false);
+      expect(isUnplayable("https://cdn.example.com/video.m3u8")).toBe(false);
+    });
+
+    it("decodeDataVideos preserva orden y decodifica base64 a URLs http", () => {
+      const m3u8 = "https://cdn.example.com/video.m3u8";
+      const embed = "https://vidhideplus.com/v/xyz";
+      const html = `
+        <button data-video="${Buffer.from(m3u8).toString("base64")}"></button>
+        <button data-server="${Buffer.from(embed).toString("base64")}"></button>
+      `;
+      const adapter2 = new TioPlusAdapter();
+      const cands = adapter2.decodeDataVideos(html);
+      expect(cands).toContain(m3u8);
+      expect(cands).toContain(embed);
+      // Orden debe ser el del DOM
+      expect(cands[0]).toBe(m3u8);
+      expect(cands[1]).toBe(embed);
+    });
+  });
 });

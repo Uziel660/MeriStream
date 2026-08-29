@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { VerAnimesAdapter } from "../../server/scrapers/adapters/VerAnimesAdapter";
+import { isSupportedServer } from "../../server/resolvers";
 import type { ExtractedCatalogItem, UniversalAnalysisResult } from "../../server/types";
 
 const TEST_TIMEOUT = 240000;
@@ -178,4 +179,32 @@ describe("VerAnimesAdapter (wwv.veranimes.net)", () => {
     },
     TEST_TIMEOUT
   );
+
+  describe("priorización de servidores (sin red)", () => {
+    it("isSupportedServer: clasifica servidores conocidos como soportados", () => {
+      expect(isSupportedServer("https://mega.nz/embed/abc#key")).toBe(true);
+      expect(isSupportedServer("https://ok.ru/video/123")).toBe(true);
+      expect(isSupportedServer("https://www.mp4upload.com/embed-xyz.html")).toBe(true);
+      expect(isSupportedServer("https://voe.sx/e/xyz")).toBe(true);
+      expect(isSupportedServer("https://streamtape.com/e/xyz")).toBe(true);
+    });
+
+    it("isSupportedServer: bysesukior (ofuscado) NO es servidor soportado por defecto", () => {
+      expect(isSupportedServer("https://bysesukior.com/e/abcd1234")).toBe(false);
+    });
+
+    it("decodeDataVideoButtons: decodifica hex/data-video a URLs de servidor", () => {
+      const hex = Buffer.from("https://mega.nz/embed/abc#def", "utf-8")
+        .toString("hex");
+      const html = `<ul class="opt"><li encrypt="${hex}"></li></ul>`;
+      const urls = adapter.decodeDataVideoButtons(html);
+      expect(urls).toContain("https://mega.nz/embed/abc#def");
+    });
+
+    it("decodeDataVideoButtons: ignora botones sin URL válida", () => {
+      const html = `<ul class="opt"><li encrypt="zzz"></li></ul>`;
+      const urls = adapter.decodeDataVideoButtons(html);
+      expect(urls.length).toBe(0);
+    });
+  });
 });

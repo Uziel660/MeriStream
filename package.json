@@ -14,7 +14,10 @@
     "db:generate": "prisma generate",
     "deploy": "python tools/deploy_fast.py",
     "fast-start": "npx tsx tools/fast-start.ts",
-    "merge-dbs": "npx tsx tools/merge-dbs.ts"
+    "merge-dbs": "npx tsx tools/merge-dbs.ts",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:live": "cross-env LIVE_SCRAPER_E2E=1 playwright test --project=chromium",
+    "test:e2e:list": "playwright test --project=chromium --list"
   },
   "dependencies": {
     "@crawlee/impit-client": "^3.18.1",
@@ -42,17 +45,20 @@
     "undici": "^8.10.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/colorthief": "^2.6.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.4.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/sanitize-html": "^2.16.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "playwright": "^1.62.1",
     "postcss": "^8.4.49",

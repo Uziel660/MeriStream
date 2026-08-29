@@ -1,7 +1,9 @@
 const { PrismaClient } = require("@prisma/client");
+require("dotenv").config();
 
 const prisma = new PrismaClient();
-const TMDB_KEY = "4598f607660f5c4eb423d868da148981";
+const TMDB_KEY = process.env.TMDB_API_KEY;
+if (!TMDB_KEY) throw new Error("TMDB_API_KEY is required");
 const DRY_RUN = !process.argv.includes("--apply");
 const VERBOSE = process.argv.includes("--verbose");
 

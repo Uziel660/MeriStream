@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildSearchCandidates,
   cleanQueryTitle,
@@ -312,9 +312,21 @@ function googleEcho(q: string): unknown {
   return [[[q, "", "", ""], [], "", "", "", []]];
 }
 
+const ORIGINAL_TMDB_KEY = process.env.TMDB_API_KEY;
+
+beforeEach(() => {
+  // Determinismo: key dummy para que el engine no haga early-return y permita stub de /search/multi + fallback en-US.
+  // También aisla cache entre tests y evita dependencia del orden.
+  process.env.TMDB_API_KEY = ORIGINAL_TMDB_KEY || "test-dummy-key";
+  __resetEngineCaches();
+  vi.unstubAllGlobals();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   __resetEngineCaches();
+  if (ORIGINAL_TMDB_KEY === undefined) delete (process.env as Record<string, string | undefined>).TMDB_API_KEY;
+  else process.env.TMDB_API_KEY = ORIGINAL_TMDB_KEY;
 });
 
 describe("enrichUniversalMetadata (integración con mocks)", () => {

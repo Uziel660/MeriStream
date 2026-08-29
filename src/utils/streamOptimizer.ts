@@ -234,11 +234,26 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
   }
 
   // Placeholder del host (ej. VOE sirve Big Buck Bunny cuando el archivo cayó): invalidar
+  // Big Buck Bunny / demo / sample NUNCA es video real (orden del dueño): se marca no reproducible.
+  // demo/sample se detecta solo como segmento de ruta/nombre de archivo delimitado, no como substring arbitrario
   const u0 = url.toLowerCase();
+  let pathname = '';
+  try {
+    pathname = new URL(url).pathname.toLowerCase();
+  } catch {
+    // Fallback para URLs relativas o malformadas: extrae hasta ?/#
+    const clean = String(url).toLowerCase().split('?')[0].split('#')[0];
+    const m = clean.match(/^[a-z][a-z0-9+.-]*:\/\/[^/]+(\/.*)$/);
+    pathname = m ? m[1] : clean.startsWith('/') ? clean : `/${clean}`;
+  }
+  const isDemoOrSampleSegment =
+    /\/demo(\/|$|\.|\-|_)/.test(pathname) || /\/sample(\/|$|\.|\-|_)/.test(pathname);
   const isPlaceholder =
-    ((u0.includes('big_buck_bunny') || u0.includes('big-buck-bunny') || u0.includes('bigbuckbunny')) &&
-      !u0.includes('googleapis.com')) ||
-    u0.endsWith('_5mb.mp4');
+    u0.includes('big_buck_bunny') ||
+    u0.includes('big-buck-bunny') ||
+    u0.includes('bigbuckbunny') ||
+    isDemoOrSampleSegment ||
+    pathname.endsWith('_5mb.mp4');
   if (isPlaceholder) {
     return {
       id: `server-${index}-placeholder`,
@@ -380,9 +395,13 @@ export function rankAndSortServers(urls: string[]): ScoredServer[] {
 
   const deduplicatedUrls = Array.from(deduplicatedUrlsMap.values());
   const scored = deduplicatedUrls.map((url, idx) => scoreServer(url, idx));
+  // Filtrar placeholders/demo/sample (Big Buck Bunny, /sample/, demo, _5mb.mp4): nunca son
+  // video real y no deben aparecer como opción válida. Solo se descartan los
+  // placeholders; las páginas crudas (rawpage) se conservan cuando son la única opción.
+  const playable = scored.filter((s) => !(s.notPlayable && s.id.includes('placeholder')));
 
   // Ordenar descendentemente por puntuación (máxima calidad + salud primero)
-  return scored.sort((a, b) => b.score - a.score);
+  return playable.sort((a, b) => b.score - a.score);
 }
 
 /**

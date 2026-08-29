@@ -614,6 +614,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           <button
             onClick={onClose}
             type="button"
+            title="Salir del panel y cerrar sesión"
+            aria-label="Salir del panel y cerrar sesión"
             className="flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X size={18} />

@@ -145,6 +145,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, "verification.config.json");
 const MIN_INTERVAL_MINUTES = 5;
 const MAX_INTERVAL_MINUTES = 525600; // 1 año
 const SCOPE_MODES = ["all", "platforms", "category"] as const;
+const SUPPORTED_CATEGORIES = ["anime", "movie", "movies", "series"] as const;
 
 /** Plataformas típicas por categoría (scope_mode="category", fase novedades). */
 const CATEGORY_PLATFORM_MAP: Record<string, string[]> = {
@@ -215,8 +216,8 @@ function cleanPlatform(p: unknown): string {
 function isValidUrlOrEmpty(u: string): boolean {
   if (!u) return true;
   try {
-    new URL(u);
-    return true;
+    const parsed = new URL(u);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
   }
@@ -325,14 +326,6 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
     }
     next.scope_mode = patch.scope_mode;
   }
-  if (patch.platforms !== undefined) {
-    if (!Array.isArray(patch.platforms)) throw new Error("'platforms' debe ser un array de strings");
-    next.platforms = [...new Set(patch.platforms.map(cleanPlatform).filter(Boolean))];
-  }
-  if (patch.category !== undefined) {
-    const c = typeof patch.category === "string" ? patch.category.trim().toLowerCase() : "";
-    next.category = c || undefined;
-  }
   if (patch.catalog_urls_by_platform !== undefined) {
     if (!patch.catalog_urls_by_platform || typeof patch.catalog_urls_by_platform !== "object" || Array.isArray(patch.catalog_urls_by_platform)) {
       throw new Error("'catalog_urls_by_platform' debe ser un objeto { plataforma: url }");
@@ -345,6 +338,30 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
       next.catalog_urls_by_platform[key] = url;
     }
   }
+  if (patch.platforms !== undefined) {
+    if (!Array.isArray(patch.platforms)) throw new Error("'platforms' debe ser un array de strings");
+    const cleaned = [...new Set(patch.platforms.map(cleanPlatform).filter(Boolean))];
+    for (const p of cleaned) {
+      const url = next.catalog_urls_by_platform[p];
+      if (!url || typeof url !== "string" || !url.trim() || !isValidUrlOrEmpty(url)) {
+        throw new Error(`Plataforma '${p}' no tiene una URL de catálogo válida configurada`);
+      }
+    }
+    next.platforms = cleaned;
+  }
+  if (patch.category !== undefined) {
+    if (patch.category === null || patch.category === "") {
+      next.category = undefined;
+    } else if (typeof patch.category === "string") {
+      const c = patch.category.trim().toLowerCase();
+      if (!SUPPORTED_CATEGORIES.includes(c as any)) {
+        throw new Error(`Categoría inválida '${patch.category}'. Categorías soportadas: ${SUPPORTED_CATEGORIES.join(", ")}`);
+      }
+      next.category = c;
+    } else {
+      throw new Error("'category' debe ser string o null");
+    }
+  }
   if (patch.metadata_only !== undefined) {
     if (typeof patch.metadata_only !== "boolean") throw new Error("'metadata_only' debe ser boolean");
     next.metadata_only = patch.metadata_only;
@@ -352,6 +369,12 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
   if (patch.sync_known_episodes !== undefined) {
     if (typeof patch.sync_known_episodes !== "boolean") throw new Error("'sync_known_episodes' debe ser boolean");
     next.sync_known_episodes = patch.sync_known_episodes;
+  }
+  if (next.scope_mode === "platforms" && next.platforms.length === 0) {
+    throw new Error("'platforms' requiere al menos una plataforma cuando scope_mode es 'platforms'");
+  }
+  if (next.scope_mode === "category" && !next.category) {
+    throw new Error("'category' es requerida cuando scope_mode es 'category'");
   }
 
   state.config = next;
@@ -441,16 +464,27 @@ export function getVerificationStatus(): VerificationStatus {
 
 function resolveCatalogPlatforms(cfg: VerificationConfig, overridePlatforms?: string[]): string[] {
   if (overridePlatforms && overridePlatforms.length > 0) {
-    return overridePlatforms.map(cleanPlatform).filter(Boolean);
+    return overridePlatforms
+      .map(cleanPlatform)
+      .filter((p) => Boolean(p && cfg.catalog_urls_by_platform[p] && isValidUrlOrEmpty(cfg.catalog_urls_by_platform[p])));
   }
   if (cfg.scope_mode === "platforms") {
-    return cfg.platforms.map(cleanPlatform).filter(Boolean);
+    return cfg.platforms
+      .map(cleanPlatform)
+      .filter((p) => Boolean(p && cfg.catalog_urls_by_platform[p] && isValidUrlOrEmpty(cfg.catalog_urls_by_platform[p])));
   }
   if (cfg.scope_mode === "category") {
-    const mapped = CATEGORY_PLATFORM_MAP[String(cfg.category || "").toLowerCase()];
-    if (mapped) return mapped.filter((p) => cfg.catalog_urls_by_platform[p]);
+    const cat = String(cfg.category || "").toLowerCase().trim();
+    const mapped = CATEGORY_PLATFORM_MAP[cat];
+    if (!mapped || mapped.length === 0) return [];
+    return mapped.filter((p) => Boolean(cfg.catalog_urls_by_platform[p] && isValidUrlOrEmpty(cfg.catalog_urls_by_platform[p])));
   }
-  return Object.keys(cfg.catalog_urls_by_platform).filter((p) => cfg.catalog_urls_by_platform[p]);
+  if (cfg.scope_mode === "all") {
+    return Object.keys(cfg.catalog_urls_by_platform).filter(
+      (p) => Boolean(cfg.catalog_urls_by_platform[p] && isValidUrlOrEmpty(cfg.catalog_urls_by_platform[p]))
+    );
+  }
+  return [];
 }
 
 /**
@@ -464,21 +498,26 @@ function resolveCatalogPlatforms(cfg: VerificationConfig, overridePlatforms?: st
  */
 async function resolveMetadataShowIds(cfg: VerificationConfig, overridePlatforms?: string[]): Promise<string[]> {
   if (overridePlatforms && overridePlatforms.length > 0) {
-    return showsLinkedToPlatforms(overridePlatforms);
+    return showsLinkedToPlatforms(overridePlatforms.filter((p) => Boolean(cfg.catalog_urls_by_platform[cleanPlatform(p)])));
   }
-  if (cfg.scope_mode === "category" && cfg.category) {
+  if (cfg.scope_mode === "category") {
+    const cat = String(cfg.category || "").toLowerCase().trim();
+    if (!SUPPORTED_CATEGORIES.includes(cat as any)) return [];
     const rows = await prisma.show.findMany({
-      where: { category: { contains: cfg.category.toLowerCase() } },
+      where: { category: { contains: cat } },
       select: { id: true },
       orderBy: { created_at: "asc" },
     });
     return rows.map((r) => r.id);
   }
   if (cfg.scope_mode === "platforms") {
-    return showsLinkedToPlatforms(cfg.platforms);
+    return showsLinkedToPlatforms(cfg.platforms.filter((p) => Boolean(cfg.catalog_urls_by_platform[cleanPlatform(p)])));
   }
-  const rows = await prisma.show.findMany({ select: { id: true }, orderBy: { created_at: "asc" } });
-  return rows.map((r) => r.id);
+  if (cfg.scope_mode === "all") {
+    const rows = await prisma.show.findMany({ select: { id: true }, orderBy: { created_at: "asc" } });
+    return rows.map((r) => r.id);
+  }
+  return [];
 }
 
 async function showsLinkedToPlatforms(platforms: string[]): Promise<string[]> {
@@ -608,22 +647,8 @@ async function findKnownWork(titleKey: string, year?: number | null, kind?: Cont
   if (show) {
     return { id: show.id, title: show.title, episodeCount: show._count.episodes };
   }
-  // Paridad multi-fuente: puede existir MediaItem sin espejo legacy aún.
-  const mediaItems = await prisma.mediaItem.findMany({
-    where: {
-      OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }],
-      ...(kind ? { kind } : {}),
-    },
-    orderBy: { created_at: "asc" },
-    select: { id: true, title: true, year: true },
-    take: 20,
-  });
-  const mediaItem = requestedYear
-    ? mediaItems.find((candidate) => candidate.year === requestedYear) ??
-      mediaItems.find((candidate) => !isPlausibleYear(candidate.year)) ??
-      null
-    : mediaItems[0] ?? null;
-  if (mediaItem) return { id: mediaItem.id, title: mediaItem.title, episodeCount: -1 };
+  // Si no existe Show, devolvemos null para que saveShowWithDeduplication
+  // cree el Show y reutilice el MediaItem existente.
   return null;
 }
 

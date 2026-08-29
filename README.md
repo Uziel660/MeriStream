@@ -75,6 +75,7 @@ DATABASE_URL="postgresql://voidstream:voidstream123@localhost:5433/voidstream?sc
 TMDB_API_KEY="tu-api-key-de-tmdb"
 ADMIN_USER="admin"
 ADMIN_PASS="tu-password"
+ADMIN_SESSION_SECRET="genera-un-secreto-aleatorio-de-al-menos-32-bytes"
 ```
 
 ### 5. Preparar la base de datos
@@ -129,8 +130,9 @@ npx tsx tools/repopulate-source.ts      # Repoblar campo source desde dominios d
 |----------|-----------|-------------|
 | `DATABASE_URL` | Sí | Conexión a PostgreSQL |
 | `TMDB_API_KEY` | Sí | API key de The Movie Database (metadatos en español) |
-| `ADMIN_USER` | No | Usuario del panel admin (default: `admin`) |
-| `ADMIN_PASS` | No | Contraseña del panel admin |
+| `ADMIN_USER` | Sí para `/admin` | Usuario del panel administrativo |
+| `ADMIN_PASS` | Sí para `/admin` | Contraseña del panel administrativo |
+| `ADMIN_SESSION_SECRET` | Sí para `/admin` | Secreto aleatorio de al menos 32 bytes para firmar la sesión administrativa |
 | `ALLOWED_ORIGINS` | No | Orígenes CORS permitidos (CSV). Si se omite, usa tunels detectados |
 
 ---
@@ -278,44 +280,55 @@ Para pares que las guardas automáticas rechazan (idiomas distintos, etc.).
 
 ---
 
-## Verification Pipeline (paso a paso)
+## Verificación del Catálogo (Motor Unificado)
 
-Pipeline extensible y configurable que ejecuta pasos de mantenimiento de la base de datos de forma secuencial. UI en la pestaña "Verificación" del Admin.
+Motor de verificación unificado y multi-fuente (`server/verificationWorker.ts`) que mantiene la integridad del catálogo, enriquece metadatos y descubre nuevos episodios/fuentes de forma segura. Accesible desde la pestaña "Verificación" del panel Admin.
 
-### Pasos disponibles
+### Modos de Ejecución Manual
 
-| ID | Nombre | Qué hace |
-|----|--------|----------|
-| `metadata` | Rellenar metadatos faltantes | Busca poster, descripción, géneros y año via TMDB/AniList/TVMaze |
-| `duplicates` | Detectar duplicados | Agrupa obras por título normalizado y fusiona |
-| `seasons` | Consolidar temporadas | Fusiona entradas de temporada dividida (misma obra, mismo tmdb_id) |
-| `sequels` | Reconciliar secuelas | Merge S2/S3 guardados como tarjetas separadas con mismo tmdb_id |
-| `empty` | Limpiar obras vacías | Elimina shows con 0 episodios |
-| `sources` | Reparar fuentes CDN | Busca páginas originales para shows con links CDN directos |
-| `titles` | Normalizar títulos | Detecta títulos basura/placeholder y restaura desde base_normalized_title |
-| `stuck` | Recuperar jobs trabados | Resetea CrawlTasks stuck en "running" por >30 minutos |
+- **Solo metadatos** (`mode: "metadata"`): Revisa las obras dentro del alcance configurado y completa sinopsis, posters, banners, géneros y años faltantes consultando TMDB / AniList / TVMaze.
+- **Verificación completa** (`mode: "full"`): Ejecuta la fase de metadatos y posteriormente el barrido de novedades por plataforma, deduplicando obras por `tmdb_id` + `kind`, vinculando episodios y conservando todas las fuentes (`SourceLink`) detectadas.
 
-### Cómo funciona
+### Ajustes Automáticos
 
-- El usuario selecciona los pasos y ejecuta desde la UI
-- Los pasos corren en background, el frontend consulta estado vía polling
-- Cada paso registra found/fixed y errores individuales
-- Estado en memoria (se reinicia con el server)
+- `enabled` (boolean): Activa/desactiva la ejecución periódica en segundo plano.
+- `interval_minutes` (number): Frecuencia de ejecución programada (mínimo **5 minutos**, default: 1440 min = 24h).
+- `metadata_only` (boolean): Si está activo, las pasadas automáticas solo completan metadatos y omiten la fase de catálogo.
+- `sync_known_episodes` (boolean): Si está activo, comprueba y agrega episodios nuevos en obras ya registradas.
+- `scope_mode` (`"all"` | `"platforms"` | `"category"`): Define el universo de obras a verificar.
 
-### API
+### Categorías Soportadas
+
+- `anime`: Cubre adaptadores de anime (`animeflv`, `tioanime`, `latanime`, `lamovie_animes`).
+- `movie` / `movies`: Cubre adaptadores de películas (`cinecalidad`, `tioplus`, `lamovie_movies`, `doramasflix_peliculas`).
+- `series`: Cubre adaptadores de series (`lamovie_series`, `doramasflix`, `doramasflix_variedades`).
+
+### Claves de Plataformas Válidas
+
+- Predefinidas: `animeflv`, `tioanime`, `latanime`, `cinecalidad`, `tioplus`, `doramasflix`, `doramasflix_peliculas`, `doramasflix_variedades`, `lamovie_movies`, `lamovie_series`, `lamovie_animes`.
+- Personalizadas: Se admiten claves adicionales siempre que tengan una URL válida asignada en `catalog_urls_by_platform`.
+
+### Significado de las Métricas
+
+- **Metadatos** (`updated_metadata`): Obras cuyos datos incompletos fueron completados en la fase de metadatos.
+- **Obras nuevas** (`works_created`): Obras descubiertas e insertadas por primera vez en el catálogo.
+- **Fusionadas** (`works_merged`): Obras identificadas como duplicados o secuelas con el mismo `tmdb_id` y consolidadas.
+- **Episodios** (`episodes_added`): Nuevos episodios agregados a obras existentes o nuevas.
+- **Fuentes aceptadas** (`sources_added`): Enlaces de streaming (`SourceLink`) aceptados por el write buffer durante la pasada; no confirma que ya se hayan persistido.
+- **Errores** (`errors`): Total de fallos o excepciones capturadas durante la pasada.
+
+### API de Verificación
 
 ```bash
-# Consultar estado del pipeline
-GET /api/v1/verify/pipeline
+# Consultar estado en vivo, progreso, último reporte y configuración
+GET /api/v1/verification
 
-# Ejecutar todos los pasos
-POST /api/v1/verify/pipeline/run
+# Actualizar configuración persistida (enabled, interval_minutes, scope_mode, etc.)
+POST /api/v1/verification/config
 
-# Ejecutar pasos específicos
-POST /api/v1/verify/pipeline/run { "steps": ["duplicates", "sources"] }
+# Disparar pasada manual (responde 202 si inició, 409 si ya está en curso)
+POST /api/v1/verification/run { "mode": "full" }
 ```
-
-> **Nota**: Los endpoints del pipeline deben registrarse ANTES del middleware Vite SPA para que no sean interceptados por el fallback a `index.html`.
 
 ---
 
@@ -505,7 +518,9 @@ Cuando un servidor devuelve `resolved: false` o falla con error de red, el playe
 
 ### Login
 
-Credenciales en `ADMIN_USER` / `ADMIN_PASS` de `.env`. Sesión en `sessionStorage`.
+Configura `ADMIN_USER`, `ADMIN_PASS` y `ADMIN_SESSION_SECRET` en `.env`. Si falta alguna, el servidor mantiene las rutas públicas operativas pero bloquea `/admin` y el plano administrativo con `503`.
+
+La sesión administrativa es una cookie `HttpOnly`, `SameSite=Strict` (y `Secure` en producción), independiente de los tokens de usuarios normales. Cierra la sesión con el botón **X** del panel; esto invalida la cookie y vuelve al inicio.
 
 ### Pestañas
 
@@ -621,11 +636,9 @@ POST /api/v1/catalog/merge-works
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/v1/verification` | Estado + config (worker existente) |
-| POST | `/api/v1/verification/config` | Actualizar config |
-| POST | `/api/v1/verification/run` | Ejecutar verificación |
-| GET | `/api/v1/verify/pipeline` | Pipeline paso a paso (8 pasos configurables) |
-| POST | `/api/v1/verify/pipeline/run` | Ejecutar pasos seleccionados en background |
+| GET | `/api/v1/verification` | Estado en vivo, progreso, último reporte y configuración |
+| POST | `/api/v1/verification/config` | Actualizar configuración persistida |
+| POST | `/api/v1/verification/run` | Ejecutar pasada de verificación manual (`mode: "metadata" \| "full"`) |
 
 ### Watchdog
 

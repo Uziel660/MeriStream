@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
 
 const mocks = vi.hoisted(() => ({
   mediaEpisodeUpsert: vi.fn(),
@@ -12,10 +14,19 @@ vi.mock("./db", () => ({
   },
 }));
 
-import { drainWriteBuffer, enqueueWrite } from "./writeBuffer";
+import {
+  drainWriteBuffer,
+  enqueueWrite,
+  flushRamToJsonl,
+  loadJsonlToRam,
+  resetWriteBufferForTesting,
+  setWriteBufferPathForTesting,
+} from "./writeBuffer";
 
 describe("writeBuffer sourceLink.create", () => {
   beforeEach(() => {
+    setWriteBufferPathForTesting(path.join(os.tmpdir(), `meristream-write-buffer-${process.pid}.jsonl`));
+    resetWriteBufferForTesting();
     mocks.mediaEpisodeUpsert.mockReset();
     mocks.sourceLinkCreate.mockReset();
     mocks.mediaEpisodeUpsert.mockResolvedValue({ id: "media-episode-1" });
@@ -95,5 +106,59 @@ describe("writeBuffer sourceLink.create", () => {
     expect(result).toMatchObject({ pending: 0, failed: 1 });
     expect(enqueueWrite(op)).toBe(true);
     await drainWriteBuffer();
+  });
+
+  it("recupera operaciones de JSONL, reconstruye pendingSourceLinkKeys y bloquea duplicados", async () => {
+    const op = {
+      kind: "sourceLink.create" as const,
+      episodeRef: { media_item_id: "media-item-recovery", season_number: 1, episode_number: 1 },
+      data: { source_site: "cinecalidad", url: "https://cdn.example/recovery.mp4", link_type: "direct" },
+    };
+
+    // 1. Encolar y volcar a JSONL
+    expect(enqueueWrite(op)).toBe(true);
+    flushRamToJsonl();
+
+    // 2. Cargar de JSONL a RAM
+    loadJsonlToRam();
+
+    // 3. Debe bloquear un nuevo enqueueWrite idéntico porque pendingSourceLinkKeys fue reconstruido
+    expect(enqueueWrite(op)).toBe(false);
+
+    // 4. Drenar buffer
+    const drainResult = await drainWriteBuffer();
+    expect(drainResult.applied).toBe(1);
+
+    // 5. Tras el drain, la clave queda liberada
+    expect(enqueueWrite(op)).toBe(true);
+    await drainWriteBuffer();
+  });
+
+  it("conserva trabajo persistido mientras otro writer espera SQLite", async () => {
+    let releaseFirstWrite: (() => void) | undefined;
+    mocks.mediaEpisodeUpsert
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { releaseFirstWrite = resolve; }))
+      .mockResolvedValue({ id: "media-episode-1" });
+    const first = {
+      kind: "sourceLink.create" as const,
+      episodeRef: { media_item_id: "media-item-race", season_number: 1, episode_number: 1 },
+      data: { source_site: "cinecalidad", url: "https://cdn.example/first.mp4", link_type: "direct" },
+    };
+    const persistedDuringWrite = {
+      ...first,
+      data: { ...first.data, url: "https://cdn.example/persisted.mp4" },
+    };
+
+    expect(enqueueWrite(first)).toBe(true);
+    const firstDrain = drainWriteBuffer();
+    await Promise.resolve();
+
+    expect(enqueueWrite(persistedDuringWrite)).toBe(true);
+    flushRamToJsonl();
+    releaseFirstWrite?.();
+    await firstDrain;
+
+    const recoveredDrain = await drainWriteBuffer();
+    expect(recoveredDrain).toMatchObject({ applied: 1, pending: 0 });
   });
 });

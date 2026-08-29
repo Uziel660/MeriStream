@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   Database,
@@ -30,6 +31,8 @@ const UNITS = [
   { label: "horas", factor: 60 },
   { label: "días", factor: 1440 },
 ];
+
+const VALID_CATEGORIES = ["anime", "movie", "movies", "series"];
 
 type Feedback = { tone: "success" | "error"; message: string };
 
@@ -68,19 +71,23 @@ function splitPlatforms(value: string): string[] {
 }
 
 function initialTimer(config?: VerificationConfig): { value: number; unit: number } {
-  const total = Math.max(1, config?.interval_minutes || 1440);
+  const total = Math.max(5, config?.interval_minutes || 1440);
   const unit = [...UNITS].reverse().find((candidate) => total % candidate.factor === 0) || UNITS[0];
-  return { value: Math.max(1, total / unit.factor), unit: unit.factor };
+  const factor = unit.factor;
+  const rawValue = Math.round(total / factor);
+  const minVal = factor === 1 ? 5 : 1;
+  return { value: Math.max(minVal, rawValue), unit: factor };
 }
 
-function Metric({ label, value, icon }: { label: string; value: number | string; icon: React.ReactNode }) {
+function Metric({ label, value, icon, hint }: { label: string; value: number | string; icon: React.ReactNode; hint?: string }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3" title={hint}>
       <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
         {icon}
         {label}
       </div>
       <div className="font-mono text-lg font-bold text-white">{value}</div>
+      {hint && <div className="mt-0.5 text-[9px] text-zinc-500">{hint}</div>}
     </div>
   );
 }
@@ -90,7 +97,8 @@ const VerificationPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [runningMode, setRunningMode] = useState<VerificationRunMode | null>(null);
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<Feedback | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [configDirty, setConfigDirty] = useState(false);
   const configDirtyRef = useRef(false);
@@ -122,9 +130,9 @@ const VerificationPanel: React.FC = () => {
       const next = await api.getVerificationStatus();
       setStatus(next);
       if (!configDirtyRef.current) applyConfig(next.config);
-      setFeedback((current) => (current?.tone === "error" ? current : null));
+      setPollError(null);
     } catch (error) {
-      setFeedback({ tone: "error", message: errorMessage(error) });
+      setPollError(errorMessage(error));
     } finally {
       setLoading(false);
       if (manual) setRefreshing(false);
@@ -138,16 +146,17 @@ const VerificationPanel: React.FC = () => {
   }, [loadStatus]);
 
   const runVerification = async (mode: VerificationRunMode) => {
-    setFeedback(null);
+    setActionFeedback(null);
     setRunningMode(mode);
     try {
-      const result = await api.runVerification(mode, {
-        platforms: scopeMode === "platforms" ? splitPlatforms(platforms) : undefined,
+      const result = await api.runVerification(mode);
+      setActionFeedback({
+        tone: "success",
+        message: result.started ? "Verificación iniciada." : result.reason || "No se inició la verificación.",
       });
-      setFeedback({ tone: "success", message: result.started ? "Verificación iniciada." : result.reason || "No se inició la verificación." });
       if (result.status) setStatus(result.status);
     } catch (error) {
-      setFeedback({ tone: "error", message: errorMessage(error) });
+      setActionFeedback({ tone: "error", message: errorMessage(error) });
       await loadStatus(true);
     } finally {
       setRunningMode(null);
@@ -155,16 +164,18 @@ const VerificationPanel: React.FC = () => {
   };
 
   const saveConfig = async () => {
-    const minutes = Math.max(1, Math.round(intervalValue || 1) * intervalUnit);
+    const minMinutes = 5;
+    const computedMinutes = Math.round(intervalValue || 1) * intervalUnit;
+    const minutes = Math.max(minMinutes, computedMinutes);
     setSaving(true);
-    setFeedback(null);
+    setActionFeedback(null);
     try {
       const result = await api.updateVerificationConfig({
         enabled,
         interval_minutes: minutes,
         scope_mode: scopeMode,
         platforms: splitPlatforms(platforms),
-        category: category.trim() || undefined,
+        category: category.trim() || null,
         metadata_only: metadataOnly,
         sync_known_episodes: syncKnownEpisodes,
       });
@@ -172,9 +183,9 @@ const VerificationPanel: React.FC = () => {
       if (result.config) applyConfig(result.config);
       configDirtyRef.current = false;
       setConfigDirty(false);
-      setFeedback({ tone: "success", message: "Configuración guardada." });
+      setActionFeedback({ tone: "success", message: "Configuración guardada." });
     } catch (error) {
-      setFeedback({ tone: "error", message: errorMessage(error) });
+      setActionFeedback({ tone: "error", message: errorMessage(error) });
     } finally {
       setSaving(false);
     }
@@ -184,6 +195,26 @@ const VerificationPanel: React.FC = () => {
     configDirtyRef.current = true;
     setConfigDirty(true);
   };
+
+  const availablePlatforms = useMemo(() => {
+    const catalogUrls = status?.config?.catalog_urls_by_platform || {};
+    return Object.keys(catalogUrls);
+  }, [status?.config?.catalog_urls_by_platform]);
+
+  const invalidPlatforms = useMemo(() => {
+    if (scopeMode !== "platforms") return [];
+    const entered = splitPlatforms(platforms);
+    return entered.filter((p) => !availablePlatforms.includes(p));
+  }, [scopeMode, platforms, availablePlatforms]);
+
+  const missingPlatforms = scopeMode === "platforms" && splitPlatforms(platforms).length === 0;
+
+  const invalidCategory = useMemo(() => {
+    if (scopeMode !== "category") return false;
+    if (!category.trim()) return true;
+    return !VALID_CATEGORIES.includes(category.trim().toLowerCase());
+  }, [scopeMode, category]);
+
   const progress = status?.progress || EMPTY_PROGRESS;
   const report = status?.last_report;
   const running = Boolean(status?.running || runningMode);
@@ -193,6 +224,8 @@ const VerificationPanel: React.FC = () => {
   const mergedWorks = progress.works_merged ?? 0;
   const sourcesAdded = progress.sources_added ?? 0;
   const recent = status?.recent || [];
+  const minInterval = intervalUnit === 1 ? 5 : 1;
+
   const configSummary = useMemo(() => {
     if (!status?.config) return "Configuración no disponible";
     if (!status.config.enabled) return "Automático desactivado";
@@ -229,7 +262,8 @@ const VerificationPanel: React.FC = () => {
         </div>
 
         {progress.total > 0 && <div className="mt-3"><div className="mb-1 flex justify-between text-[10px] text-zinc-500"><span>{status?.current_item || "Procesando catálogo"}</span><span>{progress.done}/{progress.total} · {completion}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${completion}%` }} /></div></div>}
-        {feedback && <div className={`mt-3 flex items-start gap-2 text-[11px] ${feedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}><span className="mt-0.5">{feedback.tone === "error" ? <XCircle size={14} /> : <CheckCircle2 size={14} />}</span>{feedback.message}</div>}
+        {actionFeedback && <div className={`mt-3 flex items-start gap-2 text-[11px] ${actionFeedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}><span className="mt-0.5">{actionFeedback.tone === "error" ? <XCircle size={14} /> : <CheckCircle2 size={14} />}</span>{actionFeedback.message}</div>}
+        {pollError && <div className="mt-2 flex items-start gap-2 text-[11px] text-amber-300"><span className="mt-0.5"><AlertCircle size={14} /></span>Error de conexión: {pollError}</div>}
       </section>
 
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -237,7 +271,7 @@ const VerificationPanel: React.FC = () => {
         <Metric label="Obras nuevas" value={createdWorks} icon={<CheckCircle2 size={11} />} />
         <Metric label="Fusionadas" value={mergedWorks} icon={<RefreshCw size={11} />} />
         <Metric label="Episodios" value={progress.new_episodes ?? 0} icon={<Video size={11} />} />
-        <Metric label="Fuentes" value={sourcesAdded} icon={<Video size={11} />} />
+        <Metric label="Fuentes aceptadas" value={sourcesAdded} icon={<Video size={11} />} hint="Aceptadas por el buffer en esta pasada" />
         <Metric label="Errores" value={progress.errors ?? 0} icon={<AlertCircle size={11} />} />
       </section>
 
@@ -248,11 +282,95 @@ const VerificationPanel: React.FC = () => {
           <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={metadataOnly} onChange={(event) => { setMetadataOnly(event.target.checked); markConfigDirty(); }} className="accent-emerald-500" /> Solo completar metadatos</label>
           <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={syncKnownEpisodes} onChange={(event) => { setSyncKnownEpisodes(event.target.checked); markConfigDirty(); }} className="accent-emerald-500" /> Buscar episodios nuevos en conocidas</label>
           <label className="flex items-center gap-2 text-xs text-zinc-300">Alcance<select value={scopeMode} onChange={(event) => { setScopeMode(event.target.value); markConfigDirty(); }} className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"><option value="all">Todo el catálogo</option><option value="platforms">Plataformas</option><option value="category">Categoría</option></select></label>
-          {scopeMode === "platforms" && <label className="text-xs text-zinc-300 sm:col-span-2">Plataformas <input value={platforms} onChange={(event) => { setPlatforms(event.target.value); markConfigDirty(); }} placeholder="cinecalidad, lamovie" className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white" /></label>}
-          {scopeMode === "category" && <label className="text-xs text-zinc-300">Categoría <input value={category} onChange={(event) => { setCategory(event.target.value); markConfigDirty(); }} placeholder="anime, movie, series" className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white" /></label>}
-          <label className="flex items-center gap-2 text-xs text-zinc-300">Cada <input type="number" min={1} value={intervalValue} onChange={(event) => { setIntervalValue(Math.max(1, Number(event.target.value) || 1)); markConfigDirty(); }} className="w-20 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white" /><select value={intervalUnit} onChange={(event) => { setIntervalUnit(Number(event.target.value)); markConfigDirty(); }} className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white">{UNITS.map((unit) => <option key={unit.factor} value={unit.factor}>{unit.label}</option>)}</select></label>
+          {scopeMode === "platforms" && (
+            <div className="sm:col-span-2 space-y-1">
+              <label className="text-xs text-zinc-300">
+                Plataformas
+                <input
+                  value={platforms}
+                  onChange={(event) => { setPlatforms(event.target.value); markConfigDirty(); }}
+                  placeholder="cinecalidad, lamovie_movies"
+                  className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </label>
+              {availablePlatforms.length > 0 && (
+                <div className="text-[10px] text-zinc-400">
+                  <span className="text-zinc-500">Disponibles:</span> {availablePlatforms.join(", ")}
+                </div>
+              )}
+              {invalidPlatforms.length > 0 && (
+                <div className="flex items-center gap-1 text-[11px] text-amber-400">
+                  <AlertTriangle size={12} />
+                  Plataforma(s) no configurada(s): {invalidPlatforms.join(", ")}
+                </div>
+              )}
+              {missingPlatforms && (
+                <div className="flex items-center gap-1 text-[11px] text-amber-400">
+                  <AlertTriangle size={12} /> Selecciona al menos una plataforma.
+                </div>
+              )}
+            </div>
+          )}
+          {scopeMode === "category" && (
+            <div className="space-y-1">
+              <label className="text-xs text-zinc-300">
+                Categoría
+                <input
+                  value={category}
+                  onChange={(event) => { setCategory(event.target.value); markConfigDirty(); }}
+                  placeholder="anime, movie, series"
+                  className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </label>
+              <div className="text-[10px] text-zinc-400">
+                <span className="text-zinc-500">Soportadas:</span> anime, movie, series
+              </div>
+              {invalidCategory && (
+                <div className="flex items-center gap-1 text-[11px] text-amber-400">
+                  <AlertTriangle size={12} />
+                  {category.trim() ? "Categoría no reconocida. Use: anime, movie, movies, series" : "Selecciona una categoría."}
+                </div>
+              )}
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            Cada
+            <input
+              type="number"
+              min={minInterval}
+              value={intervalValue}
+              onChange={(event) => {
+                setIntervalValue(Math.max(minInterval, Number(event.target.value) || minInterval));
+                markConfigDirty();
+              }}
+              className="w-20 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+            />
+            <select
+              value={intervalUnit}
+              onChange={(event) => {
+                const nextUnit = Number(event.target.value);
+                setIntervalUnit(nextUnit);
+                if (nextUnit === 1 && intervalValue < 5) setIntervalValue(5);
+                markConfigDirty();
+              }}
+              className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+            >
+              {UNITS.map((unit) => (
+                <option key={unit.factor} value={unit.factor}>{unit.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
-        <div className="mt-4 flex justify-end"><button type="button" onClick={() => void saveConfig()} disabled={saving || !configDirty} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">{saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Guardar configuración</button></div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={() => void saveConfig()}
+            disabled={saving || !configDirty || missingPlatforms || invalidPlatforms.length > 0 || invalidCategory}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Guardar configuración
+          </button>
+        </div>
       </section>}
 
       {report && <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4"><div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-bold text-white">Último informe</h4><span className="text-[10px] text-zinc-500">{formatDuration(report.duration_ms)} · {formatDate(report.finished_at)}</span></div><div className="grid gap-2 text-[11px] text-zinc-400 sm:grid-cols-2"><div>Metadatos: <strong className="text-zinc-200">{report.metadata_phase?.updated_metadata ?? metadataUpdated}</strong></div><div>Catálogo: <strong className="text-zinc-200">{report.catalog_phase?.items_seen ?? 0} elementos revisados</strong></div><div>Importadas: <strong className="text-zinc-200">{report.catalog_phase?.imported ?? createdWorks}</strong></div><div>Fuentes revisadas: <strong className="text-zinc-200">{report.catalog_phase?.platforms_checked?.join(", ") || "Ninguna"}</strong></div></div>{(report.catalog_phase?.errors?.length || 0) > 0 && <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/5 p-2 text-[11px] text-red-300">{report.catalog_phase?.errors.slice(0, 3).join(" · ")}</div>}</section>}

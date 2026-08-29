@@ -1,3 +1,4 @@
+import "dotenv/config";
 import dns from "dns/promises";
 import express, { Request, Response } from "express";
 import cors from "cors";
@@ -62,6 +63,12 @@ import {
 import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
+import {
+  adminLogin,
+  adminLogout,
+  adminSession,
+  requireAdminForControlPlane,
+} from "./server/adminAuth";
 
 // Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
 const stealthClient = new ImpitHttpClient({
@@ -187,6 +194,10 @@ async function startServer() {
     }
   }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+  // Protege el plano de control sin interceptar reproducción, catálogo público
+  // ni las resoluciones Just-In-Time que necesita el reproductor.
+  app.use("/api/v1", requireAdminForControlPlane);
 
   // ==========================================
   // API Routes
@@ -2214,17 +2225,10 @@ async function startServer() {
     }
   });
 
-  // POST /api/v1/admin/login - login minimalista del panel /admin
-  app.post("/api/v1/admin/login", async (req: Request, res: Response) => {
-    const user = typeof req.body?.user === "string" ? req.body.user : "";
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-    const ADMIN_USER = process.env.ADMIN_USER || "uziel";
-    const ADMIN_PASS = process.env.ADMIN_PASS || "uziel20082";
-    if (user === ADMIN_USER && password === ADMIN_PASS) {
-      return res.json({ ok: true });
-    }
-    return res.status(401).json({ ok: false, detail: "Credenciales incorrectas" });
-  });
+  // Sesión administrativa independiente de la autenticación de usuarios.
+  app.post("/api/v1/admin/login", adminLogin);
+  app.get("/api/v1/admin/session", adminSession);
+  app.post("/api/v1/admin/logout", adminLogout);
 
 
   // ==========================================

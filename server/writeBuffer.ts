@@ -16,7 +16,8 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "./db";
 
-const BUFFER_PATH = path.join(process.cwd(), "data", "write-buffer.jsonl");
+const DEFAULT_BUFFER_PATH = path.join(process.cwd(), "data", "write-buffer.jsonl");
+let bufferPath = DEFAULT_BUFFER_PATH;
 const MAX_ATTEMPTS = 5;
 const RAM_SOFT_LIMIT = 500; // Si la cola RAM supera esto, se vierte a JSONL
 
@@ -129,32 +130,38 @@ export function enqueueMediaItemUpdate(id: string, data: Record<string, unknown>
 // ── Persistencia JSONL (respaldo) ──────────────────────────────
 
 function ensureDir(): void {
-  const dir = path.dirname(BUFFER_PATH);
+  const dir = path.dirname(bufferPath);
   if (!fs.existsSync(dir)) fs.mkdirSync({ recursive: true });
 }
 
-function flushRamToJsonl(): void {
+export function flushRamToJsonl(): void {
   if (ramQueue.length === 0) return;
   ensureDir();
-  const tmp = BUFFER_PATH + ".tmp";
-  const existing = fs.existsSync(BUFFER_PATH) ? fs.readFileSync(BUFFER_PATH, "utf8") : "";
+  const tmp = bufferPath + ".tmp";
+  const existing = fs.existsSync(bufferPath) ? fs.readFileSync(bufferPath, "utf8") : "";
   fs.writeFileSync(tmp, existing + ramQueue.map((o) => JSON.stringify(o)).join("\n") + "\n", "utf8");
-  fs.renameSync(tmp, BUFFER_PATH);
+  fs.renameSync(tmp, bufferPath);
   ramQueue = [];
 }
 
-function loadJsonlToRam(): void {
-  if (!fs.existsSync(BUFFER_PATH)) return;
+export function loadJsonlToRam(): void {
+  if (!fs.existsSync(bufferPath)) return;
   try {
     const ops: BufferedOp[] = [];
-    for (const line of fs.readFileSync(BUFFER_PATH, "utf8").split("\n")) {
+    for (const line of fs.readFileSync(bufferPath, "utf8").split("\n")) {
       if (!line.trim()) continue;
-      try { ops.push(JSON.parse(line) as BufferedOp); } catch {}
+      try {
+        const op = JSON.parse(line) as BufferedOp;
+        ops.push(op);
+        if (op.kind === "sourceLink.create") {
+          pendingSourceLinkKeys.add(sourceLinkKey(op));
+        }
+      } catch {}
     }
     if (ops.length > 0) {
       ramQueue.unshift(...ops);
       // Limpiar el archivo
-      fs.writeFileSync(BUFFER_PATH, "", "utf8");
+      fs.writeFileSync(bufferPath, "", "utf8");
     }
   } catch {}
 }
@@ -306,10 +313,8 @@ async function writerLoop(): Promise<void> {
       await new Promise((r) => setTimeout(r, 5));
     }
 
-    // Si la cola quedó vacía y hay JSONL residual, limpiarlo
-    if (ramQueue.length === 0 && fs.existsSync(BUFFER_PATH)) {
-      try { fs.unlinkSync(BUFFER_PATH); } catch {}
-    }
+    // No borrar el JSONL aquí: otro tick puede haber persistido operaciones
+    // mientras este writer esperaba SQLite. El siguiente tick las recargará.
   } finally {
     isWriting = false;
   }
@@ -323,12 +328,17 @@ export function startWriteBufferDrainer(): void {
   loadJsonlToRam();
   // Writer continuo: cada 100ms chequea si hay algo
   setInterval(() => {
-    if (ramQueue.length > 0 && !isWriting) {
-      writerLoop().catch(() => {});
-    }
     // Volcar a JSONL si la cola RAM crece demasiado
     if (ramQueue.length > RAM_SOFT_LIMIT) {
       flushRamToJsonl();
+    }
+    // También despierta el writer cuando el trabajo quedó persistido mientras
+    // otro writer estaba en vuelo; RAM puede estar vacía en ese caso.
+    const hasPersistedWrites = (() => {
+      try { return fs.existsSync(bufferPath) && fs.statSync(bufferPath).size > 0; } catch { return false; }
+    })();
+    if (!isWriting && (ramQueue.length > 0 || hasPersistedWrites)) {
+      writerLoop().catch(() => {});
     }
   }, 100).unref?.();
 }
@@ -343,4 +353,25 @@ export async function drainWriteBuffer(): Promise<{ applied: number; pending: nu
   const before = totalApplied;
   await writerLoop();
   return { applied: totalApplied - before, pending: ramQueue.length, failed: totalFailed };
+}
+
+/** Resetea la cola y las claves pendientes (exclusivo para pruebas). */
+export function resetWriteBufferForTesting(): void {
+  ramQueue = [];
+  pendingSourceLinkKeys.clear();
+  totalEnqueued = 0;
+  totalApplied = 0;
+  totalFailed = 0;
+  isWriting = false;
+  if (fs.existsSync(bufferPath)) {
+    try { fs.unlinkSync(bufferPath); } catch {}
+  }
+}
+
+/** Cambia el outbox únicamente en pruebas para no tocar datos de desarrollo. */
+export function setWriteBufferPathForTesting(nextPath: string): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("setWriteBufferPathForTesting solo puede usarse en pruebas");
+  }
+  bufferPath = nextPath;
 }

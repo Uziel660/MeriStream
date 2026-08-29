@@ -351,6 +351,87 @@ describe("Verification Worker - Behavioral Tests", () => {
     expect(getVerificationStatus().progress.total).toBe(1);
   });
 
+  // 8. MediaItem huérfano
+  it("un MediaItem huérfano (sin Show) se importa vía saveShowWithDeduplication y no llama quickSyncKnownShow con el ID del MediaItem", async () => {
+    mockDbShows = []; // No existe Show
+    mockDbMediaItems = [{ id: "mi-orphan-99", title: "Orphan Show", tmdb_id: 777 }];
+    mockCatalogItems = [{ title: "Orphan Show", url: "http://site/orphan" }];
+    mockAnalysisResults = {
+      "http://site/orphan": {
+        title: "Orphan Show",
+        tmdb_id: 777,
+        episodes: [{ number: 1, title: "Ep 1", url: "http://site/orphan/ep1" }],
+      },
+    };
+
+    const { saveShowWithDeduplication, quickSyncKnownShow } = await import("./showService");
+
+    runVerification({ trigger: "manual", platforms: ["animeflv"], limit: 1 });
+    await waitForStatus((s) => !s.running);
+
+    // Debe llamar a saveShowWithDeduplication para crear el Show faltante
+    expect(saveShowWithDeduplication).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Orphan Show", tmdb_id: 777 })
+    );
+    // NUNCA debe llamar quickSyncKnownShow con el ID del MediaItem
+    expect(quickSyncKnownShow).not.toHaveBeenCalledWith("mi-orphan-99", expect.anything());
+  });
+
+  // 9. Configuración y validaciones
+  describe("Validaciones de configuración y alcance", () => {
+    it("rechaza plataformas sin URL de catálogo válida", async () => {
+      const { updateVerificationConfig } = await import("./verificationWorker");
+      await expect(
+        updateVerificationConfig({ platforms: ["plataforma_inexistente_xyz"] })
+      ).rejects.toThrow("no tiene una URL de catálogo válida configurada");
+    });
+
+    it("rechaza categorías inválidas", async () => {
+      const { updateVerificationConfig } = await import("./verificationWorker");
+      await expect(
+        updateVerificationConfig({ category: "categoria_inventada_123" })
+      ).rejects.toThrow("Categoría inválida");
+    });
+
+    it("rechaza alcances incompletos y URLs de catálogo que no sean HTTP(S)", async () => {
+      const { updateVerificationConfig } = await import("./verificationWorker");
+      await expect(
+        updateVerificationConfig({ scope_mode: "platforms", platforms: [] })
+      ).rejects.toThrow("requiere al menos una plataforma");
+      await expect(
+        updateVerificationConfig({ scope_mode: "category", category: null })
+      ).rejects.toThrow("'category' es requerida");
+      await expect(
+        updateVerificationConfig({ catalog_urls_by_platform: { sitio_inseguro: "javascript:alert(1)" } })
+      ).rejects.toThrow("URL inválida");
+    });
+
+    it("la ejecución manual respeta el alcance guardado en la configuración cuando no se pasan overrides", async () => {
+      const { updateVerificationConfig } = await import("./verificationWorker");
+      const { extractCatalogListing } = await import("./universalScraper");
+
+      // Guardamos configuración con scope de plataforma cinecalidad
+      await updateVerificationConfig({
+        scope_mode: "platforms",
+        platforms: ["cinecalidad"],
+      });
+
+      mockCatalogItems = [{ title: "Peli Cinecalidad", url: "https://www.cinecalidad.am/peli" }];
+
+      // Ejecución manual sin pasar platforms
+      runVerification({ trigger: "manual", mode: "full", limit: 1 });
+      await waitForStatus((s) => !s.running);
+
+      expect(vi.mocked(extractCatalogListing)).toHaveBeenCalledWith("https://www.cinecalidad.am/");
+
+      // Restaurar config
+      await updateVerificationConfig({
+        scope_mode: "all",
+        platforms: [],
+      });
+    });
+  });
+
   describe("Reconciliación dry-run", () => {
     it("reconcileSequelsByTmdb dry-run por defecto no escribe cambios", async () => {
       const result = await reconcileSequelsByTmdb({});

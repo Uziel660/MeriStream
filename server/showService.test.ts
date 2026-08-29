@@ -5,6 +5,8 @@
 // compuestas de MediaEpisode y SourceLink.
 // ══════════════════════════════════════════════════════════════════
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
 
 // ── In-Memory Database Store ─────────────────────────────────────
 let dbShows: any[] = [];
@@ -221,10 +223,12 @@ import {
   quickSyncKnownShow,
   syncEpisodeSources,
 } from "./showService";
-import { drainWriteBuffer } from "./writeBuffer";
+import { drainWriteBuffer, resetWriteBufferForTesting, setWriteBufferPathForTesting } from "./writeBuffer";
 
 describe("showService - Behavioral and Deduplication Tests", () => {
   beforeEach(() => {
+    setWriteBufferPathForTesting(path.join(os.tmpdir(), `meristream-show-service-${process.pid}.jsonl`));
+    resetWriteBufferForTesting();
     vi.clearAllMocks();
     dbShows = [];
     dbEpisodes = [];
@@ -389,5 +393,34 @@ describe("showService - Behavioral and Deduplication Tests", () => {
 
     expect(res2.isDuplicate).toBe(true);
     expect(res2.show.id).toBe(res1.show.id);
+  });
+
+  it("reutiliza un MediaItem huérfano al crear su Show sin duplicar fuentes", async () => {
+    dbMediaItems = [{
+      id: "media-item-existing",
+      tmdb_id: 444,
+      kind: "movie",
+      normalized_title: "orphanmovie",
+      base_normalized_title: "orphanmovie",
+      title: "Orphan Movie",
+      year: 2024,
+    }];
+
+    const result = await saveShowWithDeduplication({
+      title: "Orphan Movie",
+      content_type: "movie",
+      tmdb_id: 444,
+      source_site: "cinecalidad",
+      detected_streams: ["https://cdn.example/orphan-movie.mp4"],
+    });
+    await drainWriteBuffer();
+
+    expect(result.isDuplicate).toBe(false);
+    expect(dbShows).toHaveLength(1);
+    expect(dbMediaItems).toHaveLength(1);
+    expect(dbMediaEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ media_item_id: "media-item-existing" }),
+    ]));
+    expect(dbSourceLinks).toHaveLength(1);
   });
 });

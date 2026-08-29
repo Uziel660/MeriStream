@@ -638,7 +638,7 @@ function buildEpisodesFromAnalysis(
     ? analysis.detected_streams.filter((s: any) => typeof s === "string" && s.trim())
     : [];
   const rawEpisodes: any[] = Array.isArray(analysis.episodes) ? analysis.episodes : [];
-  const isMovie = kind === "movie" || analysis.content_type === "movie" || (rawEpisodes.length <= 1 && detectedStreams.length > 0);
+  const isMovie = kind === "movie" || analysis.content_type === "movie";
 
   if (isMovie) {
     const firstEp = rawEpisodes[0] || null;
@@ -748,7 +748,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
 
     let items: any[] = [];
     try {
-      items = await extractCatalogListing(platform, url, state.config.limit);
+      const extracted = await extractCatalogListing(url);
+      items = opts.limit && opts.limit > 0 ? extracted.slice(0, opts.limit) : extracted;
     } catch (e: any) {
       const msg = `[${platform}] error al listar catálogo: ${e?.message || e}`;
       catalogErrors.push(msg);

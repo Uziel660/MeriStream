@@ -220,7 +220,6 @@ import {
   saveShowWithDeduplication,
   quickSyncKnownShow,
   syncEpisodeSources,
-  resetEnqueuedSourceKeys,
 } from "./showService";
 import { drainWriteBuffer } from "./writeBuffer";
 
@@ -232,7 +231,6 @@ describe("showService - Behavioral and Deduplication Tests", () => {
     dbMediaItems = [];
     dbMediaEpisodes = [];
     dbSourceLinks = [];
-    resetEnqueuedSourceKeys();
   });
 
   // 1. Misma URL en episodios diferentes se guarda en ambos

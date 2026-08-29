@@ -112,8 +112,7 @@ function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
   const isMovie =
     kind === "movie" ||
     input.content_type === "movie" ||
-    input.category === "movie" ||
-    (inputEpisodes.length <= 1 && detectedStreams.length > 0 && !inputEpisodes.some((e) => (e.number ?? 1) > 1));
+    input.category === "movie";
 
   if (isMovie) {
     const rawEp = inputEpisodes[0] || null;
@@ -224,13 +223,6 @@ function hostOf(url: string): string | null {
   }
 }
 
-/** Conjunto en memoria de claves compuestas encoladas para evitar doble conteo antes del drain. */
-const enqueuedSourceKeys = new Set<string>();
-
-export function resetEnqueuedSourceKeys(): void {
-  enqueuedSourceKeys.clear();
-}
-
 /**
  * Arquitectura multi-fuente (docs/DB_MULTISOURCE_ARCHITECTURE.md): aglutina N
  * SourceLink bajo un único MediaEpisode deduplicado por obra/temporada/número.
@@ -272,11 +264,6 @@ export async function syncEpisodeSources(
     const linkType = src.link_type || (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/.test(lower) ? "direct" : "embed");
     const site = src.source_site || defaultSite || "unknown";
 
-    const compKey = `${mediaItemId}:${season}:${episodeNumber}:${site}:${rawUrl}`;
-    if (enqueuedSourceKeys.has(compKey)) {
-      continue;
-    }
-
     // Consulta de existencia exacta: media_item + season + episode + source_site + url
     const existing = await prisma.sourceLink.findFirst({
       where: {
@@ -292,9 +279,7 @@ export async function syncEpisodeSources(
     });
 
     if (!existing) {
-      enqueuedSourceKeys.add(compKey);
-      sourcesAdded++;
-      enqueueWrite({
+      const queued = enqueueWrite({
         kind: "sourceLink.create",
         episodeRef: {
           media_item_id: mediaItemId,
@@ -311,6 +296,7 @@ export async function syncEpisodeSources(
           last_checked: new Date().toISOString(),
         },
       });
+      if (queued) sourcesAdded++;
     }
   }
   return sourcesAdded;

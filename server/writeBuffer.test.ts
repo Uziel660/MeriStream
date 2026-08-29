@@ -64,4 +64,36 @@ describe("writeBuffer sourceLink.create", () => {
       },
     });
   });
+
+  it("deduplica enlaces pendientes y libera la clave después del drain", async () => {
+    const op = {
+      kind: "sourceLink.create" as const,
+      episodeRef: { media_item_id: "media-item-2", season_number: 1, episode_number: 1 },
+      data: { source_site: "lamovie", url: "https://cdn.example/video.mp4", link_type: "direct" },
+    };
+
+    expect(enqueueWrite(op)).toBe(true);
+    expect(enqueueWrite(op)).toBe(false);
+    await drainWriteBuffer();
+
+    // Después del drain la clave pendiente se libera. La BD conserva la
+    // deduplicación persistente; esta cola solo evita duplicados en vuelo.
+    expect(enqueueWrite(op)).toBe(true);
+    await drainWriteBuffer();
+  });
+
+  it("libera la clave cuando una operación agota sus reintentos", async () => {
+    mocks.sourceLinkCreate.mockRejectedValue(new Error("temporal failure"));
+    const op = {
+      kind: "sourceLink.create" as const,
+      episodeRef: { media_item_id: "media-item-3", season_number: 1, episode_number: 1 },
+      data: { source_site: "cinecalidad", url: "https://cdn.example/retry.mp4", link_type: "direct" },
+    };
+
+    expect(enqueueWrite(op)).toBe(true);
+    const result = await drainWriteBuffer();
+    expect(result).toMatchObject({ pending: 0, failed: 1 });
+    expect(enqueueWrite(op)).toBe(true);
+    await drainWriteBuffer();
+  });
 });

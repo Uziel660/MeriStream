@@ -247,6 +247,28 @@ describe("Verification Worker - Behavioral Tests", () => {
     expect(st.progress.sources_added).toBeGreaterThanOrEqual(2);
   });
 
+  it("un anime con un episodio y streams conserva su episodio, no se vuelve película", async () => {
+    mockCatalogItems = [{ title: "Anime corto", url: "http://site/anime-corto", kind: "anime" }];
+    mockAnalysisResults = {
+      "http://site/anime-corto": {
+        title: "Anime corto",
+        content_type: "anime",
+        tmdb_id: 202,
+        detected_streams: ["https://cdn.example/anime-corto.mp4"],
+        episodes: [{ number: 1, title: "Episodio especial", url: "https://site.example/ep-1" }],
+      },
+    };
+
+    runVerification({ trigger: "manual", platforms: ["animeflv"], limit: 1 });
+    await waitForStatus((s) => !s.running);
+
+    const { saveShowWithDeduplication } = await import("./showService");
+    const input = vi.mocked(saveShowWithDeduplication).mock.calls[0][0] as any;
+    expect(input.content_type).toBe("anime");
+    expect(input.episodes[0]).toMatchObject({ number: 1, title: "Episodio especial" });
+    expect(input.episodes[0].title).not.toBe("Película Completa");
+  });
+
   // 4. Idempotencia
   it("repetir la pasada no duplica SourceLink ni episodios", async () => {
     mockCatalogItems = [
@@ -311,7 +333,10 @@ describe("Verification Worker - Behavioral Tests", () => {
 
   // 7. Mode override
   it("mode metadata omite catálogo y mode full lo ejecuta", async () => {
-    mockCatalogItems = [{ title: "D", url: "http://d" }];
+    mockCatalogItems = [
+      { title: "D1", url: "http://d1" },
+      { title: "D2", url: "http://d2" },
+    ];
     const { extractCatalogListing } = await import("./universalScraper");
 
     // metadata only
@@ -322,7 +347,8 @@ describe("Verification Worker - Behavioral Tests", () => {
     // full
     runVerification({ trigger: "manual", mode: "full", platforms: ["animeflv"], limit: 1 });
     await waitForStatus((s) => !s.running);
-    expect(vi.mocked(extractCatalogListing)).toHaveBeenCalled();
+    expect(vi.mocked(extractCatalogListing)).toHaveBeenCalledWith("https://www3.animeflv.net/browse");
+    expect(getVerificationStatus().progress.total).toBe(1);
   });
 
   describe("Reconciliación dry-run", () => {

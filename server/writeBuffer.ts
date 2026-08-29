@@ -47,6 +47,22 @@ let isWriting = false;
 let totalEnqueued = 0;
 let totalApplied = 0;
 let totalFailed = 0;
+/** Claves de SourceLink pendientes en RAM; se liberan al aplicar o abandonar la operación. */
+const pendingSourceLinkKeys = new Set<string>();
+
+function sourceLinkKey(op: Extract<BufferedOp, { kind: "sourceLink.create" }>): string {
+  return [
+    op.episodeRef.media_item_id,
+    op.episodeRef.season_number,
+    op.episodeRef.episode_number,
+    String(op.data.source_site || "unknown"),
+    String(op.data.url || ""),
+  ].join("\u0000");
+}
+
+function releasePendingSourceLink(op: BufferedOp): void {
+  if (op.kind === "sourceLink.create") pendingSourceLinkKeys.delete(sourceLinkKey(op));
+}
 
 // ── Generación de IDs (cuid-like) ──────────────────────────────
 
@@ -58,10 +74,16 @@ function generateId(): string {
 
 // ── Encolar (los workers llaman esto, NUNCA tocan SQLite) ───────
 
-export function enqueueWrite(op: Omit<BufferedOp, "fp" | "attempts" | "at">): void {
+export function enqueueWrite(op: Omit<BufferedOp, "fp" | "attempts" | "at">): boolean {
   const full = { ...op, fp: `${op.kind}:${JSON.stringify(op)}`, attempts: 0, at: new Date().toISOString() } as BufferedOp;
+  if (full.kind === "sourceLink.create") {
+    const key = sourceLinkKey(full);
+    if (pendingSourceLinkKeys.has(key)) return false;
+    pendingSourceLinkKeys.add(key);
+  }
   ramQueue.push(full);
   totalEnqueued++;
+  return true;
 }
 
 /**
@@ -263,15 +285,22 @@ async function writerLoop(): Promise<void> {
         const ok = await applyOp(op);
         if (ok) {
           totalApplied++;
+          releasePendingSourceLink(op);
         } else {
           op.attempts++;
           if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
-          else totalFailed++;
+          else {
+            totalFailed++;
+            releasePendingSourceLink(op);
+          }
         }
       } catch {
         op.attempts++;
         if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
-        else totalFailed++;
+        else {
+          totalFailed++;
+          releasePendingSourceLink(op);
+        }
       }
       // Pequeña pausa entre ops (PostgreSQL maneja concurrencia nativamente)
       await new Promise((r) => setTimeout(r, 5));

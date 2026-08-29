@@ -73,6 +73,8 @@ export interface VerificationProgress {
   new_episodes: number;
   updated_metadata: number;
   errors: number;
+  works_merged: number;
+  sources_added: number;
 }
 
 export interface VerificationReport {
@@ -98,6 +100,8 @@ export interface VerificationReport {
     imported: number;
     merged_by_dedup: number;
     errors: string[];
+    works_merged: number;
+    sources_added: number;
   };
 }
 
@@ -241,6 +245,8 @@ const state = {
     new_episodes: 0,
     updated_metadata: 0,
     errors: 0,
+    works_merged: 0,
+    sources_added: 0,
   } as VerificationProgress,
   lastReport: null as VerificationReport | null,
   recent: [] as RecentEntry[],
@@ -283,8 +289,13 @@ function scheduleTimer(): void {
     return;
   }
   const ms = clampInterval(state.config.interval_minutes) * 60_000;
-  state.nextRunAt = new Date(Date.now() + ms).toISOString();
+  const next = new Date();
+  next.setMinutes(next.getMinutes() + state.config.interval_minutes);
+  state.nextRunAt = next.toISOString();
   state.timer = setInterval(() => {
+    const nextTick = new Date();
+    nextTick.setMinutes(nextTick.getMinutes() + state.config.interval_minutes);
+    state.nextRunAt = nextTick.toISOString();
     if (state.running) return; // la pasada en curso manda; la siguiente se pierde (no se acumulan)
     runVerification({ trigger: "timer" });
   }, ms);
@@ -375,7 +386,9 @@ export function runVerification(options?: VerificationRunOptions): { started: bo
     new_episodes: 0,
     updated_metadata: 0,
     errors: 0,
-  };
+    works_merged: 0,
+    sources_added: 0,
+  } as VerificationProgress;
   resetRunCounters();
   log("info", `Pasada ${options?.trigger || "manual"} iniciada.`);
 
@@ -413,11 +426,8 @@ export function getVerificationStatus(): VerificationStatus {
       metadata_updated: p.updated_metadata,
       works_created: p.new_works,
       episodes_added: p.new_episodes,
-      // TODO: contabilizar merges reales de dedup en showService y
-      //       SourceLinks efectivamente insertados por syncEpisodeSources.
-      //       Mientras tanto se expone 0 — no falsificar el dato.
-      works_merged: 0,
-      sources_added: 0,
+      works_merged: p.works_merged || 0,
+      sources_added: p.sources_added || 0,
     },
     last_run_at: state.lastRunAt,
     next_run_at: state.nextRunAt,
@@ -617,54 +627,141 @@ async function findKnownWork(titleKey: string, year?: number | null, kind?: Cont
   return null;
 }
 
+function buildEpisodesFromAnalysis(
+  analysis: any,
+  platform: string,
+  kind: ContentKind
+): Array<{ number: number; title: string; url: string; sources: SourceLinkInput[] }> {
+  if (!analysis) return [];
+  const sourceSite = analysis.source_domain || platform;
+  const detectedStreams: string[] = Array.isArray(analysis.detected_streams)
+    ? analysis.detected_streams.filter((s: any) => typeof s === "string" && s.trim())
+    : [];
+  const rawEpisodes: any[] = Array.isArray(analysis.episodes) ? analysis.episodes : [];
+  const isMovie = kind === "movie" || analysis.content_type === "movie" || (rawEpisodes.length <= 1 && detectedStreams.length > 0);
+
+  if (isMovie) {
+    const firstEp = rawEpisodes[0] || null;
+    const primaryUrl = firstEp?.url || detectedStreams[0] || "";
+    const streamSources: SourceLinkInput[] = [];
+    const seen = new Set<string>();
+
+    if (primaryUrl) {
+      streamSources.push({ url: primaryUrl, source_site: sourceSite });
+      seen.add(primaryUrl);
+    }
+    for (const st of detectedStreams) {
+      if (st && !seen.has(st)) {
+        streamSources.push({ url: st, source_site: sourceSite });
+        seen.add(st);
+      }
+    }
+    if (firstEp && Array.isArray(firstEp.sources)) {
+      for (const s of firstEp.sources) {
+        const u = typeof s === "string" ? s : s?.url;
+        if (u && !seen.has(u)) {
+          streamSources.push({
+            url: u,
+            source_site: (typeof s === "object" && s.source_site) ? s.source_site : sourceSite,
+            link_type: typeof s === "object" ? s.link_type : undefined,
+            host: typeof s === "object" ? s.host : undefined,
+          });
+          seen.add(u);
+        }
+      }
+    }
+
+    if (primaryUrl || streamSources.length > 0) {
+      return [{
+        number: 1,
+        title: firstEp?.title || "Película Completa",
+        url: primaryUrl,
+        sources: streamSources,
+      }];
+    }
+    return [];
+  }
+
+  // Series / anime
+  return rawEpisodes.map((e: any, idx: number) => {
+    const epNum = Number.isFinite(Number(e.number)) ? Number(e.number) : idx + 1;
+    const primaryUrl = String(e.url || "");
+    const epSources: SourceLinkInput[] = [];
+    const seen = new Set<string>();
+
+    if (primaryUrl) {
+      epSources.push({ url: primaryUrl, source_site: sourceSite });
+      seen.add(primaryUrl);
+    }
+    if (Array.isArray(e.sources)) {
+      for (const s of e.sources) {
+        const u = typeof s === "string" ? s : s?.url;
+        if (u && !seen.has(u)) {
+          epSources.push({
+            url: u,
+            source_site: (typeof s === "object" && s.source_site) ? s.source_site : sourceSite,
+            link_type: typeof s === "object" ? s.link_type : undefined,
+            host: typeof s === "object" ? s.host : undefined,
+          });
+          seen.add(u);
+        }
+      }
+    }
+
+    return {
+      number: epNum,
+      title: String(e.title || `Episodio ${epNum}`),
+      url: primaryUrl,
+      sources: epSources,
+    };
+  });
+}
+
+// ── Fase 2: novedades por catálogo ──────────────────────────────
+
 async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOptions): Promise<void> {
   state.phase = "catalog";
   const platforms = resolveCatalogPlatforms(cfg, opts.platforms);
-  const perPlatformCap = opts.limit && opts.limit > 0 ? opts.limit : Infinity;
+  log("info", `Fase catálogo: ${platforms.length} plataforma(s) en cola (${platforms.join(", ") || "ninguna"}).`);
 
-  const checked: string[] = [];
-  const noUrl: string[] = [];
-  const catalogErrors: string[] = [];
-  const withoutEpisodes: string[] = [];
   let itemsSeen = 0;
   let known = 0;
   let newDetected = 0;
   let imported = 0;
   let mergedByDedup = 0;
+  const withoutEpisodes: string[] = [];
+  const checked: string[] = [];
+  const noUrl: string[] = [];
+  const catalogErrors: string[] = [];
 
-  // Dedup de fichas: un mismo URL que aparezca en múltiples plataformas se
-  // analiza una sola vez. Evita enrichment y lookups duplicados.
   const analyzedUrls = new Set<string>();
 
   for (const platform of platforms) {
-    const url = (cfg.catalog_urls_by_platform[platform] || "").trim();
+    const url = cfg.catalog_urls_by_platform[platform];
     if (!url) {
       noUrl.push(platform);
-      log("warn", `Plataforma '${platform}' sin catalog_url configurada: saltada.`);
+      log("warn", `[${platform}] Sin URL de catálogo configurada, saltando.`);
       continue;
     }
+    checked.push(platform);
+    log("info", `[${platform}] Escaneando catálogo: ${url}`);
 
-    state.currentItem = `[${platform}] barriendo catálogo…`;
-    let items: ExtractedCatalogItem[] = [];
+    let items: any[] = [];
     try {
-      items = (await extractCatalogListing(url)) || [];
-      log("info", `[${platform}] ${items.length} item(s) extraídos del catálogo.`);
+      items = await extractCatalogListing(platform, url, state.config.limit);
     } catch (e: any) {
-      const msg = `[${platform}] extracción falló: ${e?.message || e}`;
+      const msg = `[${platform}] error al listar catálogo: ${e?.message || e}`;
       catalogErrors.push(msg);
-      state.progress.errors++;
       log("error", msg);
       continue;
     }
 
-    checked.push(platform);
+    log("info", `[${platform}] ${items.length} item(s) extraído(s) del listado.`);
+    state.progress.total += items.length;
 
-    const slice = items.slice(0, Number.isFinite(perPlatformCap) ? perPlatformCap : items.length);
-    state.progress.total += slice.length;
-    itemsSeen += slice.length;
-
-    for (const item of slice) {
-      if (!item?.title) {
+    for (const item of items) {
+      itemsSeen++;
+      if (!item.title) {
         state.progress.done++;
         continue;
       }
@@ -677,10 +774,29 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
 
       state.currentItem = `[${platform}] ${item.title}`;
       const key = normalizeTitleKey(item.title);
+      const itemKind = inferKindForPlatform(platform, item.kind);
 
       try {
-        const itemKind = inferKindForPlatform(platform, item.kind);
-        const existing = await findKnownWork(key, item.year, itemKind, null);
+        let analysis: any = null;
+        let tmdbIdToUse: number | null = null;
+
+        // 1. Analizar item.url UNA sola vez antes de decidir
+        if (item.url) {
+          try {
+            analysis = await analyzeUniversalUrl(item.url);
+            if (analysis.tmdb_id && analysis.tmdb_id > 0) {
+              tmdbIdToUse = analysis.tmdb_id;
+            }
+            // Cortesía
+            await sleep(50 + Math.random() * 50);
+          } catch (e: any) {
+            log("warn", `[${platform}] análisis falló para '${item.title}': ${e?.message || e}`);
+          }
+        }
+
+        // 2. Resolver identidad usando tmdb_id como prioridad, título como fallback
+        const existing = await findKnownWork(key, item.year, itemKind, tmdbIdToUse);
+
         if (existing) {
           known++;
           state.progress.known++;
@@ -688,38 +804,21 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           if (existing.episodeCount === 0) withoutEpisodes.push(existing.title);
 
           // ── RE-ESCANEO LIGERO CON ÍNDICE ──
-          // findKnownWork ya resolvió la obra POR CLAVE INDEXADA; con ese ID
-          // directo se hace el sync barato: ficha → episodios faltantes → alta.
-          // Sin TMDB, sin enrichment, sin re-guardado (hiper-rápido).
-          if (state.config.sync_known_episodes !== false && item.url) {
+          if (state.config.sync_known_episodes !== false && analysis) {
             try {
-              const analysis = await analyzeUniversalUrl(item.url);
-              // Si el análisis revela un tmdb_id, re-intentar la resolución
-              // por identidad autoritativa para no crear duplicados.
-              if (analysis.tmdb_id && analysis.tmdb_id > 0 && !existing) {
-                const byTmdb = await findKnownWork(key, item.year, itemKind, analysis.tmdb_id);
-                if (byTmdb) {
-                  // Ya la tenemos; sincronizar fuentes.
-                  known++;
-                  state.progress.known++;
-                }
-              }
-              const eps = (analysis.episodes || []).map((e: any) => ({
-                number: Number(e.number),
-                title: String(e.title || `Episodio ${e.number}`),
-                url: String(e.url || ""),
-              }));
-              const { added } = await quickSyncKnownShow(existing.id, {
+              const eps = buildEpisodesFromAnalysis(analysis, platform, itemKind);
+              const syncResult = await quickSyncKnownShow(existing.id, {
                 title: analysis.title || item.title,
                 episodes: eps,
-                source_site: platform,
+                source_site: analysis.source_domain || platform,
               });
-              if (added > 0) {
-                state.progress.new_episodes += added;
-                log("info", `[${platform}] '${existing.title}': +${added} episodio(s) nuevo(s) detectado(s) por índice.`);
+              if (syncResult.added > 0) {
+                state.progress.new_episodes += syncResult.added;
+                log("info", `[${platform}] '${existing.title}': +${syncResult.added} episodio(s) nuevo(s) detectado(s) por índice.`);
               }
-              // Cortesía mínima.
-              await sleep(50 + Math.random() * 50);
+              if (syncResult.sourcesAdded && syncResult.sourcesAdded > 0) {
+                state.progress.sources_added += syncResult.sourcesAdded;
+              }
             } catch (e: any) {
               log("warn", `[${platform}] re-escaneo ligero de '${existing.title}': ${e?.message || e}`);
             }
@@ -728,23 +827,43 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           newDetected++;
           state.progress.new_sources++;
           const kind = itemKind;
+          const eps = buildEpisodesFromAnalysis(analysis, platform, kind);
+          const detectedStreams: string[] = Array.isArray(analysis?.detected_streams) ? analysis.detected_streams : [];
+
           const result = await saveShowWithDeduplication({
-            title: item.title,
-            poster_url: item.image_url || undefined,
-            year: item.year && Number.isFinite(item.year) && item.year > 1900 ? item.year : undefined,
-            rating: item.rating && Number.isFinite(item.rating) ? item.rating : undefined,
-            genres: Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : undefined,
+            title: analysis?.title || item.title,
+            original_title: analysis?.original_title || undefined,
+            tmdb_id: tmdbIdToUse || undefined,
+            poster_url: analysis?.poster_url || item.image_url || undefined,
+            banner_url: analysis?.banner_url || undefined,
+            year: analysis?.year || (item.year && Number.isFinite(item.year) && item.year > 1900 ? item.year : undefined),
+            rating: analysis?.rating || (item.rating && Number.isFinite(item.rating) ? item.rating : undefined),
+            genres: analysis?.genres || (Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : undefined),
             content_type: kind,
-            source_site: platform,
+            source_site: analysis?.source_domain || platform,
+            source: platform,
+            description: analysis?.description || undefined,
+            detected_streams: detectedStreams,
+            episodes: eps,
           });
+
           if (result.isDuplicate) {
             mergedByDedup++;
+            state.progress.works_merged++;
             log("info", `[${platform}] '${result.show.title}' llegó como nueva pero el dedup la fusionó.`);
           } else {
             imported++;
             state.progress.new_works++;
             log("info", `[${platform}] Nueva obra importada: '${result.show.title}'.`);
           }
+
+          if (result.episodesAdded > 0) {
+            state.progress.new_episodes += result.episodesAdded;
+          }
+          if (result.sourcesAdded && result.sourcesAdded > 0) {
+            state.progress.sources_added += result.sourcesAdded;
+          }
+
           // El import dispara cascada TMDB/AniList: pausa ligera.
           await sleep(100 + Math.random() * 100);
         }
@@ -788,6 +907,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       imported,
       merged_by_dedup: mergedByDedup,
       errors: catalogErrors,
+      works_merged: state.progress.works_merged || 0,
+      sources_added: state.progress.sources_added || 0,
     },
   };
   log(
@@ -838,6 +959,8 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
           imported: 0,
           merged_by_dedup: 0,
           errors: [],
+          works_merged: 0,
+          sources_added: 0,
         },
       };
       log("info", `Pasada (solo metadatos) finalizada: ${state.progress.updated_metadata} obra(s) reparada(s).`);
@@ -874,6 +997,8 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
         imported: 0,
         merged_by_dedup: 0,
         errors: [String(e?.message || e).slice(0, 500)],
+        works_merged: 0,
+        sources_added: 0,
       },
     };
   }

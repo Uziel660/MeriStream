@@ -104,23 +104,111 @@ function applyEnrichedMetadata(
 
 function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
   const inputEpisodes = input.episodes || [];
+  const defaultSite = input.source_site || "unknown";
+  const detectedStreams: string[] = Array.isArray(input.detected_streams)
+    ? input.detected_streams.filter((s): s is string => typeof s === "string" && Boolean(s.trim()))
+    : [];
+
+  const isMovie =
+    kind === "movie" ||
+    input.content_type === "movie" ||
+    input.category === "movie" ||
+    (inputEpisodes.length <= 1 && detectedStreams.length > 0 && !inputEpisodes.some((e) => (e.number ?? 1) > 1));
+
+  if (isMovie) {
+    const rawEp = inputEpisodes[0] || null;
+    const primaryUrl =
+      rawEp?.url ||
+      rawEp?.source_url ||
+      detectedStreams[0] ||
+      (input as any).source_url ||
+      (input as any).url ||
+      "";
+    const streamSources: SourceLinkInput[] = [];
+    const seenUrls = new Set<string>();
+
+    // 1. URL primaria
+    if (primaryUrl) {
+      streamSources.push({ url: primaryUrl, source_site: defaultSite });
+      seenUrls.add(primaryUrl);
+    }
+    // 2. detected_streams
+    for (const st of detectedStreams) {
+      if (st && !seenUrls.has(st)) {
+        streamSources.push({ url: st, source_site: defaultSite });
+        seenUrls.add(st);
+      }
+    }
+    // 3. rawEp sources
+    if (rawEp?.sources) {
+      for (const s of rawEp.sources) {
+        if (s?.url && !seenUrls.has(s.url)) {
+          streamSources.push({ ...s, source_site: s.source_site || defaultSite });
+          seenUrls.add(s.url);
+        }
+      }
+    }
+    // 4. input.sources
+    if (input.sources) {
+      for (const s of input.sources) {
+        if (s?.url && !seenUrls.has(s.url)) {
+          streamSources.push({ ...s, source_site: s.source_site || defaultSite });
+          seenUrls.add(s.url);
+        }
+      }
+    }
+
+    if (primaryUrl || streamSources.length > 0) {
+      return [
+        {
+          number: 1,
+          title: rawEp?.title || "Película Completa",
+          url: primaryUrl,
+          sources: streamSources,
+        },
+      ];
+    }
+  }
+
+  // Series / anime:
   const normalizedEpisodes = inputEpisodes
-    .filter((ep) => Boolean(ep.url || ep.source_url || input.detected_streams?.[0]))
-    .map((ep, idx) => ({
-      number: ep.number ?? ep.episode_number ?? idx + 1,
-      title: ep.title || (kind === "movie" ? "Película Completa" : `Episodio ${ep.number ?? ep.episode_number ?? idx + 1}`),
-      url: ep.url || ep.source_url || input.detected_streams?.[0] || "",
-      sources: ep.sources || [],
-    }));
+    .filter((ep) => Boolean(ep.url || ep.source_url || (ep.sources && ep.sources.length > 0)))
+    .map((ep, idx) => {
+      const epNum = ep.number ?? ep.episode_number ?? idx + 1;
+      const primaryUrl = ep.url || ep.source_url || (ep.sources && ep.sources[0]?.url) || "";
+      const epSources: SourceLinkInput[] = [];
+      const seen = new Set<string>();
+
+      if (primaryUrl) {
+        epSources.push({ url: primaryUrl, source_site: defaultSite });
+        seen.add(primaryUrl);
+      }
+
+      if (ep.sources) {
+        for (const s of ep.sources) {
+          if (s?.url && !seen.has(s.url)) {
+            epSources.push({ ...s, source_site: s.source_site || defaultSite });
+            seen.add(s.url);
+          }
+        }
+      }
+
+      return {
+        number: epNum,
+        title: ep.title || (kind === "movie" ? "Película Completa" : `Episodio ${epNum}`),
+        url: primaryUrl,
+        sources: epSources,
+      };
+    });
 
   if (normalizedEpisodes.length === 0) {
-    const fallbackUrl = input.detected_streams?.[0] || (input as any).source_url || (input as any).url || "";
+    const fallbackUrl = detectedStreams[0] || (input as any).source_url || (input as any).url || "";
     if (fallbackUrl) {
       normalizedEpisodes.push({
         number: 1,
         title: kind === "movie" ? "Película Completa" : "Episodio 1",
         url: fallbackUrl,
-        sources: [],
+        sources: detectedStreams.map((st) => ({ url: st, source_site: defaultSite })),
       });
     }
   }
@@ -136,17 +224,31 @@ function hostOf(url: string): string | null {
   }
 }
 
+/** Conjunto en memoria de claves compuestas encoladas para evitar doble conteo antes del drain. */
+const enqueuedSourceKeys = new Set<string>();
+
+export function resetEnqueuedSourceKeys(): void {
+  enqueuedSourceKeys.clear();
+}
+
 /**
  * Arquitectura multi-fuente (docs/DB_MULTISOURCE_ARCHITECTURE.md): aglutina N
  * SourceLink bajo un único MediaEpisode deduplicado por obra/temporada/número.
- * 
+ *
  * BUFFERIZADO: el upsert del episode se hace directo (necesario para el ID),
  * pero los sourceLinks se encolan en el write buffer para que el drainer los
  * aplique SOLOS, evitando timeouts P1008 en SQLite durante barridos pesados.
  */
-export async function syncEpisodeSources(mediaItemId: string, season: number, episodeNumber: number, sources: SourceLinkInput[], defaultSite: string) {
-  const cleanSources = (sources || []).filter((s) => s && s.url && typeof s.url === "string");
-  if (cleanSources.length === 0) return;
+export async function syncEpisodeSources(
+  mediaItemId: string,
+  season: number,
+  episodeNumber: number,
+  sources: SourceLinkInput[],
+  defaultSite: string
+): Promise<number> {
+  const cleanSources = (sources || []).filter((s) => s && s.url && typeof s.url === "string" && s.url.trim());
+  if (cleanSources.length === 0) return 0;
+  let sourcesAdded = 0;
 
   // Bufferizar TODO: upsert + sourceLinks juntos en el write buffer.
   // El drainer los aplica secuencialmente sin bloquear el worker.
@@ -165,26 +267,53 @@ export async function syncEpisodeSources(mediaItemId: string, season: number, ep
   // El drainer resuelve la referencia compuesta al MediaEpisode exacto antes de
   // crear cada SourceLink; así no mezcla temporadas ni episodios.
   for (const src of cleanSources) {
-    const lower = src.url.toLowerCase();
+    const rawUrl = src.url.trim();
+    const lower = rawUrl.toLowerCase();
     const linkType = src.link_type || (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/.test(lower) ? "direct" : "embed");
-    enqueueWrite({
-      kind: "sourceLink.create",
-      episodeRef: {
-        media_item_id: mediaItemId,
-        season_number: season,
-        episode_number: episodeNumber,
+    const site = src.source_site || defaultSite || "unknown";
+
+    const compKey = `${mediaItemId}:${season}:${episodeNumber}:${site}:${rawUrl}`;
+    if (enqueuedSourceKeys.has(compKey)) {
+      continue;
+    }
+
+    // Consulta de existencia exacta: media_item + season + episode + source_site + url
+    const existing = await prisma.sourceLink.findFirst({
+      where: {
+        url: rawUrl,
+        source_site: site,
+        media_episode: {
+          media_item_id: mediaItemId,
+          season_number: season,
+          episode_number: episodeNumber,
+        },
       },
-      data: {
-        source_site: src.source_site || defaultSite,
-        url: src.url,
-        link_type: linkType,
-        host: src.host ?? hostOf(src.url),
-        priority_tier: getStreamTier(src.url),
-        is_verified: src.is_verified ?? false,
-        last_checked: new Date().toISOString(),
-      },
+      select: { id: true },
     });
+
+    if (!existing) {
+      enqueuedSourceKeys.add(compKey);
+      sourcesAdded++;
+      enqueueWrite({
+        kind: "sourceLink.create",
+        episodeRef: {
+          media_item_id: mediaItemId,
+          season_number: season,
+          episode_number: episodeNumber,
+        },
+        data: {
+          source_site: site,
+          url: rawUrl,
+          link_type: linkType,
+          host: src.host ?? hostOf(rawUrl),
+          priority_tier: getStreamTier(rawUrl),
+          is_verified: src.is_verified ?? false,
+          last_checked: new Date().toISOString(),
+        },
+      });
+    }
   }
+  return sourcesAdded;
 }
 
 /**
@@ -356,7 +485,7 @@ async function syncMediaItemSources(
   try {
     const canonical = titleInfo.canonical || input.title;
     const norm = titleInfo.norm || normalizeTitle(canonical);
-    if (!norm) return;
+    if (!norm) return 0;
 
     const baseNorm = titleInfo.baseNorm || norm;
     const season = input.season ?? parseTitleQuery(canonical).season ?? 1;
@@ -418,16 +547,20 @@ async function syncMediaItemSources(
     }
 
     const defaultSite = input.source_site || "unknown";
+    let sourcesAdded = 0;
 
     for (const ep of normalizedEpisodes) {
       const sources = [...ep.sources];
       if (ep.url && !sources.some((s) => s.url === ep.url)) {
         sources.unshift({ url: ep.url });
       }
-      await syncEpisodeSources(mediaItem.id, season, ep.number, sources, defaultSite);
+      const added = await syncEpisodeSources(mediaItem.id, season, ep.number, sources, defaultSite);
+      sourcesAdded += added || 0;
     }
+    return sourcesAdded;
   } catch (e) {
     console.error(`[MultiSource] No se pudo sincronizar fuentes para obra legacy ${legacyShowId}:`, e);
+    return 0;
   }
 }
 
@@ -513,7 +646,7 @@ async function mergeSequelIntoTwin(
     baseNorm: base,
     year: twin.year ?? null,
   };
-  await syncMediaItemSources({ ...input, season: seasonNumber } as SaveShowInput, kind, twin.id, normalizedEpisodes, twinTitleInfo);
+  const sourcesAdded = await syncMediaItemSources({ ...input, season: seasonNumber } as SaveShowInput, kind, twin.id, normalizedEpisodes, twinTitleInfo);
 
   // IDs externos que la gemela no tenga.
   const patch: any = {};
@@ -531,7 +664,7 @@ async function mergeSequelIntoTwin(
     where: { id: twin.id },
     include: { episodes: { orderBy: { episode_number: "asc" } } },
   });
-  return { show: fresh!, isDuplicate: true, episodesAdded: added };
+  return { show: fresh!, isDuplicate: true, episodesAdded: added, sourcesAdded: sourcesAdded || 0 };
 }
 
 /**
@@ -667,9 +800,9 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 
   if (existingShow) {
     const result = await mergeShowEpisodes(existingShow, showData, normalizedEpisodes);
-    await syncMediaItemSources(input, kind, result.show.id, normalizedEpisodes, titleInfo);
+    const sourcesAdded = await syncMediaItemSources(input, kind, result.show.id, normalizedEpisodes, titleInfo);
     enqueueBackfillIfIncomplete(result.show);
-    return { ...result, season };
+    return { ...result, sourcesAdded, season };
   }
 
   // ── MERGE DE SECUELAS POR TMDB ──
@@ -754,13 +887,14 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     })),
   };
 
-  await syncMediaItemSources(input, kind, createdShow.id, normalizedEpisodes, titleInfo);
+  const sourcesAdded = await syncMediaItemSources(input, kind, createdShow.id, normalizedEpisodes, titleInfo);
   enqueueBackfillIfIncomplete(createdShow);
 
   return {
     show: createdShow as any,
     isDuplicate: false,
     episodesAdded: normalizedEpisodes.length,
+    sourcesAdded,
     season,
   };
 }
@@ -1138,16 +1272,16 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
 
 export interface QuickSyncInput {
   title?: string;
-  episodes: Array<{ number: number; title: string; url: string }>;
+  episodes: Array<{ number: number; title: string; url: string; sources?: SourceLinkInput[] }>;
   source_site?: string;
 }
 
 export async function quickSyncKnownShow(
   showId: string,
   data: QuickSyncInput
-): Promise<{ added: number }> {
+): Promise<{ added: number; sourcesAdded: number }> {
   const show = await prisma.show.findUnique({ where: { id: showId }, include: { episodes: true } });
-  if (!show) return { added: 0 };
+  if (!show) return { added: 0, sourcesAdded: 0 };
 
   const normalizedEpisodes = (data.episodes || [])
     .filter((e) => Number.isFinite(e.number) || e.url)
@@ -1155,7 +1289,7 @@ export async function quickSyncKnownShow(
       number: Number(e.number) || 0,
       title: e.title || `Episodio ${e.number}`,
       url: e.url || "",
-      sources: [] as SourceLinkInput[],
+      sources: e.sources || ([] as SourceLinkInput[]),
     }));
 
   const showData: any = {
@@ -1173,7 +1307,7 @@ export async function quickSyncKnownShow(
     baseNorm: show.base_normalized_title || show.normalized_title,
     year: show.year ?? null,
   };
-  await syncMediaItemSources(
+  const sourcesAdded = await syncMediaItemSources(
     { title: show.title, source_site: data.source_site } as SaveShowInput,
     kind,
     show.id,
@@ -1181,5 +1315,5 @@ export async function quickSyncKnownShow(
     titleInfo
   );
 
-  return { added: result.episodesAdded };
+  return { added: result.episodesAdded, sourcesAdded: sourcesAdded || 0 };
 }

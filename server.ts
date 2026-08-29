@@ -1837,8 +1837,13 @@ async function startServer() {
   // POST /api/v1/verification/config - actualiza y persiste la config (reprograma el timer)
   app.post("/api/v1/verification/config", async (req: Request, res: Response) => {
     try {
+      if (req.body?.platforms !== undefined) {
+        if (!Array.isArray(req.body.platforms) || !req.body.platforms.every((p: any) => typeof p === "string")) {
+          return res.status(400).json({ ok: false, detail: "platforms must be an array of strings" });
+        }
+      }
       const config = await updateVerificationConfig(req.body || {});
-      res.json({ ok: true, config });
+      res.json({ ok: true, config, status: getVerificationStatus() });
     } catch (e: any) {
       res.status(400).json({ ok: false, detail: String(e?.message || e) });
     }
@@ -1852,7 +1857,10 @@ async function startServer() {
     if (body.mode !== undefined && body.mode !== "metadata" && body.mode !== "full") {
       return res.status(400).json({ ok: false, detail: "mode must be 'metadata' or 'full'" });
     }
-    if (body.platforms !== undefined && !Array.isArray(body.platforms)) {
+    if (
+      body.platforms !== undefined &&
+      (!Array.isArray(body.platforms) || !body.platforms.every((p: any) => typeof p === "string"))
+    ) {
       return res.status(400).json({ ok: false, detail: "platforms must be an array of strings" });
     }
     if (body.limit !== undefined && (!Number.isFinite(Number(body.limit)) || Number(body.limit) <= 0)) {

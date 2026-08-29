@@ -34,7 +34,7 @@ import { pipeline } from "node:stream/promises";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
 import { APP_CONFIG, localAllowedOrigins } from "./app.config";
-import { backfillMissingMetadata, getBackfillStatus, backfillShow, showNeedsBackfill, forceShowMetadata } from "./server/metadataBackfill";
+import { backfillMissingMetadata, getBackfillStatus, forceShowMetadata } from "./server/metadataBackfill";
 import { reconcileSequelsByTmdb, mergeTwoShows } from "./server/reconcileCatalog";
 import { startWriteBufferDrainer, drainWriteBuffer } from "./server/writeBuffer";
 import { getVerificationStatus, updateVerificationConfig, runVerification } from "./server/verificationWorker";
@@ -1844,18 +1844,29 @@ async function startServer() {
     }
   });
 
-  // POST /api/v1/verification/run { platforms?, limit? } - lanza UNA pasada en background (no bloqueante)
+  // POST /api/v1/verification/run { mode?, platforms?, limit? }
+  // 202 = comenzó; 409 = ya en ejecución; 400 = input inválido.
   app.post("/api/v1/verification/run", async (req: Request, res: Response) => {
-    try {
-      const body = req.body || {};
-      const result = await runVerification({
-        platforms: Array.isArray(body.platforms) ? body.platforms : undefined,
-        limit: Number.isFinite(Number(body.limit)) && Number(body.limit) > 0 ? Math.round(Number(body.limit)) : undefined,
-      });
-      res.json({ ok: true, ...result, status: getVerificationStatus() });
-    } catch (e: any) {
-      res.status(500).json({ ok: false, detail: String(e?.message || e) });
+    const body = req.body || {};
+    // Validación de input
+    if (body.mode !== undefined && body.mode !== "metadata" && body.mode !== "full") {
+      return res.status(400).json({ ok: false, detail: "mode must be 'metadata' or 'full'" });
     }
+    if (body.platforms !== undefined && !Array.isArray(body.platforms)) {
+      return res.status(400).json({ ok: false, detail: "platforms must be an array of strings" });
+    }
+    if (body.limit !== undefined && (!Number.isFinite(Number(body.limit)) || Number(body.limit) <= 0)) {
+      return res.status(400).json({ ok: false, detail: "limit must be a positive number" });
+    }
+    const result = runVerification({
+      mode: body.mode,
+      platforms: Array.isArray(body.platforms) ? body.platforms : undefined,
+      limit: body.limit ? Math.round(Number(body.limit)) : undefined,
+    });
+    if (!result.started) {
+      return res.status(409).json({ ok: false, started: false, reason: result.reason, status: getVerificationStatus() });
+    }
+    res.status(202).json({ ok: true, started: true, status: getVerificationStatus() });
   });
 
   // ──── Watchdog Auto-Reparador ────
@@ -2207,239 +2218,6 @@ async function startServer() {
     return res.status(401).json({ ok: false, detail: "Credenciales incorrectas" });
   });
 
-  // =========================================================================
-  // VERIFICATION PIPELINE — Paso a paso configurable y extensible
-  // =========================================================================
-  const VERIFICATION_STEPS = [
-    { id: 'metadata', name: 'Rellenar metadatos faltantes', description: 'Busca poster, descripción, géneros y año via TMDB/AniList/TVMaze' },
-    { id: 'duplicates', name: 'Detectar duplicados', description: 'Agrupa obras por título normalizado y reporta conflictos' },
-    { id: 'seasons', name: 'Consolidar temporadas', description: 'Fusiona entradas de temporada dividida (misma obra, mismo tmdb_id)' },
-    { id: 'sequels', name: 'Reconciliar secuelas', description: 'Merge S2/S3 guardados como tarjetas separadas con mismo tmdb_id' },
-    { id: 'empty', name: 'Limpiar obras vacías', description: 'Elimina shows con 0 episodios' },
-    { id: 'sources', name: 'Reparar fuentes CDN', description: 'Busca páginas originales para shows con links CDN directos' },
-    { id: 'titles', name: 'Normalizar títulos', description: 'Detecta títulos basura/placeholder y restaura desde base_normalized_title' },
-    { id: 'stuck', name: 'Recuperar jobs trabados', description: 'Resetea CrawlTasks stuck en "running" por >30 minutos' },
-  ];
-
-  // Pipeline state (en memoria, se reinicia con el server)
-  let pipelineRunning = false;
-  let pipelineProgress: Record<string, { status: 'pending'|'running'|'done'|'error'|'skipped'; found: number; fixed: number; error?: string }> = {};
-  let pipelineLog: Array<{ at: string; step: string; level: string; message: string }> = [];
-
-  function pipelineLogMsg(step: string, level: string, message: string) {
-    pipelineLog.unshift({ at: new Date().toISOString(), step, level, message });
-    if (pipelineLog.length > 200) pipelineLog.length = 200;
-  }
-
-  async function stepMetadata(): Promise<{ found: number; fixed: number }> {
-    const allShows = await prisma.show.findMany({
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        poster_url: true,
-        banner_url: true,
-        genres: true,
-        year: true,
-      },
-      take: 500,
-      orderBy: { updated_at: "asc" }
-    });
-
-    const needyShows = allShows.filter((s) => showNeedsBackfill(s));
-    let fixed = 0;
-
-    for (const s of needyShows.slice(0, 50)) {
-      try {
-        const res = await backfillShow(s.id);
-        if (res.changed.length > 0) {
-          fixed++;
-        }
-      } catch {}
-    }
-    return { found: needyShows.length, fixed };
-  }
-
-  async function stepDuplicates(): Promise<{ found: number; fixed: number }> {
-    const dupes = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
-      `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
-       FROM "Show" WHERE base_normalized_title != '' GROUP BY base_normalized_title HAVING COUNT(*) > 1`
-    );
-    let fixed = 0;
-    for (const d of dupes) {
-      const ids = d.ids || [];
-      if (ids.length < 2) continue;
-      const [keepId, ...mergeIds] = ids;
-      for (const mergeId of mergeIds) {
-        try {
-          await prisma.episode.updateMany({ where: { show_id: mergeId }, data: { show_id: keepId } });
-          await prisma.show.delete({ where: { id: mergeId } });
-          fixed++;
-        } catch {}
-      }
-    }
-    return { found: dupes.length, fixed };
-  }
-
-  async function stepSeasons(): Promise<{ found: number; fixed: number }> {
-    const seasonShows = await prisma.$queryRawUnsafe<{ title: string; count: bigint; ids: string[] }[]>(
-      `SELECT base_normalized_title as title, COUNT(*) as count, ARRAY_AGG(id) as ids
-       FROM "Show" WHERE base_normalized_title != '' AND title ~* 'temporada|season|tp[0-9]'
-       GROUP BY base_normalized_title HAVING COUNT(*) > 1`
-    );
-    let fixed = 0;
-    for (const d of seasonShows) {
-      const ids = d.ids || [];
-      if (ids.length < 2) continue;
-      const [keepId, ...mergeIds] = ids;
-      for (const mergeId of mergeIds) {
-        try {
-          const eps = await prisma.episode.findMany({ where: { show_id: mergeId } });
-          for (const ep of eps) {
-            const exists = await prisma.episode.findFirst({ where: { show_id: keepId, episode_number: ep.episode_number } });
-            if (!exists) {
-              await prisma.episode.update({ where: { id: ep.id }, data: { show_id: keepId } });
-            }
-          }
-          await prisma.show.delete({ where: { id: mergeId } });
-          fixed++;
-        } catch {}
-      }
-    }
-    return { found: seasonShows.length, fixed };
-  }
-
-  async function stepEmpty(): Promise<{ found: number; fixed: number }> {
-    const empty = await prisma.show.findMany({ where: { episodes: { none: {} } }, take: 500 });
-    let fixed = 0;
-    for (const s of empty) {
-      try {
-        await prisma.show.delete({ where: { id: s.id } });
-        fixed++;
-      } catch {}
-    }
-    return { found: empty.length, fixed };
-  }
-
-  async function stepSources(): Promise<{ found: number; fixed: number }> {
-    const cdnShows = await prisma.show.findMany({
-      where: { source: '', episodes: { some: { source_url: { contains: '.m3u8' } } } },
-      include: { episodes: true },
-      take: 100,
-    });
-    let fixed = 0;
-    for (const s of cdnShows) {
-      const slug = s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      for (const baseUrl of [`https://www.cinecalidad.am/ver-pelicula/${slug}/`, `https://lamovie.org/peliculas/${slug}/`]) {
-        try {
-          const r = await fetch(baseUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) });
-          if (r.ok) {
-            const html = await r.text();
-            if (html.includes('embed') || html.includes('player')) {
-              const platform = baseUrl.includes('cinecalidad') ? 'cinecalidad' : 'lamovie';
-              const epId = s.episodes[0]?.id;
-              if (epId) {
-                await prisma.episode.update({ where: { id: epId }, data: { source_url: baseUrl } });
-                await prisma.show.update({ where: { id: s.id }, data: { source: platform } });
-                fixed++;
-                break;
-              }
-            }
-          }
-        } catch {}
-      }
-    }
-    return { found: cdnShows.length, fixed };
-  }
-
-  async function stepTitles(): Promise<{ found: number; fixed: number }> {
-    const garbage = await prisma.show.findMany({
-      where: { OR: [
-        { title: { contains: 'test', mode: 'insensitive' } },
-        { title: { contains: 'placeholder', mode: 'insensitive' } },
-        { description: 'Obra multimedia indexada.' },
-      ]},
-      take: 100,
-    });
-    let fixed = 0;
-    for (const s of garbage) {
-      if (s.base_normalized_title && s.base_normalized_title !== s.title) {
-        await prisma.show.update({ where: { id: s.id }, data: { title: s.base_normalized_title } });
-        fixed++;
-      }
-    }
-    return { found: garbage.length, fixed };
-  }
-
-  async function stepStuck(): Promise<{ found: number; fixed: number }> {
-    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-    const stuck = await prisma.crawlTask.findMany({
-      where: { status: 'running', created_at: { lt: cutoff } },
-      take: 50,
-    });
-    let fixed = 0;
-    for (const t of stuck) {
-      await prisma.crawlTask.update({ where: { id: t.id }, data: { status: 'pending' } });
-      fixed++;
-    }
-    return { found: stuck.length, fixed };
-  }
-
-  const STEP_RUNNERS: Record<string, () => Promise<{ found: number; fixed: number }>> = {
-    metadata: stepMetadata,
-    duplicates: stepDuplicates,
-    seasons: stepSeasons,
-    empty: stepEmpty,
-    sources: stepSources,
-    titles: stepTitles,
-    stuck: stepStuck,
-  };
-
-  app.get("/api/v1/verify/pipeline", (_req: Request, res: Response) => {
-    res.json({
-      running: pipelineRunning,
-      steps: VERIFICATION_STEPS.map(s => ({
-        ...s,
-        ...pipelineProgress[s.id],
-      })),
-      recent: pipelineLog.slice(0, 50),
-    });
-  });
-
-  app.post("/api/v1/verify/pipeline/run", async (req: Request, res: Response) => {
-    if (pipelineRunning) {
-      return res.json({ started: false, reason: 'Pipeline ya en ejecución' });
-    }
-    const selectedSteps: string[] = Array.isArray(req.body?.steps) ? req.body.steps : VERIFICATION_STEPS.map(s => s.id);
-    pipelineRunning = true;
-    pipelineProgress = {};
-    pipelineLog = [];
-    res.json({ started: true, steps: selectedSteps });
-
-    (async () => {
-      for (const stepId of selectedSteps) {
-        const step = VERIFICATION_STEPS.find(s => s.id === stepId);
-        if (!step) continue;
-        pipelineProgress[stepId] = { status: 'running', found: 0, fixed: 0 };
-        pipelineLogMsg(stepId, 'info', `Iniciando: ${step.name}`);
-        try {
-          const runner = STEP_RUNNERS[stepId];
-          if (!runner) {
-            pipelineProgress[stepId] = { status: 'skipped', found: 0, fixed: 0 };
-            continue;
-          }
-          const result = await runner();
-          pipelineProgress[stepId] = { status: 'done', ...result };
-          pipelineLogMsg(stepId, 'info', `${step.name}: ${result.found} encontrados, ${result.fixed} corregidos`);
-        } catch (e: any) {
-          pipelineProgress[stepId] = { status: 'error', found: 0, fixed: 0, error: e.message };
-          pipelineLogMsg(stepId, 'error', `Error en ${step.name}: ${e.message}`);
-        }
-      }
-      pipelineRunning = false;
-      pipelineLogMsg('pipeline', 'info', 'Pipeline completado');
-    })();
-  });
 
   // ==========================================
   // Auth, Progress & Recommendations Routers

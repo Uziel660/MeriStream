@@ -50,6 +50,11 @@ export interface VerificationConfig {
 }
 
 export interface VerificationRunOptions {
+  /** Override de modo SOLO para esta pasada (no muta config persistida).
+   *  - "metadata": solo fase metadatos.
+   *  - "full": metadatos + catálogo, incluso si config.metadata_only === true.
+   *  - undefined: obedece config.metadata_only. */
+  mode?: "metadata" | "full";
   /** Override de plataformas SOLO para esta pasada. */
   platforms?: string[];
   /** Tope de obras (fase metadatos) y de items por plataforma (fase novedades). */
@@ -281,9 +286,7 @@ function scheduleTimer(): void {
   state.nextRunAt = new Date(Date.now() + ms).toISOString();
   state.timer = setInterval(() => {
     if (state.running) return; // la pasada en curso manda; la siguiente se pierde (no se acumulan)
-    void runVerification({ trigger: "timer" }).catch((e) =>
-      log("error", `Pasada programada falló: ${e?.message || e}`)
-    );
+    runVerification({ trigger: "timer" });
   }, ms);
   (state.timer as unknown as { unref?: () => void })?.unref?.(); // no mantiene vivo procesos de prueba
 }
@@ -349,9 +352,14 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
 
 // ── API pública: run/status ──────────────────────────────────────
 
-export function runVerification(options?: VerificationRunOptions): Promise<{ started: boolean; reason?: string }> {
+/**
+ * Inicia una pasada de verificación. Es SÍNCRONA en su decisión de arranque
+ * (devuelve inmediatamente started/reason); la pasada corre en background.
+ * Bloqueo compartido: manuales y automáticas comparten el mismo lock.
+ */
+export function runVerification(options?: VerificationRunOptions): { started: boolean; reason?: string } {
   if (state.running) {
-    return Promise.resolve({ started: false, reason: "Ya hay una pasada en curso" });
+    return { started: false, reason: "already_running" };
   }
   state.running = true;
   state.phase = "metadata";
@@ -379,11 +387,12 @@ export function runVerification(options?: VerificationRunOptions): Promise<{ sta
     if (state.config.enabled && !state.nextRunAt) scheduleTimer();
   });
 
-  return Promise.resolve({ started: true });
+  return { started: true };
 }
 
 export function getVerificationStatus(): VerificationStatus {
   const c = state.config;
+  const p = state.progress;
   return {
     enabled: c.enabled,
     interval_minutes: c.interval_minutes,
@@ -395,7 +404,21 @@ export function getVerificationStatus(): VerificationStatus {
     running: state.running,
     phase: state.phase,
     current_item: state.currentItem,
-    progress: { ...state.progress },
+    // Capa de salida canónica: nombres del contrato acordado.
+    // Los internos se conservan para compatibilidad.
+    progress: {
+      // Internos (compat)
+      ...p,
+      // Canónicos
+      metadata_updated: p.updated_metadata,
+      works_created: p.new_works,
+      episodes_added: p.new_episodes,
+      // TODO: contabilizar merges reales de dedup en showService y
+      //       SourceLinks efectivamente insertados por syncEpisodeSources.
+      //       Mientras tanto se expone 0 — no falsificar el dato.
+      works_merged: 0,
+      sources_added: 0,
+    },
     last_run_at: state.lastRunAt,
     next_run_at: state.nextRunAt,
     last_report: state.lastReport,
@@ -545,7 +568,17 @@ function inferKindForPlatform(platformKey: string, itemKind?: ContentKind | null
   return "movie";
 }
 
-async function findKnownWork(titleKey: string, year?: number | null, kind?: ContentKind): Promise<{ id: string; title: string; episodeCount: number } | null> {
+async function findKnownWork(titleKey: string, year?: number | null, kind?: ContentKind, tmdbId?: number | null): Promise<{ id: string; title: string; episodeCount: number } | null> {
+  // (1) Resolución autoritativa: tmdb_id + content kind.
+  if (tmdbId && tmdbId > 0) {
+    const byTmdb = await prisma.show.findFirst({
+      where: { tmdb_id: tmdbId, ...(kind ? { category: kind } : {}) },
+      orderBy: { created_at: "asc" },
+      select: { id: true, title: true, _count: { select: { episodes: true } } },
+    });
+    if (byTmdb) return { id: byTmdb.id, title: byTmdb.title, episodeCount: byTmdb._count.episodes };
+  }
+  // (2) Fallback: título canónico + año compatible.
   if (!titleKey) return null;
   const showCandidates = await prisma.show.findMany({
     where: {
@@ -599,6 +632,10 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
   let imported = 0;
   let mergedByDedup = 0;
 
+  // Dedup de fichas: un mismo URL que aparezca en múltiples plataformas se
+  // analiza una sola vez. Evita enrichment y lookups duplicados.
+  const analyzedUrls = new Set<string>();
+
   for (const platform of platforms) {
     const url = (cfg.catalog_urls_by_platform[platform] || "").trim();
     if (!url) {
@@ -631,12 +668,19 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
         state.progress.done++;
         continue;
       }
+      // Dedup: ficha ya analizada en otra plataforma → saltar.
+      if (item.url && analyzedUrls.has(item.url)) {
+        state.progress.done++;
+        continue;
+      }
+      if (item.url) analyzedUrls.add(item.url);
+
       state.currentItem = `[${platform}] ${item.title}`;
       const key = normalizeTitleKey(item.title);
 
       try {
         const itemKind = inferKindForPlatform(platform, item.kind);
-        const existing = await findKnownWork(key, item.year, itemKind);
+        const existing = await findKnownWork(key, item.year, itemKind, null);
         if (existing) {
           known++;
           state.progress.known++;
@@ -650,6 +694,16 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           if (state.config.sync_known_episodes !== false && item.url) {
             try {
               const analysis = await analyzeUniversalUrl(item.url);
+              // Si el análisis revela un tmdb_id, re-intentar la resolución
+              // por identidad autoritativa para no crear duplicados.
+              if (analysis.tmdb_id && analysis.tmdb_id > 0 && !existing) {
+                const byTmdb = await findKnownWork(key, item.year, itemKind, analysis.tmdb_id);
+                if (byTmdb) {
+                  // Ya la tenemos; sincronizar fuentes.
+                  known++;
+                  state.progress.known++;
+                }
+              }
               const eps = (analysis.episodes || []).map((e: any) => ({
                 number: Number(e.number),
                 title: String(e.title || `Episodio ${e.number}`),
@@ -746,9 +800,14 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
 
 async function runPass(opts: VerificationRunOptions): Promise<void> {
   const cfg = getVerificationConfig();
+  // mode override por pasada: no muta config persistida.
+  // - "metadata": solo metadatos.
+  // - "full": metadatos + catálogo, incluso si config.metadata_only === true.
+  // - undefined: obedece config.metadata_only.
+  const metadataOnly = opts.mode === "metadata" ? true : opts.mode === "full" ? false : cfg.metadata_only;
   try {
     await metadataPhase(cfg, opts);
-    if (!cfg.metadata_only) {
+    if (!metadataOnly) {
       await catalogPhase(cfg, opts);
     } else {
       const finishedAt = new Date().toISOString();

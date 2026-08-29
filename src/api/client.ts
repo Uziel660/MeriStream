@@ -64,6 +64,81 @@ function normalizeMediaItem(item: any): MediaItemOut {
 
 export const AUTH_TOKEN_KEY = "nitiflix_auth_token_v1";
 
+export type VerificationPhase = "idle" | "metadata" | "catalog";
+export type VerificationRunMode = "metadata" | "full";
+
+export interface VerificationConfig {
+  enabled: boolean;
+  interval_minutes: number;
+  scope_mode: "all" | "platforms" | "category" | string;
+  platforms: string[];
+  category?: string | null;
+  catalog_urls_by_platform: Record<string, string>;
+  metadata_only: boolean;
+  sync_known_episodes: boolean;
+}
+
+export interface VerificationProgress {
+  total: number;
+  done: number;
+  new_works?: number;
+  new_sources?: number;
+  new_episodes?: number;
+  updated_metadata?: number;
+  metadata_updated?: number;
+  works_created?: number;
+  works_merged?: number;
+  sources_added?: number;
+  errors: number;
+}
+
+export interface VerificationReport {
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  trigger: "manual" | "timer" | string;
+  scope: { mode: string; platforms: string[]; category: string | null };
+  metadata_phase?: { works_total: number; works_done: number; updated_metadata: number; errors: number };
+  catalog_phase?: {
+    skipped: boolean;
+    platforms_checked: string[];
+    platforms_skipped_no_url: string[];
+    items_seen: number;
+    known: number;
+    known_without_episodes: string[];
+    new_detected: number;
+    imported: number;
+    merged_by_dedup: number;
+    errors: string[];
+  };
+}
+
+export interface VerificationStatus {
+  enabled: boolean;
+  interval_minutes: number;
+  scope_mode?: string;
+  platforms?: string[];
+  category?: string | null;
+  metadata_only?: boolean;
+  sync_known_episodes?: boolean;
+  running: boolean;
+  phase: VerificationPhase | string;
+  current_item: string | null;
+  progress: VerificationProgress;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_report: VerificationReport | null;
+  recent: Array<{ at: string; level: "info" | "warn" | "error" | string; message: string }>;
+  config: VerificationConfig;
+}
+
+export interface VerificationRunResponse {
+  ok: boolean;
+  started: boolean;
+  reason?: string;
+  status: VerificationStatus;
+}
+
 export function getAuthToken(): string | null {
   try {
     return localStorage.getItem(AUTH_TOKEN_KEY);
@@ -133,6 +208,29 @@ function buildQuery(params: Record<string, unknown> | MediaSearchParams): string
 }
 
 export const api = {
+  async getVerificationStatus(): Promise<VerificationStatus> {
+    return request<VerificationStatus>("/verification");
+  },
+
+  async runVerification(
+    mode: VerificationRunMode = "full",
+    options: { platforms?: string[]; limit?: number } = {}
+  ): Promise<VerificationRunResponse> {
+    return request<VerificationRunResponse>("/verification/run", {
+      method: "POST",
+      body: JSON.stringify({ mode, ...options }),
+    });
+  },
+
+  async updateVerificationConfig(
+    patch: Partial<VerificationConfig>
+  ): Promise<{ ok: boolean; config: VerificationConfig; status?: VerificationStatus }> {
+    return request<{ ok: boolean; config: VerificationConfig; status?: VerificationStatus }>("/verification/config", {
+      method: "POST",
+      body: JSON.stringify(patch),
+    });
+  },
+
   // Nueva arquitectura Just-In-Time
   async getShows(search?: string, category?: string): Promise<Show[]> {
     const params = new URLSearchParams();

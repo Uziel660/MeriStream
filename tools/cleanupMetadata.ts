@@ -1,7 +1,6 @@
 import { prisma } from "../server/db";
 import { reconcileSequelsByTmdb, mergeTwoShows } from "../server/reconcileCatalog";
 import { backfillShow, showNeedsBackfill } from "../server/metadataBackfill";
-import { runWatchdogNow } from "../server/watchdog";
 import { cleanDescription, isAnomalousDescription } from "../server/utils/textCleaner";
 
 async function main() {

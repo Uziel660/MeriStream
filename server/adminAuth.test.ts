@@ -129,7 +129,6 @@ describe("adminAuth", () => {
       ["/verification", "GET"],
       ["/worker/jobs", "GET"],
       ["/tasks/task-1", "GET"],
-      ["/watchdog/run", "POST"],
       ["/write-buffer", "GET"],
       ["/metadata/backfill", "POST"],
       ["/scraper/presets", "GET"],

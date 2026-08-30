@@ -51,15 +51,6 @@ import {
   clearLogs,
   getLogFilePaths,
 } from "./server/networkLogger";
-import {
-  getWatchdogStatus,
-  getWatchdogConfig,
-  updateWatchdogConfig,
-  runWatchdogNow,
-  getWatchdogReports,
-  checkWatchdogAlert,
-  clearWatchdogAlert,
-} from "./server/watchdog";
 import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
@@ -1886,54 +1877,6 @@ async function startServer() {
       return res.status(409).json({ ok: false, started: false, reason: result.reason, status: getVerificationStatus() });
     }
     res.status(202).json({ ok: true, started: true, status: getVerificationStatus() });
-  });
-
-  // ──── Watchdog Auto-Reparador ────
-  app.get("/api/v1/watchdog", (_req: Request, res: Response) => {
-    res.json(getWatchdogStatus());
-  });
-
-  app.get("/api/v1/watchdog/config", (_req: Request, res: Response) => {
-    res.json(getWatchdogConfig());
-  });
-
-  app.post("/api/v1/watchdog/config", async (req: Request, res: Response) => {
-    try {
-      const config = await updateWatchdogConfig(req.body || {});
-      res.json({ ok: true, config });
-    } catch (e: any) {
-      res.status(400).json({ ok: false, detail: String(e?.message || e) });
-    }
-  });
-
-  app.post("/api/v1/watchdog/run", async (_req: Request, res: Response) => {
-    try {
-      const result = await runWatchdogNow();
-      res.json({ ok: true, ...result });
-    } catch (e: any) {
-      res.status(500).json({ ok: false, detail: String(e?.message || e) });
-    }
-  });
-
-  app.get("/api/v1/watchdog/reports", (req: Request, res: Response) => {
-    const limit = Math.min(Number(req.query.limit) || 10, 50);
-    res.json({ reports: getWatchdogReports(limit) });
-  });
-
-  // GET /api/v1/watchdog/alert - Alerta crítica (el asistente revisa esto)
-  app.get("/api/v1/watchdog/alert", (_req: Request, res: Response) => {
-    const alert = checkWatchdogAlert();
-    if (alert) {
-      res.json({ active: true, ...alert });
-    } else {
-      res.json({ active: false, message: "Sin alertas críticas activas." });
-    }
-  });
-
-  // POST /api/v1/watchdog/alert/clear - Marca alerta como procesada
-  app.post("/api/v1/watchdog/alert/clear", (_req: Request, res: Response) => {
-    clearWatchdogAlert();
-    res.json({ ok: true, message: "Alerta limpiada." });
   });
 
   // POST /api/v1/worker/clear-finished

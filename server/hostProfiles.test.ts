@@ -33,4 +33,23 @@ describe("hostProfiles", () => {
     const { headers } = buildProxyHeaders(target, "https://jkanime.net/");
     expect(headers["Referer"]).toBe("https://jkanime.net/");
   });
+
+  it("resuelve vimeos.zip y vimeos.net con cliente undici, sin referer y con timeout de conexión", () => {
+    const targetZip = "https://p4.vimeos.zip/hls2/02/00009/drh2cmxggq49_h/seg-12-v1-a1.ts?t=2Jgs0jtVbjaKNVfSqkn";
+    const profileZip = resolveHostProfile(targetZip);
+
+    expect(profileZip.refererMode).toBe("none");
+    expect(profileZip.client).toBe("undici");
+    expect(profileZip.userAgent).toBe(CHROME_124_UA);
+    expect(profileZip.connectTimeoutMs).toBe(15000);
+
+    const { headers: headersZip } = buildProxyHeaders(targetZip, "https://vimeos.net/");
+    expect(headersZip["Referer"]).toBeUndefined();
+    expect(headersZip["Accept-Encoding"]).toBe("identity");
+
+    const targetNet = "https://s8.vimeos.net/hls2/02/00006/i95917axjpz0_,n,h,.urlset/master.m3u8?t=xyz";
+    const profileNet = resolveHostProfile(targetNet);
+    expect(profileNet.refererMode).toBe("none");
+    expect(profileNet.client).toBe("undici");
+  });
 });

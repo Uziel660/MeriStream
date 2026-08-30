@@ -125,15 +125,14 @@ export const HOST_PROFILES: HostProfile[] = [
     // body de 146 bytes con Content-Length que envenena la rama MP4 del proxy:
     // "El origen ignoró Range (status 403)"), así que VimeosResolver entrega
     // m3u8 validado y la reproducción va por la rama HLS (solo GET).
-    // match ampliado a "vimeos." porque los nodos rotan TLD: s{N}.vimeos.net,
-    // vimeos.zip, p{N}.vimeos.zip.
-    match: ["vimeos."],
+    match: ["vimeos.", "vimeos.zip", "vimeos.net"],
     refererMode: "none",
     userAgent: CHROME_124_UA,
     extraHeaders: {
       "Accept-Encoding": "identity",
     },
     client: "undici",
+    connectTimeoutMs: 15000,
   },
   {
     // Acek-CDN y SprintCDN (CDNs HLS de Goodstream / Cinecalidad / LaMovie):

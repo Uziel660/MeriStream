@@ -1078,50 +1078,60 @@ async function startServer() {
         let upstreamStatus: number;
         let responseHeaders: any;
         let rawBody: any;
-
-        // Goodstream / Ducvomes / Playmudos usan undici directamente.
-        // Si usamos stealthClient y da Remote protocol error, hacemos fallback automÃ¡tico a undici.
-        if (isGoodstream) {
-          const upstream = await request(targetUrl, {
-            method: 'GET',
-            headers: reqHeaders,
-            headersTimeout: 15000,
-            bodyTimeout: 30000,
-            ...profileConnectOpts,
-          });
-          upstreamStatus = upstream.statusCode;
-          responseHeaders = upstream.headers;
-          const chunks: Buffer[] = [];
-          for await (const ch of upstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
-          rawBody = Buffer.concat(chunks);
-        } else {
+        let lastHlsError: any;
+        for (let attempt = 1; attempt <= MAX_NETWORK_RETRIES; attempt++) {
           try {
-            const response = await stealthClient.sendRequest({
-              url: targetUrl,
-              method: 'GET',
-              headers: reqHeaders,
-              responseType: 'buffer'
-            } as any);
-            upstreamStatus = response.statusCode ?? 0;
-            responseHeaders = response.headers || {};
-            rawBody = response.body;
-          } catch (stealthErr: any) {
-            // Fallback resiliente a undici si impit falla con Remote protocol error
-            console.warn(`[proxy/stream] stealthClient fallÃ³ (${stealthErr.message}), intentando con undici...`);
-            const fallbackUpstream = await request(targetUrl, {
-              method: 'GET',
-              headers: reqHeaders,
-              headersTimeout: 15000,
-              bodyTimeout: 30000,
-              ...profileConnectOpts,
-            });
-            upstreamStatus = fallbackUpstream.statusCode;
-            responseHeaders = fallbackUpstream.headers;
-            const chunks: Buffer[] = [];
-            for await (const ch of fallbackUpstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
-            rawBody = Buffer.concat(chunks);
+            if (isGoodstream) {
+              const upstream = await request(targetUrl, {
+                method: 'GET',
+                headers: reqHeaders,
+                headersTimeout: 15000,
+                bodyTimeout: 30000,
+                ...profileConnectOpts,
+              });
+              upstreamStatus = upstream.statusCode;
+              responseHeaders = upstream.headers;
+              const chunks: Buffer[] = [];
+              for await (const ch of upstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
+              rawBody = Buffer.concat(chunks);
+            } else {
+              try {
+                const response = await stealthClient.sendRequest({
+                  url: targetUrl,
+                  method: 'GET',
+                  headers: reqHeaders,
+                  responseType: 'buffer'
+                } as any);
+                upstreamStatus = response.statusCode ?? 0;
+                responseHeaders = response.headers || {};
+                rawBody = response.body;
+              } catch (stealthErr: any) {
+                // Fallback resiliente a undici si impit falla con Remote protocol error
+                console.warn(`[proxy/stream] stealthClient falló (${stealthErr.message}), intentando con undici...`);
+                const fallbackUpstream = await request(targetUrl, {
+                  method: 'GET',
+                  headers: reqHeaders,
+                  headersTimeout: 15000,
+                  bodyTimeout: 30000,
+                  ...profileConnectOpts,
+                });
+                upstreamStatus = fallbackUpstream.statusCode;
+                responseHeaders = fallbackUpstream.headers;
+                const chunks: Buffer[] = [];
+                for await (const ch of fallbackUpstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
+                rawBody = Buffer.concat(chunks);
+              }
+            }
+            lastHlsError = null;
+            break;
+          } catch (hlsErr: any) {
+            lastHlsError = hlsErr;
+            if (attempt < MAX_NETWORK_RETRIES) {
+              await new Promise((r) => setTimeout(r, 150 * attempt));
+            }
           }
         }
+        if (lastHlsError) throw lastHlsError;
 
         // Normalize SimpleHeaders â†’ string. They can be string | string[] | undefined.
         const getHeader = (name: string): string => {

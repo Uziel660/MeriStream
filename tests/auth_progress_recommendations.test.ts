@@ -128,4 +128,38 @@ describe("Auth, Progress and Recommendations System", () => {
     });
     expect(check).toBeNull();
   });
+
+  it("calcula recomendaciones correctamente sin errores de validación de Prisma", async () => {
+    const show = await prisma.show.create({
+      data: {
+        title: "Test Anime Show",
+        normalized_title: "test-anime-show",
+        category: "anime",
+        rating: 8.5,
+        year: 2024,
+        genres: "Acción, Anime, Aventura",
+      },
+    });
+
+    try {
+      const discoveryShows = await prisma.show.findMany({
+        where: {
+          id: { notIn: [show.id] },
+          rating: { gte: 7.8 },
+          NOT: {
+            genres: {
+              contains: "Anime",
+              mode: "insensitive",
+            },
+          },
+        },
+        orderBy: { year: "desc" },
+        take: 20,
+      });
+
+      expect(Array.isArray(discoveryShows)).toBe(true);
+    } finally {
+      await prisma.show.deleteMany({ where: { id: show.id } });
+    }
+  });
 });

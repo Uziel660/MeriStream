@@ -143,8 +143,8 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       where: {
         id: { notIn: watchedShowIds },
         rating: { gte: 7.8 },
-        genres: {
-          not: {
+        NOT: {
+          genres: {
             contains: primaryGenre,
             mode: "insensitive",
           },

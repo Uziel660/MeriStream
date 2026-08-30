@@ -1,9 +1,8 @@
-// src/components/ContinueWatching.tsx
-import React, { useRef } from 'react';
-import { Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useRef, useMemo } from 'react';
+import { Play, ChevronLeft, ChevronRight, X, Sparkles, Film } from 'lucide-react';
 import { rgbToRgbaString } from '../utils/colorExtractor';
 import { SmartImage } from './SmartImage';
-import type { Episode } from '../types';
+import type { Episode, Show } from '../types';
 
 export interface WatchProgress {
   showId: string;
@@ -16,27 +15,47 @@ export interface WatchProgress {
   currentTime?: number;
   duration?: number;
   lastWatchedAt: number;
+  isMovie?: boolean;
 }
 
 /** Nunca mostrar "undefined" en tarjetas (#2): fallback al número de episodio. */
 function safeTitle(title: string | undefined, fallbackNumber: number): string {
   const t = (title || '').trim();
   if (t && !/^undefined$/i.test(t) && !/^null$/i.test(t)) return t;
-  return fallbackNumber != null ? `Episodio ${fallbackNumber}` : 'Episodio';
+  return fallbackNumber != null && fallbackNumber > 0 ? `Episodio ${fallbackNumber}` : 'Episodio';
 }
 
 interface ContinueWatchingProps {
   items: WatchProgress[];
+  shows?: Show[];
   onPlayEpisode: (showId: string, episode: Episode, showTitle: string) => void;
   onSelectShow?: (showId: string) => void;
+  onRemoveItem?: (episodeId: string) => void;
+}
+
+interface DisplayCardItem {
+  showId: string;
+  showTitle: string;
+  showPoster?: string;
+  episodeId: string;
+  episodeNumber: number;
+  episodeTitle: string;
+  progressPercent: number;
+  currentTime?: number;
+  duration?: number;
+  lastWatchedAt: number;
+  isMovie: boolean;
+  isNextEpisode?: boolean;
+  isCompleted?: boolean;
 }
 
 export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
   items,
+  shows = [],
   onPlayEpisode,
   onSelectShow,
+  onRemoveItem,
 }) => {
-
   const rowRef = useRef<HTMLDivElement>(null);
 
   const handleScroll = (direction: 'left' | 'right') => {
@@ -50,7 +69,121 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
     }
   };
 
-  if (!items || items.length === 0) return null;
+  // ── DEDUPLICACIÓN POR OBRA Y AVANCE INTELIGENTE DE EPISODIOS ───────────
+  // Agrupa por showId para mostrar solo 1 tarjeta por serie/película.
+  // Si el último episodio se completó (>85%), avanza al siguiente episodio disponible.
+  const displayItems = useMemo<DisplayCardItem[]>(() => {
+    if (!items || items.length === 0) return [];
+
+    const showMap = new Map<string, Show>();
+    shows.forEach((s) => showMap.set(s.id, s));
+
+    // Agrupar entradas de watch progress por showId
+    const groups = new Map<string, WatchProgress[]>();
+    items.forEach((it) => {
+      if (!it.showId) return;
+      if (!groups.has(it.showId)) groups.set(it.showId, []);
+      groups.get(it.showId)!.push(it);
+    });
+
+    const result: DisplayCardItem[] = [];
+
+    for (const [showId, group] of groups.entries()) {
+      // Ordenar por lastWatchedAt descendente
+      group.sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
+      const latest = group[0];
+      const show = showMap.get(showId);
+
+      const isMovie = Boolean(
+        latest.isMovie ||
+        show?.kind === 'movie' ||
+        (show as any)?.content_type === 'movie' ||
+        ['pelicula', 'película', 'peliculas', 'películas', 'movie', 'movies', 'cine'].includes(
+          (show?.category || '').toLowerCase().trim()
+        ) ||
+        (show?.episodes && show.episodes.length === 1 && !/episodio|capitulo|capítulo/i.test(show.episodes[0].title))
+      );
+
+      const percent = Math.min(100, Math.max(0, Math.round(latest.progressPercent || 0)));
+
+      if (isMovie) {
+        // Para películas terminadas (>90%), no saturar la fila activa de continuar viendo
+        if (percent >= 90) continue;
+
+        result.push({
+          showId: latest.showId,
+          showTitle: latest.showTitle || show?.title || 'Película',
+          showPoster: latest.showPoster || show?.backdrop_url || show?.poster_url || undefined,
+          episodeId: latest.episodeId,
+          episodeNumber: 1,
+          episodeTitle: latest.showTitle || 'Película',
+          progressPercent: percent,
+          currentTime: latest.currentTime,
+          duration: latest.duration,
+          lastWatchedAt: latest.lastWatchedAt,
+          isMovie: true,
+        });
+      } else {
+        // Es una Serie / Anime
+        const allEpisodes = (show?.episodes ? [...show.episodes] : []).sort(
+          (a, b) => (a.episode_number || 0) - (b.episode_number || 0)
+        );
+
+        if (percent >= 85) {
+          // El episodio actual está completado. Buscar el siguiente episodio disponible
+          let nextEp: Episode | undefined;
+          if (allEpisodes.length > 0) {
+            const currentIdx = allEpisodes.findIndex((e) => e.id === latest.episodeId || e.episode_number === latest.episodeNumber);
+            if (currentIdx !== -1 && currentIdx + 1 < allEpisodes.length) {
+              nextEp = allEpisodes[currentIdx + 1];
+            } else {
+              // Buscar por número
+              nextEp = allEpisodes.find((e) => (e.episode_number || 0) === (latest.episodeNumber || 1) + 1);
+            }
+          }
+
+          if (nextEp) {
+            // Mostrar tarjeta lista para reproducir el siguiente episodio
+            result.push({
+              showId: latest.showId,
+              showTitle: latest.showTitle || show?.title || 'Serie',
+              showPoster: latest.showPoster || show?.backdrop_url || show?.poster_url || undefined,
+              episodeId: nextEp.id,
+              episodeNumber: nextEp.episode_number || (latest.episodeNumber + 1),
+              episodeTitle: nextEp.title || `Episodio ${nextEp.episode_number || (latest.episodeNumber + 1)}`,
+              progressPercent: 0,
+              currentTime: 0,
+              duration: 0,
+              lastWatchedAt: latest.lastWatchedAt,
+              isMovie: false,
+              isNextEpisode: true,
+            });
+          }
+          // Si no hay más episodios disponibles en la serie, se considera serie finalizada y no se duplica
+        } else {
+          // Episodio en progreso (<85%)
+          result.push({
+            showId: latest.showId,
+            showTitle: latest.showTitle || show?.title || 'Serie',
+            showPoster: latest.showPoster || show?.backdrop_url || show?.poster_url || undefined,
+            episodeId: latest.episodeId,
+            episodeNumber: latest.episodeNumber || 1,
+            episodeTitle: latest.episodeTitle || `Episodio ${latest.episodeNumber || 1}`,
+            progressPercent: percent,
+            currentTime: latest.currentTime,
+            duration: latest.duration,
+            lastWatchedAt: latest.lastWatchedAt,
+            isMovie: false,
+          });
+        }
+      }
+    }
+
+    // Ordenar todas las obras por última interacción
+    return result.sort((a, b) => b.lastWatchedAt - a.lastWatchedAt).slice(0, 15);
+  }, [items, shows]);
+
+  if (displayItems.length === 0) return null;
 
   return (
     <section className="space-y-3">
@@ -59,7 +192,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
           Seguir Viendo
         </h3>
         <span className="text-xs text-zinc-500 font-mono">
-          {items.length} en curso
+          {displayItems.length} {displayItems.length === 1 ? 'obra en curso' : 'obras en curso'}
         </span>
       </div>
 
@@ -79,7 +212,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
           ref={rowRef}
           className="flex gap-4 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none scroll-smooth items-stretch"
         >
-          {items.map((item) => (
+          {displayItems.map((item) => (
             <div key={`${item.showId}-${item.episodeId}`} className="w-64 sm:w-72 shrink-0">
               <ContinueWatchingCard
                 item={item}
@@ -87,13 +220,22 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
                   const ep: Episode = {
                     id: item.episodeId,
                     show_id: item.showId,
-                    title: safeTitle(item.episodeTitle, item.episodeNumber),
+                    title: item.isMovie
+                      ? item.showTitle
+                      : safeTitle(item.episodeTitle, item.episodeNumber),
                     episode_number: item.episodeNumber,
                     created_at: new Date().toISOString(),
                   };
-                  onPlayEpisode(item.showId, ep, safeTitle(item.showTitle, 0) === 'Episodio' ? (item.showTitle || 'Contenido') : item.showTitle);
+                  onPlayEpisode(
+                    item.showId,
+                    ep,
+                    safeTitle(item.showTitle, 0) === 'Episodio'
+                      ? item.showTitle || 'Contenido'
+                      : item.showTitle
+                  );
                 }}
                 onOpenDetails={() => onSelectShow && onSelectShow(item.showId)}
+                onRemove={() => onRemoveItem && onRemoveItem(item.episodeId)}
               />
             </div>
           ))}
@@ -114,15 +256,17 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
 };
 
 interface ContinueWatchingCardProps {
-  item: WatchProgress;
+  item: DisplayCardItem;
   onPlay: () => void;
   onOpenDetails: () => void;
+  onRemove?: () => void;
 }
 
 const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   item,
   onPlay,
   onOpenDetails,
+  onRemove,
 }) => {
   const accentRgb: [number, number, number] = [245, 158, 11];
   const accentColor = rgbToRgbaString(accentRgb, 1);
@@ -153,6 +297,22 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
 
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-transparent" />
 
+        {/* BOTÓN DE DESCARTE (X) EN HOVER */}
+        {onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Quitar de seguir viendo"
+            aria-label="Quitar de seguir viendo"
+            className="absolute top-2 right-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-zinc-400 hover:text-white hover:bg-rose-600/90 border border-zinc-700/50 backdrop-blur-md opacity-0 group-hover/cw:opacity-100 transition-all shadow-md"
+          >
+            <X size={12} />
+          </button>
+        )}
+
         {/* HOVER PLAY BUTTON */}
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/cw:opacity-100 transition-opacity duration-200 flex items-center justify-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black shadow-xl group-hover/cw:scale-110 transition-transform">
@@ -160,19 +320,29 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
           </span>
         </div>
 
-        {/* EPISODE BADGE */}
-        <div className="absolute top-2 left-2">
-          <span className="rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-zinc-200 border border-zinc-800">
-            Ep. {item.episodeNumber}
-          </span>
+        {/* BADGE SUPERIOR IZQUIERDO: PELÍCULA / SIGUIENTE / EPISODIO */}
+        <div className="absolute top-2 left-2 z-10">
+          {item.isMovie ? (
+            <span className="inline-flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-amber-300 border border-amber-500/30 backdrop-blur-sm shadow-sm">
+              <Film size={10} /> Película
+            </span>
+          ) : item.isNextEpisode ? (
+            <span className="inline-flex items-center gap-1 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-mono font-bold text-black border border-amber-400 shadow-md">
+              <Sparkles size={10} /> Ep. {item.episodeNumber}
+            </span>
+          ) : (
+            <span className="rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-zinc-200 border border-zinc-800 backdrop-blur-sm shadow-sm">
+              Ep. {item.episodeNumber}
+            </span>
+          )}
         </div>
 
-        {/* 3PX INFERIOR PROGRESS BAR */}
+        {/* BARRA DE PROGRESO INFERIOR */}
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800 overflow-hidden">
           <div
             className="h-full transition-all duration-300"
             style={{
-              width: `${Math.max(5, Math.min(100, item.progressPercent))}%`,
+              width: item.isNextEpisode ? '0%' : `${Math.max(5, Math.min(100, item.progressPercent))}%`,
               backgroundColor: accentColor,
             }}
           />
@@ -193,11 +363,15 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
             {item.showTitle || 'Contenido'}
           </button>
           <span className="text-[10px] text-zinc-500 font-mono">
-            {item.progressPercent}%
+            {item.isNextEpisode ? 'Siguiente' : `${item.progressPercent}%`}
           </span>
         </div>
         <h4 className="font-display text-xs sm:text-sm font-semibold text-zinc-100 group-hover/cw:text-amber-400 truncate transition-colors">
-          {safeTitle(item.episodeTitle, item.episodeNumber)}
+          {item.isMovie
+            ? item.showTitle
+            : item.isNextEpisode
+              ? `Siguiente: ${safeTitle(item.episodeTitle, item.episodeNumber)}`
+              : safeTitle(item.episodeTitle, item.episodeNumber)}
         </h4>
       </div>
     </div>

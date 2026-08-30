@@ -1,7 +1,7 @@
 // src/components/MediaDetailsModal.tsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Loader2, AlertCircle, Search, Calendar, Star } from 'lucide-react';
+import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { thumbBackdropUrl } from '../utils/imageSizes';
@@ -9,12 +9,14 @@ import { cleanDescription } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { ShowDetail, Episode } from '../types';
+import type { WatchProgress } from './ContinueWatching';
 
 interface MediaDetailsModalProps {
   showId: string | null;
   isOpen?: boolean;
   onClose: () => void;
   onSelectEpisode: (episode: Episode, showTitle: string) => void;
+  watchProgress?: WatchProgress[];
 }
 
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
@@ -22,6 +24,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   isOpen = Boolean(showId),
   onClose,
   onSelectEpisode,
+  watchProgress = [],
 }) => {
   const [show, setShow] = useState<ShowDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +64,31 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  // ── MAPA DE PROGRESO DE EPISODIOS DE ESTA OBRA ──────────────────────
+  const episodeProgressMap = useMemo(() => {
+    const map = new Map<string, { percent: number; currentTime: number; duration: number }>();
+    if (!watchProgress || !showId) return map;
+
+    for (const p of watchProgress) {
+      if (p.showId === showId) {
+        const percent = Math.min(100, Math.max(0, Math.round(p.progressPercent || 0)));
+        map.set(p.episodeId, {
+          percent,
+          currentTime: p.currentTime || 0,
+          duration: p.duration || 0,
+        });
+        if (typeof p.episodeNumber === 'number') {
+          map.set(`num_${p.episodeNumber}`, {
+            percent,
+            currentTime: p.currentTime || 0,
+            duration: p.duration || 0,
+          });
+        }
+      }
+    }
+    return map;
+  }, [watchProgress, showId]);
 
   const episodes = show?.episodes ? [...show.episodes].sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0)) : [];
 
@@ -156,6 +184,27 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
   const playableEpisodes = episodes.filter((ep) => !isMetadataOnlyUrl(ep.source_url));
   const hasNoSources = !isLoading && !error && Boolean(show) && playableEpisodes.length === 0 && !hasDirectSource;
+
+  const isMovie = Boolean(
+    show &&
+    (show.kind === 'movie' ||
+      (show as any).content_type === 'movie' ||
+      ['pelicula', 'película', 'peliculas', 'películas', 'movie', 'movies', 'cine'].includes(
+        (show.category || '').toLowerCase().trim()
+      ) ||
+      (episodes.length === 1 && !/episodio|capitulo|capítulo/i.test(episodes[0].title)))
+  );
+
+  // Progreso de película
+  const movieEpisode = episodes[0] || (show?.episodes && show.episodes[0]) || {
+    id: show?.id || 'movie',
+    title: show?.title || 'Película Completa',
+    episode_number: 1,
+    source_url: (show as any)?.source_url || show?.sources?.master_m3u8 || '',
+  };
+  const movieProgress = episodeProgressMap.get(movieEpisode.id) || episodeProgressMap.get('num_1');
+  const moviePercent = movieProgress?.percent || 0;
+  const isMovieCompleted = moviePercent >= 88;
 
   return (
     <AnimatePresence>
@@ -306,108 +355,174 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   )}
 
                   {/* BOTÓN DE REPRODUCIR PARA PELÍCULAS O LISTA DE EPISODIOS */}
-                  {show.kind === 'movie' ||
-                  (show as any).content_type === 'movie' ||
-                  ['pelicula', 'película', 'peliculas', 'películas', 'movie', 'movies', 'cine'].includes(
-                    (show.category || '').toLowerCase().trim()
-                  ) ? (
-                    <div className="pt-4 flex justify-center pb-8">
+                  {isMovie ? (
+                    <div className="pt-4 flex flex-col items-center gap-3 pb-8">
                       <button
                         type="button"
-                        onClick={() => {
-                          const movieEp =
-                            episodes[0] ||
-                            (show.episodes && show.episodes[0]) || {
-                              id: show.id,
-                              title: show.title || 'Película Completa',
-                              episode_number: 1,
-                              source_url: (show as any).source_url || show.sources?.master_m3u8 || '',
-                            };
-                          onSelectEpisode(movieEp, show.title);
-                        }}
+                        onClick={() => onSelectEpisode(movieEpisode, show.title)}
                         className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] cursor-pointer"
                       >
-                        <Play size={20} className="fill-black" />
-                        REPRODUCIR PELÍCULA
+                        {isMovieCompleted ? (
+                          <>
+                            <RotateCcw size={20} className="stroke-[2.5]" />
+                            VOLVER A VER PELÍCULA
+                          </>
+                        ) : moviePercent > 0 ? (
+                          <>
+                            <Play size={20} className="fill-black" />
+                            CONTINUAR PELÍCULA ({moviePercent}%)
+                          </>
+                        ) : (
+                          <>
+                            <Play size={20} className="fill-black" />
+                            REPRODUCIR PELÍCULA
+                          </>
+                        )}
                       </button>
-                    </div>
-                  ) : (
-                  <div className="space-y-4 pt-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col gap-2">
-                          <h4 className="font-display text-sm font-bold text-white">
-                            Episodios ({episodes.length})
-                          </h4>
-                          {availableSeasons.length > 1 && (
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              {availableSeasons.map((season) => (
-                                <button
-                                  key={season}
-                                  onClick={() => setSelectedSeason(season)}
-                                  className={`px-3 py-1 text-xs rounded-full transition-colors border ${
-                                    selectedSeason === season
-                                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold'
-                                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                                  }`}
-                                >
-                                  Temporada {season}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
 
-                      {episodes.length > 6 && (
-                        <div className="relative flex items-center">
-                          <Search
-                            size={13}
-                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
-                          />
-                          <input
-                            type="text"
-                            value={episodeSearch}
-                            onChange={(e) => setEpisodeSearch(e.target.value)}
-                            placeholder="Buscar nº o título..."
-                            className="rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 pl-8 pr-3 py-1.5 focus:border-amber-500/60 focus:outline-none w-full sm:w-48 font-normal"
-                          />
+                      {moviePercent > 0 && (
+                        <div className="w-full sm:w-72 space-y-1">
+                          <div className="flex justify-between text-[11px] font-mono text-zinc-400">
+                            <span>{isMovieCompleted ? 'Completada' : 'Progreso de reproducción'}</span>
+                            <span className={isMovieCompleted ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+                              {moviePercent}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-300 ${
+                                isMovieCompleted ? 'bg-emerald-500' : 'bg-amber-500'
+                              }`}
+                              style={{ width: `${moviePercent}%` }}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
-
-                    {filteredEpisodes.length === 0 ? (
-                      <div className="text-center py-10 text-xs text-zinc-500">
-                        No se encontraron episodios {episodeSearch ? `que coincidan con "${episodeSearch}"` : 'registrados'}.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[420px] overflow-y-auto pr-1">
-                        {filteredEpisodes.map((ep) => {
-                          return (
-                            <button
-                              key={ep.id}
-                              type="button"
-                              onClick={() => onSelectEpisode(ep, show.title)}
-                              className="group/ep w-full flex items-center justify-between rounded-xl bg-zinc-900/60 hover:bg-zinc-800/70 p-3 text-left border border-zinc-800/80 hover:border-zinc-700 transition-all shadow-sm"
-                            >
-                              <div className="flex flex-col truncate pr-3">
-                                <span className="font-display text-xs font-semibold text-zinc-200 group-hover/ep:text-amber-400 truncate transition-colors">
-                                  {ep.title}
-                                </span>
-                                <span className="text-[11px] text-zinc-500 font-mono mt-0.5">
-                                  Episodio {ep.episode_number}
-                                </span>
+                  ) : (
+                    <div className="space-y-4 pt-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-2">
+                            <h4 className="font-display text-sm font-bold text-white">
+                              Episodios ({episodes.length})
+                            </h4>
+                            {availableSeasons.length > 1 && (
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {availableSeasons.map((season) => (
+                                  <button
+                                    key={season}
+                                    onClick={() => setSelectedSeason(season)}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors border ${
+                                      selectedSeason === season
+                                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold'
+                                        : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                                    }`}
+                                  >
+                                    Temporada {season}
+                                  </button>
+                                ))}
                               </div>
+                            )}
+                          </div>
+                        </div>
 
-                              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 group-hover/ep:bg-amber-500 group-hover/ep:text-black transition-colors shrink-0">
-                                <Play size={13} className="ml-0.5 fill-current" />
-                              </span>
-                            </button>
-                          );
-                        })}
+                        {episodes.length > 6 && (
+                          <div className="relative flex items-center">
+                            <Search
+                              size={13}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+                            />
+                            <input
+                              type="text"
+                              value={episodeSearch}
+                              onChange={(e) => setEpisodeSearch(e.target.value)}
+                              placeholder="Buscar nº o título..."
+                              className="rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 pl-8 pr-3 py-1.5 focus:border-amber-500/60 focus:outline-none w-full sm:w-48 font-normal"
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {filteredEpisodes.length === 0 ? (
+                        <div className="text-center py-10 text-xs text-zinc-500">
+                          No se encontraron episodios {episodeSearch ? `que coincidan con "${episodeSearch}"` : 'registrados'}.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[440px] overflow-y-auto pr-1">
+                          {filteredEpisodes.map((ep) => {
+                            const prog = episodeProgressMap.get(ep.id) || episodeProgressMap.get(`num_${ep.episode_number}`);
+                            const percent = prog?.percent || 0;
+                            const isCompleted = percent >= 85;
+                            const isInProgress = percent > 0 && !isCompleted;
+
+                            return (
+                              <button
+                                key={ep.id}
+                                type="button"
+                                onClick={() => onSelectEpisode(ep, show.title)}
+                                className={`group/ep relative w-full flex flex-col justify-between overflow-hidden rounded-xl p-3 text-left border transition-all shadow-sm ${
+                                  isCompleted
+                                    ? 'bg-zinc-900/50 border-emerald-500/30 hover:border-emerald-500/50 hover:bg-zinc-800/60'
+                                    : isInProgress
+                                      ? 'bg-zinc-900/80 border-amber-500/30 hover:border-amber-500/60 hover:bg-zinc-800/80'
+                                      : 'bg-zinc-900/60 hover:bg-zinc-800/70 border-zinc-800/80 hover:border-zinc-700'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2 w-full pb-1">
+                                  <div className="flex flex-col truncate pr-2">
+                                    <span className="font-display text-xs font-semibold text-zinc-200 group-hover/ep:text-amber-400 truncate transition-colors">
+                                      {ep.title}
+                                    </span>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <span className="text-[11px] text-zinc-500 font-mono">
+                                        Ep. {ep.episode_number}
+                                      </span>
+
+                                      {isCompleted && (
+                                        <span className="inline-flex items-center gap-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 text-[10px] font-bold text-emerald-400">
+                                          <Check size={10} strokeWidth={3} /> Visto
+                                        </span>
+                                      )}
+
+                                      {isInProgress && (
+                                        <span className="inline-flex items-center rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-semibold text-amber-400 font-mono">
+                                          {percent}%
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <span
+                                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors shrink-0 ${
+                                      isCompleted
+                                        ? 'bg-emerald-500/20 text-emerald-400 group-hover/ep:bg-emerald-500 group-hover/ep:text-black'
+                                        : isInProgress
+                                          ? 'bg-amber-500/20 text-amber-400 group-hover/ep:bg-amber-500 group-hover/ep:text-black'
+                                          : 'bg-zinc-800 text-zinc-300 group-hover/ep:bg-amber-500 group-hover/ep:text-black'
+                                    }`}
+                                  >
+                                    <Play size={13} className="ml-0.5 fill-current" />
+                                  </span>
+                                </div>
+
+                                {/* BARRA DE PROGRESO INFERIOR */}
+                                {percent > 0 && (
+                                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800/80 overflow-hidden">
+                                    <div
+                                      className={`h-full transition-all duration-300 ${
+                                        isCompleted ? 'bg-emerald-500' : 'bg-amber-500'
+                                      }`}
+                                      style={{ width: `${Math.max(5, percent)}%` }}
+                                    />
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

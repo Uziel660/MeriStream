@@ -802,11 +802,13 @@ export function App() {
                   {continueWatchingItems.length > 0 && (
                     <ContinueWatching
                       items={continueWatchingItems}
+                      shows={shows}
                       onPlayEpisode={(_showId, ep, title) => handleSelectEpisode(ep, title)}
                       onSelectShow={(showId) => {
                         const target = shows.find((s) => s.id === showId);
                         if (target) handleOpenDetails(target);
                       }}
+                      onRemoveItem={(epId) => removeContinueWatchingItem(epId)}
                     />
                   )}
 
@@ -996,6 +998,7 @@ export function App() {
         isOpen={Boolean(selectedShowId)}
         onClose={() => setSelectedShowId(null)}
         onSelectEpisode={(ep, title) => handleSelectEpisode(ep, title)}
+        watchProgress={continueWatchingItems}
       />
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}
@@ -1028,8 +1031,8 @@ export function App() {
               };
 
               setContinueWatchingItems((prev) => {
-                const filtered = prev.filter((p) => p.showId !== playingStreamData.showId);
-                const updated = [newProgress, ...filtered].slice(0, 12);
+                const filtered = prev.filter((p) => p.episodeId !== playingStreamData.episodeId);
+                const updated = [newProgress, ...filtered].slice(0, 50);
                 try {
                   localStorage.setItem(STORAGE_CONTINUE_KEY, JSON.stringify(updated));
                 } catch {}

@@ -136,6 +136,18 @@ export const HOST_PROFILES: HostProfile[] = [
     client: "undici",
   },
   {
+    // Acek-CDN y SprintCDN (CDNs HLS de Goodstream / Cinecalidad / LaMovie):
+    // nginx rechaza peticiones con Referer ajeno y con TLS no estándar (impit).
+    // Exige undici + Chrome UA + Accept-Encoding: identity + sin Referer.
+    match: ["acek-cdn.com", "sprintcdn"],
+    refererMode: "none",
+    userAgent: CHROME_124_UA,
+    extraHeaders: {
+      "Accept-Encoding": "identity",
+    },
+    client: "undici",
+  },
+  {
     // DoodStream (2026-08-23, resolver pass_md5.sh): el CDN de entrega exige el
     // Referer del propio embed (hotlink-protection estándar del ecosistema dood:
     // dood.watch/dsvplay.com/d000d.com/dood.la). Sin verificación curl en vivo;

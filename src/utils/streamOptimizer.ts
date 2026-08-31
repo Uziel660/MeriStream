@@ -35,7 +35,7 @@ export interface ScoredServer {
   refresh_after?: number;
   expires_at?: number;
   resolved_at?: number;
-  failure_reason?: 'expired_without_locator' | 'unresolved' | 'unsafe_url';
+  failure_reason?: 'expired_without_locator' | 'unresolved' | 'unsafe_url' | 'empty_locator';
   /** Cabeceras que el CDN exige al consumir url (el proxy las inyecta server-side). */
   requiredHeaders?: Record<string, string>;
 }

@@ -1,6 +1,6 @@
 # Avance — Parte 1: fuentes canónicas y resolución JIT
 
-Última actualización: 2026-08-30 (America/La_Paz)
+Última actualización: 2026-08-31 (America/La_Paz)
 
 ## Objetivo
 
@@ -8,7 +8,7 @@ Evitar que URLs HLS firmadas y efímeras se almacenen como identidad permanente,
 
 ## Estado actual
 
-- Fase: Parte 1 implementada y validada; lista para integración con las Partes 2 y 3.
+- Fase: Partes 1, 2 y 3 integradas y validadas de forma estática; pendiente únicamente la operación manual y autorizada de auditoría/reimportación.
 - Documento rector: `docs/workstreams/01_BACKEND_CANONICAL_JIT.md`.
 - Proyecto del grafo: `C-Users-Uziel-Desktop-Meristream`.
 - Generación observada: `2026-08-31T00:28:48Z`.
@@ -51,6 +51,7 @@ npm run build
   - `npm run lint`: aprobado sin errores.
 - `npm run build`: aprobado; conserva dos avisos preexistentes (regla CSS inválida y chunk frontend mayor a 500 kB).
 - Verificación posterior al rebase de recursos absolutos: 3 archivos/39 pruebas aprobadas, `npm run lint` aprobado y `git diff --check` sin errores.
+- Integración de Partes 1–3: 9 archivos de prueba, 118 pruebas aprobadas; `npm run lint` y `npm run build` aprobados.
 
 ## Cambios integrados por el agente principal
 
@@ -63,6 +64,8 @@ npm run build
 - Un embed que produzca media ya vencida se mantiene como locator renovable, pero no se anuncia como stream reproducible.
 - Los recursos HLS absolutos conservan su URL durante la generación actual y, tras renovar, se reconstruyen con directorio/host/token de la nueva raíz en vez de repetir el recurso que devolvió 403.
 - La cascada DB-only marca `expires_at`/`expired_without_locator` de directos efímeros sin efectuar red y consulta ratings una sola vez.
+- El frontend consume todo el contrato de resolución, incluidos `empty_locator`, `is_proxyable`, `is_refreshable`, `generation` y `delivery_mode`.
+- La reimportación conserva `page`, `embed` y `stable_direct` como `link_type` correcto, con `page` explícito en vez de degradarlo a `direct`.
 
 ## Restricciones activas
 
@@ -77,7 +80,7 @@ npm run build
 - Las filas legacy que ya contienen HLS vencidos no se modificaron. Se recuperarán mediante la auditoría/reimportación de la Parte 3.
 - El camino legacy de `/play` conserva su resolución anterior por compatibilidad; el camino `MediaEpisode + SourceLink` ya es DB-only y será el camino normal después de reimportar.
 - No se reinició el servidor, no se modificó la base y no se ejecutaron pruebas de navegador, conforme a los límites del trabajo.
-- Siguiente paso operativo: terminar Parte 2, ejecutar primero la auditoría dry-run de Parte 3 y solo después reimportar.
+- Siguiente paso operativo: con respaldo manual de PostgreSQL, ejecutar primero la auditoría de Parte 3 y después un piloto `--dry-run --limit 50`. `--apply` sigue requiriendo autorización explícita.
 
 ## Historial
 

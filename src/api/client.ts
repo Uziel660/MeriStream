@@ -226,7 +226,13 @@ export interface PlaybackResolution {
   generation?: string;
   expiration_source?: string;
   requiredHeaders?: Record<string, string>;
-  failure_reason?: "expired_without_locator" | "unresolved" | "unsafe_url" | "empty_locator";
+  failure_reason?:
+    | "expired_without_locator"
+    | "unresolved"
+    | "unsafe_url"
+    | "empty_locator"
+    | "provider_blocked"
+    | "drm_or_captcha";
 }
 
 export const api = {

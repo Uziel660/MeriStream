@@ -1,9 +1,10 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { EmbedResolvers } from "./resolvers";
+import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
 import { parseMegaUrl, isMegaUrl } from "./resolvers/megaResolver";
 
 describe("EmbedResolvers with Status & Meta", () => {
   afterEach(() => vi.restoreAllMocks());
+
   it("correctly identifies direct media URLs", () => {
     expect(EmbedResolvers.isDirectMediaUrl("https://example.com/playlist.m3u8")).toBe(true);
     expect(EmbedResolvers.isDirectMediaUrl("https://example.com/video.mp4?token=123")).toBe(true);
@@ -141,5 +142,31 @@ describe("MegaResolver - formato TioAnime /embed/!ID!KEY", () => {
       expect(p, `falló para ${v}`).not.toBeNull();
       expect(p?.canonicalUrl).toBe("https://mega.nz/file/BTU1DKKR#RLPNcC8ohIh769HwlEZUPfJLH5n3Xsd2CiIZeEU0cBk");
     }
+  });
+});
+
+describe("ProviderResolverRegistry & Capabilities", () => {
+  it("matches providers and returns appropriate capabilities", () => {
+    const vimeos = providerResolverRegistry.findResolver("https://vimeos.net/embed-123.html");
+    expect(vimeos).toBeDefined();
+    expect(vimeos?.name).toBe("Vimeos");
+    expect(vimeos?.capabilities.supportsProxy).toBe(true);
+    expect(vimeos?.capabilities.requiresHeaders).toBe(true);
+
+    const mega = providerResolverRegistry.findResolver("https://mega.nz/embed/!abc!key");
+    expect(mega).toBeDefined();
+    expect(mega?.name).toBe("Mega");
+    expect(mega?.capabilities.supportsEmbed).toBe(true);
+
+    const direct = providerResolverRegistry.findResolver("https://cdn.example.com/stream.m3u8");
+    expect(direct).toBeDefined();
+    expect(direct?.name).toBe("DirectMedia");
+    expect(direct?.capabilities.supportsDirect).toBe(true);
+  });
+
+  it("handles empty and unrecognized locators safely", async () => {
+    const empty = await providerResolverRegistry.resolve("");
+    expect(empty.resolved).toBe(false);
+    expect(empty.failure_reason).toBe("empty_locator");
   });
 });

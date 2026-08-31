@@ -159,6 +159,7 @@ export interface NormalizedMega {
   embedUrl: string;
 }
 
+
 /**
  * Extrae el ID (+key) de cualquier variante de URL pública de Mega
  * (/file/, /#!legacy/, /embed/) y devuelve la forma normalizada.
@@ -173,6 +174,27 @@ export function normalizeMegaUrl(url: string): NormalizedMega | null {
     canonicalUrl: parsed.canonicalUrl,
     embedUrl: parsed.embedUrl,
   };
+}
+
+export interface ResolveContext {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+}
+
+export interface ProviderCapabilities {
+  supportsDirect: boolean;
+  supportsProxy: boolean;
+  supportsEmbed: boolean;
+  renewable: boolean;
+  requiresHeaders: boolean;
+}
+
+export interface ProviderResolver {
+  readonly name: string;
+  matches(url: URL): boolean;
+  resolve(locator: string, context?: ResolveContext): Promise<ResolvedStreamMeta>;
+  capabilities: ProviderCapabilities;
 }
 
 export interface ResolvedStreamMeta {
@@ -197,7 +219,13 @@ export interface ResolvedStreamMeta {
   generation?: string;
   expiration_source?: string;
   /** Motivo estable para que API/UI distingan expiración de un fallo genérico. */
-  failure_reason?: "empty_locator" | "expired_without_locator" | "unresolved";
+  failure_reason?:
+    | "empty_locator"
+    | "expired_without_locator"
+    | "unresolved"
+    | "unsafe_url"
+    | "provider_blocked"
+    | "drm_or_captcha";
 }
 
 function hasSignedMediaQuery(rawUrl: string): boolean {
@@ -941,3 +969,308 @@ export class EmbedResolvers {
     }
   }
 }
+
+// ── Registro Modular de Resolvers por Proveedor ──────────────────────────────
+
+export class ProviderResolverRegistry {
+  private readonly resolvers: ProviderResolver[] = [];
+
+  constructor() {
+    this.registerDefaults();
+  }
+
+  public register(resolver: ProviderResolver): void {
+    this.resolvers.push(resolver);
+  }
+
+  public getResolvers(): readonly ProviderResolver[] {
+    return this.resolvers;
+  }
+
+  public findResolver(urlStr: string): ProviderResolver | undefined {
+    try {
+      const parsed = new URL(urlStr);
+      return this.resolvers.find((r) => r.matches(parsed));
+    } catch {
+      return undefined;
+    }
+  }
+
+  public async resolve(locator: string, context?: ResolveContext): Promise<ResolvedStreamMeta> {
+    const raw = (locator || "").trim();
+    if (!raw) {
+      return {
+        url: "",
+        original_url: "",
+        resolved: false,
+        type: "embed",
+        provider: "Desconocido",
+        is_proxyable: false,
+        is_refreshable: false,
+        failure_reason: "empty_locator",
+      };
+    }
+
+    const resolver = this.findResolver(raw);
+    if (resolver) {
+      return resolver.resolve(raw, context);
+    }
+    return EmbedResolvers.resolveWithMeta(raw);
+  }
+
+  private registerDefaults(): void {
+    // 1. Direct Media (.m3u8, .mp4, .webm)
+    this.register({
+      name: "DirectMedia",
+      matches: (url) => EmbedResolvers.isDirectMediaUrl(url.href) && !url.hostname.includes("mega.nz"),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: false,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 2. Mega Cloud
+    this.register({
+      name: "Mega",
+      matches: (url) => /mega\.(?:nz|io|co\.nz)/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: false,
+        supportsProxy: false,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 3. Vimeos
+    this.register({
+      name: "Vimeos",
+      matches: (url) => /vimeos\.[a-z]+/i.test(url.hostname) || /p\d+\.vimeos\.zip/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: false,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: true,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 4. MP4Upload
+    this.register({
+      name: "MP4Upload",
+      matches: (url) => /mp4upload\.com/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 5. YourUpload
+    this.register({
+      name: "YourUpload",
+      matches: (url) => /yourupload\.com/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 6. Okru
+    this.register({
+      name: "Okru",
+      matches: (url) => /ok\.ru/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 7. VOE / ByseLapuix
+    this.register({
+      name: "VOE",
+      matches: (url) => /voe\.sx|voe\.|byselapuix\.com/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 8. Primeload
+    this.register({
+      name: "Primeload",
+      matches: (url) => /primeload\.co/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 9. Byse Ecosistema
+    this.register({
+      name: "Byse",
+      matches: (url) => /byseqekaho\.com|byselapuix\.com|bysekoze\.com/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 10. Bysesukior
+    this.register({
+      name: "Bysesukior",
+      matches: (url) => /bysesukior\.com/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 11. Streamtape
+    this.register({
+      name: "Streamtape",
+      matches: (url) => /streamtape\.(?:com|to)/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 12. DoodStream
+    this.register({
+      name: "Doodstream",
+      matches: (url) => /dood\.|doodstream|dsvplay|d000d|ds2play|do7go/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 13. Uqload
+    this.register({
+      name: "Uqload",
+      matches: (url) => /uqload/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 14. Vidhide
+    this.register({
+      name: "Vidhide",
+      matches: (url) => /vidhide|vixhide/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 15. HQQ / Divxplayer
+    this.register({
+      name: "Netu/HQQ",
+      matches: (url) => /hqq\.|waaw|divxplayer|cvary\.org/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 16. Goodstream
+    this.register({
+      name: "Goodstream",
+      matches: (url) => /goodstream\./i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: true,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 17. Generic Packed (Streamwish, Filemoon, Vidmoly, etc.)
+    this.register({
+      name: "PackedEmbed",
+      matches: (url) => /streamwish|filemoon|vidmoly|upstream|fastre|streamhide|swhoi/i.test(url.hostname),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 18. Generic Fallback
+    this.register({
+      name: "GenericHtml",
+      matches: () => true,
+      capabilities: {
+        supportsDirect: false,
+        supportsProxy: false,
+        supportsEmbed: true,
+        renewable: false,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+  }
+}
+
+export const providerResolverRegistry = new ProviderResolverRegistry();

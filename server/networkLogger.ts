@@ -128,9 +128,45 @@ export interface ProxyLogEntry {
   client: "undici" | "stealth" | "mega";
 }
 
+// ── Sanitización de Tokens en URLs ──
+
+export function maskSignedTokens(rawUrl: string): string {
+  if (!rawUrl) return "";
+  try {
+    const parsed = new URL(rawUrl);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      const lower = key.toLowerCase();
+      if (
+        [
+          "t", "token", "jwt", "s", "e", "st", "sig", "signature", "auth",
+          "hash", "key", "secret", "hdnts", "access_token", "authorization"
+        ].includes(lower)
+      ) {
+        parsed.searchParams.set(key, "***");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return rawUrl.replace(/([?&](?:token|t|jwt|s|e|st|sig|signature|auth|hash)=)[^&]+/gi, "$1***");
+  }
+}
+
 // ── Tipos de Eventos del Reproductor y Scraper ──
 
 export type PlayerEventType =
+  | "play_requested"
+  | "source_selected"
+  | "resolution_started"
+  | "resolution_succeeded"
+  | "resolution_failed"
+  | "direct_started"
+  | "direct_failed"
+  | "proxy_session_created"
+  | "proxy_upstream_rejected"
+  | "session_refreshed"
+  | "embed_selected"
+  | "manual_failover"
+  | "playback_confirmed"
   | "scraper_resolution"      // El backend extrajo los servidores de un episodio
   | "scraper_failed"          // El backend no pudo encontrar servidores para un episodio
   | "embed_opened"            // Se abrió un servidor Embed (iframe con posibles anuncios/captchas)
@@ -147,12 +183,15 @@ export interface PlayerEventEntry {
   ts: string;
   eventType: PlayerEventType;
   provider: string;           // Nombre real del servidor (e.g. "AnimeFLV (HLS)", "Streamwish", "VOE", "MEGA")
-  serverUrl: string;          // URL del stream o embed
+  serverUrl: string;          // URL del stream o embed (con tokens enmascarados)
   host: string;               // Hostname real
+  playback_attempt_id?: string | number;
   mediaTitle?: string;        // Título del anime/película
   episodeTitle?: string;      // Episodio
   durationBeforeErrorMs?: number; // Cuánto tardó en arrancar / fallar
   bufferPauseCount?: number;  // Cuántas veces se ha pausado por buffer
+  status?: number;            // Código de estado HTTP o error code
+  reason?: string;            // Motivo estructurado de fallo o transición
   details?: string;           // Mensaje descriptivo
 }
 
@@ -301,12 +340,13 @@ export function logProxyRequest(data: {
   referer?: string;
   client: "undici" | "stealth" | "mega";
 }): ProxyLogEntry {
+  const sanitizedUrl = maskSignedTokens(data.targetUrl);
   const info = resolveRegisteredProvider(data.targetUrl, data.referer);
 
   const entry: ProxyLogEntry = {
     id: nextProxyId++,
     ts: new Date().toISOString(),
-    targetUrl: data.targetUrl,
+    targetUrl: sanitizedUrl,
     host: extractHost(data.targetUrl),
     providerName: data.provider || info.providerName,
     category: info.category,
@@ -336,12 +376,16 @@ export function logPlayerEvent(data: {
   eventType: PlayerEventType;
   provider?: string;
   serverUrl: string;
+  playback_attempt_id?: string | number;
   mediaTitle?: string;
   episodeTitle?: string;
   durationBeforeErrorMs?: number;
   bufferPauseCount?: number;
+  status?: number;
+  reason?: string;
   details?: string;
 }): PlayerEventEntry {
+  const sanitizedUrl = maskSignedTokens(data.serverUrl);
   const host = extractHost(data.serverUrl);
   const info = resolveRegisteredProvider(data.serverUrl);
   const provider = data.provider || info.providerName || host;
@@ -351,12 +395,15 @@ export function logPlayerEvent(data: {
     ts: new Date().toISOString(),
     eventType: data.eventType,
     provider,
-    serverUrl: data.serverUrl,
+    serverUrl: sanitizedUrl,
     host,
+    playback_attempt_id: data.playback_attempt_id,
     mediaTitle: data.mediaTitle,
     episodeTitle: data.episodeTitle,
     durationBeforeErrorMs: data.durationBeforeErrorMs,
     bufferPauseCount: data.bufferPauseCount,
+    status: data.status,
+    reason: data.reason,
     details: data.details,
   };
 

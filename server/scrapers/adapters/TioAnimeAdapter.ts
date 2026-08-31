@@ -3,6 +3,7 @@ import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
+import { isPlausibleTitle, cleanSlugToWords } from "../../utils/titleNormalizer";
 
 const BASE_URL = "https://tioanime.com";
 
@@ -197,13 +198,44 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
   } {
     const $ = cheerio.load(html);
 
+    const animeInfoMatch = html.match(/var\s+anime_info\s*=\s*(\[.*?\]);/s);
+    let jsTitle = "";
+    if (animeInfoMatch) {
+      try {
+        const parsed = JSON.parse(animeInfoMatch[1].replace(/'/g, '"'));
+        if (Array.isArray(parsed) && typeof parsed[2] === "string" && parsed[2].trim()) {
+          jsTitle = parsed[2].trim();
+        }
+      } catch {}
+    }
+
+    const h1Title = $("h1.title, article.anime-single h1, h1")
+      .filter((_, el) => {
+        const t = $(el).text().trim();
+        return t.length > 0 && !/^(anime|tioanime|anime tioanime)$/i.test(t);
+      })
+      .first()
+      .text()
+      .trim();
+
     const ogTitle = $('meta[property="og:title"]').attr("content") || "";
-    const h1Title = $("h1").first().text().trim();
-    const title =
-      ogTitle.replace(/\s*[-–—]\s*TioAnime\s*$/i, "").trim() ||
-      h1Title ||
-      $("title").text().trim() ||
-      this.titleFromSlug(url);
+    const cleanOg = ogTitle
+      .replace(/\s*[-–—|•]\s*(?:TioAnime|Anime)\s*$/i, "")
+      .replace(/^Ver\s+/i, "")
+      .trim();
+
+    const slugTitle = this.titleFromSlug(url);
+
+    let title = "";
+    if (jsTitle && isPlausibleTitle(jsTitle)) {
+      title = jsTitle;
+    } else if (h1Title && isPlausibleTitle(h1Title)) {
+      title = h1Title;
+    } else if (cleanOg && isPlausibleTitle(cleanOg)) {
+      title = cleanOg;
+    } else {
+      title = cleanSlugToWords(slugTitle) || slugTitle;
+    }
 
     let ogImage = $('meta[property="og:image"]').attr("content") || $('meta[name="twitter:image"]').attr("content") || "";
     // Fallback a thumb / portada si no hay og:image (caso TioAnime)
@@ -528,7 +560,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       return {
         page_type: "detail",
         content_type: "anime",
-        title: "Anime TioAnime",
+        title: this.titleFromSlug(cleanUrl) || "Anime",
         description: "URL inválida",
         poster_url: null,
         banner_url: null,
@@ -550,11 +582,6 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       path === "/directorio/" ||
       /^\/(directorio|browse|letra|emision)?\/?$/.test(path)
     ) {
-      // Paginación real: la URL recibida ES la página pedida del catálogo
-      // ("/directorio?p=2"). ANTES aquí se ignoraba y siempre se re-traía
-      // `${BASE_URL}/directorio` hardcodeado, así que toda "página N" devolvía
-      // los mismos 20 shows de la página 1. Fallback a BASE_URL solo si la URL
-      // limpia falla o es la raíz (que no lista el directorio completo).
       const isCatalogRoot = path === "/" || path === "";
       let html: string | null = isCatalogRoot ? null : await this.fetchHtml(cleanUrl, 10000);
       if (!html) html = await this.fetchHtml(`${BASE_URL}/directorio`, 10000);
@@ -585,7 +612,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       return {
         page_type: "detail",
         content_type: "anime",
-        title: "Anime TioAnime",
+        title: this.titleFromSlug(cleanUrl) || "Anime",
         description: "No se pudo cargar la página",
         poster_url: null,
         banner_url: null,
@@ -604,7 +631,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       return {
         page_type: "detail",
         content_type: "anime",
-        title: "Anime TioAnime",
+        title: this.titleFromSlug(cleanUrl) || "Anime",
         description: "Contenido no encontrado en TioAnime",
         poster_url: null,
         banner_url: null,
@@ -842,7 +869,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
         .trim();
     } catch {
       const match = url.match(/\/([^/]+)\/?$/);
-      if (!match) return "Anime TioAnime";
+      if (!match) return "Anime";
       return match[1]
         .replace(/-/g, " ")
         .replace(/\b\w/g, (l) => l.toUpperCase())

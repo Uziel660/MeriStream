@@ -3,9 +3,11 @@ import { prisma, normalizeTitle } from "./db";
 import { enqueueShowBackfill, showNeedsBackfill } from "./metadataBackfill";
 import { enrichUniversalMetadata, cleanQueryTitle, parseTitleQuery } from "./metadataEngine";
 import { applyEnrichmentGapFill, hasSubstantiveText, isPlausibleYear } from "./metadataMerge";
-import { ContentKind } from "./types";
+import { ContentKind, SourceLinkInput, SourceKind } from "./types";
+import { classifySourceKind } from "./resolutionMetadata";
 import { getStreamTier } from "./utils/streamSorter";
-import { normalizeTitleKey, parseRawTitle, isPlausibleTitle } from "./utils/titleNormalizer";
+import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
+import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 import { extractStreamFromUrl } from "./universalScraper";
 import {
   enqueueWrite,
@@ -16,14 +18,7 @@ import {
   enqueueEpisodeCreateMany,
 } from "./writeBuffer";
 
-export interface SourceLinkInput {
-  url: string;
-  /** Origen del scrape ("cinecalidad.am", "animeflv.net", ...). Default: "unknown". */
-  source_site?: string;
-  link_type?: "direct" | "embed";
-  host?: string;
-  is_verified?: boolean;
-}
+export type { SourceLinkInput };
 
 export interface SaveShowInput {
   mal_id?: number | null;
@@ -102,7 +97,7 @@ function applyEnrichedMetadata(
   );
 }
 
-function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
+export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
   const inputEpisodes = input.episodes || [];
   const defaultSite = input.source_site || "unknown";
   const detectedStreams: string[] = Array.isArray(input.detected_streams)
@@ -128,22 +123,31 @@ function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
 
     // 1. URL primaria
     if (primaryUrl) {
-      streamSources.push({ url: primaryUrl, source_site: defaultSite });
-      seenUrls.add(primaryUrl);
+      const kind = classifySourceKind(primaryUrl);
+      if (kind !== "ephemeral_direct") {
+        streamSources.push({ url: primaryUrl, source_site: defaultSite, source_kind: kind });
+        seenUrls.add(primaryUrl);
+      }
     }
     // 2. detected_streams
     for (const st of detectedStreams) {
       if (st && !seenUrls.has(st)) {
-        streamSources.push({ url: st, source_site: defaultSite });
-        seenUrls.add(st);
+        const kind = classifySourceKind(st);
+        if (kind !== "ephemeral_direct") {
+          streamSources.push({ url: st, source_site: defaultSite, source_kind: kind });
+          seenUrls.add(st);
+        }
       }
     }
     // 3. rawEp sources
     if (rawEp?.sources) {
       for (const s of rawEp.sources) {
         if (s?.url && !seenUrls.has(s.url)) {
-          streamSources.push({ ...s, source_site: s.source_site || defaultSite });
-          seenUrls.add(s.url);
+          const kind = classifySourceKind(s.url);
+          if (kind !== "ephemeral_direct") {
+            streamSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
+            seenUrls.add(s.url);
+          }
         }
       }
     }
@@ -151,18 +155,21 @@ function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
     if (input.sources) {
       for (const s of input.sources) {
         if (s?.url && !seenUrls.has(s.url)) {
-          streamSources.push({ ...s, source_site: s.source_site || defaultSite });
-          seenUrls.add(s.url);
+          const kind = classifySourceKind(s.url);
+          if (kind !== "ephemeral_direct") {
+            streamSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
+            seenUrls.add(s.url);
+          }
         }
       }
     }
 
-    if (primaryUrl || streamSources.length > 0) {
+    if (streamSources.length > 0) {
       return [
         {
           number: 1,
           title: rawEp?.title || "Película Completa",
-          url: primaryUrl,
+          url: streamSources[0].url,
           sources: streamSources,
         },
       ];
@@ -179,15 +186,21 @@ function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
       const seen = new Set<string>();
 
       if (primaryUrl) {
-        epSources.push({ url: primaryUrl, source_site: defaultSite });
-        seen.add(primaryUrl);
+        const kind = classifySourceKind(primaryUrl);
+        if (kind !== "ephemeral_direct") {
+          epSources.push({ url: primaryUrl, source_site: defaultSite, source_kind: kind });
+          seen.add(primaryUrl);
+        }
       }
 
       if (ep.sources) {
         for (const s of ep.sources) {
           if (s?.url && !seen.has(s.url)) {
-            epSources.push({ ...s, source_site: s.source_site || defaultSite });
-            seen.add(s.url);
+            const kind = classifySourceKind(s.url);
+            if (kind !== "ephemeral_direct") {
+              epSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
+              seen.add(s.url);
+            }
           }
         }
       }
@@ -195,20 +208,32 @@ function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind) {
       return {
         number: epNum,
         title: ep.title || (kind === "movie" ? "Película Completa" : `Episodio ${epNum}`),
-        url: primaryUrl,
+        url: epSources[0]?.url || "",
         sources: epSources,
       };
-    });
+    })
+    .filter((episode) => Boolean(episode.url));
 
   if (normalizedEpisodes.length === 0) {
     const fallbackUrl = detectedStreams[0] || (input as any).source_url || (input as any).url || "";
     if (fallbackUrl) {
-      normalizedEpisodes.push({
-        number: 1,
-        title: kind === "movie" ? "Película Completa" : "Episodio 1",
-        url: fallbackUrl,
-        sources: detectedStreams.map((st) => ({ url: st, source_site: defaultSite })),
-      });
+      const fallbackKind = classifySourceKind(fallbackUrl);
+      const fallbackSources = detectedStreams
+        .filter((st) => classifySourceKind(st) !== "ephemeral_direct")
+        .map((st) => ({ url: st, source_site: defaultSite, source_kind: classifySourceKind(st) }));
+      const persistentFallbacks = fallbackSources.length > 0
+        ? fallbackSources
+        : fallbackKind !== "ephemeral_direct"
+          ? [{ url: fallbackUrl, source_site: defaultSite, source_kind: fallbackKind }]
+          : [];
+      if (persistentFallbacks.length > 0) {
+        normalizedEpisodes.push({
+          number: 1,
+          title: kind === "movie" ? "Película Completa" : "Episodio 1",
+          url: persistentFallbacks[0].url,
+          sources: persistentFallbacks,
+        });
+      }
     }
   }
 
@@ -224,12 +249,7 @@ function hostOf(url: string): string | null {
 }
 
 /**
- * Arquitectura multi-fuente (docs/DB_MULTISOURCE_ARCHITECTURE.md): aglutina N
- * SourceLink bajo un único MediaEpisode deduplicado por obra/temporada/número.
- *
- * BUFFERIZADO: el upsert del episode se hace directo (necesario para el ID),
- * pero los sourceLinks se encolan en el write buffer para que el drainer los
- * aplique SOLOS, evitando timeouts P1008 en SQLite durante barridos pesados.
+ * Arquitectura multi-fuente: aglutina N SourceLink bajo un único MediaEpisode deduplicado.
  */
 export async function syncEpisodeSources(
   mediaItemId: string,
@@ -240,10 +260,15 @@ export async function syncEpisodeSources(
 ): Promise<number> {
   const cleanSources = (sources || []).filter((s) => s && s.url && typeof s.url === "string" && s.url.trim());
   if (cleanSources.length === 0) return 0;
+
+  const persistentSources = cleanSources.filter((s) => {
+    const kind = classifySourceKind(s.url);
+    return kind !== "ephemeral_direct";
+  });
+  if (persistentSources.length === 0) return 0;
+
   let sourcesAdded = 0;
 
-  // Bufferizar TODO: upsert + sourceLinks juntos en el write buffer.
-  // El drainer los aplica secuencialmente sin bloquear el worker.
   enqueueWrite({
     kind: "mediaEpisode.upsert",
     where: {
@@ -256,15 +281,12 @@ export async function syncEpisodeSources(
     create: { media_item_id: mediaItemId, season_number: season, episode_number: episodeNumber },
   });
 
-  // El drainer resuelve la referencia compuesta al MediaEpisode exacto antes de
-  // crear cada SourceLink; así no mezcla temporadas ni episodios.
-  for (const src of cleanSources) {
+  for (const src of persistentSources) {
     const rawUrl = src.url.trim();
-    const lower = rawUrl.toLowerCase();
-    const linkType = src.link_type || (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/.test(lower) ? "direct" : "embed");
+    const kind = classifySourceKind(rawUrl);
+    const linkType = src.link_type || (kind === "embed" ? "embed" : kind === "page" ? "page" : "direct");
     const site = src.source_site || defaultSite || "unknown";
 
-    // Consulta de existencia exacta: media_item + season + episode + source_site + url
     const existing = await prisma.sourceLink.findFirst({
       where: {
         url: rawUrl,
@@ -302,12 +324,6 @@ export async function syncEpisodeSources(
   return sourcesAdded;
 }
 
-/**
- * Misma clave canónica + año plausible DISTINTO = obra distinta (remakes:
- * "La Bestia" 2012 vs 2026). Un candidato sin año creíble (0/null/garbage)
- * se considera compatible para no duplicar filas legacy cuyo año fue
- * autocompletado con el año corriente.
- */
 function pickYearCompatible<T extends { year: number | null }>(candidates: T[], year: number | null): T | null {
   if (candidates.length === 0) return null;
   if (year === null || !isPlausibleYear(year)) return candidates[0];
@@ -317,11 +333,6 @@ function pickYearCompatible<T extends { year: number | null }>(candidates: T[], 
   return unknownish[0] ?? null;
 }
 
-/**
- * Agrupación multi-temporada/multi-fuente: localiza la obra por su CLAVE
- * CANÓNICA (normalizeTitleKey del título base sin ruido ni temporada), sin
- * importar de qué sitio venga. El año parseado desambigua remakes.
- */
 async function findExistingShowByBase(baseNorm: string, year: number | null) {
   if (!baseNorm) return null;
   const candidates = await prisma.show.findMany({
@@ -343,8 +354,6 @@ async function findExistingShow(malId: number | null, normTitle: string, normEng
 
   if (!normTitle) return null;
 
-  // C4: consulta indexada por normalized_title en vez de traer los últimos
-  // shows completos con episodios y comparar en JS.
   const candidates = await prisma.show.findMany({
     where: { normalized_title: { in: [normTitle, normEng, normJap].filter(Boolean) } },
     take: 50,
@@ -371,12 +380,17 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
   console.log(`[Deduplication] Obra existente detectada: '${existingShow.title}' (ID: ${existingShow.id}). Fusionando datos...`);
 
   const updatePayload: any = {};
-  // Upgrade de presentación: si la fila legacy trae ruido ("...Latino HD") y
-  // el entrante ya es canónico para la MISMA clave, se adopta el título limpio.
   const existingTitleStr = String(existingShow.title ?? "").trim();
   const incomingTitleStr = String(showData.title ?? "").trim();
   const incomingIsClean = parseRawTitle(incomingTitleStr).canonical === incomingTitleStr;
-  if (
+
+  // Reparar slug si la obra existente tenía un slug pegado ("sixjoursceprintempsla")
+  if (isSlugLikeTitle(existingTitleStr) && !isSlugLikeTitle(incomingTitleStr)) {
+    console.log(`[Deduplication] Título reparado de slug: '${existingTitleStr}' → '${incomingTitleStr}'`);
+    updatePayload.title = incomingTitleStr;
+    updatePayload.normalized_title = normalizeTitleKey(incomingTitleStr) || normalizeTitle(incomingTitleStr);
+    updatePayload.base_normalized_title = normalizeTitleKey(incomingTitleStr);
+  } else if (
     incomingTitleStr &&
     incomingIsClean &&
     parseRawTitle(existingTitleStr).canonical !== existingTitleStr &&
@@ -386,6 +400,7 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
     updatePayload.title = incomingTitleStr;
     updatePayload.normalized_title = normalizeTitleKey(incomingTitleStr) || normalizeTitle(incomingTitleStr);
   }
+
   if (!existingShow.mal_id && showData.malId) updatePayload.mal_id = showData.malId;
   if (!existingShow.anilist_id && showData.anilistId) updatePayload.anilist_id = showData.anilistId;
   if (!existingShow.tmdb_id && showData.tmdbId) updatePayload.tmdb_id = showData.tmdbId;
@@ -404,6 +419,15 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
   }
   if ((!existingShow.poster_url || existingShow.poster_url === "") && showData.posterUrl) updatePayload.poster_url = showData.posterUrl;
   if ((!existingShow.banner_url || existingShow.banner_url === "") && showData.bannerUrl) updatePayload.banner_url = showData.bannerUrl;
+
+  // Actualizar géneros si estaban incompletos o sin formato
+  if (
+    showData.genresStr &&
+    showData.genresStr !== "Multimedia" &&
+    (!existingShow.genres || existingShow.genres === "Multimedia" || !existingShow.genres.includes(","))
+  ) {
+    updatePayload.genres = showData.genresStr;
+  }
 
   if (Object.keys(updatePayload).length > 0) {
     enqueueShowUpdate(existingShow.id, updatePayload);
@@ -447,19 +471,13 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
 /** Info canónica calculada por saveShowWithDeduplication y reutilizada aquí. */
 interface CanonicalTitleInfo {
   canonical: string;
-  /** Clave canónica del título completo (normalizeTitleKey). */
   norm: string;
-  /** Clave canónica del título base sin temporada (normalizeTitleKey). */
   baseNorm: string;
-  /** Año resuelto (caller > TMDB > parseado del título) o null si desconocido. */
   year: number | null;
 }
 
 /**
- * Espeja la obra guardada (legacy Show) hacia la arquitectura multi-fuente:
- * MediaItem deduplicado por clave canónica+kind+año, MediaEpisode por
- * temporada/número y SourceLink N-por-episodio. Best-effort: un fallo aquí no
- * rompe el guardado legacy.
+ * Espeja la obra guardada (legacy Show) hacia la arquitectura multi-fuente.
  */
 async function syncMediaItemSources(
   input: SaveShowInput,
@@ -482,12 +500,7 @@ async function syncMediaItemSources(
         : input.year && isPlausibleYear(input.year)
           ? input.year
           : null;
-    // findMany + desambiguación por año en vez de upsert por @@unique: con year
-    // NULL, SQL UNIQUE no agrupa nulos entre sí y el selector compuesto de
-    // Prisma no acepta null. La clave primaria de agrupación es la CLAVE
-    // CANÓNICA del título base (sin sufijo de temporada ni ruido), así
-    // "Kaguya-sama TP1"/"TP2" —o "Toy Story 5 Latino HD" y "Toy Story 5"—
-    // confluyen en el mismo MediaItem; remakes con año distinto no.
+
     const tmdbId = input.tmdb_id ?? enrichedAny?.tmdb_id ?? null;
     const orConditions = [
       { base_normalized_title: baseNorm, kind },
@@ -505,7 +518,6 @@ async function syncMediaItemSources(
       : null;
     if (!mediaItem) mediaItem = pickYearCompatible(itemCandidates, year);
     if (!mediaItem) {
-      // Generar ID y encolar (no tocar SQLite)
       const itemId = enqueueMediaItemCreate({
         normalized_title: norm,
         base_normalized_title: baseNorm,
@@ -518,7 +530,6 @@ async function syncMediaItemSources(
         poster_path: enrichedAny?.poster_path || null,
         backdrop_path: enrichedAny?.backdrop_path || null,
       });
-      // Falso objeto para operaciones posteriores
       mediaItem = { id: itemId, normalized_title: norm, base_normalized_title: baseNorm, title: canonical, kind, year } as any;
     } else {
       const updateData: Record<string, unknown> = {};
@@ -538,7 +549,10 @@ async function syncMediaItemSources(
     for (const ep of normalizedEpisodes) {
       const sources = [...ep.sources];
       if (ep.url && !sources.some((s) => s.url === ep.url)) {
-        sources.unshift({ url: ep.url });
+        const epKind = classifySourceKind(ep.url);
+        if (epKind !== "ephemeral_direct") {
+          sources.unshift({ url: ep.url, source_kind: epKind });
+        }
       }
       const added = await syncEpisodeSources(mediaItem.id, season, ep.number, sources, defaultSite);
       sourcesAdded += added || 0;
@@ -550,11 +564,6 @@ async function syncMediaItemSources(
   }
 }
 
-/**
- * Enriquecimiento diferido: si la obra guardada/fusionada quedó con metadatos
- * faltantes (descripción, póster, géneros...), se encola para completarlos en
- * background con datos REALES del enrichment. NUNCA bloquea ni rompe el guardado.
- */
 function enqueueBackfillIfIncomplete(show: {
   id: string;
   description?: string | null;
@@ -570,15 +579,6 @@ function enqueueBackfillIfIncomplete(show: {
   }
 }
 
-/**
- * MERGE DE SECUELAS POR TMDB: cuando el título difiere pero TMDB confirma que
- * es la MISMA obra (mismo tmdb_id), la secuela se multiplica DENTRO de la obra
- * gemela en vez de crear un cartel separado:
- *   - Episodios legacy → obra gemela con numeración CONTINUA (una sola tarjeta).
- *   - Fuentes multi-fuente → MediaItem gemelo bajo la temporada correspondiente
- *     (detectada en el título; si no hay marca, la siguiente a la máxima existente).
- * Así el "episodio por episodio por plataforma" converge en un solo título.
- */
 async function mergeSequelIntoTwin(
   twin: any,
   showData: any,
@@ -590,7 +590,6 @@ async function mergeSequelIntoTwin(
   const norm = twin.normalized_title;
   const base = twin.base_normalized_title || twin.normalized_title;
 
-  // Temporada: detectada en el título > siguiente a la máxima ya existente.
   let maxSeason = 0;
   const mediaItem = await prisma.mediaItem.findFirst({
     where: { OR: [{ base_normalized_title: base, kind }, { normalized_title: norm, kind }] },
@@ -605,7 +604,6 @@ async function mergeSequelIntoTwin(
   }
   const seasonNumber = detectedSeason > 1 ? detectedSeason : Math.max(1, maxSeason + 1);
 
-  // Episodios legacy → gemela, numeración continua (después del último existente).
   const lastEp = await prisma.episode.findFirst({
     where: { show_id: twin.id },
     orderBy: { episode_number: "desc" },
@@ -625,7 +623,6 @@ async function mergeSequelIntoTwin(
     added++;
   }
 
-  // Fuentes → MediaItem de la GEMELA (claves de la gemela) bajo la temporada resuelta.
   const twinTitleInfo: CanonicalTitleInfo = {
     canonical: twin.title,
     norm,
@@ -634,7 +631,6 @@ async function mergeSequelIntoTwin(
   };
   const sourcesAdded = await syncMediaItemSources({ ...input, season: seasonNumber } as SaveShowInput, kind, twin.id, normalizedEpisodes, twinTitleInfo);
 
-  // IDs externos que la gemela no tenga.
   const patch: any = {};
   if (!twin.mal_id && showData.malId) patch.mal_id = showData.malId;
   if (!twin.anilist_id && showData.anilistId) patch.anilist_id = showData.anilistId;
@@ -659,22 +655,13 @@ async function mergeSequelIntoTwin(
  * and saves or merges into PostgreSQL.
  */
 export async function saveShowWithDeduplication(input: SaveShowInput) {
-  // ── Normalización del título crudo del scraper ──────────────────
-  // ANTES de guardar y antes de calcular claves de dedup:
-  // "Toy Story 5 Latino Español HD" → canonical "Toy Story 5" (+idioma/calidad),
-  // "La Bestia 2026 Ver" → "La Bestia" + year 2026.
   const rawParsed = parseRawTitle(String(input.title ?? ""));
   const canonicalTitle = rawParsed.canonical || String(input.title ?? "").trim();
-  // parseTitleQuery aporta temporada/año estructural sobre el título YA limpio,
-  // así la búsqueda TMDB/Jikan (enrichUniversalMetadata) parte del nombre real.
   const parsed = parseTitleQuery(canonicalTitle);
   const rawTitle = parsed.baseTitle || canonicalTitle;
   const kind: ContentKind = (input.content_type || input.category || "anime") as ContentKind;
-  // Temporada explícita del caller > detectada en el título > 1.
   const season = input.season ?? rawParsed.season ?? parsed.season ?? 1;
 
-  // Guard anti-títulos-basura (fugas tipo "pe", "Género: ...", URLs de debug):
-  // se rechaza la obra y el pipeline la marca como item fallido sin detener el barrido.
   if (rawParsed.plausible === false || !isPlausibleTitle(canonicalTitle)) {
     throw new Error(`Título implausible descartado por el guard: "${input.title}"`);
   }
@@ -683,9 +670,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     malId: input.mal_id || null,
     anilistId: input.anilist_id || null,
     tmdbId: input.tmdb_id || null,
-    // Título VISIBLE = canónico sin ruido. El crudo del scraper NO se guarda
-    // (el schema no tiene columna para conservarlo sin migración).
-    title: canonicalTitle,
+    title: isSlugLikeTitle(canonicalTitle) ? cleanSlugToWords(canonicalTitle) : canonicalTitle,
     originalTitle: input.original_title || null,
     japaneseTitle: input.japanese_title || null,
     englishTitle: input.english_title || null,
@@ -693,9 +678,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     posterUrl: input.poster_url || null,
     bannerUrl: input.banner_url || null,
     rating: input.rating || 8.0,
-    // Defecto #24: un año desconocido se queda en 0 para que el enriquecimiento
-    // pueda llenarlo con el año real; solo si nadie lo aporta se usa el actual.
-    // Prioridad: year del caller > TMDB > parseado del título ("La Bestia 2026").
     year:
       input.year && isPlausibleYear(input.year)
         ? input.year
@@ -703,23 +685,16 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
           ? rawParsed.year
           : 0,
     status: input.status || "Finalizado",
-    genresStr: Array.isArray(input.genres) ? input.genres.join(", ") : (input.genres || "Multimedia")
+    genresStr: formatAndNormalizeGenres(input.genres, null)
   };
 
   let enriched: any = null;
   try {
-    // FULL FAST (worker): el caller pidió saltarse el enrichment inline —
-    // guarda YA con los datos del sitio; el backfill worker enriquece después
-    // EN PARALELO (TMDB tolera 40-50 rps).
     const skipEnrich = (input as any)._skipEnrichment === true;
-    // Un tmdb_id explícito ya fija la identidad. Imágenes externas por sí solas
-    // NO prueban identidad y no deben impedir la búsqueda TMDB central.
     const preEnriched = Boolean(input.tmdb_id);
     if (skipEnrich) {
       enriched = null;
     } else if (!preEnriched) {
-      // Buscar primero el título limpio del scraper y después sus aliases. Esto
-      // permite que nombres localizados distintos converjan al mismo tmdb_id.
       const identityQueries = [canonicalTitle, input.original_title, input.english_title, input.japanese_title]
         .map((value) => String(value || "").trim())
         .filter((value, index, values) => value && values.findIndex((v) => v.toLowerCase() === value.toLowerCase()) === index)
@@ -742,7 +717,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
       };
     }
     applyEnrichedMetadata(input, showData, enriched);
-    // La metadata TMDB es canónica: título es-MX y rutas de imagen crudas.
     if (enriched?.tmdb_id && !showData.tmdbId) showData.tmdbId = enriched.tmdb_id;
     if (enriched?.original_title && !showData.originalTitle) showData.originalTitle = enriched.original_title;
     if ((input as any).poster_path && !showData.posterUrl) showData.posterUrl = `https://image.tmdb.org/t/p/w780${(input as any).poster_path}`;
@@ -754,16 +728,11 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     console.error("Enrichment warning during deduplication:", e);
   }
 
-  // ── Claves canónicas de dedup ───────────────────────────────────
-  // normalizeTitleKey elimina ruido/años/puntuación, así el título sucio del
-  // scraper y una fila previa limpia producen LA MISMA clave:
-  //   "Toy Story 5 Latino Español HD" ≡ "Toy Story 5" → "toystory5".
-  const normTitle = normalizeTitleKey(canonicalTitle) || normalizeTitle(canonicalTitle);
+  const normTitle = normalizeTitleKey(showData.title) || normalizeTitle(showData.title);
   const baseNorm = normalizeTitleKey(rawTitle) || normTitle;
   const normJap = showData.japaneseTitle ? normalizeTitle(showData.japaneseTitle) : "";
   const normEng = showData.englishTitle ? normalizeTitle(showData.englishTitle) : "";
 
-  // El año (caller > TMDB > parseado) desambigua remakes con la misma clave.
   const dedupYear = showData.year > 0 ? showData.year : null;
   const existingByTmdb = showData.tmdbId
     ? await prisma.show.findFirst({
@@ -778,7 +747,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     (await findExistingShow(showData.malId ?? showData.tmdbId ? showData.malId : null, normTitle, normEng, normJap));
   const normalizedEpisodes = buildNormalizedEpisodes(input, kind);
   const titleInfo: CanonicalTitleInfo = {
-    canonical: canonicalTitle,
+    canonical: showData.title,
     norm: normTitle,
     baseNorm,
     year: dedupYear,
@@ -791,9 +760,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     return { ...result, sourcesAdded, season };
   }
 
-  // ── MERGE DE SECUELAS POR TMDB ──
-  // Título distinto pero MISMA obra según TMDB (mismo tmdb_id): es una secuela/
-  // temporada sin marca en el nombre. Se multiplexa dentro de la gemela.
   if (showData.tmdbId) {
     const twin = await prisma.show.findFirst({
       where: { tmdb_id: showData.tmdbId, base_normalized_title: { not: baseNorm } },
@@ -808,13 +774,11 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 
   console.log(`[Deduplication] Nueva obra verificada sin duplicados. Encolando en buffer RAM...`);
 
-  // Normalizar source: "lamovie.org" → "lamovie", "www3.animeflv.net" → "animeflv"
   const rawSource = input.source || input.source_site || "";
   const normalizedSource = rawSource.includes(".")
     ? rawSource.replace(/^www\./, "").split(".")[0] || rawSource
     : rawSource;
 
-  // Generar ID y encolar show.create + episodios (NUNCA toco SQLite directamente)
   const showId = enqueueShowCreate({
     mal_id: showData.malId,
     anilist_id: showData.anilistId,
@@ -838,7 +802,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     source: normalizedSource,
   });
 
-  // Encolar episodios
   enqueueEpisodeCreateMany(
     showId,
     normalizedEpisodes.map((ep) => ({
@@ -849,7 +812,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     }))
   );
 
-  // Falso objeto show para las operaciones posteriores (el real se crea en el writer)
   const createdShow = {
     id: showId,
     title: showData.title,
@@ -885,9 +847,6 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   };
 }
 
-/**
- * Returns all shows from PostgreSQL with optional search/category filter
- */
 export async function getShowsFromDb(search?: string, category?: string) {
   let where: any = {};
 
@@ -918,12 +877,6 @@ export async function getShowsFromDb(search?: string, category?: string) {
   return shows;
 }
 
-/**
- * Lite mode: shows WITHOUT episodes. ~2MB vs ~15MB.
- * Used by frontend for local-filtered catalog and admin panel.
- * Supports pagination: ?page=1&limit=100
- * Uses PostgreSQL full-text search (tsvector + GIN) when search is provided.
- */
 export async function getShowsFromDbLite(
   search?: string,
   category?: string,
@@ -934,7 +887,6 @@ export async function getShowsFromDbLite(
   const pageSize = Math.min(50000, Math.max(1, limit || 500));
   const skip = (pageNum - 1) * pageSize;
 
-  // PostgreSQL full-text search via raw query (much faster than LIKE)
   if (search && search.trim().length >= 2) {
     const s = search.trim();
     const tsQuery = s.split(/\s+/).join(" & ");
@@ -991,7 +943,6 @@ export async function getShowsFromDbLite(
     return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
-  // Fallback: sin búsqueda, solo categoría o todo
   let where: any = {};
   if (category) {
     where.category = { contains: category };
@@ -1030,9 +981,6 @@ export async function getShowsFromDbLite(
   return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
 }
 
-/**
- * Get single show by ID
- */
 export async function getShowByIdFromDb(id: string) {
   return prisma.show.findUnique({
     where: { id },
@@ -1044,33 +992,21 @@ export async function getShowByIdFromDb(id: string) {
   });
 }
 
-/**
- * Delete single show by ID
- */
 export async function deleteShowFromDb(id: string) {
   return prisma.show.delete({
     where: { id },
   });
 }
 
-/**
- * Clear all shows from database — TODO de verdad: además del esquema legacy
- * (Show/Episode) se vacían los MediaItem (y en cascada MediaEpisode/SourceLink)
- * para que "vaciar catálogo" no deje huérfanos invisibles.
- */
 export async function clearAllShowsFromDb() {
   await prisma.episode.deleteMany({});
   await prisma.show.deleteMany({});
   await prisma.mediaItem.deleteMany({});
 }
 
-// ═══════════════ Editor de catálogo (panel de administración) ═══════════════
-
-/** Campos editables de una obra vía PUT /api/v1/shows/:show_id. */
 export interface UpdateShowPatch {
   title?: string;
   description?: string;
-  /** Acepta array (se une con ", ") o string directo. */
   genres?: string | string[];
   year?: number;
   rating?: number;
@@ -1082,14 +1018,6 @@ export interface UpdateShowPatch {
   english_title?: string | null;
 }
 
-/**
- * Actualiza SOLO los campos presentes en el patch: jamás rellena los defaults
- * falsos del schema (rating 8.0, genres "Multimedia", status "Finalizado").
- * Si cambia `title`, recalcula normalized_title y base_normalized_title con el
- * MISMO pipeline de saveShowWithDeduplication (parseRawTitle → parseTitleQuery
- * → normalizeTitleKey) para mantener la consistencia de la dedup.
- * Devuelve la obra actualizada (con episodios) o null si no existe.
- */
 export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   const existing = await prisma.show.findUnique({ where: { id: showId } });
   if (!existing) return null;
@@ -1099,8 +1027,6 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   if (typeof patch.title === "string") {
     const raw = patch.title.replace(/\s+/g, " ").trim();
     if (raw) {
-      // Réplica exacta del cálculo de claves canónicas del guardado:
-      //   "Toy Story 5 Latino HD" → canonical "Toy Story 5" → "toystory5".
       const canonical = parseRawTitle(raw).canonical || raw;
       const parsed = parseTitleQuery(canonical);
       const baseTitle = parsed.baseTitle || canonical;
@@ -1112,15 +1038,12 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   }
   if (typeof patch.description === "string") data.description = patch.description;
   if (patch.genres !== undefined && patch.genres !== null) {
-    const joined = Array.isArray(patch.genres) ? patch.genres.join(", ") : String(patch.genres);
-    if (joined.trim()) data.genres = joined;
+    data.genres = formatAndNormalizeGenres(patch.genres, null);
   }
   if (typeof patch.year === "number" && Number.isFinite(patch.year)) data.year = Math.round(patch.year);
   if (typeof patch.rating === "number" && Number.isFinite(patch.rating)) data.rating = patch.rating;
   if (typeof patch.status === "string" && patch.status.trim()) data.status = patch.status.trim();
   if (typeof patch.category === "string" && patch.category.trim()) data.category = patch.category.trim();
-  // Los nullable admiten null explícito para LIMPIAR el campo (acción deliberada
-  // del editor; no confundir con defaults falsos autocompletados).
   if (patch.poster_url !== undefined) data.poster_url = patch.poster_url;
   if (patch.banner_url !== undefined) data.banner_url = patch.banner_url;
   if (patch.japanese_title !== undefined) data.japanese_title = patch.japanese_title;
@@ -1140,21 +1063,6 @@ export interface RefreshStreamsSummary {
   episodes_without_streams: number;
 }
 
-/** Página de episodio (".../ver/slug-1") disfrazada de stream: el player nativo muere. */
-function looksLikeSourcePage(url: string): boolean {
-  try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    return /\/(ver|watch|episode|ep|capitulo)\//.test(pathname) && !/\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url);
-  } catch {
-    return false;
-  }
-}
-
-function isDirectMediaUrl(url: string): boolean {
-  return /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url);
-}
-
-/** Sitio de origen de una URL (hostname sin www) para etiquetar SourceLinks. */
 function siteOfUrl(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "") || "unknown";
@@ -1164,13 +1072,6 @@ function siteOfUrl(url: string): string {
   }
 }
 
-/**
- * Re-resuelve en JIT los servidores de cada Episode con source_url (mismo motor
- * que POST /api/v1/catalog/episode-servers: extractStreamFromUrl) y sincroniza
- * hacia el MediaItem espejo de la obra vía syncEpisodeSources. Si la obra no
- * tiene MediaItem espejo, se omite silenciosamente. Pensado para correr en
- * background: nunca lanza, devuelve un resumen contable.
- */
 export async function refreshShowStreams(showId: string): Promise<RefreshStreamsSummary> {
   const summary: RefreshStreamsSummary = { episodes_checked: 0, sources_added: 0, episodes_without_streams: 0 };
 
@@ -1184,8 +1085,6 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
   summary.episodes_checked = targetEpisodes.length;
   if (targetEpisodes.length === 0) return summary;
 
-  // Misma localización del MediaItem espejo que syncMediaItemSources: clave
-  // canónica (base_normalized_title/normalized_title + kind), año como desambiguador.
   const kind = (show.category || "anime") as ContentKind;
   const norm = show.normalized_title || normalizeTitle(show.title);
   const baseNorm = show.base_normalized_title || norm;
@@ -1201,21 +1100,18 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
     orderBy: { created_at: "asc" },
   });
   const mediaItem = pickYearCompatible(itemCandidates, show.year ?? null);
-  // Sin MediaItem espejo no hay dónde escribir SourceLinks: omitir silenciosamente.
   if (!mediaItem) return summary;
 
   for (const ep of targetEpisodes) {
     try {
       const extracted = await extractStreamFromUrl(ep.source_url);
-      const all = Array.from(
-        new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
-      ) as string[];
-      // Mismo guard anti-pseudo-streams del endpoint episode-servers: la página
-      // origen NO cuenta como resolución; la media directa sí aunque coincida.
-      const realStreams = all.filter(
-        (u) => (u !== ep.source_url || isDirectMediaUrl(u)) && !looksLikeSourcePage(u)
-      );
-      if (realStreams.length === 0) {
+      const canonicalSources = Array.from(
+        new Set(
+          [ep.source_url, extracted.stream_url, ...(extracted.all_available_streams || [])]
+            .filter((url): url is string => typeof url === "string" && Boolean(url.trim()))
+        )
+      ).filter((url) => classifySourceKind(url) !== "ephemeral_direct");
+      if (canonicalSources.length === 0) {
         summary.episodes_without_streams++;
         continue;
       }
@@ -1232,13 +1128,17 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
         include: { links: true },
       });
       const knownUrls = new Set((mediaEpisode?.links || []).map((l) => l.url));
-      summary.sources_added += realStreams.filter((u) => !knownUrls.has(u)).length;
+      summary.sources_added += canonicalSources.filter((url) => !knownUrls.has(url)).length;
 
       await syncEpisodeSources(
         mediaItem.id,
         season,
         ep.episode_number,
-        realStreams.map((url) => ({ url, source_site: episodeSite })),
+        canonicalSources.map((url) => ({
+          url,
+          source_site: episodeSite,
+          source_kind: classifySourceKind(url),
+        })),
         "unknown"
       );
     } catch (e) {
@@ -1249,12 +1149,6 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
 
   return summary;
 }
-
-// ── ÍNDICE DE RE-ESCANEO ─────────────────────────────────────────────
-// Verificación LIGERA de una obra ya conocida: inserta solo los episodios
-// que falten (comparando la lista de la ficha contra la BD) y sincroniza
-// sus fuentes al MediaItem. SIN TMDB, SIN enrichment, SIN re-guardado.
-// Los streams de los episodios nuevos se resuelven Just-In-Time al reproducir.
 
 export interface QuickSyncInput {
   title?: string;
@@ -1269,14 +1163,13 @@ export async function quickSyncKnownShow(
   const show = await prisma.show.findUnique({ where: { id: showId }, include: { episodes: true } });
   if (!show) return { added: 0, sourcesAdded: 0 };
 
-  const normalizedEpisodes = (data.episodes || [])
-    .filter((e) => Number.isFinite(e.number) || e.url)
-    .map((e) => ({
-      number: Number(e.number) || 0,
-      title: e.title || `Episodio ${e.number}`,
-      url: e.url || "",
-      sources: e.sources || ([] as SourceLinkInput[]),
-    }));
+  const kind = (show.category || "anime") as ContentKind;
+  const normalizedEpisodes = buildNormalizedEpisodes({
+    title: data.title || show.title,
+    category: kind,
+    source_site: data.source_site,
+    episodes: data.episodes,
+  }, kind);
 
   const showData: any = {
     malId: null,
@@ -1286,7 +1179,6 @@ export async function quickSyncKnownShow(
 
   const result = await mergeShowEpisodes(show, showData, normalizedEpisodes);
 
-  const kind = (show.category || "anime") as ContentKind;
   const titleInfo: CanonicalTitleInfo = {
     canonical: show.title,
     norm: show.normalized_title,

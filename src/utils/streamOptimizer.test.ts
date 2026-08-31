@@ -6,7 +6,6 @@ import {
   scoreServer,
   isRawWebpageUrl,
   hasExpiringSignature,
-  shouldProxyDirectHost,
 } from './streamOptimizer';
 
 describe('streamOptimizer — URL honesty helpers', () => {
@@ -57,15 +56,6 @@ describe('streamOptimizer — URL honesty helpers', () => {
       expect(hasExpiringSignature('https://animeflv.net/ver/x-1')).toBe(false);
       expect(hasExpiringSignature('')).toBe(false);
       expect(hasExpiringSignature(null)).toBe(false);
-    });
-  });
-
-  describe('shouldProxyDirectHost', () => {
-    it('routes known CORS-aggressive CDNs via proxy first', () => {
-      expect(shouldProxyDirectHost('https://enc12.goodstream.one/hls2/a/master.m3u8')).toBe(true);
-      expect(shouldProxyDirectHost('https://hls.acek-cdn.com/hls2/01/08535/x.master.m3u8')).toBe(true);
-      expect(shouldProxyDirectHost('https://example.com/video.m3u8')).toBe(false);
-      expect(shouldProxyDirectHost(null)).toBe(false);
     });
   });
 

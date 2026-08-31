@@ -2,14 +2,15 @@
 // Fusión scraper-first entre los metadatos que trajo el análisis del scraper y los
 // del enriquecedor externo (AniList/MAL/TMDB/TVMaze/Wikipedia).
 //
-// Defectos #10/#13/#16 (informe E2E 2026-08-23): el enriquecimiento hacía fuzzy-match
-// por título y SOBREESCRIBÍA título/sinopsis/poster/año correctos del scraper
-// (ej. Frieren Latino guardado como "Kidou Shinseiki Gundam X"), o pisaba datos
-// reales de la ficha con placeholders genéricos ("Contenido indexado en
-// VoidStream...", poster de Unsplash, año corriente).
+// Defectos #10/#13/#16: el enriquecimiento hacía fuzzy-match
+// por título y SOBREESCRIBÍA título/sinopsis/poster/año correctos del scraper.
 //
-// Regla: el scraper MANDA; el enriquecedor solo completa huecos y jamás introduce
-// valores placeholder.
+// Regla: el scraper MANDA salvo cuando su título es un slug o texto corrupto
+// pegado (ej. "sixjoursceprintempsla"), en cuyo caso se adopta el título limpio de TMDB.
+// Los géneros se normalizan siempre con formato canónico separado por comas ("Acción, Aventura").
+
+import { isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
+import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 
 /** Descripciones placeholder generadas por el propio pipeline (nunca son datos reales). */
 const PLACEHOLDER_DESCRIPTIONS: RegExp[] = [
@@ -65,9 +66,7 @@ interface EnrichedLike {
 
 /**
  * Cola de elipsis de truncado ("...", "…"): los sitios fuente cortan la sinopsis
- * a N caracteres y rematan con puntos suspensivos. Excepciones legítimas donde
- * la elipsis NO implica corte: abreviaturas tipo "etc...", "vs...", "Sr...",
- * "EE.UU..." o iniciales punteadas ("J.R.R...").
+ * a N caracteres y rematan con puntos suspensivos.
  */
 const TRAILING_ELLIPSIS_RE = /(?:\.{3,}|…)\s*$/;
 const ELLIPSIS_ABBREV_RE =
@@ -78,7 +77,6 @@ export function endsWithTruncationEllipsis(value?: string | null): boolean {
   const t = String(value ?? "").replace(/\s+/g, " ").trimEnd();
   const m = t.match(TRAILING_ELLIPSIS_RE);
   if (!m || m.index === undefined) return false;
-  // "etc…", "vs..." y similares son finales válidos, no sinopsis cortadas.
   return !ELLIPSIS_ABBREV_RE.test(t.slice(0, m.index).trimEnd());
 }
 
@@ -86,9 +84,6 @@ export function endsWithTruncationEllipsis(value?: string | null): boolean {
 export function hasSubstantiveText(value?: string | null): boolean {
   const t = (value || "").trim();
   if (t.length < 12) return false;
-  // Una sinopsis que termina en "..." está CORTADA: se considera débil para que
-  // la descripción completa del enriquecedor (TMDB/AniList) pueda reemplazarla.
-  // Si ninguna fuente trae algo mejor, esta sigue siendo la mejor disponible.
   if (endsWithTruncationEllipsis(t)) return false;
   return !PLACEHOLDER_DESCRIPTIONS.some((p) => p.test(t));
 }
@@ -111,17 +106,23 @@ export function isPlausibleYear(year?: number | null): boolean {
 }
 
 /**
- * Fusiona el enriquecimiento sobre los datos del scraper SIN pisarlos:
- * - título del scraper siempre gana (es la identidad que trae la ficha real);
+ * Fusiona el enriquecimiento sobre los datos del scraper:
+ * - Si el título del scraper es un slug o texto pegado (ej. "sixjoursceprintempsla"), adopta el título limpio de TMDB;
  * - sinopsis/poster/año/etc. del enriquecedor solo llenan campos vacíos o placeholder;
- * - ningún valor placeholder del enriquecedor se aplica jamás.
+ * - géneros siempre se normalizan con acentos y comas estándar ("Acción, Aventura").
  */
 export function applyEnrichmentGapFill(
   input: ScraperMetadataInput,
   target: MergeableMetadataTarget,
   enriched: EnrichedLike | null | undefined
 ): void {
-  if (!enriched) return;
+  if (!enriched) {
+    target.genresStr = formatAndNormalizeGenres(input.genres || target.genresStr, null);
+    if (isSlugLikeTitle(target.title)) {
+      target.title = cleanSlugToWords(target.title);
+    }
+    return;
+  }
 
   // IDs externos: siempre valiosos para deduplicación, solo si faltan
   if (!target.malId && enriched.mal_id) target.malId = enriched.mal_id;
@@ -135,7 +136,14 @@ export function applyEnrichmentGapFill(
     target.englishTitle = enriched.english_title;
   }
 
-  // Título: el del scraper manda SIEMPRE (input.title es requerido y no vacío)
+  // Título: Si el scraper trajo un slug corrupto o sin espacios (ej: "sixjoursceprintempsla")
+  if (isSlugLikeTitle(target.title)) {
+    if (enriched.title && !isSlugLikeTitle(enriched.title)) {
+      target.title = enriched.title;
+    } else {
+      target.title = cleanSlugToWords(target.title);
+    }
+  }
 
   // Sinopsis: solo si el scraper no trajo una propia sustantiva
   if (!hasSubstantiveText(input.description) && hasSubstantiveText(enriched.description)) {
@@ -159,14 +167,6 @@ export function applyEnrichmentGapFill(
   }
   if (!input.status && enriched.status) target.status = enriched.status;
 
-  const inputGenres = Array.isArray(input.genres)
-    ? input.genres.join(",")
-    : input.genres || "";
-  if (
-    !String(inputGenres).trim() &&
-    Array.isArray(enriched.genres) &&
-    enriched.genres.length > 0
-  ) {
-    target.genresStr = enriched.genres.join(", ");
-  }
+  // Géneros: normalización canónica separada por comas con acentos
+  target.genresStr = formatAndNormalizeGenres(input.genres || target.genresStr, enriched.genres);
 }

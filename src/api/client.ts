@@ -74,6 +74,7 @@ export interface VerificationConfig {
   platforms: string[];
   category?: string | null;
   catalog_urls_by_platform: Record<string, string>;
+  catalog_pages_per_platform?: number;
   metadata_only: boolean;
   sync_known_episodes: boolean;
 }
@@ -81,6 +82,7 @@ export interface VerificationConfig {
 export interface VerificationProgress {
   total: number;
   done: number;
+  percent?: number;
   new_works?: number;
   new_sources?: number;
   new_episodes?: number;
@@ -114,20 +116,16 @@ export interface VerificationReport {
 }
 
 export interface VerificationStatus {
-  enabled: boolean;
-  interval_minutes: number;
-  scope_mode?: string;
-  platforms?: string[];
-  category?: string | null;
-  metadata_only?: boolean;
-  sync_known_episodes?: boolean;
-  running: boolean;
+  is_running: boolean;
+  running?: boolean;
+  paused?: boolean;
   phase: VerificationPhase | string;
-  current_item: string | null;
-  progress: VerificationProgress;
+  current_target?: string | null;
+  current_item?: string | null;
+  progress: VerificationProgress | null;
+  last_report: VerificationReport | null;
   last_run_at: string | null;
   next_run_at: string | null;
-  last_report: VerificationReport | null;
   recent: Array<{ at: string; level: "info" | "warn" | "error" | string; message: string }>;
   config: VerificationConfig;
 }
@@ -207,6 +205,30 @@ function buildQuery(params: Record<string, unknown> | MediaSearchParams): string
   return qs ? `?${qs}` : "";
 }
 
+export interface PlaybackResolution {
+  url: string;
+  original_url: string;
+  canonical_locator?: string;
+  resolved: boolean;
+  type: "direct" | "embed";
+  delivery_mode?: "direct" | "direct_trial" | "proxy_required" | "embed";
+  is_proxyable?: boolean;
+  is_refreshable?: boolean;
+  provider?: string;
+  strategy?: string;
+  /** URL estable del proxy de sesión; preferirla sobre la URL upstream firmada. */
+  playback_url?: string;
+  session_id?: string;
+  resolved_at?: number;
+  expires_at?: number;
+  refresh_after?: number;
+  resolution_id?: string;
+  generation?: string;
+  expiration_source?: string;
+  requiredHeaders?: Record<string, string>;
+  failure_reason?: "expired_without_locator" | "unresolved" | "unsafe_url" | "empty_locator";
+}
+
 export const api = {
   async getVerificationStatus(): Promise<VerificationStatus> {
     return request<VerificationStatus>("/verification");
@@ -229,6 +251,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(patch),
     });
+  },
+
+  async pauseVerification(): Promise<{ ok: boolean; status: VerificationStatus }> {
+    return request<{ ok: boolean; status: VerificationStatus }>("/verification/pause", { method: "POST" });
+  },
+
+  async resumeVerification(): Promise<{ ok: boolean; status: VerificationStatus }> {
+    return request<{ ok: boolean; status: VerificationStatus }>("/verification/resume", { method: "POST" });
+  },
+
+  async stopVerification(): Promise<{ ok: boolean; status: VerificationStatus }> {
+    return request<{ ok: boolean; status: VerificationStatus }>("/verification/stop", { method: "POST" });
   },
 
   // Nueva arquitectura Just-In-Time
@@ -501,19 +535,23 @@ export const api = {
     });
   },
 
-  async resolveEmbed(url: string): Promise<{
-    url: string;
-    original_url: string;
-    resolved: boolean;
-    type: "direct" | "embed";
-    provider?: string;
-    strategy?: string;
-    /** Cabeceras que el CDN exige al consumir url (el proxy las inyecta server-side) */
-    requiredHeaders?: Record<string, string>;
-  }> {
-    return request<any>(`/resolve-embed`, {
+  async resolveEmbed(url: string): Promise<PlaybackResolution> {
+    return request<PlaybackResolution>(`/resolve-embed`, {
       method: "POST",
       body: JSON.stringify({ url }),
+    });
+  },
+
+  async requestProxySession(original_url: string, resolution_id?: string): Promise<{
+    session_id: string;
+    playback_url: string;
+    expires_at: number;
+    refresh_after: number;
+    generation: string;
+  }> {
+    return request<any>(`/playback/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ original_url, resolution_id }),
     });
   },
 

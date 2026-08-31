@@ -1,6 +1,9 @@
 // src/utils/streamOptimizer.ts
 import { proxiedStreamUrl } from './proxiedUrl';
 import type { RankedStream } from '../types';
+
+export type DeliveryMode = 'direct' | 'direct_trial' | 'proxy_required' | 'embed';
+
 export interface ScoredServer {
   id: string;
   url: string;
@@ -16,41 +19,28 @@ export interface ScoredServer {
   latencyMs?: number;
   /** Tier del backend (1-4); presente cuando la respuesta trae ranked_streams. */
   tier?: number;
-  /** Plataforma de origen (animeflv, cinecalidad, latanime…); presente con ranked_streams. */
+  /** Plataforma de origen (animeflv, cinecalidad, latanime...); presente con ranked_streams. */
   sourceSite?: string;
+  /** URL original sin firmar/renovable tal y como llegó del backend. */
+  original_url?: string;
+  /** Localizador canónico estable (preferido para renovar/re-resolver y proxy). */
+  canonical_locator?: string;
+  /** ID de resolución que el backend empareja con original_url para sesiones proxy. */
+  resolution_id?: string;
+  /** Generación de la resolución actual; cambia al renovar el enlace firmado. */
+  generation?: string;
+  delivery_mode?: DeliveryMode;
+  is_proxyable?: boolean;
+  is_refreshable?: boolean;
+  refresh_after?: number;
+  expires_at?: number;
+  resolved_at?: number;
+  failure_reason?: 'expired_without_locator' | 'unresolved' | 'unsafe_url';
+  /** Cabeceras que el CDN exige al consumir url (el proxy las inyecta server-side). */
+  requiredHeaders?: Record<string, string>;
 }
 
 /**
- * Hosts de CDN directo conocidos por bloquear el primer intento del navegador
- * con CORS (defecto #4/#9: goodstream en Cinecalidad/LaMovie, acek-cdn en
- * TioPlus, CDNs de tubepelis/cuevana). Para estos, el reproductor enruta por
- * /api/v1/proxy/stream desde el PRIMER intento en vez de dejar que hls.js
- * falle y se recupere (consola limpia y arranque más rápido).
- */
-const PROXY_FIRST_HOSTS = [
-  'goodstream',
-  'acek-cdn',
-  'acefile',
-  'tubepelis',
-  'cuevana',
-  'cdn-tnmr.org',
-  'tnmr.org',
-  'ducvomes.com',
-  // CDNs HLS con manifestLoadError directo desde navegador (2026-08-24):
-  // sprintcdn (tioplus), owphbf24 (animeflv/playmudos), dramiyos-cdn (latanime)
-  'sprintcdn',
-  'owphbf24',
-  'dramiyos',
-];
-
-export function shouldProxyDirectHost(url: string | null | undefined): boolean {
-  if (!url) return false;
-  const lower = String(url).toLowerCase();
-  return PROXY_FIRST_HOSTS.some((h) => lower.includes(h));
-}
-
-/**
- * Detecta URLs de media con firma temporal en query (?st=&e=&s=&token=...).
  * Estos HLS/MP4 guardados en BD expiran antes del play (defecto #11: 403 al
  * abrir horas después); si fallan conviene re-resolver Just-In-Time.
  */

@@ -145,6 +145,9 @@ vi.mock("fs", async () => {
 import {
   runVerification,
   getVerificationStatus,
+  pauseVerification,
+  resumeVerification,
+  stopVerification,
 } from "./verificationWorker";
 import { reconcileSequelsByTmdb } from "./reconcileCatalog";
 
@@ -429,6 +432,35 @@ describe("Verification Worker - Behavioral Tests", () => {
         scope_mode: "all",
         platforms: [],
       });
+    });
+  });
+
+  describe("Controles interactivos de verificación (Pausa, Reanudación, Detención)", () => {
+    it("pauseVerification, resumeVerification y stopVerification operan correctamente", async () => {
+      // 1. Pausar cuando no hay nada corriendo
+      const pauseWhenIdle = pauseVerification();
+      expect(pauseWhenIdle.ok).toBe(false);
+
+      // 2. Iniciar y pausar
+      mockCatalogItems = [
+        { title: "Item 1", url: "http://site/item1" },
+        { title: "Item 2", url: "http://site/item2" },
+      ];
+      runVerification({ trigger: "manual", mode: "full", platforms: ["animeflv"], limit: 5 });
+      const pauseResult = pauseVerification();
+      expect(pauseResult.ok).toBe(true);
+      expect(getVerificationStatus().paused).toBe(true);
+
+      // 3. Reanudar
+      const resumeResult = resumeVerification();
+      expect(resumeResult.ok).toBe(true);
+      expect(getVerificationStatus().paused).toBe(false);
+
+      // 4. Detener
+      const stopResult = stopVerification();
+      expect(stopResult.ok).toBe(true);
+      await waitForStatus((s) => !s.running);
+      expect(getVerificationStatus().running).toBe(false);
     });
   });
 

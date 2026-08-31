@@ -1,27 +1,22 @@
 // server/verificationWorker.ts
 // ══════════════════════════════════════════════════════════════════
-// APARTADO DE VERIFICACIÓN: worker periódico que recorre el catálogo
-// OBRA POR OBRA según el scope configurado y hace dos cosas:
+// APARTADO DE VERIFICACIÓN: motor unificado en 3 FASES que recorre
+// el catálogo según el scope configurado:
 //
-//  (1) FASE METADATOS — re-enriquece y repara cada obra reusando
-//      backfillShow() de ./metadataBackfill (solo completa huecos con
-//      datos REALES del enrichment; nunca sobrescribe valores).
-//  (2) FASE NOVEDADES — re-barre el catálogo de CADA plataforma del
-//      scope (extractCatalogListing con la URL configurada) y cruza los
-//      títulos contra la BD por CLAVE CANÓNICA (normalizeTitleKey vs
-//      Show.base_normalized_title / normalized_title). Lo NUEVO se
-//      importa con saveShowWithDeduplication (el dedup fusiona solo);
-//      lo EXISTENTE queda anotado en el reporte (y se marca el caso
-//      "conocida pero sin episodios locales").
+//  (1) FASE 1: METADATOS INICIALES — re-enriquece y repara cada obra existente
+//      reusando backfillShow() de ./metadataBackfill (completa huecos con
+//      datos REALES de TMDB/AniList; nunca sobrescribe datos existentes).
+//  (2) FASE 2: CATÁLOGO Y NOVEDADES — recorre las páginas de catálogo de CADA
+//      plataforma del scope (con paginación multi-página autónoma hasta agotar)
+//      y cruza los títulos contra la BD por CLAVE CANÓNICA en lote (0-lag fast-path).
+//      Obras conocidas y completas se pasan en 0ms; lo NUEVO se importa con
+//      saveShowWithDeduplication y los episodios nuevos se sincronizan.
+//  (3) FASE 3: NORMALIZACIÓN FINAL — segunda pasada rápida de metadatos sobre
+//      cualquier obra recién importada o modificada en la Fase 2, garantizando
+//      que todo el catálogo quede 100% enriquecido, pulido y normalizado.
 //
-// Config persistida en data/verification.config.json (cero migraciones).
-// Rate-limit amable: ~1 obra cada 2s en metadatos; pausas cortas entre
-// items de catálogo y extra al importar (el import dispara enrichment).
-//
-// NOTA de alcance: el barrido paginado profundo es territorio del
-// taskWorker; este worker muestrea la URL de catálogo configurada por
-// plataforma (los directorios ordenan por novedad, así que la primera
-// página ya revela lo nuevo).
+// Incluye control de PAUSA, REANUDACIÓN y DETENCIÓN interactivo.
+// Config persistida en data/verification.config.json.
 // ══════════════════════════════════════════════════════════════════
 
 import fs from "fs";
@@ -30,9 +25,10 @@ import { prisma } from "./db";
 import { backfillShow, showNeedsBackfill } from "./metadataBackfill";
 import { extractCatalogListing, analyzeUniversalUrl } from "./universalScraper";
 import { saveShowWithDeduplication, quickSyncKnownShow } from "./showService";
-import { normalizeTitleKey } from "./utils/titleNormalizer";
+import { normalizeTitleKey, isPlausibleTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { isPlausibleYear } from "./metadataMerge";
-import type { ContentKind, ExtractedCatalogItem } from "./types";
+import { buildPageUrl } from "./utils/pageUrlBuilder";
+import type { ContentKind, SourceLinkInput } from "./types";
 
 // ── Contrato público ─────────────────────────────────────────────
 
@@ -44,21 +40,21 @@ export interface VerificationConfig {
   category?: string;
   catalog_urls_by_platform: Record<string, string>;
   metadata_only: boolean;
-  /** Re-escaneo ligero de conocidas: detecta e inserta episodios nuevos
-   *  (compara la ficha contra la BD; streams JIT). Default: true. */
+  /** Re-escaneo ligero de conocidas: detecta e inserta episodios nuevos. Default: true. */
   sync_known_episodes: boolean;
+  /** Páginas a recorrer por plataforma (0 = sin límite / hasta agotar catálogo). Default: 0. */
+  catalog_pages_per_platform?: number;
 }
 
 export interface VerificationRunOptions {
-  /** Override de modo SOLO para esta pasada (no muta config persistida).
-   *  - "metadata": solo fase metadatos.
-   *  - "full": metadatos + catálogo, incluso si config.metadata_only === true.
-   *  - undefined: obedece config.metadata_only. */
+  /** Override de modo SOLO para esta pasada (no muta config persistida). */
   mode?: "metadata" | "full";
   /** Override de plataformas SOLO para esta pasada. */
   platforms?: string[];
-  /** Tope de obras (fase metadatos) y de items por plataforma (fase novedades). */
+  /** Tope de obras (fase metadatos) e items por página. */
   limit?: number;
+  /** Páginas a escanear por plataforma en esta pasada (override, 0 = sin límite). */
+  pages_per_platform?: number;
   /** Uso interno: marca el origen de la pasada en el reporte. */
   trigger?: "manual" | "timer";
 }
@@ -66,6 +62,7 @@ export interface VerificationRunOptions {
 export interface VerificationProgress {
   total: number;
   done: number;
+  percent: number;
   new_works: number;
   new_sources: number;
   known: number;
@@ -75,6 +72,10 @@ export interface VerificationProgress {
   errors: number;
   works_merged: number;
   sources_added: number;
+  // Aliases canónicos
+  metadata_updated?: number;
+  works_created?: number;
+  episodes_added?: number;
 }
 
 export interface VerificationReport {
@@ -112,8 +113,10 @@ export interface VerificationStatus {
   platforms: string[];
   category: string | null;
   metadata_only: boolean;
+  sync_known_episodes: boolean;
   running: boolean;
-  phase: "idle" | "metadata" | "catalog";
+  paused: boolean;
+  phase: "idle" | "metadata" | "catalog" | "finalizing" | "paused";
   current_item: string | null;
   progress: VerificationProgress;
   last_run_at: string | null;
@@ -165,6 +168,7 @@ function defaultConfig(): VerificationConfig {
     catalog_urls_by_platform: { ...DEFAULT_CATALOG_URLS },
     metadata_only: false,
     sync_known_episodes: true,
+    catalog_pages_per_platform: 0, // 0 = sin límite / hasta agotar
   };
 }
 
@@ -173,7 +177,6 @@ function loadConfigFromDisk(): VerificationConfig {
   try {
     if (!fs.existsSync(CONFIG_PATH)) return base;
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-    // Fusión tolerante: un archivo viejo/corrupto parcialmente válido no tumba al worker.
     if (typeof raw?.enabled === "boolean") base.enabled = raw.enabled;
     if (Number.isFinite(raw?.interval_minutes)) {
       base.interval_minutes = clampInterval(raw.interval_minutes);
@@ -190,6 +193,9 @@ function loadConfigFromDisk(): VerificationConfig {
     }
     if (typeof raw?.metadata_only === "boolean") base.metadata_only = raw.metadata_only;
     if (typeof raw?.sync_known_episodes === "boolean") base.sync_known_episodes = raw.sync_known_episodes;
+    if (raw?.catalog_pages_per_platform !== undefined && Number.isFinite(Number(raw.catalog_pages_per_platform))) {
+      base.catalog_pages_per_platform = Math.max(0, Math.round(Number(raw.catalog_pages_per_platform)));
+    }
   } catch (e) {
     console.error("[verificationWorker] config corrupta, usando defaults:", e);
   }
@@ -231,7 +237,10 @@ const state = {
   config: loadConfigFromDisk(),
   timer: null as ReturnType<typeof setInterval> | null,
   running: false,
-  phase: "idle" as "idle" | "metadata" | "catalog",
+  paused: false,
+  stopped: false,
+  isMetadataOnlyRun: false,
+  phase: "idle" as "idle" | "metadata" | "catalog" | "finalizing" | "paused",
   currentItem: null as string | null,
   startedAt: null as string | null,
   lastRunAt: null as string | null,
@@ -239,6 +248,7 @@ const state = {
   progress: {
     total: 0,
     done: 0,
+    percent: 0,
     new_works: 0,
     new_sources: 0,
     known: 0,
@@ -253,14 +263,26 @@ const state = {
   recent: [] as RecentEntry[],
 };
 
-/** Contadores de la pasada en curso, separados por fase para el reporte. */
-const runCounters = { metaTotal: 0, metaDone: 0, metaUpdated: 0, metaErrors: 0 };
+const runCounters = {
+  metaTotal: 0,
+  metaDone: 0,
+  metaUpdated: 0,
+  metaErrors: 0,
+  catalogTotal: 0,
+  catalogDone: 0,
+  finalMetaTotal: 0,
+  finalMetaDone: 0,
+};
 
 function resetRunCounters(): void {
   runCounters.metaTotal = 0;
   runCounters.metaDone = 0;
   runCounters.metaUpdated = 0;
   runCounters.metaErrors = 0;
+  runCounters.catalogTotal = 0;
+  runCounters.catalogDone = 0;
+  runCounters.finalMetaTotal = 0;
+  runCounters.finalMetaDone = 0;
 }
 
 function log(level: RecentEntry["level"], message: string): void {
@@ -279,10 +301,6 @@ function clearTimer(): void {
   state.timer = null;
 }
 
-/**
- * Programa (o reprograma/cancela) el intervalo según config.enabled.
- * Al arrancar el módulo SOLO programa: nunca corre un barrido completo en boot.
- */
 function scheduleTimer(): void {
   clearTimer();
   if (!state.config.enabled) {
@@ -297,10 +315,10 @@ function scheduleTimer(): void {
     const nextTick = new Date();
     nextTick.setMinutes(nextTick.getMinutes() + state.config.interval_minutes);
     state.nextRunAt = nextTick.toISOString();
-    if (state.running) return; // la pasada en curso manda; la siguiente se pierde (no se acumulan)
+    if (state.running) return;
     runVerification({ trigger: "timer" });
   }, ms);
-  (state.timer as unknown as { unref?: () => void })?.unref?.(); // no mantiene vivo procesos de prueba
+  (state.timer as unknown as { unref?: () => void })?.unref?.();
 }
 
 // ── API pública: config ──────────────────────────────────────────
@@ -370,6 +388,12 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
     if (typeof patch.sync_known_episodes !== "boolean") throw new Error("'sync_known_episodes' debe ser boolean");
     next.sync_known_episodes = patch.sync_known_episodes;
   }
+  if (patch.catalog_pages_per_platform !== undefined) {
+    if (Number.isFinite(Number(patch.catalog_pages_per_platform))) {
+      next.catalog_pages_per_platform = Math.max(0, Math.round(Number(patch.catalog_pages_per_platform)));
+    }
+  }
+
   if (next.scope_mode === "platforms" && next.platforms.length === 0) {
     throw new Error("'platforms' requiere al menos una plataforma cuando scope_mode es 'platforms'");
   }
@@ -379,29 +403,28 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
 
   state.config = next;
   persistConfig(next);
-  scheduleTimer(); // reprograma o cancela según enabled/intervalo nuevos
-  log("info", `Config actualizada (enabled=${next.enabled}, intervalo=${next.interval_minutes}min, scope=${next.scope_mode}).`);
+  scheduleTimer();
+  log("info", `Config actualizada (enabled=${next.enabled}, intervalo=${next.interval_minutes}min, scope=${next.scope_mode}, paginación=${next.catalog_pages_per_platform === 0 ? "sin límite" : next.catalog_pages_per_platform}).`);
   return getVerificationConfig();
 }
 
-// ── API pública: run/status ──────────────────────────────────────
+// ── API pública: Control de ejecución (Run / Pause / Resume / Stop) ─
 
-/**
- * Inicia una pasada de verificación. Es SÍNCRONA en su decisión de arranque
- * (devuelve inmediatamente started/reason); la pasada corre en background.
- * Bloqueo compartido: manuales y automáticas comparten el mismo lock.
- */
-export function runVerification(options?: VerificationRunOptions): { started: boolean; reason?: string } {
+export function runVerification(options?: VerificationRunOptions): { started: boolean; reason?: string; status?: VerificationStatus } {
   if (state.running) {
-    return { started: false, reason: "already_running" };
+    return { started: false, reason: "already_running", status: getVerificationStatus() };
   }
   state.running = true;
+  state.paused = false;
+  state.stopped = false;
   state.phase = "metadata";
   state.currentItem = null;
   state.startedAt = new Date().toISOString();
+  state.isMetadataOnlyRun = options?.mode === "metadata" ? true : options?.mode === "full" ? false : state.config.metadata_only;
   state.progress = {
     total: 0,
     done: 0,
+    percent: 0,
     new_works: 0,
     new_sources: 0,
     known: 0,
@@ -411,24 +434,92 @@ export function runVerification(options?: VerificationRunOptions): { started: bo
     errors: 0,
     works_merged: 0,
     sources_added: 0,
-  } as VerificationProgress;
+  };
   resetRunCounters();
-  log("info", `Pasada ${options?.trigger || "manual"} iniciada.`);
+  log("info", `Pasada ${options?.trigger || "manual"} iniciada (Pipeline de 3 fases: Metadatos -> Catálogo -> Normalización final).`);
 
   void runPass(options || {}).finally(() => {
     state.running = false;
+    state.paused = false;
+    state.stopped = false;
     state.phase = "idle";
     state.currentItem = null;
     state.lastRunAt = new Date().toISOString();
     if (state.config.enabled && !state.nextRunAt) scheduleTimer();
   });
 
-  return { started: true };
+  return { started: true, status: getVerificationStatus() };
+}
+
+export function pauseVerification(): { ok: boolean; message: string; status: VerificationStatus } {
+  if (!state.running) {
+    return { ok: false, message: "No hay ninguna verificación en ejecución.", status: getVerificationStatus() };
+  }
+  if (state.paused) {
+    return { ok: true, message: "La verificación ya se encuentra pausada.", status: getVerificationStatus() };
+  }
+  state.paused = true;
+  log("warn", "Verificación pausada por el usuario.");
+  return { ok: true, message: "Verificación pausada.", status: getVerificationStatus() };
+}
+
+export function resumeVerification(): { ok: boolean; message: string; status: VerificationStatus } {
+  if (!state.running) {
+    return { ok: false, message: "No hay ninguna verificación para reanudar.", status: getVerificationStatus() };
+  }
+  if (!state.paused) {
+    return { ok: true, message: "La verificación ya está en ejecución activa.", status: getVerificationStatus() };
+  }
+  state.paused = false;
+  log("info", "Verificación reanudada por el usuario.");
+  return { ok: true, message: "Verificación reanudada.", status: getVerificationStatus() };
+}
+
+export function stopVerification(): { ok: boolean; message: string; status: VerificationStatus } {
+  if (!state.running) {
+    return { ok: false, message: "No hay ninguna verificación en ejecución.", status: getVerificationStatus() };
+  }
+  state.stopped = true;
+  state.paused = false;
+  log("warn", "Deteniendo la verificación...");
+  return { ok: true, message: "Deteniendo verificación...", status: getVerificationStatus() };
 }
 
 export function getVerificationStatus(): VerificationStatus {
   const c = state.config;
   const p = state.progress;
+
+  let computedPercent = 0;
+  if (state.running) {
+    if (state.isMetadataOnlyRun) {
+      computedPercent = runCounters.metaTotal > 0
+        ? Math.min(100, Math.round((runCounters.metaDone / runCounters.metaTotal) * 100))
+        : 0;
+    } else {
+      const metaFraction = runCounters.metaTotal > 0
+        ? Math.min(1, runCounters.metaDone / runCounters.metaTotal)
+        : 0;
+      const catalogFraction = state.progress.total > 0
+        ? Math.min(1, state.progress.done / state.progress.total)
+        : 0;
+      const finalMetaFraction = runCounters.finalMetaTotal > 0
+        ? Math.min(1, runCounters.finalMetaDone / runCounters.finalMetaTotal)
+        : 0;
+
+      if (state.phase === "metadata") {
+        computedPercent = Math.min(25, Math.round(metaFraction * 25));
+      } else if (state.phase === "catalog") {
+        computedPercent = Math.min(85, Math.round(25 + catalogFraction * 60));
+      } else if (state.phase === "finalizing") {
+        computedPercent = Math.min(99, Math.round(85 + finalMetaFraction * 14));
+      }
+    }
+  } else if (state.lastReport) {
+    computedPercent = 100;
+  }
+
+  const phaseName = state.paused ? "paused" : state.phase;
+
   return {
     enabled: c.enabled,
     interval_minutes: c.interval_minutes,
@@ -438,14 +529,12 @@ export function getVerificationStatus(): VerificationStatus {
     metadata_only: c.metadata_only,
     sync_known_episodes: c.sync_known_episodes !== false,
     running: state.running,
-    phase: state.phase,
+    paused: state.paused,
+    phase: phaseName,
     current_item: state.currentItem,
-    // Capa de salida canónica: nombres del contrato acordado.
-    // Los internos se conservan para compatibilidad.
     progress: {
-      // Internos (compat)
       ...p,
-      // Canónicos
+      percent: computedPercent,
       metadata_updated: p.updated_metadata,
       works_created: p.new_works,
       episodes_added: p.new_episodes,
@@ -487,15 +576,6 @@ function resolveCatalogPlatforms(cfg: VerificationConfig, overridePlatforms?: st
   return [];
 }
 
-/**
- * Obras del scope para la fase metadatos.
- * - all: todas las filas Show.
- * - category: Show.category = config.category.
- * - platforms: claves canónicas de los MediaItem que tienen SourceLink cuyo
- *   source_site pertenece a la plataforma (SourceLink es la ÚNICA tabla con
- *   source_site en el schema; Episode legacy solo trae source_url), y luego
- *   Show cuya clave canónica coincida (chunked IN para no reventar SQLite).
- */
 async function resolveMetadataShowIds(cfg: VerificationConfig, overridePlatforms?: string[]): Promise<string[]> {
   if (overridePlatforms && overridePlatforms.length > 0) {
     return showsLinkedToPlatforms(overridePlatforms.filter((p) => Boolean(cfg.catalog_urls_by_platform[cleanPlatform(p)])));
@@ -544,7 +624,7 @@ async function showsLinkedToPlatforms(platforms: string[]): Promise<string[]> {
 
   const ids = new Set<string>();
   const keyList = [...keys];
-  const CHUNK = 400; // margen seguro bajo el límite de variables SQL de SQLite
+  const CHUNK = 400;
   for (let i = 0; i < keyList.length; i += CHUNK) {
     const group = keyList.slice(i, i + CHUNK);
     const rows = await prisma.show.findMany({
@@ -556,58 +636,75 @@ async function showsLinkedToPlatforms(platforms: string[]): Promise<string[]> {
   return [...ids];
 }
 
-// ── Fase 1: metadatos ────────────────────────────────────────────
+// ── Fase 1 & 3: Metadatos (Inicial y Normalización Final) ─────────
 
-async function metadataPhase(cfg: VerificationConfig, opts: VerificationRunOptions): Promise<void> {
-  state.phase = "metadata";
+async function metadataPhase(
+  cfg: VerificationConfig,
+  opts: VerificationRunOptions,
+  stage: "initial" | "final" = "initial"
+): Promise<void> {
+  state.phase = stage === "initial" ? "metadata" : "finalizing";
   const showIds = await resolveMetadataShowIds(cfg, opts.platforms);
   const limited = opts.limit && opts.limit > 0 ? showIds.slice(0, opts.limit) : showIds;
 
-  runCounters.metaTotal = limited.length;
-  state.progress.total += limited.length;
-  log("info", `Fase metadatos: ${limited.length} obra(s) en cola (scope=${cfg.scope_mode}).`);
+  if (stage === "initial") {
+    runCounters.metaTotal = limited.length;
+    state.progress.total = limited.length;
+    log("info", `Fase 1/3 (Metadatos existentes): ${limited.length} obra(s) en cola (scope=${cfg.scope_mode}).`);
+  } else {
+    runCounters.finalMetaTotal = limited.length;
+    log("info", `Fase 3/3 (Normalización y pulido final): verificando ${limited.length} obra(s)...`);
+  }
 
-  // POOL PARALELO (20 slots): TMDB tolera 40-50 req/s.
-  // Reducimos cuellos de botella para que la fase de metadatos vuele.
-  const CONCURRENCY = 20;
+  const CONCURRENCY = 15;
   let cursor = 0;
   const worker = async (): Promise<void> => {
     for (;;) {
+      if (state.stopped) return;
+      while (state.paused && !state.stopped) {
+        await sleep(400);
+      }
+      if (state.stopped) return;
+
       const idx = cursor++;
       if (idx >= limited.length) return;
       const showId = limited[idx];
       try {
         const row = await prisma.show.findUnique({
           where: { id: showId },
-          select: { id: true, title: true, description: true, poster_url: true, banner_url: true, genres: true, year: true },
+          select: { id: true, title: true, description: true, poster_url: true, banner_url: true, genres: true, year: true, tmdb_id: true },
         });
         state.currentItem = row?.title || showId;
         if (row && showNeedsBackfill(row)) {
           const result = await backfillShow(showId);
           if (result.changed.length > 0) {
             runCounters.metaUpdated++;
+            state.progress.updated_metadata = runCounters.metaUpdated;
             log("info", `Metadatos completados en '${result.title}': ${result.changed.join(", ")}`);
           }
-          // Stagger cortísimo para no saturar la red local.
-          await sleep(10 + Math.random() * 20);
+          await sleep(20 + Math.random() * 20);
         }
-        // Obra completa → sin TMDB, sin espera: siguiente.
       } catch (e: any) {
-        runCounters.metaErrors++;
+        if (stage === "initial") {
+          runCounters.metaErrors++;
+        }
         state.progress.errors++;
         log("warn", `Error en backfill de obra ${showId}: ${e?.message || e}`);
       }
-      runCounters.metaDone++;
-      state.progress.done++;
-      state.progress.updated_metadata = runCounters.metaUpdated;
+
+      if (stage === "initial") {
+        runCounters.metaDone++;
+        state.progress.done = runCounters.metaDone;
+      } else {
+        runCounters.finalMetaDone++;
+      }
     }
   };
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  state.phase = "catalog";
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, limited.length || 1) }, () => worker()));
 }
 
-// ── Fase 2: novedades por plataforma ─────────────────────────────
+// ── Fase 2: Novedades por plataforma ─────────────────────────────
 
 function inferKindForPlatform(platformKey: string, itemKind?: ContentKind | null): ContentKind {
   if (itemKind) return itemKind;
@@ -617,17 +714,15 @@ function inferKindForPlatform(platformKey: string, itemKind?: ContentKind | null
   return "movie";
 }
 
-async function findKnownWork(titleKey: string, year?: number | null, kind?: ContentKind, tmdbId?: number | null): Promise<{ id: string; title: string; episodeCount: number } | null> {
-  // (1) Resolución autoritativa: tmdb_id + content kind.
+async function findKnownWork(titleKey: string, year?: number | null, kind?: ContentKind, tmdbId?: number | null): Promise<{ id: string; title: string; category?: string | null; episodeCount: number } | null> {
   if (tmdbId && tmdbId > 0) {
     const byTmdb = await prisma.show.findFirst({
       where: { tmdb_id: tmdbId, ...(kind ? { category: kind } : {}) },
       orderBy: { created_at: "asc" },
-      select: { id: true, title: true, _count: { select: { episodes: true } } },
+      select: { id: true, title: true, category: true, _count: { select: { episodes: true } } },
     });
-    if (byTmdb) return { id: byTmdb.id, title: byTmdb.title, episodeCount: byTmdb._count.episodes };
+    if (byTmdb) return { id: byTmdb.id, title: byTmdb.title, category: byTmdb.category, episodeCount: byTmdb._count.episodes };
   }
-  // (2) Fallback: título canónico + año compatible.
   if (!titleKey) return null;
   const showCandidates = await prisma.show.findMany({
     where: {
@@ -635,7 +730,7 @@ async function findKnownWork(titleKey: string, year?: number | null, kind?: Cont
       ...(kind ? { category: kind } : {}),
     },
     orderBy: { created_at: "asc" },
-    select: { id: true, title: true, year: true, _count: { select: { episodes: true } } },
+    select: { id: true, title: true, category: true, year: true, _count: { select: { episodes: true } } },
     take: 20,
   });
   const requestedYear = isPlausibleYear(year) ? year! : null;
@@ -645,10 +740,8 @@ async function findKnownWork(titleKey: string, year?: number | null, kind?: Cont
       null
     : showCandidates[0] ?? null;
   if (show) {
-    return { id: show.id, title: show.title, episodeCount: show._count.episodes };
+    return { id: show.id, title: show.title, category: show.category, episodeCount: show._count.episodes };
   }
-  // Si no existe Show, devolvemos null para que saveShowWithDeduplication
-  // cree el Show y reutilice el MediaItem existente.
   return null;
 }
 
@@ -707,7 +800,6 @@ function buildEpisodesFromAnalysis(
     return [];
   }
 
-  // Series / anime
   return rawEpisodes.map((e: any, idx: number) => {
     const epNum = Number.isFinite(Number(e.number)) ? Number(e.number) : idx + 1;
     const primaryUrl = String(e.url || "");
@@ -742,12 +834,23 @@ function buildEpisodesFromAnalysis(
   });
 }
 
-// ── Fase 2: novedades por catálogo ──────────────────────────────
+// ── Fase 2: Novedades por catálogo multi-página ultra-optimizado ─
 
 async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOptions): Promise<void> {
   state.phase = "catalog";
   const platforms = resolveCatalogPlatforms(cfg, opts.platforms);
-  log("info", `Fase catálogo: ${platforms.length} plataforma(s) en cola (${platforms.join(", ") || "ninguna"}).`);
+
+  // 0 o no configurado = Sin límite / hasta agotar catálogo (fusible de seguridad en 5000 páginas)
+  const configuredPages = opts.pages_per_platform !== undefined
+    ? opts.pages_per_platform
+    : (cfg.catalog_pages_per_platform !== undefined ? cfg.catalog_pages_per_platform : 0);
+  const maxPages = configuredPages > 0 ? configuredPages : 5000;
+  const isUnlimited = configuredPages === 0;
+
+  log(
+    "info",
+    `Fase 2/3 (Catálogo): ${platforms.length} plataforma(s) en cola (${isUnlimited ? "recorrido autónomo hasta agotar" : `máximo ${maxPages} páginas c/u`}).`
+  );
 
   let itemsSeen = 0;
   let known = 0;
@@ -758,106 +861,198 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
   const checked: string[] = [];
   const noUrl: string[] = [];
   const catalogErrors: string[] = [];
-
   const analyzedUrls = new Set<string>();
 
+  state.progress.total = runCounters.metaTotal;
+
   for (const platform of platforms) {
-    const url = cfg.catalog_urls_by_platform[platform];
-    if (!url) {
+    if (state.stopped) return;
+    while (state.paused && !state.stopped) {
+      await sleep(400);
+    }
+    if (state.stopped) return;
+
+    const baseCatalogUrl = cfg.catalog_urls_by_platform[platform];
+    if (!baseCatalogUrl) {
       noUrl.push(platform);
       log("warn", `[${platform}] Sin URL de catálogo configurada, saltando.`);
       continue;
     }
     checked.push(platform);
-    log("info", `[${platform}] Escaneando catálogo: ${url}`);
 
-    let items: any[] = [];
-    try {
-      const extracted = await extractCatalogListing(url);
-      items = opts.limit && opts.limit > 0 ? extracted.slice(0, opts.limit) : extracted;
-    } catch (e: any) {
-      const msg = `[${platform}] error al listar catálogo: ${e?.message || e}`;
-      catalogErrors.push(msg);
-      log("error", msg);
-      continue;
-    }
+    let consecutiveEmptyPages = 0;
 
-    log("info", `[${platform}] ${items.length} item(s) extraído(s) del listado.`);
-    state.progress.total += items.length;
-
-    for (const item of items) {
-      itemsSeen++;
-      if (!item.title) {
-        state.progress.done++;
-        continue;
+    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      if (state.stopped) return;
+      while (state.paused && !state.stopped) {
+        await sleep(400);
       }
-      // Dedup: ficha ya analizada en otra plataforma → saltar.
-      if (item.url && analyzedUrls.has(item.url)) {
-        state.progress.done++;
-        continue;
-      }
-      if (item.url) analyzedUrls.add(item.url);
+      if (state.stopped) return;
 
-      state.currentItem = `[${platform}] ${item.title}`;
-      const key = normalizeTitleKey(item.title);
-      const itemKind = inferKindForPlatform(platform, item.kind);
+      const pageUrl = buildPageUrl(baseCatalogUrl, pageNum);
+      state.currentItem = `[${platform}] Pág. ${pageNum} - ${pageUrl}`;
 
+      let items: any[] = [];
       try {
-        let analysis: any = null;
-        let tmdbIdToUse: number | null = null;
+        const extracted = await extractCatalogListing(pageUrl);
+        items = opts.limit && opts.limit > 0 ? extracted.slice(0, opts.limit) : extracted;
+      } catch (e: any) {
+        const msg = `[${platform}] Error al extraer página ${pageNum} (${pageUrl}): ${e?.message || e}`;
+        catalogErrors.push(msg);
+        log("error", msg);
+        consecutiveEmptyPages++;
+        if (consecutiveEmptyPages >= 3) break;
+        continue;
+      }
 
-        // 1. Analizar item.url UNA sola vez antes de decidir
-        if (item.url) {
-          try {
-            analysis = await analyzeUniversalUrl(item.url);
-            if (analysis.tmdb_id && analysis.tmdb_id > 0) {
-              tmdbIdToUse = analysis.tmdb_id;
-            }
-            // Cortesía
-            await sleep(50 + Math.random() * 50);
-          } catch (e: any) {
-            log("warn", `[${platform}] análisis falló para '${item.title}': ${e?.message || e}`);
-          }
+      if (!items || items.length === 0) {
+        consecutiveEmptyPages++;
+        if (pageNum > 1) {
+          log("info", `[${platform}] Fin del catálogo alcanzado en página ${pageNum}.`);
+          break;
         }
+        continue;
+      }
 
-        // 2. Resolver identidad usando tmdb_id como prioridad, título como fallback
-        const existing = await findKnownWork(key, item.year, itemKind, tmdbIdToUse);
+      // En página > 1, si todos los items ya fueron analizados en esta pasada, el catálogo ya converge
+      if (pageNum > 1 && items.every((it) => it.url && analyzedUrls.has(it.url))) {
+        log("info", `[${platform}] Página ${pageNum} sin items nuevos, catálogo al día. Pasando a siguiente plataforma.`);
+        break;
+      }
+
+      state.progress.total += items.length;
+      consecutiveEmptyPages = 0;
+
+      // ── FAST-PATH: BATCH PRE-LOOKUP EN BD (1 QUERY POR PÁGINA) ────
+      const pageTitleKeys = items.map((it) => normalizeTitleKey(it.title)).filter(Boolean);
+      let knownShowsInBatch: any[] = [];
+      try {
+        knownShowsInBatch = await prisma.show.findMany({
+          where: {
+            OR: [
+              { normalized_title: { in: pageTitleKeys } },
+              { base_normalized_title: { in: pageTitleKeys } },
+            ],
+          },
+          select: {
+            id: true,
+            title: true,
+            year: true,
+            category: true,
+            normalized_title: true,
+            base_normalized_title: true,
+            _count: { select: { episodes: true } },
+          },
+        });
+      } catch {
+        // Fallback tolerante
+      }
+
+      const knownMap = new Map<string, typeof knownShowsInBatch[0]>();
+      for (const s of knownShowsInBatch) {
+        if (s.normalized_title) knownMap.set(s.normalized_title, s);
+        if (s.base_normalized_title) knownMap.set(s.base_normalized_title, s);
+      }
+
+      for (const item of items) {
+        if (state.stopped) return;
+        while (state.paused && !state.stopped) {
+          await sleep(400);
+        }
+        if (state.stopped) return;
+
+        itemsSeen++;
+        runCounters.catalogDone++;
+        state.progress.done = runCounters.metaDone + runCounters.catalogDone;
+
+        if (!item.title) continue;
+
+        if (item.url && analyzedUrls.has(item.url)) {
+          continue;
+        }
+        if (item.url) analyzedUrls.add(item.url);
+
+        state.currentItem = `[${platform}] ${item.title}`;
+        const key = normalizeTitleKey(item.title);
+        const itemKind = inferKindForPlatform(platform, item.kind);
+
+        // 1. FAST-PATH: Detección instantánea en memoria / índice BD
+        const batchMatch = knownMap.get(key);
+        const existing = batchMatch
+          ? { id: batchMatch.id, title: batchMatch.title, category: batchMatch.category, episodeCount: batchMatch._count.episodes }
+          : await findKnownWork(key, item.year, itemKind);
 
         if (existing) {
           known++;
           state.progress.known++;
-          // Anomalía anotable sin scrappear fichas: conocida pero sin episodios locales.
           if (existing.episodeCount === 0) withoutEpisodes.push(existing.title);
 
-          // ── RE-ESCANEO LIGERO CON ÍNDICE ──
-          if (state.config.sync_known_episodes !== false && analysis) {
+          const isMovie = itemKind === "movie" || existing.category === "movie";
+          const skipDetailFetch = isMovie
+            ? existing.episodeCount > 0
+            : state.config.sync_known_episodes === false;
+
+          // ── SALTO INSTANTÁNEO EN 0ms SI YA ESTÁ COMPLETA ──
+          if (skipDetailFetch) {
+            continue;
+          }
+
+          // Si es serie/anime y tiene activado sync_known_episodes: re-escaneo ligero
+          if (state.config.sync_known_episodes !== false && item.url) {
             try {
+              const analysis = await analyzeUniversalUrl(item.url);
               const eps = buildEpisodesFromAnalysis(analysis, platform, itemKind);
               const syncResult = await quickSyncKnownShow(existing.id, {
-                title: analysis.title || item.title,
+                title: analysis?.title || item.title,
                 episodes: eps,
-                source_site: analysis.source_domain || platform,
+                source_site: analysis?.source_domain || platform,
               });
               if (syncResult.added > 0) {
                 state.progress.new_episodes += syncResult.added;
-                log("info", `[${platform}] '${existing.title}': +${syncResult.added} episodio(s) nuevo(s) detectado(s) por índice.`);
+                log("info", `[${platform}] '${existing.title}': +${syncResult.added} episodio(s) nuevo(s) detectado(s).`);
               }
               if (syncResult.sourcesAdded && syncResult.sourcesAdded > 0) {
                 state.progress.sources_added += syncResult.sourcesAdded;
               }
             } catch (e: any) {
-              log("warn", `[${platform}] re-escaneo ligero de '${existing.title}': ${e?.message || e}`);
+              log("warn", `[${platform}] Re-escaneo de '${existing.title}': ${e?.message || e}`);
             }
           }
-        } else {
-          newDetected++;
-          state.progress.new_sources++;
+          continue;
+        }
+
+        // 2. OBRA NUEVA NO RECONOCIDA: Fetch y guardado enriquecido TMDB
+        newDetected++;
+        state.progress.new_sources++;
+
+        try {
+          let analysis: any = null;
+          let tmdbIdToUse: number | null = null;
+
+          if (item.url) {
+            try {
+              analysis = await analyzeUniversalUrl(item.url);
+              if (analysis.tmdb_id && analysis.tmdb_id > 0) {
+                tmdbIdToUse = analysis.tmdb_id;
+              }
+              await sleep(30 + Math.random() * 30);
+            } catch (e: any) {
+              log("warn", `[${platform}] Análisis falló para '${item.title}': ${e?.message || e}`);
+            }
+          }
+
           const kind = itemKind;
           const eps = buildEpisodesFromAnalysis(analysis, platform, kind);
           const detectedStreams: string[] = Array.isArray(analysis?.detected_streams) ? analysis.detected_streams : [];
 
+          const candidateTitle = (analysis?.title && isPlausibleTitle(analysis.title))
+            ? analysis.title
+            : (item.title && isPlausibleTitle(item.title))
+              ? item.title
+              : cleanSlugToWords(analysis?.title || item.title);
+
           const result = await saveShowWithDeduplication({
-            title: analysis?.title || item.title,
+            title: candidateTitle,
             original_title: analysis?.original_title || undefined,
             tmdb_id: tmdbIdToUse || undefined,
             poster_url: analysis?.poster_url || item.image_url || undefined,
@@ -876,7 +1071,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           if (result.isDuplicate) {
             mergedByDedup++;
             state.progress.works_merged++;
-            log("info", `[${platform}] '${result.show.title}' llegó como nueva pero el dedup la fusionó.`);
+            log("info", `[${platform}] '${result.show.title}' fusionada con obra existente por deduplicación.`);
           } else {
             imported++;
             state.progress.new_works++;
@@ -890,18 +1085,14 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
             state.progress.sources_added += result.sourcesAdded;
           }
 
-          // El import dispara cascada TMDB/AniList: pausa ligera.
-          await sleep(100 + Math.random() * 100);
+          await sleep(50 + Math.random() * 50);
+        } catch (e: any) {
+          state.progress.errors++;
+          const msg = `[${platform}] Item '${item.title}': ${e?.message || e}`;
+          catalogErrors.push(msg);
+          log("error", msg);
         }
-      } catch (e: any) {
-        state.progress.errors++;
-        const msg = `[${platform}] item '${item.title}': ${e?.message || e}`;
-        catalogErrors.push(msg);
-        log("error", msg);
       }
-
-      state.progress.done++;
-      await sleep(10 + Math.random() * 10); // lookups locales por índice súper rápidos
     }
   }
 
@@ -937,26 +1128,31 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       sources_added: state.progress.sources_added || 0,
     },
   };
-  log(
-    "info",
-    `Pasada finalizada: ${imported} nueva(s) importada(s), ${known} conocida(s), ${runCounters.metaUpdated} obra(s) con metadatos reparados, ${runCounters.metaErrors + catalogErrors.length} error(es).`
-  );
 }
 
-// ── Orquestación de una pasada ───────────────────────────────────
+// ── Orquestación de una pasada en 3 fases ─────────────────────────
 
 async function runPass(opts: VerificationRunOptions): Promise<void> {
   const cfg = getVerificationConfig();
-  // mode override por pasada: no muta config persistida.
-  // - "metadata": solo metadatos.
-  // - "full": metadatos + catálogo, incluso si config.metadata_only === true.
-  // - undefined: obedece config.metadata_only.
   const metadataOnly = opts.mode === "metadata" ? true : opts.mode === "full" ? false : cfg.metadata_only;
   try {
-    await metadataPhase(cfg, opts);
-    if (!metadataOnly) {
+    // ── FASE 1: Metadatos existentes ──
+    await metadataPhase(cfg, opts, "initial");
+
+    if (!metadataOnly && !state.stopped) {
+      // ── FASE 2: Catálogo y novedades multi-página ──
       await catalogPhase(cfg, opts);
-    } else {
+
+      if (!state.stopped) {
+        // ── FASE 3: Normalización y enriquecimiento de metadatos de lo nuevo ──
+        await metadataPhase(cfg, opts, "final");
+      }
+
+      log(
+        "info",
+        `Pasada completa finalizada: ${state.progress.new_works} nueva(s) importada(s), ${state.progress.known} conocida(s), ${state.progress.updated_metadata} obra(s) con metadatos normalizados/reparados.`
+      );
+    } else if (metadataOnly) {
       const finishedAt = new Date().toISOString();
       state.lastReport = {
         started_at: state.startedAt || finishedAt,
@@ -994,7 +1190,6 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
   } catch (e: any) {
     state.progress.errors++;
     log("error", `Pasada abortada: ${e?.message || e}`);
-    // Reporte mínimo de aborto para que el UI nunca quede sin last_report.
     const finishedAt = new Date().toISOString();
     state.lastReport = {
       started_at: state.startedAt || finishedAt,
@@ -1030,5 +1225,5 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
   }
 }
 
-// ── Boot: SOLO programa el timer (nunca barrido completo al arrancar) ──
+// ── Boot: SOLO programa el timer ─────────────────────────────────
 scheduleTimer();

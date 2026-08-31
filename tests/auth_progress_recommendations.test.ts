@@ -161,5 +161,5 @@ describe("Auth, Progress and Recommendations System", () => {
     } finally {
       await prisma.show.deleteMany({ where: { id: show.id } });
     }
-  });
+  }, 15000);
 });

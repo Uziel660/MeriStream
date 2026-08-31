@@ -142,7 +142,7 @@ describe("metadataMerge (scraper-first, defectos #10/#13/#16)", () => {
       { rating: 5.5, genres: ["Anime"], status: "Finalizado" }
     );
     expect(target.rating).toBe(9.2);
-    expect(target.genresStr).toBe("Drama, Crime");
+    expect(target.genresStr).toBe("Drama, Crimen");
 
     const empty = makeTarget();
     applyEnrichmentGapFill({ title: "Y" }, empty, {

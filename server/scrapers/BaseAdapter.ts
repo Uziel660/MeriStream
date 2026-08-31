@@ -49,10 +49,11 @@ export abstract class BaseScraperAdapter {
 
       const validStreams = await MediaValidator.validateUrls(resolvedStreams);
       const finalStreams = validStreams.length > 0 ? validStreams : (resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl]);
+      const allStreams = Array.from(new Set([...finalStreams, ...rawStreams, cleanUrl].filter(Boolean)));
 
       return {
-        stream_url: finalStreams[0],
-        all_available_streams: finalStreams,
+        stream_url: finalStreams[0] || cleanUrl,
+        all_available_streams: allStreams,
         title: $("title").text().trim() || undefined,
       };
     } catch {

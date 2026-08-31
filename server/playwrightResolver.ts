@@ -1,18 +1,17 @@
 // server/playwrightResolver.ts
 import type { Browser, BrowserContext } from "playwright";
+import { createResolutionTiming, isResolutionFresh } from "./resolutionMetadata";
+import type { ResolvedStreamMeta } from "./resolvers";
 
-interface CacheEntry {
-  directUrl: string;
-  timestamp: number;
-}
-
-class PlaywrightResolver {
+export class PlaywrightResolver {
   private browser: Browser | null = null;
   private isLaunching = false;
   private activeJobs = 0;
   private idleTimer: NodeJS.Timeout | null = null;
-  private cache = new Map<string, CacheEntry>();
-  private readonly CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+  private cache = new Map<string, ResolvedStreamMeta>();
+  private negativeCache = new Map<string, number>();
+  private inFlight = new Map<string, Promise<ResolvedStreamMeta | null>>();
+  private readonly NEGATIVE_CACHE_TTL_MS = 20 * 1000;
   private readonly MAX_CONCURRENT = 2;
   private queue: Array<() => void> = [];
 
@@ -105,19 +104,41 @@ class PlaywrightResolver {
   public async resolve(embedUrl: string): Promise<string | null> {
     const rawUrl = (embedUrl || "").trim();
     if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return null;
+    return (await this.resolveWithMeta(rawUrl))?.url ?? null;
+  }
 
-    // 1. Revisar caché en memoria
+  /**
+   * Dynamic, single-flight resolver. Its cache is bounded by refresh_after, not a
+   * fixed thirty-minute value, because stream URLs are often signed.
+   */
+  public async resolveWithMeta(embedUrl: string): Promise<ResolvedStreamMeta | null> {
+    const rawUrl = (embedUrl || "").trim();
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return null;
+
     const cached = this.cache.get(rawUrl);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
-      return cached.directUrl;
-    }
+    if (cached && isResolutionFresh(cached)) return cached;
+    const negativeUntil = this.negativeCache.get(rawUrl);
+    if (negativeUntil && negativeUntil > Date.now()) return null;
+    if (negativeUntil) this.negativeCache.delete(rawUrl);
+
+    const existing = this.inFlight.get(rawUrl);
+    if (existing) return existing;
+    const work = this.resolveUncached(rawUrl).finally(() => this.inFlight.delete(rawUrl));
+    this.inFlight.set(rawUrl, work);
+    return work;
+  }
+
+  private async resolveUncached(rawUrl: string): Promise<ResolvedStreamMeta | null> {
 
     await this.acquireSlot();
 
     let context: BrowserContext | null = null;
     try {
+      // Another request could have completed while this one waited in the semaphore.
+      const cachedAfterWait = this.cache.get(rawUrl);
+      if (cachedAfterWait && isResolutionFresh(cachedAfterWait)) return cachedAfterWait;
       const browser = await this.getBrowser();
-      if (!browser) return null;
+      if (!browser) return this.cacheNegative(rawUrl);
 
       context = await browser.newContext({
         userAgent:
@@ -206,16 +227,24 @@ class PlaywrightResolver {
 
       // 7. Guardar en caché si se resolvió exitosamente
       if (detectedStreamUrl) {
-        this.cache.set(rawUrl, {
-          directUrl: detectedStreamUrl,
-          timestamp: Date.now(),
-        });
+        const provider = this.providerName(rawUrl);
+        const meta: ResolvedStreamMeta = {
+          url: detectedStreamUrl,
+          original_url: rawUrl,
+          canonical_locator: rawUrl,
+          is_refreshable: true,
+          resolved: true,
+          type: "direct",
+          provider,
+          ...createResolutionTiming({ originalUrl: rawUrl, upstreamUrl: detectedStreamUrl, provider }),
+        };
+        this.cache.set(rawUrl, meta);
+        return meta;
       }
-
-      return detectedStreamUrl;
+      return this.cacheNegative(rawUrl);
     } catch (err) {
       console.warn("[PlaywrightResolver] Error al resolver embed:", (err as Error)?.message);
-      return null;
+      return this.cacheNegative(rawUrl);
     } finally {
       if (context) {
         try {
@@ -224,6 +253,23 @@ class PlaywrightResolver {
       }
       this.releaseSlot();
     }
+  }
+
+  /** Visible for focused tests and operational diagnostics; returns no stale URLs. */
+  public getCachedResolution(embedUrl: string): ResolvedStreamMeta | null {
+    const cached = this.cache.get((embedUrl || "").trim());
+    return cached && isResolutionFresh(cached) ? cached : null;
+  }
+
+  private cacheNegative(rawUrl: string): null {
+    this.negativeCache.set(rawUrl, Date.now() + this.NEGATIVE_CACHE_TTL_MS);
+    return null;
+  }
+
+  private providerName(url: string): string {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("vimeos")) return "Vimeos";
+    return host;
   }
 }
 

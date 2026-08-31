@@ -8,6 +8,7 @@ import { resolveDoodstream } from "./resolvers/doodstreamResolver";
 import { resolveUqload } from "./resolvers/uqloadResolver";
 import { resolveVidhide } from "./resolvers/vidhideResolver";
 import { VIMEOS_REQUIRED_HEADERS } from "./hostProfiles";
+import { parseStreamExpiry } from "./resolutionMetadata";
 
 // ── Blacklist global de proveedores muertos ──────────────────────────────────
 // Dominios verificados caídos: ninguna resolución server-side rinde con ellos,
@@ -182,6 +183,34 @@ export interface ResolvedStreamMeta {
   provider: string;
   /** Cabeceras que el nodo CDN exige al reproducir (403 sin ellas). */
   requiredHeaders?: Record<string, string>;
+  /** true si la URL directa vigente puede entregarse mediante una sesión proxy. */
+  is_proxyable?: boolean;
+  /** true si existe un localizador estable capaz de producir una URL nueva. */
+  is_refreshable?: boolean;
+  /** Localizador estable re-resoluble para renovar la URL directa firmada. */
+  canonical_locator?: string;
+  /** El resolver crudo puede omitirlos; ResolutionCoordinator los completa. */
+  resolved_at?: number;
+  refresh_after?: number;
+  expires_at?: number;
+  resolution_id?: string;
+  generation?: string;
+  expiration_source?: string;
+  /** Motivo estable para que API/UI distingan expiración de un fallo genérico. */
+  failure_reason?: "empty_locator" | "expired_without_locator" | "unresolved";
+}
+
+function hasSignedMediaQuery(rawUrl: string): boolean {
+  try {
+    const params = new URL(rawUrl).searchParams;
+    return [
+      "t", "token", "jwt", "access_token", "authorization", "expires", "expiry",
+      "exp", "s", "e", "sig", "signature", "hash", "auth", "hdnts", "policy",
+      "key-pair-id",
+    ].some((key) => params.has(key));
+  } catch {
+    return false;
+  }
 }
 
 export class EmbedResolvers {
@@ -255,24 +284,66 @@ export class EmbedResolvers {
         resolved: false,
         type: "embed",
         provider: "Desconocido",
+        is_proxyable: false,
+        is_refreshable: false,
+        failure_reason: "empty_locator",
       };
     }
 
     const provider = this.getProviderName(rawUrl);
 
-    // Si ya es un stream directo, retornar inmediatamente (salvo placeholders del host)
+    // Si ya es un stream directo, retornar inmediatamente (salvo placeholders del host).
+    // Semántica de renovación: una URL directa con expiración explícita (firmada) es
+    // reproducible mientras no venció, pero NO es renovable — renovarla exige re-resolver
+    // un embed o localizador estable, no la propia URL firmada. Por eso canonical_locator
+    // queda sin definir en URLs firmadas y solo se promueve en URLs estables sin firma.
     if (this.isDirectMediaUrl(rawUrl) && !this.isPlaceholderUrl(rawUrl)) {
+      const { expiresAt } = parseStreamExpiry(rawUrl);
+      const hasExplicitExpiry = expiresAt !== undefined;
+      if (hasExplicitExpiry) {
+        const explicitlyExpired = expiresAt <= Date.now();
+        return {
+          url: rawUrl,
+          original_url: rawUrl,
+          resolved: !explicitlyExpired,
+          type: "direct",
+          provider,
+          is_proxyable: !explicitlyExpired,
+          is_refreshable: false,
+          ...(explicitlyExpired ? { failure_reason: "expired_without_locator" as const } : {}),
+        };
+      }
+      // Un token opaco (por ejemplo `t=...`) también es una firma aunque no revele
+      // su deadline. No debe promoverse como locator renovable.
+      const hasOpaqueSignature = hasSignedMediaQuery(rawUrl);
       return {
         url: rawUrl,
         original_url: rawUrl,
         resolved: true,
         type: "direct",
         provider,
+        is_proxyable: true,
+        is_refreshable: !hasOpaqueSignature,
+        ...(!hasOpaqueSignature ? { canonical_locator: rawUrl } : {}),
       };
     }
 
     const resolvedUrl = await this.resolve(rawUrl);
     const isDirect = this.isDirectMediaUrl(resolvedUrl) && !this.isPlaceholderUrl(resolvedUrl);
+    const resolvedExpiry = isDirect ? parseStreamExpiry(resolvedUrl).expiresAt : undefined;
+    if (isDirect && resolvedExpiry !== undefined && resolvedExpiry <= Date.now()) {
+      return {
+        url: rawUrl,
+        original_url: rawUrl,
+        canonical_locator: rawUrl,
+        resolved: false,
+        type: "embed",
+        provider,
+        is_proxyable: false,
+        is_refreshable: true,
+        failure_reason: "unresolved",
+      };
+    }
 
     return {
       url: resolvedUrl,
@@ -280,6 +351,11 @@ export class EmbedResolvers {
       resolved: isDirect,
       type: isDirect ? "direct" : "embed",
       provider,
+      // El embed original sí es un locator estable: puede volver a producir un
+      // token nuevo cuando el upstream expire.
+      ...(isDirect
+        ? { is_proxyable: true, is_refreshable: true, canonical_locator: rawUrl }
+        : { is_proxyable: false, is_refreshable: false, failure_reason: "unresolved" as const }),
       // Cubre tanto embeds como nodos del CDN (s{N}.vimeos.net, vimeos.zip):
       // los headers reales los aplica el proxy vía perfil de hostProfiles.
       ...(provider === "Vimeos" ? { requiredHeaders: { ...VIMEOS_REQUIRED_HEADERS } } : {}),
@@ -416,10 +492,21 @@ export class EmbedResolvers {
       if (hqq) return hqq;
     }
 
-    // 12. Genérico: intentar extraer .m3u8 o .mp4 del HTML del iframe
+    // 12. GOODSTREAM: el m3u8 firmado vive en el HTML del embed (jwplayer setup en texto plano).
+    // El embed de goodstream.one/embed-{code}.html responde con el script del player que
+    // incluye la URL de enc{N}.goodstream.one/hls2/...master.m3u8 sin ofuscar.
+    // Requiere Referer=goodstream.one para que Cloudflare sirva el HTML real.
+    if (rawUrl.includes("goodstream.")) {
+      const gs = await this.resolveGoodstream(rawUrl);
+      if (gs) return gs;
+      return rawUrl; // fallback: dejar el embed (navegador lo carga con Referer correcto)
+    }
+
+    // 13. Genérico: intentar extraer .m3u8 o .mp4 del HTML del iframe
     const generic = await this.resolveGeneric(rawUrl);
     return generic || rawUrl;
   }
+
 
   /**
    * Resuelve el embed de hqq.ac / divxplayer (reproductor "raro" de VerAnimes).
@@ -764,6 +851,54 @@ export class EmbedResolvers {
       if (mp4) return mp4;
 
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resuelve Goodstream: el m3u8 firmado está embebido directamente en el HTML del embed.
+   * El script de jwplayer contiene la URL enc{N}.goodstream.one/hls2/.../master.m3u8?t=...
+   * en texto plano dentro de la etiqueta <script>. Sin ofuscación.
+   * Requiere Referer=goodstream.one para que Cloudflare entregue el HTML real.
+   */
+  private static async resolveGoodstream(url: string): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.DEFAULT_TIMEOUT);
+      let html: string | null = null;
+      try {
+        const res = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": this.DEFAULT_HEADERS["User-Agent"],
+            "Referer": "https://goodstream.one/",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+          },
+        });
+        clearTimeout(timer);
+        if (!res.ok) return null;
+        html = await res.text();
+      } catch {
+        clearTimeout(timer);
+        return null;
+      }
+
+      if (!html || html.includes("File is no longer available") || html.includes("expired or has been deleted")) {
+        return null;
+      }
+
+      // El m3u8 firmado está en texto plano en el objeto de configuración del jwplayer.
+      // Preferir master.m3u8 (contiene todas las calidades) sobre playlists de nivel (_l/index...).
+      const m3u8Regex = /https?:\/\/[^\s"'<>\\]+\.m3u8(?:\?[^\s"'<>\\]*)?/gi;
+      const matches = html.match(m3u8Regex) || [];
+      const cleaned = matches
+        .map((m) => m.replace(/\\/g, "").replace(/['"]/g, ""))
+        .filter((m) => m.includes("goodstream") || m.includes(".goodstream."));
+      // Priorizar el master.m3u8 (urlset) que contiene todas las calidades
+      const master = cleaned.find((m) => m.includes("master.m3u8") || m.includes(".urlset/"));
+      return master || cleaned[0] || null;
     } catch {
       return null;
     }

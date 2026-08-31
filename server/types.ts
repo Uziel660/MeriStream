@@ -38,6 +38,7 @@ export interface UniversalAnalysisResult {
   detected_streams?: string[];
   episodes: ExtractedEpisode[];
   catalog_items: ExtractedCatalogItem[];
+  next_page_url?: string | null;
   raw_metadata?: {
     og?: Record<string, string>;
     json_ld?: any[];
@@ -54,4 +55,39 @@ export interface ScraperPreset {
   icon: string;
   original_url?: string;
   is_custom?: boolean;
+}
+
+export interface SourceLinkInput {
+  url: string;
+  source_site?: string;
+  link_type?: string;
+  host?: string;
+  source_kind?: SourceKind;
+  is_verified?: boolean;
+}
+
+export type SourceKind = "page" | "embed" | "stable_direct" | "ephemeral_direct";
+
+export interface CanonicalSourceInput {
+  url: string;
+  source_site: string;
+  source_kind: SourceKind;
+}
+
+export interface PlaybackResolution {
+  url: string;
+  original_url: string;
+  canonical_locator?: string;
+  resolved: boolean;
+  type: "direct" | "embed";
+  delivery_mode: "direct" | "direct_trial" | "proxy_required" | "embed";
+  is_proxyable: boolean;
+  is_refreshable: boolean;
+  resolved_at?: number;
+  refresh_after?: number;
+  expires_at?: number;
+  resolution_id?: string;
+  generation?: string;
+  requiredHeaders?: Record<string, string>;
+  failure_reason?: "expired_without_locator" | "unresolved" | "unsafe_url" | "empty_locator";
 }

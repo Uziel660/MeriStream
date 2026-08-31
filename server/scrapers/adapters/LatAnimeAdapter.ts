@@ -122,7 +122,8 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const title =
       ogTitle.replace(/\s*[-–—]\s*Latanime\s*$/i, "").trim() ||
       h1Title ||
-      "Anime LatAnime";
+      this.titleFromSlug(url) ||
+      "Anime";
 
     const ogImage = $('meta[property="og:image"]').attr("content");
     const poster_url = ogImage ? this.resolveRelativeUrl(ogImage, url) : undefined;

@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { EmbedResolvers } from "./resolvers";
 import { parseMegaUrl, isMegaUrl } from "./resolvers/megaResolver";
 
 describe("EmbedResolvers with Status & Meta", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("correctly identifies direct media URLs", () => {
     expect(EmbedResolvers.isDirectMediaUrl("https://example.com/playlist.m3u8")).toBe(true);
     expect(EmbedResolvers.isDirectMediaUrl("https://example.com/video.mp4?token=123")).toBe(true);
@@ -27,6 +28,85 @@ describe("EmbedResolvers with Status & Meta", () => {
     const meta = await EmbedResolvers.resolveWithMeta("https://cdn.example.com/movie.mp4");
     expect(meta.resolved).toBe(true);
     expect(meta.type).toBe("direct");
+  });
+
+  it("does not promote an opaque signed direct URL as a renewable locator", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://edge.acek-cdn.com/master.m3u8?t=opaque-token");
+    expect(meta.resolved).toBe(true);
+    expect(meta.is_refreshable).toBe(false);
+    expect(meta.canonical_locator).toBeUndefined();
+  });
+
+  it("does not advertise an explicitly expired direct URL as renewable/playable", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://cdn.example.com/movie.m3u8?expires=1700000000");
+    expect(meta.resolved).toBe(false);
+    expect(meta.is_proxyable).toBe(false);
+    expect(meta.is_refreshable).toBe(false);
+    expect(meta.canonical_locator).toBeUndefined();
+    expect(meta.failure_reason).toBe("expired_without_locator");
+  });
+
+  it("rejects an expired Vimeos s+e URL with an explicit failure reason", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://s1.vimeos.net/a.m3u8?s=1700000000&e=3600");
+    expect(meta).toMatchObject({
+      resolved: false,
+      is_proxyable: false,
+      is_refreshable: false,
+      failure_reason: "expired_without_locator",
+    });
+  });
+
+  it("keeps a signed direct URL with future expiry playable but NOT renewable", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://cdn.example.com/movie.m3u8?expires=1900000000");
+    expect(meta.resolved).toBe(true);
+    expect(meta.is_proxyable).toBe(true);
+    expect(meta.is_refreshable).toBe(false);
+    // Una URL firmada nunca se promueve como canonical_locator: solo un embed o
+    // localizador estable es renovable.
+    expect(meta.canonical_locator).toBeUndefined();
+  });
+
+  it("treats a stable unsigned direct URL as renewable with itself as locator", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://cdn.example.com/movie.mp4");
+    expect(meta.resolved).toBe(true);
+    expect(meta.is_proxyable).toBe(true);
+    expect(meta.is_refreshable).toBe(true);
+    expect(meta.canonical_locator).toBe("https://cdn.example.com/movie.mp4");
+  });
+
+  it("does not promote a signed Vimeos s+e URL as a renewable locator", async () => {
+    const meta = await EmbedResolvers.resolveWithMeta("https://s1.vimeos.net/a.m3u8?s=1999999999&e=3600");
+    expect(meta.resolved).toBe(true);
+    expect(meta.is_proxyable).toBe(true);
+    expect(meta.is_refreshable).toBe(false);
+    expect(meta.canonical_locator).toBeUndefined();
+  });
+
+  it("keeps the embed as canonical locator when it resolves to direct media", async () => {
+    const locator = "https://vimeos.net/embed-renewable.html";
+    vi.spyOn(EmbedResolvers, "resolve").mockResolvedValueOnce("https://s1.vimeos.net/master.m3u8?s=1999999999&e=3600");
+    const meta = await EmbedResolvers.resolveWithMeta(locator);
+    expect(meta).toMatchObject({
+      resolved: true,
+      is_proxyable: true,
+      is_refreshable: true,
+      canonical_locator: locator,
+    });
+  });
+
+  it("does not advertise an embed resolution whose signed media is already expired", async () => {
+    const locator = "https://vimeos.net/embed-expired.html";
+    vi.spyOn(EmbedResolvers, "resolve").mockResolvedValueOnce("https://s1.vimeos.net/master.m3u8?s=1700000000&e=60");
+    const meta = await EmbedResolvers.resolveWithMeta(locator);
+    expect(meta).toMatchObject({
+      url: locator,
+      resolved: false,
+      type: "embed",
+      is_proxyable: false,
+      is_refreshable: true,
+      canonical_locator: locator,
+      failure_reason: "unresolved",
+    });
   });
 });
 

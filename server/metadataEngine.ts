@@ -172,8 +172,8 @@ function isGenericQuery(lower: string): boolean {
 // devuelven sus catálogos en inglés. Este mapa unifica todo a español.
 const GENRE_ES_ALIASES: Record<string, string> = {
   "action": "Acción",
-  "action adventure": "Acción y Aventura",
-  "action y aventura": "Acción y Aventura",
+  "action adventure": "Acción, Aventura",
+  "action y aventura": "Acción, Aventura",
   "adventure": "Aventura",
   "animation": "Animación",
   "anime": "Anime",
@@ -187,14 +187,14 @@ const GENRE_ES_ALIASES: Record<string, string> = {
   "mystery": "Misterio",
   "news": "Noticias",
   "reality": "Reality",
-  "sci fi fantasy": "Ciencia Ficción y Fantasía",
+  "sci fi fantasy": "Ciencia Ficción, Fantasía",
   "science fiction": "Ciencia Ficción",
-  "science fiction fantasy": "Ciencia Ficción y Fantasía",
+  "science fiction fantasy": "Ciencia Ficción, Fantasía",
   "soap": "Telenovela",
   "soap opera": "Telenovela",
   "talk": "Talk Show",
   "talk show": "Talk Show",
-  "war politics": "Guerra y Política",
+  "war politics": "Guerra, Política",
   "war": "Bélico",
   "western": "Western",
   "fantasy": "Fantasía",
@@ -246,7 +246,10 @@ export function translateGenresToEs(genres: string[]): string[] {
   for (const g of Array.isArray(genres) ? genres : []) {
     if (typeof g !== "string" || !g.trim()) continue;
     const translated = GENRE_ES_ALIASES[normalizeGenreKey(g)] || g.trim();
-    if (!out.includes(translated)) out.push(translated);
+    const parts = translated.split(',').map(p => p.trim());
+    for (const p of parts) {
+      if (!out.includes(p)) out.push(p);
+    }
   }
   return out;
 }

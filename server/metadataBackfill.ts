@@ -17,7 +17,8 @@ import { prisma } from "./db";
 import { enqueueWrite } from "./writeBuffer";
 import { enrichUniversalMetadata } from "./metadataEngine";
 import { endsWithTruncationEllipsis } from "./metadataMerge";
-import { normalizeTitleKey, parseRawTitle, isPlausibleTitle } from "./utils/titleNormalizer";
+import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
+import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 import { cleanDescription, isAnomalousDescription } from "./utils/textCleaner";
 import type { ContentKind } from "./types";
 
@@ -92,9 +93,11 @@ export function showNeedsBackfill(show: {
   banner_url?: string | null;
   genres?: string | null;
   year?: number | null;
+  tmdb_id?: number | null;
 }): boolean {
-  // Título con ruido estructural ("... Latino HD", "Ver X online") = reparable.
+  // Título con ruido estructural ("... Latino HD", "Ver X online") o slug pegado ("sixjoursceprintempsla")
   if (show.title) {
+    if (isSlugLikeTitle(show.title)) return true;
     const parsed = parseRawTitle(show.title);
     if (parsed.canonical !== show.title && isPlausibleTitle(parsed.canonical)) return true;
   }
@@ -106,6 +109,13 @@ export function showNeedsBackfill(show: {
   if (isLandscapePosterUrl(show.poster_url) || isLowQualityImage(show.poster_url) || isLowQualityImage(show.banner_url) || show.banner_url === show.poster_url) {
     return true;
   }
+  // Géneros sin formato o pegados ("accion aventura", "Multimedia", sin comas)
+  if (show.genres) {
+    const rawG = show.genres.trim();
+    if (rawG === "Multimedia" || (!rawG.includes(",") && rawG.includes(" ")) || rawG.toLowerCase() === rawG) {
+      return true;
+    }
+  }
   return (
     !show.description ||
     show.description.trim() === "" ||
@@ -115,7 +125,8 @@ export function showNeedsBackfill(show: {
     show.genres.trim() === "" ||
     show.genres === "Multimedia" ||
     !show.year ||
-    show.year <= 0
+    show.year <= 0 ||
+    !show.tmdb_id
   );
 }
 
@@ -188,20 +199,24 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
   const data: Record<string, unknown> = {};
 
   // ── Reparación de título (NO requiere enrichment) ──
-  // Ruido estructural del scraper ("X Latino Español HD", "Ver X online") →
-  // título canónico. Las CLAVES de dedup no se tocan: normalizeTitleKey ya
-  // ignora ese ruido, así que la identidad/fusión quedan intactas.
+  // Ruido estructural del scraper ("X Latino Español HD", "Ver X online") o slug pegado
+  // ("temporadaparamatar" -> "Temporada Para Matar") para buscar en TMDB con precisión.
   if (show.title) {
-    const parsed = parseRawTitle(show.title);
-    if (parsed.canonical !== show.title && isPlausibleTitle(parsed.canonical)) {
-      data.title = parsed.canonical;
+    if (isSlugLikeTitle(show.title)) {
+      data.title = cleanSlugToWords(show.title);
+    } else {
+      const parsed = parseRawTitle(show.title);
+      if (parsed.canonical !== show.title && isPlausibleTitle(parsed.canonical)) {
+        data.title = parsed.canonical;
+      }
     }
   }
 
   const kind = (show.category || "anime") as ContentKind;
   let enriched: any = null;
+  const searchTitle = String(data.title || show.title || "").trim();
   try {
-    enriched = await enrichUniversalMetadata(data.title || show.title, kind);
+    enriched = await enrichUniversalMetadata(searchTitle, kind);
   } catch {
     enriched = null;
   }
@@ -257,8 +272,25 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
   } else if ((!show.banner_url || show.banner_url === show.poster_url || isLowQualityImage(show.banner_url)) && enriched.banner_url) {
     data.banner_url = enriched.banner_url;
   }
-  if ((!show.genres || show.genres === "Multimedia") && Array.isArray(enriched.genres) && enriched.genres.length > 0) {
-    data.genres = enriched.genres.join(", ");
+  // Reparar título si es un slug pegado ("sixjoursceprintempsla")
+  if (isSlugLikeTitle(show.title)) {
+    if (enriched.title && !isSlugLikeTitle(enriched.title)) {
+      data.title = enriched.title;
+      data.normalized_title = normalizeTitleKey(enriched.title);
+      data.base_normalized_title = normalizeTitleKey(enriched.title);
+    } else {
+      const cleanWords = cleanSlugToWords(show.title);
+      data.title = cleanWords;
+      data.normalized_title = normalizeTitleKey(cleanWords);
+      data.base_normalized_title = normalizeTitleKey(cleanWords);
+    }
+  }
+
+  // Normalizar y formatear géneros con comas y acentos estándar
+  const currentGenres = show.genres || "";
+  const normalizedGenres = formatAndNormalizeGenres(currentGenres, enriched.genres);
+  if (normalizedGenres && normalizedGenres !== currentGenres && normalizedGenres !== "Multimedia") {
+    data.genres = normalizedGenres;
   }
   if ((!show.year || show.year <= 0) && Number.isFinite(enriched.year) && enriched.year > 0) {
     data.year = enriched.year;
@@ -277,6 +309,9 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
       console.warn(`[Backfill] Escritura diferida en write-buffer para obra ${showId}: ${e?.message || e}`);
     }
     result.changed = Object.keys(data);
+    if (data.title) {
+      result.title = String(data.title);
+    }
     // Espejo multi-fuente: mismo título visible en el MediaItem (best-effort).
     if (data.title) {
       try {

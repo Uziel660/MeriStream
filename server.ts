@@ -29,7 +29,17 @@ import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUr
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
 import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/siteRatingService";
 import { siteFromDomain } from "./server/siteRatingService";
-import { playwrightResolver } from "./server/playwrightResolver";
+import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./server/playbackSessions";
+import { streamHealthService } from "./server/streamHealthService";
+import { reportPlaybackSignal } from "./server/scrapers/hostHealth";
+import { runtimeBudget } from "./server/runtimeBudget";
+import { assertSafePublicHttpUrl, UnsafeUrlError } from "./server/urlSafety";
+import {
+  buildResolveDeliveryResponse,
+  DeliveryPlanner,
+  ResolutionCoordinator,
+} from "./server/deliveryPlanner";
+import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
 import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
 import { pipeline } from "node:stream/promises";
 import { request } from "undici";
@@ -38,7 +48,14 @@ import { APP_CONFIG, localAllowedOrigins } from "./app.config";
 import { backfillMissingMetadata, getBackfillStatus, forceShowMetadata } from "./server/metadataBackfill";
 import { reconcileSequelsByTmdb, mergeTwoShows } from "./server/reconcileCatalog";
 import { startWriteBufferDrainer, drainWriteBuffer } from "./server/writeBuffer";
-import { getVerificationStatus, updateVerificationConfig, runVerification } from "./server/verificationWorker";
+import {
+  getVerificationStatus,
+  updateVerificationConfig,
+  runVerification,
+  pauseVerification,
+  resumeVerification,
+  stopVerification,
+} from "./server/verificationWorker";
 import { handleMegaStream } from "./server/resolvers/megaStream";
 import { getMp4SizeCacheEntry, setMp4SizeCacheEntry } from "./server/mp4SizeCache";
 import {
@@ -67,6 +84,28 @@ const stealthClient = new ImpitHttpClient({
   http3: false,
   ignoreTlsErrors: true
 });
+
+const deliveryPlanner = new DeliveryPlanner();
+const resolutionCoordinator = new ResolutionCoordinator(
+  (url) => EmbedResolvers.resolveWithMeta(url),
+  { maxEntries: 128 },
+);
+
+// Stable browser-facing HLS sessions. Renewal uses the lightweight, single-flight
+// HTTP/static resolver only; Chromium is intentionally absent from production.
+const playbackSessions = new PlaybackSessionStore({
+  resolver: (url) => resolutionCoordinator.resolve(url),
+});
+const playbackSessionHandlers = createPlaybackSessionHandlers(
+  playbackSessions,
+  "/api/v1/playback",
+  {
+    // Existing relays are never rejected: the budget only uses these balanced
+    // counters to stop admitting new sessions and speculative work under pressure.
+    onRelayStart: () => { runtimeBudget.beginRelay(); },
+    onRelayEnd: () => { runtimeBudget.endRelay(); },
+  },
+);
 
 const CHUNK_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_NETWORK_RETRIES = 3;
@@ -127,7 +166,22 @@ async function buildMultiSourceCascade(sourceLinks: Array<{ url: string; source_
   return ranked
     .map((entry) => {
       const site = siteFromDomain(siteByUrl.get(entry.url) || "");
-      return { ...entry, source_site: site || "unknown", rating: ratingBySite.get(site) ?? 5 };
+      const sourceKind = classifySourceKind(entry.url);
+      const canonicalLocator = sourceKind === "ephemeral_direct" ? undefined : entry.url;
+      const expiresAt = sourceKind === "ephemeral_direct" ? parseStreamExpiry(entry.url).expiresAt : undefined;
+      const explicitlyExpired = expiresAt !== undefined && expiresAt <= Date.now();
+      return {
+        ...entry,
+        original_url: entry.url,
+        canonical_locator: canonicalLocator,
+        is_proxyable: entry.type === "direct" && !explicitlyExpired,
+        is_refreshable: Boolean(canonicalLocator),
+        delivery_mode: entry.type === "direct" && !explicitlyExpired ? "direct_trial" as const : "embed" as const,
+        ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+        ...(explicitlyExpired ? { failure_reason: "expired_without_locator" as const } : {}),
+        source_site: site || "unknown",
+        rating: ratingBySite.get(site) ?? 5,
+      };
     })
     .sort((a, b) => {
       if (b.rating !== a.rating) return b.rating - a.rating;
@@ -566,6 +620,33 @@ async function startServer() {
     }
   });
 
+  // GET /api/v1/proxy/image - Lightweight image proxy to bypass CORS
+  app.get("/api/v1/proxy/image", async (req: Request, res: Response) => {
+    const targetUrl = req.query.url as string;
+    if (!targetUrl || !targetUrl.startsWith("http")) {
+      return res.status(400).send("Invalid URL");
+    }
+    try {
+      const fetchRes = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": new URL(targetUrl).origin,
+        },
+      });
+      if (!fetchRes.ok) {
+        return res.status(fetchRes.status).send("Failed to fetch image");
+      }
+      res.setHeader("Content-Type", fetchRes.headers.get("content-type") || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400"); // Cache 1 day
+
+      const arrayBuffer = await fetchRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      res.end(buffer);
+    } catch (e) {
+      res.status(500).send("Error proxying image");
+    }
+  });
+
   /**
    * Busca episodios de la misma obra en OTRAS plataformas y resuelve sus streams en paralelo.
    * Devuelve un mapa de plataforma → streams[] para merge con la plataforma primaria.
@@ -711,58 +792,22 @@ async function startServer() {
           }
         }
 
-        // Ordenar por SiteRating de la plataforma
-        const ratedLinks = await Promise.all(
-          Array.from(siteLinks.values()).map(async (link) => ({
-            link,
-            rating: await getSiteRating(link.source_site),
-          }))
-        );
-        ratedLinks.sort((a, b) => b.rating - a.rating);
-        const topLinks = ratedLinks.slice(0, 4).map(r => r.link); // Máx 4 extractores paralelos
+        // La cascada consulta y ordena ratings una sola vez.
+        const topLinks = Array.from(siteLinks.values());
 
         let title = `${mediaEpisode.media_item.title} - Episodio ${mediaEpisode.episode_number}`;
-
-        // Extraer streams JIT de cada página origen en paralelo
-        const resolutions = await Promise.allSettled(
-          topLinks.map(async (link) => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 8000);
-            try {
-              const extracted = await extractStreamFromUrl(link.url);
-              clearTimeout(timer);
-              const streams = Array.from(
-                new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
-              );
-              const ranked = rankStreams(streams, getServerPriorities(link.source_site));
-              return { site: link.source_site, ranked, sourceUrl: link.url };
-            } catch {
-              clearTimeout(timer);
-              return { site: link.source_site, ranked: [], sourceUrl: link.url };
-            }
-          })
-        );
-
-        const ranked: Array<{ url: string; type: string; tier: number; host: string | null; source_site: string }> = [];
-        const allMergedStreams: string[] = [];
-        const primarySourceUrl = topLinks[0]?.url || "";
-
-        for (const r of resolutions) {
-          if (r.status === "fulfilled" && r.value.ranked.length > 0) {
-            const streamsWithSite = r.value.ranked.map(s => ({ ...s, source_site: r.value.site }));
-            ranked.push(...streamsWithSite);
-            allMergedStreams.push(...streamsWithSite.map(s => s.url));
-          }
-        }
-
-        // Prioridad: El mejor de los rankeados, o la página origen si falló todo
-        const streamUrl = ranked[0]?.url || primarySourceUrl;
+        // Esta ruta queda deliberadamente DB-only: devuelve las fuentes canónicas
+        // y el frontend resuelve solo la elegida mediante /resolve-embed. Así una
+        // apertura no dispara cuatro scrapers concurrentes en el host de 2 GB.
+        const ranked = await buildMultiSourceCascade(topLinks);
+        const allMergedStreams = ranked.map((entry) => entry.url);
+        const streamUrl = ranked[0]?.url || topLinks[0]?.url || "";
 
         return res.json({
           episode_id: mediaEpisode.id,
           stream_url: streamUrl,
           title,
-          all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [primarySourceUrl],
+          all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [streamUrl],
           ranked_streams: ranked,
         });
       }
@@ -887,57 +932,113 @@ async function startServer() {
     }
   });
 
-  // POST /api/v1/resolve-embed - ResoluciÃ³n hÃ­brida (Regex rÃ¡pido -> Playwright Fallback con cachÃ©)
+  // La sesión proxy nace solo cuando el navegador demuestra que la entrega
+  // directa no sirve o el perfil exige headers protegidos.
+  app.post("/api/v1/playback/sessions", async (req: Request, res: Response) => {
+    const originalInput = typeof req.body?.original_url === "string" ? req.body.original_url.trim() : "";
+    const resolutionId = typeof req.body?.resolution_id === "string"
+      ? req.body.resolution_id.trim().slice(0, 200)
+      : "";
+    if (!originalInput) return res.status(400).json({ error: "original_url requerida" });
+    if (runtimeBudget.shouldFallback()) {
+      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
+    }
+
+    let originalUrl: string;
+    try {
+      originalUrl = (await assertSafePublicHttpUrl(originalInput)).toString();
+    } catch (error) {
+      const detail = error instanceof UnsafeUrlError ? error.code : "unsafe_url";
+      return res.status(400).json({ error: "URL no permitida", detail });
+    }
+
+    const resolutionLease = runtimeBudget.tryBeginResolution();
+    if (!resolutionLease) {
+      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
+    }
+    try {
+      const cached = resolutionId
+        ? resolutionCoordinator.getByResolutionId(resolutionId, originalUrl)
+        : undefined;
+      const meta = cached ?? await resolutionCoordinator.resolve(originalUrl);
+      // Proxyable and renewable are different properties. A current signed URL
+      // may be relayed until its own deadline even when no stable locator exists
+      // to renew it later.
+      if (!meta.resolved || !meta.url || meta.is_proxyable === false) {
+        return res.status(422).json({
+          error: "stream_not_proxyable",
+          fallback: "embed",
+          failure_reason: meta.failure_reason || "unresolved",
+        });
+      }
+      const session = playbackSessions.createFromResolved(originalUrl, meta);
+      return res.status(201).json({
+        session_id: session.id,
+        playback_url: `/api/v1/playback/${encodeURIComponent(session.id)}/master.m3u8`,
+        expires_at: session.current.expires_at,
+        refresh_after: session.current.refresh_after,
+        generation: session.current.generation,
+        is_proxyable: session.current.is_proxyable ?? true,
+        is_refreshable: session.current.is_refreshable ?? Boolean(session.current.canonical_locator),
+      });
+    } catch (error) {
+      console.warn("[PlaybackSession] No se pudo crear sesión ligera:", error instanceof Error ? error.message : error);
+      return res.status(502).json({ error: "session_resolution_failed", fallback: "embed" });
+    } finally {
+      resolutionLease.release();
+    }
+  });
+
+  app.get("/api/v1/playback/:sessionId/master.m3u8", playbackSessionHandlers.masterManifest);
+  app.get("/api/v1/playback/:sessionId/resource/:resourceId", playbackSessionHandlers.resource);
+
+  // Snapshot inmediato: nunca espera las sondas. Los datos se actualizan en
+  // segundo plano con stale-while-revalidate para no sumar latencia al play.
+  app.post("/api/v1/streams/health", async (req: Request, res: Response) => {
+    const candidates = Array.isArray(req.body?.urls) ? req.body.urls : [];
+    const urls = [...new Set(candidates
+      .filter((value: unknown): value is string => typeof value === "string" && /^https?:\/\//i.test(value))
+      .map((value: string) => value.trim()))]
+      .slice(0, 4);
+    return res.json(await streamHealthService.getSnapshot(urls));
+  });
+
+  // POST /api/v1/resolve-embed - Resolución HTTP/estática ligera. Las sesiones
+  // proxy se crean aparte y solo bajo demanda del reproductor.
   app.post(["/api/v1/resolve-embed", "/api/resolve-embed"], async (req: Request, res: Response) => {
-    const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
-    if (!rawUrl) {
+    const rawInput = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!rawInput) {
       return res.status(400).json({ error: "URL requerida" });
+    }
+    let rawUrl: string;
+    try {
+      rawUrl = (await assertSafePublicHttpUrl(rawInput)).toString();
+    } catch (error) {
+      const detail = error instanceof UnsafeUrlError ? error.code : "unsafe_url";
+      return res.status(400).json({ error: "URL no permitida", detail });
+    }
+    const resolutionLease = runtimeBudget.tryBeginResolution();
+    if (!resolutionLease) {
+      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
     }
 
     try {
-      // 1. Capa RÃ¡pida: EmbedResolvers (Regex & Desempaquetador JS)
-      const meta = await EmbedResolvers.resolveWithMeta(rawUrl);
+      // Capa ligera: fetch HTTP + extractores específicos, sin navegador headless.
+      const meta = await resolutionCoordinator.resolve(rawUrl);
       if (meta.resolved) {
-        return res.json({
-          url: meta.url,
-          original_url: rawUrl,
-          resolved: true,
-          type: "direct",
-          provider: meta.provider,
-          requiredHeaders: meta.requiredHeaders,
-          strategy: "regex_fast",
-        });
+        return res.json(buildResolveDeliveryResponse(meta, "regex_fast", deliveryPlanner));
       }
 
-      // 2. Capa Avanzada: Playwright Headless Sniffer (Solo para embeds difÃ­ciles como VOE, Filemoon, etc.)
-      const playwrightUrl = await playwrightResolver.resolve(rawUrl);
-      if (
-        playwrightUrl &&
-        EmbedResolvers.isDirectMediaUrl(playwrightUrl) &&
-        !EmbedResolvers.isPlaceholderUrl(playwrightUrl)
-      ) {
-        return res.json({
-          url: playwrightUrl,
-          original_url: rawUrl,
-          resolved: true,
-          type: "direct",
-          provider: meta.provider,
-          strategy: "playwright_sniffer",
-        });
-      }
-
-      // 3. Fallback: Mantener URL original en modo embed
-      return res.json({
-        url: meta.url || rawUrl,
-        original_url: rawUrl,
-        resolved: false,
-        type: "embed",
-        provider: meta.provider,
-        requiredHeaders: meta.requiredHeaders,
-        strategy: "unresolved_embed",
-      });
+      // Fallback barato: el navegador abre el embed o avanza al siguiente host.
+      return res.json(buildResolveDeliveryResponse(
+        { ...meta, url: meta.url || rawUrl },
+        "unresolved_embed",
+        deliveryPlanner,
+      ));
     } catch (e: any) {
       return res.status(500).json({ error: e.message || "Error al resolver embed" });
+    } finally {
+      resolutionLease.release();
     }
   });
 
@@ -1878,15 +1979,46 @@ async function startServer() {
     if (body.limit !== undefined && (!Number.isFinite(Number(body.limit)) || Number(body.limit) <= 0)) {
       return res.status(400).json({ ok: false, detail: "limit must be a positive number" });
     }
+    if (body.pages_per_platform !== undefined && (!Number.isFinite(Number(body.pages_per_platform)) || Number(body.pages_per_platform) <= 0)) {
+      return res.status(400).json({ ok: false, detail: "pages_per_platform must be a positive number" });
+    }
     const result = runVerification({
       mode: body.mode,
       platforms: Array.isArray(body.platforms) ? body.platforms : undefined,
       limit: body.limit ? Math.round(Number(body.limit)) : undefined,
+      pages_per_platform: body.pages_per_platform ? Math.round(Number(body.pages_per_platform)) : undefined,
     });
     if (!result.started) {
       return res.status(409).json({ ok: false, started: false, reason: result.reason, status: getVerificationStatus() });
     }
     res.status(202).json({ ok: true, started: true, status: getVerificationStatus() });
+  });
+
+  // POST /api/v1/verification/pause
+  app.post("/api/v1/verification/pause", (_req: Request, res: Response) => {
+    const result = pauseVerification();
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  });
+
+  // POST /api/v1/verification/resume
+  app.post("/api/v1/verification/resume", (_req: Request, res: Response) => {
+    const result = resumeVerification();
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  });
+
+  // POST /api/v1/verification/stop
+  app.post("/api/v1/verification/stop", (_req: Request, res: Response) => {
+    const result = stopVerification();
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
   });
 
   // POST /api/v1/worker/clear-finished
@@ -1996,6 +2128,15 @@ async function startServer() {
       durationBeforeErrorMs,
       details,
     });
+    if (eventType === "playback_started") {
+      reportPlaybackSignal(serverUrl, { ok: true, latencyMs: durationBeforeErrorMs });
+    } else if (eventType === "playback_error" || eventType === "black_screen_stalled") {
+      reportPlaybackSignal(serverUrl, {
+        ok: false,
+        reason: eventType === "black_screen_stalled" ? "playback_timeout" : "playback_error",
+        latencyMs: durationBeforeErrorMs,
+      });
+    }
     res.json({ status: "ok", entry });
   });
 

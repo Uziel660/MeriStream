@@ -131,7 +131,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       .replace(/\s*\((?:TV|Movie|OVA|ONA)\)\s*/gi, " ")
       .trim();
 
-    const title = rawTitle || h1Title || "Anime VerAnimes";
+    const title = rawTitle || h1Title || this.titleFromUrl(url) || "Anime";
 
     const ogImage = $('meta[property="og:image"]').attr("content");
     const poster_url = ogImage ? this.resolveRelativeUrl(ogImage, url) : undefined;
@@ -661,7 +661,7 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
 
   private titleFromUrl(url: string): string {
     const match = url.match(/\/(?:anime|ver)\/([^/?#]+)/);
-    if (!match) return "Anime VerAnimes";
+    if (!match) return "Anime";
     return match[1]
       .replace(/-\d+$/, "")
       .replace(/-/g, " ")

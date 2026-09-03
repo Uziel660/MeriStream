@@ -115,7 +115,7 @@ export function buildPageUrl(baseUrl: string, pageNumber: number): string {
     const origin = url.origin;
 
     // 3. Patrones específicos de hosts conocidos
-    if (/(^|\.)animeflv\.(or\.at|la|cc|pe|iu|se)$/.test(host)) {
+    if (/(^|\.)animeflv\.(or\.(?:at|am)|la|cc|pe|iu|se)$/.test(host)) {
       return `${origin}${path}/page/${pageNumber}/`;
     }
     if (/(^|\.)tioplus\.app$/.test(host)) {

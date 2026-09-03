@@ -1,0 +1,21 @@
+{
+  "dry_run": true,
+  "start_time": "2026-09-02T22:54:01.791Z",
+  "end_time": "2026-09-02T22:54:01.803Z",
+  "duration_ms": 12,
+  "total_records_considered": 67,
+  "processed_records": 67,
+  "imported_media_items": 67,
+  "imported_media_episodes": 67,
+  "imported_canonical_sources": 67,
+  "excluded_ephemeral_sources": 0,
+  "skipped_records": 0,
+  "errors": [],
+  "cursor_state": {
+    "version": 1,
+    "lastProcessedIndex": 66,
+    "lastProcessedTitle": "Rob1n",
+    "processedCount": 67,
+    "updatedAt": "2026-09-02T22:54:01.803Z"
+  }
+}

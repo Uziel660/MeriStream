@@ -23,7 +23,7 @@ import {
   Zap,
   Info,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, type PlaybackResolution } from '../api/client';
 import type { MediaStreamOut, SubtitleTrack, MediaStreamVariant, RankedStream } from '../types';
 // proxiedStreamUrl removed
 import {
@@ -31,6 +31,7 @@ import {
   quickProbeServerHealth,
   hasExpiringSignature,
   applyBackendTiers,
+  scoredServerFromRanked,
   type ScoredServer,
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
@@ -44,6 +45,9 @@ import {
   shouldScheduleRenewal,
   canEscalateToProxy,
   isExpiredWithoutLocator,
+  isUnresolvedCanonical,
+  isRealPlayableEmbed,
+  prioritizeDirectCandidates,
   hasAttemptedMode,
   recordAttemptedMode,
   DIRECT_WATCHDOG_MS,
@@ -123,15 +127,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const playbackConfirmedRef = useRef<boolean>(false);
   const bufferCountRef = useRef<number>(0);
   const bufferingStartMsRef = useRef<number | null>(null);
+  // Preserva la posición al cambiar entre una fuente subtitulada/doblada o
+  // durante un failover. Se consume al recibir MANIFEST_PARSED/metadata.
+  const pendingResumeTimeRef = useRef<number | null>(null);
 
   // Estados de Servidores y Selección Inteligente
   const [servers, setServers] = useState<ScoredServer[]>([]);
   const [activeServerIndex, setActiveServerIndex] = useState<number>(0);
   const [serverHealthMap, setServerHealthMap] = useState<Record<string, 'online' | 'checking' | 'failed'>>({});
   const [streamInfo, setStreamInfo] = useState<MediaStreamOut | null>(null);
+  const [resolvedSubtitleTracks, setResolvedSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [isLoadingStream, setIsLoadingStream] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [failoverNotice, setFailoverNotice] = useState<string | null>(null);
+  const [canonicalResolveError, setCanonicalResolveError] = useState<string | null>(null);
   // Aviso con acción manual: un embed sin confirmar deja de hacer failover
   // automático; se muestra una notificación interactiva para que el usuario elija.
   const [embedStall, setEmbedStall] = useState<{ message: string; targetIndex: number } | null>(null);
@@ -173,6 +182,27 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [audioTracks, setAudioTracks] = useState<AudioOption[]>([]);
   const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | 'off'>('off');
+
+  const subtitleTracks: SubtitleTrack[] = resolvedSubtitleTracks.length > 0
+    ? resolvedSubtitleTracks
+    : (streamInfo?.subtitles || []);
+  const renditionServers = servers
+    .map((server, index) => ({ server, index }))
+    .filter(({ server }) => Boolean(server.link_type || server.language || server.audio_language || server.subtitle_language));
+
+  const renditionLabel = (server: ScoredServer): string => {
+    const linkType = (server.link_type || '').toLowerCase();
+    const rendition = (server.language || '').toLowerCase();
+    const audio = server.audio_language?.toUpperCase();
+    const subtitle = server.subtitle_language?.toUpperCase();
+    if (rendition === 'dub' || linkType === 'dub' || audio === 'ES' || audio === 'EN') {
+      return `Audio ${audio || 'Doblado'}`;
+    }
+    if (rendition === 'sub' || linkType === 'sub' || subtitle) {
+      return `Subtítulos ${subtitle || 'Originales'}`;
+    }
+    return server.language?.toUpperCase() || 'Idioma alternativo';
+  };
 
   const rawTitle: string =
     props.title || media?.title || props.item?.title || props.result?.title || '';
@@ -268,6 +298,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     let cancelled = false;
     setIsLoadingStream(props.isLoading === true);
     setLoadError(null);
+    setResolvedSubtitleTracks([]);
 
     if (props.isLoading) {
       return;
@@ -279,81 +310,45 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return;
     }
 
-    const rawDirect = directSource?.url || props.streamUrl || props.src || media?.stream_url;
-    const allCandidateUrls: string[] = Array.from(
-      new Set(
-        [
-          rawDirect,
-          ...(props.all_streams || []),
-          ...(media?.all_streams || []),
-          ...(media?.all_available_streams || []),
-          media?.sources?.master_m3u8,
-          media?.sources?.fallback_mp4,
-          ...(media?.sources?.qualities?.map((q: { url: string }) => q.url) || []),
-        ].filter(Boolean) as string[]
-      )
-    );
+    let candidateServers: ScoredServer[] = [];
 
-    if (allCandidateUrls.length > 0) {
-      // Ordenar inteligentemente por máxima calidad y salud, luego aplicar la
-      // jerarquía de tiers del backend (ranked_streams) como orden primario.
-      const ranked = applyBackendTiers(rankAndSortServers(allCandidateUrls), props.ranked_streams);
+    // 1. Construcción directa desde ranked_streams si existen
+    if (props.ranked_streams && props.ranked_streams.length > 0) {
+      candidateServers = prioritizeDirectCandidates(
+        props.ranked_streams.map((r, idx) => scoredServerFromRanked(r, idx)),
+      );
+    } else {
+      const rawDirect = directSource?.url || props.streamUrl || props.src || media?.stream_url;
+      const allCandidateUrls: string[] = Array.from(
+        new Set(
+          [
+            rawDirect,
+            ...(props.all_streams || []),
+            ...(media?.all_streams || []),
+            ...(media?.all_available_streams || []),
+            media?.sources?.master_m3u8,
+            media?.sources?.fallback_mp4,
+            ...(media?.sources?.qualities?.map((q: { url: string }) => q.url) || []),
+          ].filter(Boolean) as string[]
+        )
+      );
+
+      if (allCandidateUrls.length > 0) {
+        candidateServers = applyBackendTiers(rankAndSortServers(allCandidateUrls), props.ranked_streams);
+      }
+    }
+
+    if (candidateServers.length > 0) {
+      const ranked = candidateServers;
       const signature = serversStableSignature(ranked);
 
       if (candidateSignatureRef.current !== signature) {
         candidateSignatureRef.current = signature;
         setServers(ranked);
-        setActiveServerIndex(0); // El índice 0 es el de mayor calidad y mejor salud por defecto
+        const firstPlayableIdx = ranked.findIndex((s) => !isExpiredWithoutLocator(s) && !s.notPlayable);
+        setActiveServerIndex(firstPlayableIdx >= 0 ? firstPlayableIdx : 0);
       }
       setIsLoadingStream(false);
-
-      // RE-RESOLVE JUST-IN-TIME (#11): si TODOS los candidatos son páginas
-      // web crudas o firmas expiradas, re-resolver contra el backend antes de
-      // dar play (el resolve devuelve servidores frescos reproducibles).
-      const primary = ranked[0];
-      const needsJit =
-        primary &&
-        !primary.isEmbed &&
-        (primary.notPlayable || hasExpiringSignature(primary.url)) &&
-        !jitInFlightRef.current.has(primary.id);
-      if (needsJit && primary) {
-        jitInFlightRef.current.add(primary.id);
-        api
-          .resolveEmbed(primary.url)
-          .then((res) => {
-            if (cancelled) return;
-            if (res.failure_reason === 'expired_without_locator') {
-              setServers((prev) => {
-                const copy = [...prev];
-                if (copy[0]) {
-                  copy[0] = applyResolution(copy[0], res);
-                }
-                return copy;
-              });
-              if (ranked.length > 1) {
-                handleServerChange(1, true);
-              } else {
-                setDeliveryState('error');
-                setPlaybackError(MSG_EXPIRED_WITHOUT_LOCATOR);
-              }
-              return;
-            }
-            if (res?.resolved && res.url && res.url !== primary.url) {
-              const nextMetadata = applyResolution(primary, res);
-              setServers((prev) => {
-                const copy = [...prev];
-                if (copy[0]) {
-                  copy[0] = { ...nextMetadata, notPlayable: false, label: `[Re-resuelto] ${copy[0].provider}` };
-                }
-                return copy;
-              });
-            }
-          })
-          .catch(() => {})
-          .finally(() => {
-            jitInFlightRef.current.delete(primary!.id);
-          });
-      }
 
       // Comprobar salud en segundo plano para enriquecer la UI sin retrasar el inicio (máx 4 candidatos)
       const initialMap: Record<string, 'online' | 'checking' | 'failed'> = {};
@@ -395,6 +390,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         .then((info) => {
           if (cancelled) return;
           setStreamInfo(info);
+          setResolvedSubtitleTracks(info.subtitles || []);
 
           const variantUrls = info.variants?.map((v: MediaStreamVariant) => v.url) || [];
           const masterUrl = (info as any).master_m3u8;
@@ -442,6 +438,122 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // /ver/<slug>-<n> nunca fueron media. Antes de dar play, se re-resuelven en
   // caliente vía episode-servers/resolve-embed. Se intenta UNA vez por servidor.
   const jitInFlightRef = useRef<Set<string>>(new Set());
+  const jitCompletedRef = useRef<Set<string>>(new Set());
+
+  // Resolver únicamente el servidor activo. Esto evita que una fuente vencida
+  // del índice 0 sobrescriba o dispare failover sobre otro candidato que el
+  // usuario ya eligió.
+  useEffect(() => {
+    const server = activeServer;
+    // Un candidato marcado como página canónica/no reproducible no es un
+    // iframe: es un localizador que debe resolverse Just-In-Time. Los embeds
+    // reales sí permanecen en el flujo iframe y no se consultan aquí.
+    if (!server || (server.isEmbed && !isUnresolvedCanonical(server.url))) return;
+
+    const signedNeedsJit =
+      hasExpiringSignature(server.url) &&
+      (!server.expires_at || server.expires_at <= Date.now()) &&
+      !server.resolved_at;
+    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit;
+    if (!needsJit) {
+      setCanonicalResolveError(null);
+      return;
+    }
+
+    const locator = canonicalUrlOf(server) || server.url;
+    const jitKey = `${server.id}|${locator}`;
+    if (jitInFlightRef.current.has(jitKey) || jitCompletedRef.current.has(jitKey)) return;
+
+    const attemptId = attemptIdRef.current;
+    const targetId = server.id;
+    const targetIndex = activeServerIndex;
+    let cancelled = false;
+    jitInFlightRef.current.add(jitKey);
+    jitCompletedRef.current.add(jitKey);
+    setCanonicalResolveError(null);
+    setDeliveryState('resolving');
+
+    // Las páginas canónicas de episodio necesitan el adaptador del proveedor
+    // (AnimeFLV/TioAnime/Cinecalidad/etc.), no el resolver genérico de embeds.
+    // Ese endpoint sigue siendo JIT y no escribe en la BD, pero sí ejecuta la
+    // receta correcta de catálogo → episodio → media.
+    const resolutionPromise = isUnresolvedCanonical(locator)
+      ? api.getEpisodeServers(locator).then((episodeResult) => {
+          const isMediaUrl = (value: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(value) || value.includes('/m3u8/');
+          const ranked = Array.isArray(episodeResult.ranked_streams) ? episodeResult.ranked_streams : [];
+          const first = ranked.find((candidate) => candidate?.url && (candidate.type === 'direct' || isMediaUrl(candidate.url))) || ranked[0];
+          const resolvedUrl = first?.url || episodeResult.stream_url || '';
+          const resolved = Boolean(episodeResult.resolved && resolvedUrl && resolvedUrl !== locator && !isUnresolvedCanonical(resolvedUrl));
+          return {
+            url: resolved ? resolvedUrl : locator,
+            original_url: locator,
+            canonical_locator: locator,
+            resolved,
+            type: resolved && first?.type !== 'embed' ? 'direct' as const : 'embed' as const,
+            delivery_mode: resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const,
+            is_proxyable: resolved,
+            is_refreshable: true,
+            provider: first?.provider,
+            requiredHeaders: first?.requiredHeaders || episodeResult.requiredHeaders,
+            subtitles: first?.subtitles?.flatMap((track) => {
+              const src = track.src || track.url;
+              return src ? [{ ...track, src }] : [];
+            }),
+          } as PlaybackResolution;
+        })
+      : api.resolveEmbed(locator);
+
+    resolutionPromise
+      .then((res) => {
+        if (cancelled || attemptId !== attemptIdRef.current) return;
+
+        if (res.failure_reason === 'expired_without_locator') {
+          setServers((prev) => prev.map((candidate) =>
+            candidate.id === targetId ? { ...applyResolution(candidate, res), notPlayable: true } : candidate
+          ));
+          setCanonicalResolveError(MSG_EXPIRED_WITHOUT_LOCATOR);
+          setDeliveryState('error');
+          if (targetIndex < servers.length - 1) {
+            handleServerChange(targetIndex + 1, true);
+          } else {
+            setPlaybackError(MSG_EXPIRED_WITHOUT_LOCATOR);
+          }
+          return;
+        }
+
+        if (!res.resolved || !res.url) {
+          if (isUnresolvedCanonical(server.url)) {
+            setCanonicalResolveError('No se pudo extraer un stream reproducible de esta página.');
+            setDeliveryState('error');
+          } else {
+            setDeliveryState('playing_direct');
+          }
+          return;
+        }
+
+        setServers((prev) => prev.map((candidate) => {
+          if (candidate.id !== targetId) return candidate;
+          return { ...applyResolution(candidate, res), notPlayable: false };
+        }));
+        setCanonicalResolveError(null);
+      })
+      .catch(() => {
+        if (cancelled || attemptId !== attemptIdRef.current) return;
+        setCanonicalResolveError(
+          isUnresolvedCanonical(server.url)
+            ? 'No se pudo contactar al resolutor. Puedes probar otro servidor.'
+            : 'No se pudo renovar esta fuente.'
+        );
+        setDeliveryState('error');
+      })
+      .finally(() => {
+        jitInFlightRef.current.delete(jitKey);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError]);
 
   // Fallback Mega: dado un stream local /api/v1/stream/mega?url=..., derivar la URL
   // /embed/ oficial para inyectarla como iframe si el descifrado nativo falla (cuota).
@@ -508,6 +620,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     // intento anterior (punto 6 y 7).
     attemptIdRef.current += 1;
     const targetIndex = index;
+    const currentPosition = videoRef.current?.currentTime || currentTime;
+    if (Number.isFinite(currentPosition) && currentPosition > 0.5) {
+      pendingResumeTimeRef.current = currentPosition;
+    }
 
     if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
     if (renewalTimerRef.current) clearTimeout(renewalTimerRef.current);
@@ -539,6 +655,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       // Selección manual del usuario: resetear contador e historial de modos intentados
       autoFailoverCountRef.current = 0;
       attemptedModesRef.current.clear();
+      // Permitir reintentar una resolución JIT si el usuario vuelve a elegir
+      // manualmente la fuente después de un error transitorio.
+      jitCompletedRef.current.clear();
     }
 
     // Destruir la instancia HLS anterior y eliminar listeners nativos pendientes.
@@ -579,15 +698,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video || !url || activeServer?.isEmbed) return;
 
-    // Protección contra carreras: este intento pertenece al attemptId actual.
-    const attemptId = attemptIdRef.current;
-
-    if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
-    if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
-    playbackConfirmedRef.current = false;
-    loadStartMsRef.current = Date.now();
-
-    // Regla 1: expired_without_locator jamás entra en trying_direct ni requesting_proxy
+    // Las páginas canónicas y candidatos marcados como no reproducibles solo
+    // pueden pasar por el resolutor JIT; nunca deben llegar a HLS.js como si
+    // fueran un manifiesto. La rama de expiración sí se evalúa primero para
+    // poder saltar una URL firmada vencida cuando corresponda.
     if (isExpiredWithoutLocator(activeServer)) {
       if (activeServerIndex < servers.length - 1) {
         handleServerChange(activeServerIndex + 1, true);
@@ -597,6 +711,18 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
       return;
     }
+    if (activeServer?.notPlayable || isUnresolvedCanonical(activeServer.url)) {
+      setDeliveryState('resolving');
+      return;
+    }
+
+    // Protección contra carreras: este intento pertenece al attemptId actual.
+    const attemptId = attemptIdRef.current;
+
+    if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
+    if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
+    playbackConfirmedRef.current = false;
+    loadStartMsRef.current = Date.now();
 
     // Watchdog de pantalla negra: si tras 6.5s no arranca frames ni playback, reportar stall
     blackScreenTimerRef.current = setTimeout(() => {
@@ -653,6 +779,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           if (attemptId !== attemptIdRef.current) return;
           // MANIFEST_PARSED => el directo arrancó: cancelar el watchdog directo.
           if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
+          // Un intento anterior puede haber dejado un mensaje de fallo mientras
+          // este manifiesto se resolvía. Un manifiesto válido invalida ese aviso.
+          setPlaybackError(null);
+          setEmbedStall(null);
           setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
           const levels: { index: number; label: string; height?: number }[] = data.levels.map((lvl: Level, idx: number) => ({
             index: idx,
@@ -666,8 +796,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             setCurrentResolutionLabel('Auto HD');
           }
 
-          if (props.initialTime && props.initialTime > 0) {
-            video.currentTime = props.initialTime;
+          const resumeTime = pendingResumeTimeRef.current ?? props.initialTime;
+          if (resumeTime && resumeTime > 0) {
+            video.currentTime = resumeTime;
+            pendingResumeTimeRef.current = null;
           }
 
           // Reproducir automáticamente de manera fluida
@@ -928,8 +1060,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       const onLoadedMetadata = () => {
         if (attemptId !== attemptIdRef.current) return;
         if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
-        if (props.initialTime && props.initialTime > 0) {
-          video.currentTime = props.initialTime;
+        const resumeTime = pendingResumeTimeRef.current ?? props.initialTime;
+        if (resumeTime && resumeTime > 0) {
+          video.currentTime = resumeTime;
+          pendingResumeTimeRef.current = null;
         }
         video.play().catch(() => {});
         playbackConfirmedRef.current = true;
@@ -949,7 +1083,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const lastAttachmentKey = useRef<string>('');
   useEffect(() => {
     const key = buildAttachmentKey(activeServer);
-    if (activeServer && !activeServer.isEmbed && lastAttachmentKey.current !== key) {
+    // Las páginas canónicas/no reproducibles se resuelven JIT; nunca se deben
+    // entregar a HLS.js como si fueran un manifiesto. El efecto de resolución
+    // actualizará el mismo candidato a una URL nativa y entonces este efecto
+    // volverá a ejecutarse con una clave de conexión nueva.
+    const isCanonicalPending = Boolean(
+      activeServer && (activeServer.notPlayable || isUnresolvedCanonical(activeServer.url))
+    );
+    if (activeServer && !activeServer.isEmbed && !isCanonicalPending && lastAttachmentKey.current !== key) {
       lastAttachmentKey.current = key;
       attachSource(activeServer.url || '');
     }
@@ -1038,9 +1179,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           return;
         }
 
-        // Embed NO resoluble por HTTP: conservar el iframe tal cual (sigue siendo
-        // válido). NO se ejecuta handleServerChange() automáticamente.
+        // Embed NO resoluble por HTTP o página canónica:
         if (!res || !res.resolved || !res.url) {
+          if (isUnresolvedCanonical(activeServer.url)) {
+            // Una página web canónica no resuelta NO es un embed real reproducible.
+            setDeliveryState('resolving');
+            setFailoverNotice('Página no reproducible directamente. Esperando resolución...');
+            return;
+          }
           setDeliveryState('playing_embed');
           setFailoverNotice('El servidor se mantiene como reproductor embebido.');
           setTimeout(() => setFailoverNotice(null), 2500);
@@ -1066,7 +1212,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setServers((prev) => {
           const copy = [...prev];
           if (copy[activeServerIndex]) {
-            copy[activeServerIndex] = applyResolution(copy[activeServerIndex], {
+              copy[activeServerIndex] = applyResolution(copy[activeServerIndex], {
               url: res.url,
               original_url: res.original_url,
               resolved: true,
@@ -1082,11 +1228,22 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               expires_at: res.expires_at,
               resolved_at: res.resolved_at,
               failure_reason: res.failure_reason,
-              requiredHeaders: res.requiredHeaders,
-            });
+                requiredHeaders: res.requiredHeaders,
+                subtitles: res.subtitles,
+              });
           }
           return copy;
         });
+
+        if (res.subtitles && res.subtitles.length > 0) {
+          setResolvedSubtitleTracks(res.subtitles.map((track, index) => ({
+            id: track.id || `resolved-sub-${index}`,
+            label: track.label || track.language || `Subtítulo ${index + 1}`,
+            language: track.language || 'en',
+            url: track.url || track.src || '',
+            is_default: Boolean(track.is_default ?? index === 0),
+          })).filter((track) => Boolean(track.url)));
+        }
 
         if (res.type === 'direct' || res.delivery_mode === 'direct' || res.delivery_mode === 'proxy_required') {
           setFailoverNotice(`Stream nativo optimizado con éxito (${res.provider || 'Servidor'})`);
@@ -1097,9 +1254,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       })
       .catch(() => {
         // Error de red/timeout del resolve: NO failover automático; el iframe sigue
-        // siendo válido y el timeout largo controlado decidirá si finalmente falla.
+        // siendo válido si era un embed real y el timeout largo controlado decidirá si finalmente falla.
         if (!cancelled && attemptId === attemptIdRef.current) {
-          setDeliveryState('playing_embed');
+          if (!isUnresolvedCanonical(activeServer.url)) {
+            setDeliveryState('playing_embed');
+          } else {
+            setDeliveryState('resolving');
+          }
         }
       })
       .finally(() => {
@@ -1154,17 +1315,32 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video || !activeServer || activeServer.isEmbed) return;
 
+    // Los eventos nativos pueden llegar después de destruir HLS.js durante un
+    // cambio de servidor. Asociarlos al intento evita que un error tardío del
+    // candidato anterior pinte "ningún servidor" sobre un stream ya activo.
+    const listenerAttemptId = attemptIdRef.current;
+
     bufferCountRef.current = 0;
     bufferingStartMsRef.current = null;
 
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
 
+      // Si el elemento ya avanza, cualquier overlay de un intento anterior es
+      // obsoleto. Esto cubre el caso en que un error nativo tardío llegó justo
+      // después de que HLS.js había comenzado a reproducir.
+      if (video.currentTime > 0.3 && !video.paused) {
+        setPlaybackError(null);
+        setEmbedStall(null);
+      }
+
       // Confirmar playback saludable y cancelar watchdog de pantalla negra y directo
       if (!playbackConfirmedRef.current && video.currentTime > 0.3) {
         playbackConfirmedRef.current = true;
         if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
         if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
+        setPlaybackError(null);
+        setEmbedStall(null);
         api.reportPlayerEvent({
           eventType: "playback_started",
           provider: activeServer.provider || "Servidor",
@@ -1196,7 +1372,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
 
     const onPlay = () => {
+      if (listenerAttemptId !== attemptIdRef.current) return;
       setIsPlaying(true);
+      setPlaybackError(null);
+      setEmbedStall(null);
       if (!playbackConfirmedRef.current && video.currentTime > 0.1) {
         playbackConfirmedRef.current = true;
         if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
@@ -1211,7 +1390,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
 
     const onPlaying = () => {
+      if (listenerAttemptId !== attemptIdRef.current) return;
       setIsPlaying(true);
+      setPlaybackError(null);
+      setEmbedStall(null);
       // El evento `playing` confirma reproducción real: cancelar el watchdog directo.
       if (directWatchdogRef.current) {
         clearTimeout(directWatchdogRef.current);
@@ -1268,6 +1450,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
 
     const onError = () => {
+      if (listenerAttemptId !== attemptIdRef.current) return;
+      // Un error nativo tardío no debe cubrir una reproducción que ya está
+      // confirmada y avanzando. Los errores HLS reales se procesan en el
+      // listener Hls.Events.ERROR, que conserva su propia protección de carrera.
+      if (playbackConfirmedRef.current && !video.paused && video.currentTime > 0.3) {
+        setPlaybackError(null);
+        return;
+      }
       // Solo actuar si no hay instancia Hls activa para no colisionar con Hls.Events.ERROR
       if (!hlsRef.current && activeServer && !activeServer.isEmbed) {
         if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
@@ -1520,6 +1710,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // botón solo repintaba el mismo src sin disparar ninguna petición nueva.
   const handleRetryCurrentServer = () => {
     if (!activeServer) return;
+    jitCompletedRef.current.clear();
+    setCanonicalResolveError(null);
     setPlaybackError(null);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -1561,6 +1753,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         {/* 1. TOP BAR MODERNA Y ELEGANTE (SIN SLOP)                                   */}
         {/* ========================================================================= */}
         <div
+          data-player-topbar
           className={`absolute top-0 inset-x-0 z-40 flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-300 ${
             controlsVisible || !isPlaying || Boolean(playbackError) ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
@@ -1612,7 +1805,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   title="Cambiar Servidor de Streaming"
                 >
                   <Server size={13} className="text-emerald-400" />
-                  <span className="hidden sm:inline">Servidor {activeServerIndex + 1}/{servers.length}</span>
+                  <span className="hidden sm:inline">
+                    {activeServer?.provider || (activeServer?.sourceSite ? activeServer.sourceSite.toUpperCase() : `Servidor ${activeServerIndex + 1}`)} ({activeServerIndex + 1}/{servers.length})
+                  </span>
                   <ChevronRight size={12} className={activeMenu === 'servers' ? 'rotate-90' : ''} />
                 </button>
 
@@ -1845,15 +2040,76 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {!isLoadingStream && !loadError && activeServer && (
             <>
-              {activeServer.isEmbed ? (
-                /* MODO EMBED IFRAME */
+              {activeServer.isEmbed && isRealPlayableEmbed(activeServer) ? (
+                /* MODO EMBED IFRAME REAL */
                 <iframe
                   key={activeServer.url}
                   src={activeServer.url}
+                  title={`Reproductor embebido de ${activeServer.provider || activeServer.sourceSite || 'la fuente seleccionada'}`}
                   className="h-full w-full border-0 bg-black"
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
                   allowFullScreen
+                  onLoad={() => {
+                    // En iframes cross-origin no existe una señal fiable de
+                    // `playing`; la carga del documento es la única señal
+                    // segura y evita mostrar un falso aviso de stall a los
+                    // 20 s cuando el reproductor ya está activo.
+                    playbackConfirmedRef.current = true;
+                    setDeliveryState('playing_embed');
+                    setEmbedStall(null);
+                  }}
                 />
+              ) : isUnresolvedCanonical(activeServer.url) || activeServer.notPlayable ? (
+                /* ESTADO RESOLVIENDO FUENTE CANÓNICA NO RESUELTA */
+                <div className="flex flex-col items-center gap-4 text-white z-20 px-6 text-center animate-in fade-in duration-200">
+                  <div className="relative flex items-center justify-center">
+                    <div className={`h-14 w-14 rounded-full border-2 ${canonicalResolveError ? 'border-amber-500/30 border-t-amber-400' : 'border-emerald-500/20 border-t-emerald-500 animate-spin'}`} />
+                    <Zap size={20} className={`absolute ${canonicalResolveError ? 'text-amber-400' : 'text-emerald-400 animate-pulse'}`} />
+                  </div>
+                  <div className="flex flex-col items-center gap-1.5 max-w-md">
+                    <p className="text-base font-semibold text-white tracking-wide">
+                      {canonicalResolveError ? 'Fuente no disponible' : `Resolviendo fuente de ${activeServer.sourceSite ? activeServer.sourceSite.toUpperCase() : activeServer.provider}...`}
+                    </p>
+                    <p className="text-xs text-zinc-400">
+                      {canonicalResolveError || 'Esta página canónica no contiene un reproductor directo y se está extrayendo su stream nativo.'}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex items-center gap-3">
+                    {canonicalResolveError && (
+                      <button
+                        type="button"
+                        onClick={handleRetryCurrentServer}
+                        className="flex items-center gap-2 rounded-lg bg-zinc-800 border border-zinc-700 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 transition"
+                      >
+                        <RotateCcw size={14} /> Reintentar
+                      </button>
+                    )}
+                    {servers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleServerChange((activeServerIndex + 1) % servers.length, false)}
+                        className="flex items-center gap-2 rounded-lg bg-zinc-800 border border-zinc-700 px-4 py-2 text-xs font-medium text-emerald-400 hover:bg-zinc-700 hover:text-emerald-300 transition"
+                      >
+                        Probar siguiente servidor <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : activeServer.isEmbed ? (
+                /* Embed no reproducible */
+                <div className="flex flex-col items-center gap-3 px-6 text-center z-20">
+                  <Info className="h-8 w-8 text-amber-400" />
+                  <p className="text-sm text-zinc-200">Servidor embebido no disponible directamente.</p>
+                  {servers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleServerChange((activeServerIndex + 1) % servers.length, false)}
+                      className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs text-white hover:bg-zinc-700 transition"
+                    >
+                      Pasar al siguiente servidor
+                    </button>
+                  )}
+                </div>
               ) : (
                 /* MODO NATIVO HLS */
                 <>
@@ -1863,7 +2119,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     playsInline
                     preload="auto"
                   >
-                    {streamInfo?.subtitles?.map((sub: SubtitleTrack) => (
+                    {subtitleTracks.map((sub: SubtitleTrack) => (
                       <track
                         key={sub.id}
                         kind="subtitles"
@@ -1917,6 +2173,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         {/* 3. BARRA INFERIOR DE CONTROLES CINEMATOGRÁFICA (SIN SLOP)                 */}
         {/* ========================================================================= */}
         <div
+          data-player-controls
           className={`absolute bottom-0 inset-x-0 z-40 flex flex-col bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 sm:px-6 pt-6 pb-4 transition-opacity duration-300 ${
             controlsVisible || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
@@ -2040,7 +2297,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 {/* LADO DERECHO: AUDIO, SUBTÍTULOS, VELOCIDAD, CALIDAD, PIP, FULLSCREEN */}
                 <div className="flex items-center gap-2 sm:gap-3">
                   {/* MENÚ DE IDIOMA / PISTAS DE AUDIO */}
-                  {audioTracks.length > 0 && (
+                  {(audioTracks.length > 0 || renditionServers.length > 0) && (
                     <div className="relative">
                       <button
                         type="button"
@@ -2072,13 +2329,38 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                               {activeAudioTrack === track.id && <Check size={12} />}
                             </button>
                           ))}
+                          {renditionServers.length > 0 && (
+                            <>
+                              <span className="mt-1 block border-t border-zinc-800 px-2.5 pt-2 text-[10px] font-bold text-zinc-400 uppercase">
+                                Fuentes por idioma
+                              </span>
+                              {renditionServers.map(({ server, index }) => (
+                                <button
+                                  key={`rendition-${server.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    handleServerChange(index);
+                                    setActiveMenu('none');
+                                  }}
+                                  className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
+                                    activeServerIndex === index
+                                      ? 'text-emerald-400 font-semibold bg-zinc-800'
+                                      : 'text-zinc-200 hover:bg-zinc-800/60'
+                                  }`}
+                                >
+                                  <span className="truncate">{renditionLabel(server)} · {server.provider}</span>
+                                  {activeServerIndex === index && <Check size={12} />}
+                                </button>
+                              ))}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
 
                   {/* MENÚ DE SUBTÍTULOS */}
-                  {streamInfo?.subtitles && streamInfo.subtitles.length > 0 && (
+                  {subtitleTracks.length > 0 && (
                     <div className="relative">
                       <button
                         type="button"
@@ -2108,7 +2390,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                             <span>Desactivados</span>
                             {activeSubtitleId === 'off' && <Check size={12} />}
                           </button>
-                          {streamInfo.subtitles.map((sub: SubtitleTrack) => (
+                          {subtitleTracks.map((sub: SubtitleTrack) => (
                             <button
                               key={sub.id}
                               type="button"

@@ -19,6 +19,9 @@ import {
   ANTIBOT_HIT_WINDOW_MS,
 } from "./utils/antiBot";
 import { enqueueWrite } from "./writeBuffer";
+import { canonicalCatalogUrl, catalogPageFingerprint, dedupeCatalogItems, isRepeatedCatalogPage } from "./catalogIntegrity";
+import { normalizeExtractedEpisodes } from "./catalogFusion";
+import { buildCatalogPageUrl } from "./catalogPagination";
 
 function siteOf(url: string | undefined): string {
   try {
@@ -61,13 +64,19 @@ export interface WorkerSettings {
   item_concurrency: number;
 }
 
+// Valores conservadores para el equipo que aloja la aplicación (ASUS T100TA,
+// 2 GB de RAM). El worker comparte proceso con Express, Prisma y el proxy de
+// reproducción: abrir varios crawls y pools grandes puede consumir toda la
+// memoria aunque el catálogo se importe más rápido. El usuario puede elevar
+// estos valores explícitamente desde la configuración del worker cuando haga
+// falta; estos son únicamente los valores de arranque seguros.
 const DEFAULT_SETTINGS: WorkerSettings = {
-  default_delay_ms: 0,
-  jitter_enabled: false,
-  max_concurrent_jobs: 5,
+  default_delay_ms: 1500,
+  jitter_enabled: true,
+  max_concurrent_jobs: 1,
   user_agent_rotation: true,
-  page_concurrency: 16,
-  item_concurrency: 24,
+  page_concurrency: 1,
+  item_concurrency: 1,
 };
 
 // Columnas que EXISTEN en la tabla WorkerSettingsStore (schema.prisma).
@@ -160,6 +169,10 @@ class BackgroundCrawlerWorker {
       .catch(() => {})
       .finally(() => {
         this.recoveryDone = true;
+        // No esperar a que el primer tick del intervalo rescate una cola que
+        // se creó mientras arrancaba Express. El disparo es idempotente gracias
+        // al mutex de processNextInQueue.
+        void this.processNextInQueue();
       });
     setInterval(() => {
       if (this.recoveryDone) this.processNextInQueue();
@@ -305,10 +318,11 @@ class BackgroundCrawlerWorker {
   }
 
   public async getJob(id: string): Promise<CrawlJob | null> {
-    try {
-      const t = await prisma.crawlTask.findUnique({ where: { id } });
-      if (!t) return null;
-      return {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const t = await prisma.crawlTask.findUnique({ where: { id } });
+        if (!t) return null;
+        return {
         id: t.id,
         name: t.name,
         target_url: t.target_url,
@@ -326,20 +340,27 @@ class BackgroundCrawlerWorker {
         created_at: t.created_at.toISOString(),
         updated_at: t.updated_at.toISOString(),
         logs: parseJsonArray(t.logs),
-      };
-    } catch {
-      return null;
+        };
+      } catch {
+        // Una lectura transitoria (pool ocupado/P1008) no debe interpretarse
+        // como una orden de pausa: executeJob conserva el checkpoint y reintenta.
+        if (attempt < 2) await this.sleep(150 * (attempt + 1));
+      }
     }
+    return null;
   }
 
   /** Lee items_queue CRUDO desde DB (con marcador de descubrimiento). Uso interno/resume. */
   private async getRawQueueItems(id: string): Promise<QueueItem[]> {
-    try {
-      const t = await prisma.crawlTask.findUnique({ where: { id }, select: { items_queue: true } });
-      return parseJsonArray<QueueItem>(t?.items_queue);
-    } catch {
-      return [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const t = await prisma.crawlTask.findUnique({ where: { id }, select: { items_queue: true } });
+        return parseJsonArray<QueueItem>(t?.items_queue);
+      } catch {
+        if (attempt < 2) await this.sleep(150 * (attempt + 1));
+      }
     }
+    return [];
   }
 
   public async createJob(options: {
@@ -543,10 +564,18 @@ class BackgroundCrawlerWorker {
   /** Logs en memoria por job: flush al DB cada N segundos o al finalizar. */
   private logBuffers = new Map<string, Array<{ timestamp: string; level: string; message: string }>>();
   private lastLogFlush = 0;
+  // Bajo presión de BD un flush puede tardar más que la generación de eventos.
+  // Mantener una ventana acotada evita que un barrido grande convierta sus
+  // mensajes de progreso en una segunda cola ilimitada dentro del proceso.
+  private static readonly MAX_LOG_BUFFER_PER_JOB = 250;
 
   private async addLog(id: string, level: "info" | "success" | "warn" | "error", message: string) {
     if (!this.logBuffers.has(id)) this.logBuffers.set(id, []);
-    this.logBuffers.get(id)!.push({ timestamp: new Date().toISOString(), level, message });
+    const buffer = this.logBuffers.get(id)!;
+    buffer.push({ timestamp: new Date().toISOString(), level, message });
+    if (buffer.length > BackgroundCrawlerWorker.MAX_LOG_BUFFER_PER_JOB) {
+      buffer.splice(0, buffer.length - BackgroundCrawlerWorker.MAX_LOG_BUFFER_PER_JOB);
+    }
     // Flush cada 5 segundos como máximo
     const now = Date.now();
     if (now - this.lastLogFlush > 5000) {
@@ -701,6 +730,17 @@ class BackgroundCrawlerWorker {
     if (this.isClaiming) return;
     this.isClaiming = true;
     try {
+      // La recuperación canónica hace upserts por episodio y debe conservar
+      // prioridad sobre el barrido masivo: ejecutar ambos escritores a la vez
+      // satura el pool de Prisma y puede dejar el worker de fuentes esperando
+      // minutos. Los catálogos quedan pending y se reanudan al cerrar recovery.
+      const activeRecovery = await prisma.crawlTask.count({
+        where: {
+          scope: "source_recovery",
+          status: { in: ["recovery_pending", "recovery_running"] },
+        },
+      });
+      if (activeRecovery > 0) return;
       while (
         this.activeJobIds.size <
         clampConcurrency(this.settings.max_concurrent_jobs, DEFAULT_SETTINGS.max_concurrent_jobs)
@@ -744,6 +784,10 @@ class BackgroundCrawlerWorker {
       }
     } catch (err: any) {
       console.error("Error en processNextInQueue:", err);
+    } finally {
+      // El mutex solo protege un tick; mantenerlo levantado después del primer
+      // reclamo congelaba todas las tareas pendientes para siempre.
+      this.isClaiming = false;
     }
   }
 
@@ -772,32 +816,21 @@ class BackgroundCrawlerWorker {
         if (checkJob?.status !== "running") return;
 
         let analysis: UniversalAnalysisResult | null = null;
+        let analysisError: string | null = null;
         try {
           analysis = await analyzeUniversalUrl(job.target_url);
         } catch (err: any) {
-          await this.addLog(job.id, "warn", `No se pudo analizar la página inicial: ${String(err?.message || err)}. Se reintentará vía descubrimiento de páginas.`);
-          analysis = {
-            page_type: "catalog",
-            content_type: "movie",
-            title: "",
-            description: "",
-            poster_url: null,
-            banner_url: null,
-            rating: 0,
-            year: 0,
-            status: "Publicado",
-            genres: [],
-            episodes: [],
-            catalog_items: [],
-          } as UniversalAnalysisResult;
+          analysisError = String(err?.message || err);
+          await this.addLog(job.id, "warn", `No se pudo analizar la página inicial: ${analysisError}.`);
         }
 
-        if (analysis.page_type === "catalog" && analysis.catalog_items.length > 0) {
+        if (analysis && analysis.page_type === "catalog" && analysis.catalog_items.length > 0) {
           isCatalogFlow = true;
-          const seen = new Set(queue.map((q) => q.url));
-          for (const item of analysis.catalog_items) {
-            if (item?.url && !seen.has(item.url)) {
-              seen.add(item.url);
+          const seen = new Set(queue.map((q) => canonicalCatalogUrl(q.url)));
+          for (const item of dedupeCatalogItems(analysis.catalog_items)) {
+            const itemKey = canonicalCatalogUrl(item?.url);
+            if (item?.url && itemKey && !seen.has(itemKey)) {
+              seen.add(itemKey);
               queue.push({ title: item.title, url: item.url, status: "pending" });
             }
           }
@@ -809,7 +842,7 @@ class BackgroundCrawlerWorker {
             current_page: 1,
           });
           await this.addLog(job.id, "info", `Página 1: ${queue.length} obras. Importación arranca YA en paralelo con el descubrimiento de páginas siguientes.`);
-        } else {
+        } else if (job.scope === "single" && analysis && analysis.page_type !== "catalog") {
           await this.addLog(job.id, "info", `Ficha individual detectada: '${analysis.title}'.`);
           queue.push({ title: analysis.title || job.target_url, url: job.target_url, status: "pending" });
           job.total_discovered = 1;
@@ -819,6 +852,13 @@ class BackgroundCrawlerWorker {
             total_discovered: 1,
             current_page: 1,
           });
+        } else {
+          // Nunca guardar /browse, /peliculas u otra URL de catálogo como si
+          // fuera una obra cuando el proveedor falló o devolvió cero tarjetas.
+          const reason = analysisError || "el adaptador no devolvió elementos de catálogo";
+          await this.addLog(job.id, "error", `Importación detenida sin escribir una obra ficticia: ${reason}`);
+          await this.updateJobState(job.id, { status: "failed", error_message: reason });
+          return;
         }
       } else {
         // REANUDACIÓN: el proceso murió/pausó a mitad del pipeline.
@@ -904,27 +944,42 @@ class BackgroundCrawlerWorker {
           if (titleKey.length >= 2) {
             const knownCandidates = await prisma.show.findMany({
               where: { OR: [{ base_normalized_title: titleKey }, { normalized_title: titleKey }] },
-              select: { id: true, title: true, year: true },
+              select: { id: true, title: true, year: true, category: true },
               orderBy: { created_at: "asc" },
               take: 20,
             });
+            const kindHint = kindHintFromCatalogUrl(job.target_url);
+            const sameKindCandidates = kindHint
+              ? knownCandidates.filter((show) => show.category === kindHint)
+              : [];
+            // Si hay varios homónimos y el catálogo no declara tipo, no
+            // adivinamos: se analiza la ficha y el flujo enriquecido
+            // resolverá la identidad por TMDB/título/año.
+            const candidates = sameKindCandidates.length > 0
+              ? sameKindCandidates
+              : knownCandidates.length === 1
+                ? knownCandidates
+                : [];
             const itemYear = isPlausibleYear(item.year) ? item.year! : null;
             const knownShow = itemYear
-              ? knownCandidates.find((show) => show.year === itemYear) ??
-                knownCandidates.find((show) => !isPlausibleYear(show.year)) ??
+              ? candidates.find((show) => show.year === itemYear) ??
+                candidates.find((show) => !isPlausibleYear(show.year)) ??
                 null
-              : knownCandidates[0] ?? null;
+              : candidates[0] ?? null;
             if (knownShow) {
               // Modo "detail": SOLO lista de episodios — sin extracción de streams
               // (los nuevos se resuelven Just-In-Time al reproducir). Full fast.
               const itemAnalysis = await analyzeUniversalUrl(item.url || item.title, "detail");
-              const eps = (itemAnalysis.episodes || []).map((e: any) => ({
-                number: Number(e.number),
-                title: String(e.title || `Episodio ${e.number}`),
-                url: String(e.url || ""),
-              }));
+              const eps = normalizeExtractedEpisodes(
+                itemAnalysis.episodes,
+                siteOf(item.url || job.target_url),
+              );
               const { added } = await quickSyncKnownShow(knownShow.id, {
                 title: itemAnalysis.title || item.title,
+                // Algunos adaptadores quitan el sufijo de temporada del
+                // título normalizado; conservarlo desde título+slug evita
+                // mezclar fuentes de S2/S3 dentro de T1.
+                season: parseTitleQuery(`${item.title} ${item.url || ""}`).season,
                 episodes: eps,
                 source_site: siteOf(item.url || job.target_url),
               });
@@ -1016,8 +1071,10 @@ class BackgroundCrawlerWorker {
           await this.updateJobState(job.id, { items_queue: queue });
           await this.addLog(job.id, "warn", `Error en '${item.title}': ${item.error}. Continuando con el siguiente...`);
         }
-        // Pausa entre items: dar tiempo al write buffer para aplicar.
-        await this.sleep(2000);
+        // No añadir una espera fija aquí: `applyPoliteRateLimit` ya espacia
+        // cada petición al dominio y el write buffer drena de forma asíncrona.
+        // Los 2 s heredados por elemento hacían que un catálogo de 10k obras
+        // tardara muchas horas sin aportar estabilidad.
       }
     };
 
@@ -1095,9 +1152,10 @@ class BackgroundCrawlerWorker {
     endPageExclusive: number
   ): Promise<"stopped" | "completed"> {
     const pageConcurrency = clampConcurrency(this.settings.page_concurrency, DEFAULT_SETTINGS.page_concurrency);
-    const seen = new Set(queue.map((q) => q.url));
+    const seen = new Set(queue.map((q) => canonicalCatalogUrl(q.url)));
     let consecutiveErrors = 0;
     let consecutiveNoNew = 0;
+    let previousPageFingerprint: string | undefined;
     let page = startPage;
 
     await this.addLog(
@@ -1150,21 +1208,31 @@ class BackgroundCrawlerWorker {
           return "completed";
         }
 
+        const repeatedPage = isRepeatedCatalogPage(r.items, previousPageFingerprint);
+        const currentPageFingerprint = catalogPageFingerprint(r.items);
         let newAdded = 0;
         for (const item of r.items) {
-          if (item?.url && !seen.has(item.url)) {
-            seen.add(item.url);
+          const itemKey = canonicalCatalogUrl(item?.url);
+          if (item?.url && itemKey && !seen.has(itemKey)) {
+            seen.add(itemKey);
             queue.push({ title: item.title, url: item.url, status: "pending" });
             newAdded++;
           }
         }
+
+        // El fingerprint se actualiza incluso en una página solapada para que
+        // una repetición consecutiva se distinga de una página simplemente
+        // sin nuevos enlaces.
+        previousPageFingerprint = currentPageFingerprint || previousPageFingerprint;
 
         if (newAdded === 0) {
           consecutiveNoNew++;
           await this.addLog(
             job.id,
             "warn",
-            `Página ${pageNo} sin obras nuevas (${consecutiveNoNew}/${NO_NEW_ITEM_PAGES_BEFORE_STOP}): posible fin del catálogo o repetición del sitio.`
+            repeatedPage
+              ? `Página ${pageNo} repite exactamente la anterior (${consecutiveNoNew}/${NO_NEW_ITEM_PAGES_BEFORE_STOP}): se detendrá solo tras confirmar la repetición.`
+              : `Página ${pageNo} sin obras nuevas (${consecutiveNoNew}/${NO_NEW_ITEM_PAGES_BEFORE_STOP}): posible fin del catálogo o solapamiento.`
           );
           if (consecutiveNoNew >= NO_NEW_ITEM_PAGES_BEFORE_STOP) {
             await this.addLog(job.id, "info", `El sitio dejó de aportar contenido nuevo: FIN del catálogo alcanzado.`);
@@ -1198,7 +1266,7 @@ class BackgroundCrawlerWorker {
    * 1) Reutiliza el patrón que YA trae la URL base (?page=, ?p=, ?pag=, /page/N/).
    * 2) Tabla de patrones verificados por sitio (2026-08-24):
    *      animeflv.net        → /browse?page=N
-   *      animeflv.or.at (+mirrors) → /anime/page/N/
+   *      animeflv.or.at / animeflv.or.am (+mirrors) → /anime/page/N/
    *      tioplus.app         → /peliculas/N
    *      latanime.org        → /animes?p=N
    *      tioanime.com        → /directorio?p=N
@@ -1208,67 +1276,19 @@ class BackgroundCrawlerWorker {
    *    "páginas consecutivas sin obras nuevas" corta el barrido solo).
    */
   private buildPageUrl(baseUrl: string, pageNumber: number): string {
-    try {
-      const url = new URL(baseUrl);
-      if (url.searchParams.has("page")) {
-        url.searchParams.set("page", String(pageNumber));
-        return url.toString();
-      }
-      if (url.searchParams.has("p")) {
-        url.searchParams.set("p", String(pageNumber));
-        return url.toString();
-      }
-      if (url.searchParams.has("pag")) {
-        url.searchParams.set("pag", String(pageNumber));
-        return url.toString();
-      }
-      if (/\/page\/\d+\/?$/.test(url.pathname)) {
-        url.pathname = url.pathname.replace(/\/page\/\d+/, `/page/${pageNumber}`);
-        return url.toString();
-      }
-
-      const host = url.hostname.toLowerCase();
-      const path = url.pathname.replace(/\/+$/, "");
-      const origin = url.origin;
-
-      // Mirrors de AnimeFLV (or.at y similares): path-segment /page/N/
-      if (/(^|\.)animeflv\.(or\.at|la|cc|pe|iu|se)$/.test(host)) {
-        return `${origin}${path}/page/${pageNumber}/`;
-      }
-      // TioPlus: segmento numérico directo
-      if (/(^|\.)tioplus\.app$/.test(host)) {
-        return `${origin}${path}/${pageNumber}`;
-      }
-      // LatAnime: query ?p=
-      if (/(^|\.)latanime\.org$/.test(host)) {
-        return `${origin}${path || "/animes"}?p=${pageNumber}`;
-      }
-      // TioAnime: query ?p=
-      if (/(^|\.)tioanime\.com$/.test(host)) {
-        return `${origin}${path || "/directorio"}?p=${pageNumber}`;
-      }
-      // VerAnimes: query ?pag=
-      if (/(^|\.)veranimes\.(net|com)$/.test(host)) {
-        return `${origin}${path || "/animes"}?pag=${pageNumber}`;
-      }
-      // Cinecalidad: path /page/N/
-      if (/(^|\.)cinecalidad\.[a-z.]+$/.test(host)) {
-        return `${origin}${path}/page/${pageNumber}/`;
-      }
-      // AnimeFLV principal: /browse?page=N
-      if (/(^|\.)animeflv\.net$/.test(host)) {
-        return `${origin}${path || "/browse"}?page=${pageNumber}`;
-      }
-
-      url.searchParams.set("page", String(pageNumber));
-      return url.toString();
-    } catch {
-      if (baseUrl.includes("?")) {
-        return `${baseUrl}&page=${pageNumber}`;
-      }
-      return `${baseUrl}?page=${pageNumber}`;
-    }
+    return buildCatalogPageUrl(baseUrl, pageNumber);
   }
+}
+
+/** Inferencia ligera del tipo del catálogo, usada solo para evitar colisiones
+ * de títulos homónimos en el fast-path. La ficha detallada sigue siendo la
+ * autoridad y puede corregir el tipo durante el guardado enriquecido. */
+function kindHintFromCatalogUrl(url: string | undefined): "movie" | "series" | "anime" | null {
+  const value = String(url || "").toLowerCase();
+  if (/animeflv|tioanime|latanime|hianimes|\/animes?\b/.test(value)) return "anime";
+  if (/\/series?\b|tvshows?|doramas/.test(value)) return "series";
+  if (/\/pel[ií]culas?\b|\/movies?\b|cinecalidad/.test(value)) return "movie";
+  return null;
 }
 
 export const taskWorker = new BackgroundCrawlerWorker();

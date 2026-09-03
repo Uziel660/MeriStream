@@ -19,6 +19,11 @@ export interface RuntimeLease {
   release(): void;
 }
 
+export interface ResolutionAdmissionOptions {
+  /** Resolución iniciada por una acción explícita del usuario (play). */
+  interactive?: boolean;
+}
+
 export interface RuntimeBudgetOptions {
   careRssBytes?: number;
   saturatedRssBytes?: number;
@@ -148,8 +153,12 @@ export class RuntimeBudget {
     return this.lease(() => this.endResolution());
   }
 
-  tryBeginResolution(): RuntimeLease | null {
-    if (this.shouldFallback()) return null;
+  tryBeginResolution(options: ResolutionAdmissionOptions = {}): RuntimeLease | null {
+    // En saturación se conserva un único carril interactivo para que una
+    // reproducción solicitada por el usuario no se convierta automáticamente
+    // en un iframe. El resto de resoluciones sigue rechazándose para proteger
+    // memoria/CPU del host pequeño.
+    if (this.shouldFallback() && !(options.interactive && this.activeResolutions === 0)) return null;
     return this.beginResolution();
   }
 

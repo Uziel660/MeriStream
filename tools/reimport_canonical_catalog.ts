@@ -22,6 +22,8 @@ export interface CanonicalImportEpisode {
 export interface CanonicalImportRecord {
   title: string;
   kind: "movie" | "series" | "anime";
+  /** Identidad TMDB conocida; evita crear un MediaItem paralelo por idioma. */
+  tmdb_id?: number | null;
   year?: number;
   season?: number;
   episodes: CanonicalImportEpisode[];
@@ -402,14 +404,54 @@ async function processSingleRecord(
     return;
   }
 
-  // APPLY MODE: Idempotent DB writes
-  let mediaItem = await prisma.mediaItem.findFirst({
-    where: {
-      normalized_title: normTitle,
-      kind: record.kind,
-      year: record.year ?? null,
-    },
-  });
+  // APPLY MODE: Idempotent DB writes. TMDB es la clave primaria de identidad
+  // cuando está disponible; el título/año quedan como fallback histórico.
+  // También heredamos el ID de un Show legacy equivalente para que la
+  // reimportación no vuelva a crear una obra paralela localizada.
+  let tmdbId = Number.isInteger(record.tmdb_id) && Number(record.tmdb_id) > 0
+    ? Number(record.tmdb_id)
+    : null;
+  if (!tmdbId) {
+    const showModel = (prisma as any).show;
+    if (showModel?.findFirst) {
+      const show = await showModel.findFirst({
+        where: {
+          category: record.kind,
+          OR: [{ base_normalized_title: baseNormTitle }, { normalized_title: normTitle }],
+          tmdb_id: { not: null },
+        },
+        select: { tmdb_id: true },
+        orderBy: { created_at: "asc" },
+      });
+      if (Number.isInteger(show?.tmdb_id) && show.tmdb_id > 0) tmdbId = show.tmdb_id;
+    }
+  }
+
+  let mediaItem = tmdbId
+    ? await prisma.mediaItem.findFirst({
+        where: { tmdb_id: tmdbId, kind: record.kind },
+        orderBy: { created_at: "asc" },
+      })
+    : null;
+  if (!mediaItem) {
+    mediaItem = await prisma.mediaItem.findFirst({
+      where: {
+        normalized_title: normTitle,
+        kind: record.kind,
+        year: record.year ?? null,
+      },
+    });
+  }
+  if (!mediaItem) {
+    mediaItem = await prisma.mediaItem.findFirst({
+      where: {
+        base_normalized_title: baseNormTitle,
+        kind: record.kind,
+        ...(record.year ? { year: record.year } : {}),
+      },
+      orderBy: { created_at: "asc" },
+    });
+  }
 
   if (!mediaItem) {
     mediaItem = await prisma.mediaItem.create({
@@ -419,8 +461,12 @@ async function processSingleRecord(
         base_normalized_title: baseNormTitle,
         kind: record.kind,
         year: record.year ?? null,
+        tmdb_id: tmdbId,
       },
     });
+  } else if (tmdbId && !mediaItem.tmdb_id) {
+    // No sobreescribir una identidad existente; solo completar un null.
+    await prisma.mediaItem.update?.({ where: { id: mediaItem.id }, data: { tmdb_id: tmdbId } });
   }
   report.imported_media_items++;
 
@@ -466,14 +512,20 @@ async function processSingleRecord(
           url: src.url,
           link_type: linkType,
           host,
-          is_verified: true,
-          last_checked: new Date(),
+          // La reimportación solo confirma identidad canónica. No convierte
+          // una página/directo histórico en una prueba de reproducción.
+          is_verified: false,
+          source_status: "discovered",
+          canonical_locator: src.source_kind === "page" || src.source_kind === "embed" ? src.url : null,
+          extraction_method: "canonical_reimport",
+          resolver_version: "catalog-v2",
         },
         update: {
           link_type: linkType,
           host,
-          is_verified: true,
-          last_checked: new Date(),
+          canonical_locator: src.source_kind === "page" || src.source_kind === "embed" ? src.url : null,
+          extraction_method: "canonical_reimport",
+          resolver_version: "catalog-v2",
         },
       });
       report.imported_canonical_sources++;

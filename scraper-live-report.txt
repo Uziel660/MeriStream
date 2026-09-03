@@ -1,0 +1,42 @@
+=== TEST LIVE MULTI-PLATAFORMA ===
+
+
+[animeflv] 3 muestras
+  animeflv.net [animeflv] OK (5853ms) → https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11093/pylcah8g7aj3
+  animeflv.net [animeflv] OK (1109ms) → https://edge1-moscow-sprintcdn.owphbf24.com/hls2/06/11128/pqa9thmypoy4
+  animeflv.net [animeflv] OK (1311ms) → https://edge1-moscow-sprintcdn.owphbf24.com/hls2/04/11163/rouceahd00u2
+
+[tioanime] 3 muestras
+  tioanime.com [tioanime] OK (1438ms) → https://mega.nz/embed/!0etREBTA!OsUXJy9I-xG9niG5piLxDBdK3VZfO5sb08UwIP
+  tioanime.com [tioanime] OK (1165ms) → https://mega.nz/embed/!xGt32Y5B!DaMgtiX2llxWYsYz0-mJwHibYJ1w1NJkJYqHjX
+  tioanime.com [tioanime] OK (1728ms) → https://ugc-cdn-caching-n3hk2fu0xytfxdnam1.cloudwindow-route.com/engin
+
+[cinecalidad] 3 muestras
+  www.cinecalidad.am [cinecalidad] FALLÓ (8872ms) → https://www.cinecalidad.am/ver-pelicula/engendro/
+  www.cinecalidad.am [cinecalidad] OK (6617ms) → https://s8.vimeos.net/hls2/02/00010/h6nvi3xachxv_,n,h,.urlset/master.m
+  www.cinecalidad.am [cinecalidad] OK (2442ms) → https://vimeos.zip/hls2/03/00010/etyzza0gw30k_,n,h,.urlset/master.m3u8
+
+[otro] 3 muestras
+  yXqC9C2Vqj7VEPBl.acek-cdn.com [direct_stream] FALLÓ (0ms) → https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/9jh53g0838bl_,l,n,
+  wt4PjIIVE9AGjPL.dramiyos-cdn.com [direct_stream] FALLÓ (0ms) → https://wt4PjIIVE9AGjPL.dramiyos-cdn.com/hls2/01/08557/oj9g4slz0oo6_,l
+  yXqC9C2Vqj7VEPBl.acek-cdn.com [direct_stream] FALLÓ (0ms) → https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08545/pjabnk95yjpg_,l,n,
+
+[lamovie] 3 muestras
+  lamovie.org [lamovie] FALLÓ (2876ms) → https://lamovie.org/peliculas/el-magico-mundo-de-andrew-bennett-2018/
+  lamovie.org [lamovie] FALLÓ (689ms) → https://lamovie.org/peliculas/doi-boy-2023/
+  lamovie.org [lamovie] OK (1501ms) → https://hls2.goodstream.one/hls2/02/00028/v7ufy710iwb4_,l,n,h,x,.urlse
+
+[latanime] 3 muestras
+  latanime.org [latanime] OK (3082ms) → https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11849/2gymagcd1
+  latanime.org [latanime] OK (926ms) → https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/08/11849/pshhff02a
+  latanime.org [latanime] OK (1095ms) → https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/05/11770/6jx85ccsarri_x/
+
+[veranimes] 3 muestras
+  wwv.veranimes.net [veranimes] FALLÓ (5518ms) → https://wwv.veranimes.net/ver/tenchi-muyo-18
+  wwv.veranimes.net [veranimes] FALLÓ (2562ms) → https://wwv.veranimes.net/ver/tenchi-muyo-19
+  wwv.veranimes.net [veranimes] FALLÓ (1197ms) → https://wwv.veranimes.net/ver/tenchi-muyo-20
+
+[tubepelis] 3 muestras
+  www.tubepelis.com [tubepelis] OK (3037ms) → https://edge1-moscow-sprintcdn.owphbf24.com/hls2/06/11834/euoy2mtnyqh2
+  www.tubepelis.com [tubepelis] OK (662ms) → https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11725/tq1egk50n16t_x/
+  www.tubepelis.com [tubepelis] OK (3575ms) → https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/02/11672/v9ggn8fad

@@ -28,12 +28,30 @@ export interface ReconcileSummary {
   skipped: Array<{ canonical: string; merged: string; reason: string }>;
 }
 
+export interface MediaItemReconcileSummary {
+  groups_checked: number;
+  merges_done: number;
+  episodes_moved: number;
+  media_items_deleted: number;
+  dry_run: boolean;
+  details: Array<{ canonical: string; merged: string; season: number; episodes_moved: number }>;
+  skipped: Array<{ canonical: string; merged: string; reason: string }>;
+}
+
 /** Temporada de una secuela: marcador en el título > siguiente disponible. */
-function detectSeason(title: string): number {
+function detectSeason(title: string, kind?: string): number {
   const raw = parseRawTitle(title);
   if (raw.season && raw.season > 1) return raw.season;
   const parsed = parseTitleQuery(raw.canonical);
   if (parsed.season && parsed.season > 1) return parsed.season;
+  // En anime/series algunos catálogos publican solo "Título 2". No aplicar
+  // esta convención a películas, donde el número suele formar parte del
+  // título de una secuela cinematográfica.
+  if (kind !== "movie") {
+    const bare = raw.canonical.match(/(?:^|\s)(\d{1,2})$/);
+    const value = bare ? Number(bare[1]) : 0;
+    if (value > 1 && value <= 20) return value;
+  }
   return 0;
 }
 
@@ -65,17 +83,72 @@ function similarity(a: string, b: string): number {
 }
 
 /** Decisión de auto-fusión segura entre dos títulos de un mismo tmdb_id. */
-function shouldAutoMerge(titleA: string, titleB: string, kind: string, sequelTitle: string): { ok: boolean; reason: string } {
-  const sim = similarity(titleA, titleB);
-  const hasMarker = detectSeason(sequelTitle) > 1;
+function shouldAutoMerge(
+  titleA: string,
+  titleB: string,
+  kind: string,
+  sequelTitle: string,
+  aliasesA: string[] = [],
+  aliasesB: string[] = [],
+): { ok: boolean; reason: string; similarity: number } {
+  // Las fuentes pueden guardar el mismo TMDB con títulos localizados. Usar
+  // también los aliases persistidos evita dejar obras paralelas cuando, por
+  // ejemplo, una trae el título español y otra el original/inglés.
+  const pairs = [[titleA, titleB], ...aliasesA.flatMap((a) => aliasesB.map((b) => [a, b] as const))];
+  const sim = Math.max(...pairs.map(([a, b]) => similarity(a, b)), 0);
+  const hasMarker = detectSeason(sequelTitle, kind) > 1;
   // Películas: sin concepto de temporada, exigir similitud fuerte.
   // Con marcador explícito de temporada el umbral baja: el marcador + mismo
   // tmdb_id es evidencia fuerte (p.ej. "Haikyuu S3" vs "Haikyu S4").
   const minSim = kind === "movie" ? 0.5 : hasMarker ? 0.3 : 0.5;
   if (sim < minSim) {
-    return { ok: false, reason: `similitud baja (${sim.toFixed(2)} < ${minSim})` };
+    return { ok: false, reason: `similitud baja (${sim.toFixed(2)} < ${minSim})`, similarity: sim };
   }
-  return { ok: true, reason: `similitud ${sim.toFixed(2)}${hasMarker ? " + marcador de temporada" : ""}` };
+  return { ok: true, reason: `similitud ${sim.toFixed(2)}${hasMarker ? " + marcador de temporada" : ""}`, similarity: sim };
+}
+
+/** TMDB comparte el espacio numérico entre tipos de TV, pero no con películas. */
+function sameTmdbNamespace(left: string, right: string): boolean {
+  const tvKinds = new Set(["anime", "series"]);
+  const leftTv = tvKinds.has(left || "anime");
+  const rightTv = tvKinds.has(right || "anime");
+  return leftTv === rightTv && (leftTv || left === right);
+}
+
+/** Copia una fuente al episodio canónico sin perder evidencia ni receta JIT. */
+async function copySourceLink(link: any, targetMediaEpisodeId: string): Promise<void> {
+  await prisma.sourceLink
+    .create({
+      data: {
+        media_episode_id: targetMediaEpisodeId,
+        source_site: link.source_site,
+        url: link.url,
+        link_type: link.link_type,
+        language: link.language,
+        audio_language: link.audio_language,
+        subtitle_language: link.subtitle_language,
+        subtitles: link.subtitles ?? undefined,
+        host: link.host,
+        priority_tier: link.priority_tier,
+        is_verified: link.is_verified,
+        last_checked: link.last_checked,
+        source_status: link.source_status,
+        canonical_locator: link.canonical_locator,
+        external_id: link.external_id,
+        extraction_method: link.extraction_method,
+        resolver_version: link.resolver_version,
+        failure_reason: link.failure_reason,
+        last_success: link.last_success,
+        last_failure: link.last_failure,
+        retry_after: link.retry_after,
+      },
+    })
+    .catch((error: any) => {
+      // Solo una colisión de la clave única significa que la fuente ya fue
+      // copiada. Cualquier otro error (por ejemplo, una caída de PostgreSQL)
+      // debe abortar la fusión para no borrar la única copia de la fuente.
+      if (error?.code !== "P2002") throw error;
+    });
 }
 
 export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): Promise<ReconcileSummary> {
@@ -109,26 +182,62 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
     const kind = (canonical.category || "anime") as ContentKind;
     const cBase = canonical.base_normalized_title || canonical.normalized_title;
 
+    // La identidad TMDB es la primera clave de unión. El título queda como
+    // fallback para filas históricas que aún no heredaron el ID.
     let canonicalItem = await prisma.mediaItem.findFirst({
-      where: { OR: [{ base_normalized_title: cBase, kind }, { normalized_title: canonical.normalized_title, kind }] },
+      where: { tmdb_id: g.tmdb_id!, kind },
       orderBy: { created_at: "asc" },
     });
+    if (!canonicalItem) {
+      // Algunos importadores clasificaron la misma obra como anime/series/tv.
+      // TMDB sigue siendo una identidad más fuerte que esa etiqueta local.
+      canonicalItem = await prisma.mediaItem.findFirst({
+        where: { tmdb_id: g.tmdb_id! },
+        orderBy: { created_at: "asc" },
+      });
+    }
+    if (!canonicalItem) {
+      canonicalItem = await prisma.mediaItem.findFirst({
+        where: { OR: [{ base_normalized_title: cBase, kind }, { normalized_title: canonical.normalized_title, kind }] },
+        orderBy: { created_at: "asc" },
+      });
+    }
 
     for (const sequel of shows.slice(1)) {
-      // Misma clave canónica = ya fusionadas de facto; saltar.
+      // TMDB usa namespaces distintos para películas y TV: el mismo entero
+      // puede existir en ambos tipos. Nunca fusionar entre categorías locales;
+      // hacerlo convertiría una película y una serie en una sola obra aunque
+      // compartan accidentalmente el número de TMDB.
+      if (!sameTmdbNamespace(sequel.category || "anime", canonical.category || "anime")) {
+        summary.skipped.push({
+          canonical: canonical.title,
+          merged: sequel.title,
+          reason: `namespace distinto (${sequel.category || "anime"} ≠ ${canonical.category || "anime"})`,
+        });
+        continue;
+      }
+      // Una misma clave canónica puede representar duplicados reales que aún
+      // viven en filas separadas; se fusionan bajo la misma temporada.
       const sBase = sequel.base_normalized_title || sequel.normalized_title;
-      if (sBase === cBase) continue;
+      const sameBase = sBase === cBase;
 
       // GUARDA anti-falsos-positivos: títulos muy distintos con mismo tmdb_id
       // = match erróneo del importador. NO fusionar; reportar para revisión.
-      const guard = shouldAutoMerge(canonical.title, sequel.title, kind, sequel.title);
+      const guard = shouldAutoMerge(
+        canonical.title,
+        sequel.title,
+        kind,
+        sequel.title,
+        [canonical.original_title, canonical.english_title, canonical.japanese_title].filter(Boolean) as string[],
+        [sequel.original_title, sequel.english_title, sequel.japanese_title].filter(Boolean) as string[],
+      );
       if (!guard.ok) {
         summary.skipped.push({ canonical: canonical.title, merged: sequel.title, reason: guard.reason });
         console.log(`[Reconcile]${dry ? " (dry)" : ""} SKIP "${sequel.title}" ≠ "${canonical.title}" (${guard.reason}).`);
         continue;
       }
 
-      const detected = detectSeason(sequel.title);
+      const detected = detectSeason(sequel.title, kind);
       let maxSeason = 0;
       if (canonicalItem) {
         const agg = await prisma.mediaEpisode.aggregate({
@@ -138,7 +247,17 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
         maxSeason = agg._max?.season_number ?? 0;
       }
       // Películas: sin temporadas — todo va como T1 dentro de la misma tarjeta.
-      const season = kind === "movie" ? 1 : detected > 1 ? detected : Math.max(1, maxSeason + 1);
+      // Duplicados con el mismo título/base son copias de la misma temporada,
+      // no una temporada nueva. Solo una secuela sin marcador explícito usa la
+      // siguiente temporada disponible.
+      const sameIdentity = sameBase || guard.similarity >= 0.5;
+      const season = kind === "movie"
+        ? 1
+        : detected > 1
+          ? detected
+          : sameIdentity
+            ? 1
+            : Math.max(1, maxSeason + 1);
 
       const lastEp = await prisma.episode.findFirst({
         where: { show_id: canonical.id },
@@ -171,9 +290,31 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
       }
 
       // 2) Mover fuentes multi-fuente al MediaItem canónico bajo `season`.
+      // Si la obra canónica no tenía aún MediaItem, créalo antes de mover nada;
+      // nunca se borra una secuela con fuentes sin un destino confirmado.
+      if (!dry && !canonicalItem) {
+        canonicalItem = await prisma.mediaItem.create({
+          data: {
+            normalized_title: canonical.normalized_title,
+            base_normalized_title: canonical.base_normalized_title || canonical.normalized_title,
+            title: canonical.title,
+            tmdb_id: canonical.tmdb_id,
+            kind,
+            year: canonical.year,
+            poster_url: canonical.poster_url,
+          },
+        });
+      }
       if (!dry && canonicalItem) {
         const sequelItem = await prisma.mediaItem.findFirst({
-          where: { OR: [{ base_normalized_title: sBase, kind }, { normalized_title: sequel.normalized_title, kind }] },
+          where: {
+            id: { not: canonicalItem.id },
+            OR: [
+              ...(sequel.tmdb_id ? [{ tmdb_id: sequel.tmdb_id }] : []),
+              { base_normalized_title: sBase, kind },
+              { normalized_title: sequel.normalized_title, kind },
+            ],
+          },
         });
         if (sequelItem) {
           const seqMediaEps = await prisma.mediaEpisode.findMany({
@@ -192,20 +333,7 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
               create: { media_item_id: canonicalItem.id, season_number: season, episode_number: me.episode_number },
               update: {},
             });
-            for (const link of me.links) {
-              await prisma.sourceLink
-                .create({
-                  data: {
-                    media_episode_id: target.id,
-                    source_site: link.source_site,
-                    url: link.url,
-                    link_type: link.link_type,
-                    host: link.host,
-                    priority_tier: link.priority_tier,
-                  },
-                })
-                .catch(() => {}); // duplicado exacto: ignorar
-            }
+            for (const link of me.links) await copySourceLink(link, target.id);
           }
         }
       }
@@ -213,8 +341,21 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
       // 3) Eliminar la secuela (MediaItem cascada → MediaEpisode+SourceLink; Show cascada → Episode).
       if (!dry) {
         const sequelItem = await prisma.mediaItem.findFirst({
-          where: { OR: [{ base_normalized_title: sBase, kind }, { normalized_title: sequel.normalized_title, kind }] },
+          where: {
+            ...(canonicalItem ? { id: { not: canonicalItem.id } } : {}),
+            OR: [
+              ...(sequel.tmdb_id ? [{ tmdb_id: sequel.tmdb_id }] : []),
+              { base_normalized_title: sBase, kind },
+              { normalized_title: sequel.normalized_title, kind },
+            ],
+          },
         });
+        // Si existe un MediaItem con fuentes y no pudimos preparar destino,
+        // abortar la eliminación para no perder datos.
+        if (sequelItem && !canonicalItem) {
+          summary.skipped.push({ canonical: canonical.title, merged: sequel.title, reason: "sin MediaItem canónico seguro" });
+          continue;
+        }
         if (sequelItem) await prisma.mediaItem.delete({ where: { id: sequelItem.id } });
         await prisma.show.delete({ where: { id: sequel.id } });
         summary.shows_deleted++;
@@ -234,6 +375,109 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
     }
   }
 
+  return summary;
+}
+
+/**
+ * Fusiona `MediaItem` duplicados que comparten TMDB pero no están vinculados
+ * al mismo Show legacy. Es la segunda mitad de la reconciliación: sin ella,
+ * el multiplexor seguiría viendo fuentes fragmentadas aunque los carteles ya
+ * fueran una sola obra.
+ */
+export async function reconcileMediaItemsByTmdb(opts: { dryRun?: boolean } = {}): Promise<MediaItemReconcileSummary> {
+  const dry = opts.dryRun !== false;
+  const summary: MediaItemReconcileSummary = {
+    groups_checked: 0,
+    merges_done: 0,
+    episodes_moved: 0,
+    media_items_deleted: 0,
+    dry_run: dry,
+    details: [],
+    skipped: [],
+  };
+  const mediaModel = prisma.mediaItem as any;
+  if (typeof mediaModel.groupBy !== "function") return summary;
+
+  const groups = await mediaModel.groupBy({
+    by: ["tmdb_id"],
+    where: { tmdb_id: { not: null } },
+    _count: { _all: true },
+    having: { tmdb_id: { _count: { gt: 1 } } },
+  });
+  summary.groups_checked = groups.length;
+
+  for (const group of groups) {
+    const items = await prisma.mediaItem.findMany({
+      where: { tmdb_id: group.tmdb_id },
+      orderBy: { created_at: "asc" },
+      include: { episodes: { include: { links: true } } },
+    });
+    if (items.length < 2) continue;
+
+    // Un entero TMDB puede repetirse entre namespaces movie/TV. Procesar cada
+    // kind por separado y dejar constancia de los cruces que se descartan.
+    const byKind = new Map<string, any[]>();
+    for (const item of items) {
+      const itemKind = String(item.kind || "movie");
+      const key = new Set(["anime", "series"]).has(itemKind) ? "tv" : itemKind;
+      const list = byKind.get(key) || [];
+      list.push(item);
+      byKind.set(key, list);
+    }
+    for (const [kind, sameKind] of byKind) {
+      const canonical = sameKind[0];
+      for (const duplicate of sameKind.slice(1)) {
+        const guard = shouldAutoMerge(
+          canonical.title,
+          duplicate.title,
+          kind,
+          duplicate.title,
+          [canonical.original_title].filter(Boolean) as string[],
+          [duplicate.original_title].filter(Boolean) as string[],
+        );
+        if (!guard.ok) {
+          summary.skipped.push({ canonical: canonical.title, merged: duplicate.title, reason: guard.reason });
+          continue;
+        }
+
+        const detected = detectSeason(duplicate.title, kind);
+        let moved = 0;
+        for (const episode of duplicate.episodes || []) {
+          // Si el título indica S2/S3 y el importador dejó la temporada en 1,
+          // corregirla al mover; las temporadas explícitas ya se conservan.
+          const season = detected > 1 && Number(episode.season_number) === 1
+            ? detected
+            : Number(episode.season_number) || 1;
+          if (!dry) {
+            const target = await prisma.mediaEpisode.upsert({
+              where: {
+                media_item_id_season_number_episode_number: {
+                  media_item_id: canonical.id,
+                  season_number: season,
+                  episode_number: episode.episode_number,
+                },
+              },
+              create: {
+                media_item_id: canonical.id,
+                season_number: season,
+                episode_number: episode.episode_number,
+              },
+              update: {},
+            });
+            for (const link of episode.links || []) await copySourceLink(link, target.id);
+          }
+          moved++;
+        }
+        if (!dry) {
+          await prisma.mediaItem.delete({ where: { id: duplicate.id } });
+          summary.media_items_deleted++;
+        }
+        summary.merges_done++;
+        summary.episodes_moved += moved;
+        summary.details.push({ canonical: canonical.title, merged: duplicate.title, season: detected > 1 ? detected : 1, episodes_moved: moved });
+      }
+    }
+  }
   return summary;
 }
 
@@ -261,7 +505,7 @@ export async function mergeTwoShows(
 
   const kind = (keep.category || "anime") as ContentKind;
   const cBase = keep.base_normalized_title || keep.normalized_title;
-  const detected = detectSeason(merge.title);
+  const detected = detectSeason(merge.title, kind);
 
   let canonicalItem = await prisma.mediaItem.findFirst({
     where: { OR: [{ base_normalized_title: cBase, kind }, { normalized_title: keep.normalized_title, kind }] },
@@ -325,20 +569,7 @@ export async function mergeTwoShows(
           create: { media_item_id: canonicalItem.id, season_number: season, episode_number: me.episode_number },
           update: {},
         });
-        for (const link of me.links) {
-          await prisma.sourceLink
-            .create({
-              data: {
-                media_episode_id: target.id,
-                source_site: link.source_site,
-                url: link.url,
-                link_type: link.link_type,
-                host: link.host,
-                priority_tier: link.priority_tier,
-              },
-            })
-            .catch(() => {});
-        }
+        for (const link of me.links) await copySourceLink(link, target.id);
       }
       await prisma.mediaItem.delete({ where: { id: mergeItem.id } });
     }

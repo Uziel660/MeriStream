@@ -32,7 +32,9 @@ vi.mock("./db", () => ({
         if (where?.tmdb_id !== undefined) {
           list = list.filter((s) => s.tmdb_id === where.tmdb_id);
         }
-        if (where?.category) {
+        if (where?.category?.in) {
+          list = list.filter((s) => where.category.in.includes(s.category));
+        } else if (where?.category) {
           list = list.filter((s) => s.category === where.category);
         }
         if (where?.base_normalized_title?.not) {
@@ -107,7 +109,8 @@ vi.mock("./db", () => ({
       findFirst: vi.fn().mockImplementation(({ where }) => {
         let list = [...dbMediaItems];
         if (where?.tmdb_id !== undefined) list = list.filter((m) => m.tmdb_id === where.tmdb_id);
-        if (where?.kind) list = list.filter((m) => m.kind === where.kind);
+        if (where?.kind?.in) list = list.filter((m) => where.kind.in.includes(m.kind));
+        else if (where?.kind) list = list.filter((m) => m.kind === where.kind);
         return Promise.resolve(list[0] || null);
       }),
       findMany: vi.fn().mockImplementation(({ where }) => {
@@ -304,6 +307,26 @@ describe("showService - Behavioral and Deduplication Tests", () => {
     expect(dbSourceLinks.map((s) => s.source_site).sort()).toEqual(["cinecalidad", "lamovie"].sort());
   });
 
+  it("importa la identidad canónica como descubierta, no como verificada", async () => {
+    const added = await syncEpisodeSources(
+      "mi_evidence",
+      1,
+      1,
+      [{ url: "https://provider.example/embed/episode-1", source_site: "provider" }],
+      "provider",
+    );
+
+    expect(added).toBe(1);
+    await drainWriteBuffer();
+    expect(dbSourceLinks[0]).toMatchObject({
+      source_status: "discovered",
+      canonical_locator: "https://provider.example/embed/episode-1",
+      extraction_method: "catalog_import",
+      resolver_version: "catalog-v2",
+      is_verified: false,
+    });
+  });
+
   // 4. detected_streams de una película llegan a SourceLink
   it("detected_streams de una película llegan a SourceLink", async () => {
     const res = await saveShowWithDeduplication({
@@ -422,5 +445,58 @@ describe("showService - Behavioral and Deduplication Tests", () => {
       expect.objectContaining({ media_item_id: "media-item-existing" }),
     ]));
     expect(dbSourceLinks).toHaveLength(1);
+  });
+
+  it("mantiene la misma obra y separa una temporada TMDB explícita", async () => {
+    const first = await saveShowWithDeduplication({
+      title: "Serie de prueba",
+      content_type: "anime",
+      tmdb_id: 987001,
+      source_site: "animeflv",
+      episodes: [{ number: 1, title: "T1 E1", url: "https://animeflv.example/serie-1" }],
+    });
+    await drainWriteBuffer();
+
+    const second = await saveShowWithDeduplication({
+      title: "Serie de prueba S2",
+      content_type: "anime",
+      tmdb_id: 987001,
+      season: 2,
+      source_site: "tioanime",
+      episodes: [{ number: 1, title: "T2 E1", url: "https://tioanime.example/serie-2-1" }],
+    });
+
+    expect(second.isDuplicate).toBe(true);
+    expect(second.show.id).toBe(first.show.id);
+    await drainWriteBuffer();
+    expect(dbMediaEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ season_number: 1, episode_number: 1 }),
+      expect.objectContaining({ season_number: 2, episode_number: 1 }),
+    ]));
+  });
+
+  it("el reescaneo conocido de S2 no descarta el episodio 1 por colisión legacy", async () => {
+    const first = await saveShowWithDeduplication({
+      title: "Serie reescaneada",
+      content_type: "anime",
+      tmdb_id: 987002,
+      source_site: "animeflv",
+      episodes: [{ number: 1, title: "T1 E1", url: "https://animeflv.example/reescaneada-1" }],
+    });
+    await drainWriteBuffer();
+
+    const result = await quickSyncKnownShow(first.show.id, {
+      title: "Serie reescaneada S2",
+      season: 2,
+      source_site: "tioanime",
+      episodes: [{ number: 1, title: "T2 E1", url: "https://tioanime.example/reescaneada-2-1" }],
+    });
+
+    expect(result.added).toBe(1);
+    await drainWriteBuffer();
+    expect(dbEpisodes.filter((episode) => episode.show_id === first.show.id)).toHaveLength(2);
+    expect(dbMediaEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ season_number: 2, episode_number: 1 }),
+    ]));
   });
 });

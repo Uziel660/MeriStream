@@ -1,0 +1,22 @@
+{
+  "format": "meristream-prisma-ndjson-v1",
+  "created_at": "2026-09-03T02:49:58.229Z",
+  "schema": "prisma/schema.prisma",
+  "database_size_bytes": 120936127,
+  "tables": {
+    "Show": 19864,
+    "Episode": 125997,
+    "CrawlTask": 13,
+    "WorkerSettingsStore": 1,
+    "MediaItem": 21175,
+    "SiteRating": 8,
+    "MediaEpisode": 84037,
+    "SourceLink": 17110,
+    "User": 1,
+    "WatchProgress": 7
+  },
+  "snapshot_file": "pre-durable-recovery-20260902-224956.ndjson.gz",
+  "snapshot_size_bytes": 15437471,
+  "sha256": "876838677364825c57588bf09477f022ccff1884115c3d50f18b1705db2fd860",
+  "contains_sensitive_data": true
+}

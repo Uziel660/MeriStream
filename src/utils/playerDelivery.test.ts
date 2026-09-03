@@ -11,6 +11,9 @@ import {
   shouldScheduleRenewal,
   canEscalateToProxy,
   isExpiredWithoutLocator,
+  isUnresolvedCanonical,
+  isRealPlayableEmbed,
+  prioritizeDirectCandidates,
   hasAttemptedMode,
   recordAttemptedMode,
   isAttemptCurrent,
@@ -239,5 +242,116 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(MSG_EXPIRED_WITHOUT_LOCATOR).toBe('Esta fuente antigua necesita reimportarse.');
     expect(MSG_PROXY_FAILED).toBe('No se pudo usar el proxy. Puedes probar otro servidor.');
   });
-});
 
+  it('isUnresolvedCanonical detecta páginas de catálogo que no deben montarse en iframe', () => {
+    expect(isUnresolvedCanonical('https://lamovie.org/peliculas/10-cosas')).toBe(true);
+    expect(isUnresolvedCanonical('https://cinecalidad.am/pelicula/ejemplo.html')).toBe(true);
+    expect(isUnresolvedCanonical('https://animeflv.net/ver/anime-1')).toBe(true);
+    expect(isUnresolvedCanonical('https://tioanime.com/ver/anime-2')).toBe(true);
+    expect(isUnresolvedCanonical('https://hianimes.se/watch/anime-episode-1')).toBe(true);
+    expect(isUnresolvedCanonical('https://streamtape.com/e/abc123xyz')).toBe(false);
+    expect(isUnresolvedCanonical('https://edge.cdn.com/master.m3u8')).toBe(false);
+  });
+
+  it('isRealPlayableEmbed valida embeds reales y rechaza páginas no resueltas o expiradas', () => {
+    const realEmbed = makeServer({
+      isEmbed: true,
+      url: 'https://streamtape.com/e/abc123xyz',
+    });
+    expect(isRealPlayableEmbed(realEmbed)).toBe(true);
+
+    const unresolvedPage = makeServer({
+      isEmbed: true,
+      url: 'https://lamovie.org/peliculas/10-cosas',
+    });
+    expect(isRealPlayableEmbed(unresolvedPage)).toBe(false);
+
+    const expiredEmbed = makeServer({
+      isEmbed: true,
+      url: 'https://streamtape.com/e/abc123xyz',
+      failure_reason: 'expired_without_locator',
+    });
+    expect(isRealPlayableEmbed(expiredEmbed)).toBe(false);
+
+    const directStream = makeServer({
+      isEmbed: false,
+      url: 'https://edge.cdn.com/master.m3u8',
+    });
+    expect(isRealPlayableEmbed(directStream)).toBe(false);
+  });
+
+  it('prioriza directos sobre embeds preservando el orden relativo', () => {
+    const embed = makeServer({
+      id: 'embed',
+      url: 'https://vidhideplus.com/v/abc123',
+      isEmbed: true,
+      streamType: 'embed',
+    });
+    const directTrial = makeServer({
+      id: 'direct-trial',
+      url: 'https://cdn.example/trial.m3u8',
+      delivery_mode: 'direct_trial',
+    });
+    const direct = makeServer({
+      id: 'direct',
+      url: 'https://cdn.example/direct.m3u8',
+      delivery_mode: 'direct',
+    });
+
+    expect(prioritizeDirectCandidates([embed, directTrial, direct]).map((s) => s.id))
+      .toEqual(['direct-trial', 'direct', 'embed']);
+  });
+
+  it('deja al final páginas canónicas no reproducibles', () => {
+    const unresolved = makeServer({
+      id: 'page',
+      url: 'https://tioanime.com/ver/show-1',
+      isEmbed: true,
+      streamType: 'embed',
+      notPlayable: true,
+    });
+    const embed = makeServer({
+      id: 'embed',
+      url: 'https://vidhideplus.com/v/abc123',
+      isEmbed: true,
+      streamType: 'embed',
+    });
+    expect(prioritizeDirectCandidates([unresolved, embed]).map((s) => s.id))
+      .toEqual(['embed', 'page']);
+  });
+
+  it('canonicalUrlOf garantiza que la solicitud proxy use canonical_locator preferentemente', () => {
+    const serverWithLocator = makeServer({
+      url: 'https://cdn-edge.net/hls/master.m3u8?st=signed123',
+      original_url: 'https://origin.com/stream.m3u8',
+      canonical_locator: 'https://upstream-provider.com/embed/ref-999',
+    });
+    expect(canonicalUrlOf(serverWithLocator)).toBe('https://upstream-provider.com/embed/ref-999');
+  });
+
+  it('una página canónica resuelta a embed se monta como iframe, no como HLS', () => {
+    const canonicalPage = makeServer({
+      id: 'canonical-page',
+      url: 'https://tioanime.com/ver/yozakurasan-chi-no-daisakusen-1',
+      isEmbed: false,
+      streamType: 'direct',
+      notPlayable: true,
+      canonical_locator: 'https://tioanime.com/ver/yozakurasan-chi-no-daisakusen-1',
+    });
+
+    const resolved = applyResolution(canonicalPage, {
+      resolved: true,
+      url: 'https://ok.ru/videoembed/123456',
+      type: 'embed',
+      delivery_mode: 'embed',
+      original_url: canonicalPage.url,
+      canonical_locator: canonicalPage.url,
+    });
+
+    expect(resolved.url).toBe('https://ok.ru/videoembed/123456');
+    expect(resolved.isEmbed).toBe(true);
+    expect(resolved.streamType).toBe('embed');
+    expect(resolved.delivery_mode).toBe('embed');
+    expect(resolved.notPlayable).toBe(false);
+  });
+});

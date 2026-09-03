@@ -312,20 +312,40 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
     if (data.title) {
       result.title = String(data.title);
     }
-    // Espejo multi-fuente: mismo título visible en el MediaItem (best-effort).
-    if (data.title) {
+    // Espejo multi-fuente: identidad y título visibles en el MediaItem
+    // (best-effort). El ID debe propagarse aun cuando el título ya estuviera
+    // completo en el Show.
+    if (data.title || data.tmdb_id) {
       try {
         const base = show.base_normalized_title || show.normalized_title;
-        const item = await prisma.mediaItem.findFirst({
-          where: {
-            OR: [
-              { base_normalized_title: base, kind },
-              ...(show.normalized_title !== base ? [{ normalized_title: show.normalized_title, kind }] : []),
-            ],
-          },
-        });
-        if (item && item.title !== data.title) {
-          await prisma.mediaItem.update({ where: { id: item.id }, data: { title: String(data.title) } });
+        const mediaKinds = kind === "anime" || kind === "series"
+          ? { in: ["anime", "series"] }
+          : kind;
+        let item = data.tmdb_id
+          ? await prisma.mediaItem.findFirst({
+              // TMDB comparte namespace entre anime y series; solo las
+              // películas/documentales permanecen en un namespace separado.
+              where: { tmdb_id: data.tmdb_id, kind: mediaKinds },
+              orderBy: { created_at: "asc" },
+            })
+          : null;
+        if (!item) {
+          item = await prisma.mediaItem.findFirst({
+            where: {
+              OR: [
+                { base_normalized_title: base, kind: mediaKinds },
+                ...(show.normalized_title !== base ? [{ normalized_title: show.normalized_title, kind: mediaKinds }] : []),
+              ],
+            },
+          });
+        }
+        if (item) {
+          const itemData: Record<string, unknown> = {};
+          if (data.title && item.title !== data.title) itemData.title = String(data.title);
+          if (data.tmdb_id && !item.tmdb_id) itemData.tmdb_id = data.tmdb_id;
+          if (Object.keys(itemData).length > 0) {
+            await prisma.mediaItem.update({ where: { id: item.id }, data: itemData });
+          }
         }
       } catch {
         /* best-effort */
@@ -351,6 +371,7 @@ export async function backfillMissingMetadata(limit: number = 100): Promise<{ qu
         { banner_url: null },
         { genres: "Multimedia" },
         { year: { lte: 0 } },
+        { tmdb_id: null },
       ],
     },
     orderBy: { created_at: "asc" },

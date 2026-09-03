@@ -97,6 +97,29 @@ h4,
   border-radius: 6px;
 }
 
+/* El reproductor mantiene controles cómodos para el pulgar en móviles sin
+   agrandar botones del resto de la aplicación. El área segura evita que la
+   barra inferior quede debajo del gesto de inicio en iOS/Android. */
+@media (pointer: coarse) {
+  [data-player-topbar] {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
+  [data-player-topbar] button,
+  [data-player-controls] button {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  [data-player-controls] {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  [data-player-controls] input[type="range"] {
+    min-height: 2rem;
+  }
+}
+
 .text-balance {
   text-wrap: balance;
 }

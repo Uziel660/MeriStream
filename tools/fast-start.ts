@@ -16,14 +16,16 @@ const prisma = new PrismaClient();
 // Todos los sitios reales (excluidos archive, direct, test)
 const JOBS = [
   { target_url: "https://www3.animeflv.net/browse", name: "AnimeFLV (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://hianimes.se/filter?type=All&page=1", name: "HiAnimes (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://lamovie.org/peliculas", name: "LaMovie Películas (Catálogo Completo)", scope: "full_catalog" as const },
-  { target_url: "https://lamovie.org/series", name: "LaMovie Series (Catálogo Completo)", scope: "full_catalog" as const },
-  { target_url: "https://lamovie.org/anime", name: "LaMovie Anime (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24", name: "LaMovie Series (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24", name: "LaMovie Anime (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://cinecalidad.am", name: "Cinecalidad (Catálogo Completo)", scope: "full_catalog" as const },
-  { target_url: "https://tubepelis.com/peliculas", name: "TubePelis Películas (Catálogo Completo)", scope: "full_catalog" as const },
-  { target_url: "https://tubepelis.com/series", name: "TubePelis Series (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://tioplus.app/peliculas", name: "TioPlus Películas (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://tioplus.app/series", name: "TioPlus Series (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://doramasflix.io/doramas", name: "Doramasflix Doramas (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://doramasflix.io/peliculas", name: "Doramasflix Películas (Catálogo Completo)", scope: "full_catalog" as const },
+  { target_url: "https://doramasflix.io/variedades", name: "Doramasflix Variedades (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://latanime.org/browse", name: "LatAnime (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://tioanime.com/browse", name: "TioAnime (Catálogo Completo)", scope: "full_catalog" as const },
   { target_url: "https://wwv.veranimes.net", name: "VerAnimes (Catálogo Completo)", scope: "full_catalog" as const },
@@ -39,14 +41,16 @@ async function main() {
     update: {
       default_delay_ms: 800,
       jitter_enabled: true,
-      max_concurrent_jobs: 5,
+      // Dos tareas simultáneas mantienen el backend y los proveedores
+      // estables; el worker solapa I/O sin abrir cinco crawlers a la vez.
+      max_concurrent_jobs: 2,
       user_agent_rotation: true,
     },
     create: {
       id: "default",
       default_delay_ms: 800,
       jitter_enabled: true,
-      max_concurrent_jobs: 5,
+      max_concurrent_jobs: 2,
       user_agent_rotation: true,
     },
   });
@@ -101,7 +105,7 @@ async function main() {
   console.log(`\n📊 Resumen:`);
   console.log(`   Jobs creados: ${created}`);
   console.log(`   Jobs ya existentes: ${existing.length}`);
-  console.log(`   Config: max_jobs=5, delay=800ms`);
+  console.log(`   Config: max_jobs=2, delay=800ms`);
   console.log(`\n🚀 El worker arrancará automáticamente al iniciar el server.`);
   console.log(`   Ejecuta: npm run dev`);
 }

@@ -100,6 +100,7 @@ export function isAdminControlPlaneRequest(path: string, method: string): boolea
     "/verification",
     "/worker",
     "/tasks",
+    "/source-recovery",
     "/write-buffer",
     "/metadata/backfill",
     "/scraper/presets",

@@ -226,6 +226,14 @@ export interface PlaybackResolution {
   generation?: string;
   expiration_source?: string;
   requiredHeaders?: Record<string, string>;
+  subtitles?: Array<{
+    id?: string;
+    label?: string;
+    language?: string;
+    url?: string;
+    src?: string;
+    is_default?: boolean;
+  }>;
   failure_reason?:
     | "expired_without_locator"
     | "unresolved"
@@ -534,6 +542,13 @@ export const api = {
     resolved: boolean;
     /** Cabeceras que el CDN exige al consumir stream_url (ej. vimeos: Origin/Referer) */
     requiredHeaders?: Record<string, string>;
+    ranked_streams?: Array<{
+      url: string;
+      type?: "direct" | "embed";
+      provider?: string;
+      requiredHeaders?: Record<string, string>;
+      subtitles?: Array<{ id?: string; label?: string; language?: string; src?: string; url?: string; is_default?: boolean }>;
+    }>;
   }> {
     return request<any>(`/catalog/episode-servers`, {
       method: "POST",

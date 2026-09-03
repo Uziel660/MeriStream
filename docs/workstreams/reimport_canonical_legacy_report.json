@@ -1,0 +1,21 @@
+{
+  "dry_run": false,
+  "start_time": "2026-09-02T22:57:43.425Z",
+  "end_time": "2026-09-02T22:57:44.011Z",
+  "duration_ms": 586,
+  "total_records_considered": 92,
+  "processed_records": 92,
+  "imported_media_items": 92,
+  "imported_media_episodes": 92,
+  "imported_canonical_sources": 92,
+  "excluded_ephemeral_sources": 0,
+  "skipped_records": 0,
+  "errors": [],
+  "cursor_state": {
+    "version": 1,
+    "lastProcessedIndex": 91,
+    "lastProcessedTitle": "Yo antes de ser yo",
+    "processedCount": 92,
+    "updatedAt": "2026-09-02T22:57:44.008Z"
+  }
+}

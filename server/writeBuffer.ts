@@ -39,6 +39,7 @@ type BufferedOp =
       attempts: number;
       at: string;
     }
+  | { kind: "sourceLink.update"; id: string; data: Record<string, unknown>; fp: string; attempts: number; at: string }
   | { kind: "crawlTask.update"; id: string; data: Record<string, unknown>; fp: string; attempts: number; at: string };
 
 // �─ Cola en RAM ─────────────────────────────────────────────────
@@ -125,6 +126,11 @@ export function enqueueShowUpdate(id: string, data: Record<string, unknown>): vo
  */
 export function enqueueMediaItemUpdate(id: string, data: Record<string, unknown>): void {
   enqueueWrite({ kind: "mediaItem.update", id, data });
+}
+
+/** Encola una actualización incremental de evidencia de una fuente existente. */
+export function enqueueSourceLinkUpdate(id: string, data: Record<string, unknown>): void {
+  enqueueWrite({ kind: "sourceLink.update", id, data });
 }
 
 // ── Persistencia JSONL (respaldo) ──────────────────────────────
@@ -262,6 +268,17 @@ async function applyOp(op: BufferedOp): Promise<boolean> {
         await prisma.sourceLink.create({
           data: { ...op.data, media_episode_id: episode.id } as any,
         });
+      } catch (e: any) {
+        if (e?.code === "P2002") return true;
+        throw e;
+      }
+      return true;
+    }
+    case "sourceLink.update": {
+      try {
+        const exists = await prisma.sourceLink.findUnique({ where: { id: op.id }, select: { id: true } });
+        if (!exists) return true;
+        await prisma.sourceLink.update({ where: { id: op.id }, data: op.data as any });
       } catch (e: any) {
         if (e?.code === "P2002") return true;
         throw e;

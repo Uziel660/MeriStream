@@ -93,6 +93,7 @@ function cloneMeta(meta: Readonly<ResolvedStreamMeta>): ResolvedStreamMeta {
   return {
     ...meta,
     requiredHeaders: meta.requiredHeaders ? { ...meta.requiredHeaders } : undefined,
+    subtitles: meta.subtitles ? meta.subtitles.map((track) => ({ ...track })) : undefined,
   };
 }
 
@@ -147,8 +148,11 @@ export class ResolutionLeaseCache {
    * or its canonical equivalent. It never authorizes lookup by `meta.url`.
    */
   get(resolutionId: string, locator: string): ResolvedStreamMeta | undefined {
-    const id = resolutionId.trim();
-    const requestedLocator = locator.trim();
+    // Las rutas HTTP son datos no confiables aunque el tipo compile como string.
+    // Normalizar aquí evita que una petición incompleta convierta un error 4xx
+    // en "Cannot read properties of undefined (reading 'trim')".
+    const id = typeof resolutionId === "string" ? resolutionId.trim() : "";
+    const requestedLocator = typeof locator === "string" ? locator.trim() : "";
     if (!id || !requestedLocator) return undefined;
 
     const lease = this.leases.get(id);
@@ -215,7 +219,7 @@ export class ResolutionCoordinator {
   }
 
   async resolve(locator: string): Promise<ResolvedStreamMeta> {
-    const stableLocator = locator.trim();
+    const stableLocator = typeof locator === "string" ? locator.trim() : "";
     if (!stableLocator) throw new TypeError("A non-empty stable locator is required");
 
     const cachedId = this.locatorIndex.get(stableLocator);
@@ -284,7 +288,7 @@ export class ResolutionCoordinator {
   }
 
   private indexLocator(locator: string, resolutionId: string): void {
-    const stableLocator = locator.trim();
+    const stableLocator = typeof locator === "string" ? locator.trim() : "";
     if (!stableLocator) return;
     this.touchLocator(stableLocator, resolutionId);
     while (this.locatorIndex.size > this.maxEntries) {

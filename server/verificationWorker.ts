@@ -9,7 +9,8 @@
 //  (2) FASE 2: CATÁLOGO Y NOVEDADES — recorre las páginas de catálogo de CADA
 //      plataforma del scope (con paginación multi-página autónoma hasta agotar)
 //      y cruza los títulos contra la BD por CLAVE CANÓNICA en lote (0-lag fast-path).
-//      Obras conocidas y completas se pasan en 0ms; lo NUEVO se importa con
+//      Las obras conocidas se reescanean de forma ligera (incluidas películas
+//      para recoger nuevas fuentes); lo NUEVO se importa con
 //      saveShowWithDeduplication y los episodios nuevos se sincronizan.
 //  (3) FASE 3: NORMALIZACIÓN FINAL — segunda pasada rápida de metadatos sobre
 //      cualquier obra recién importada o modificada en la Fase 2, garantizando
@@ -25,6 +26,7 @@ import { prisma } from "./db";
 import { backfillShow, showNeedsBackfill } from "./metadataBackfill";
 import { extractCatalogListing, analyzeUniversalUrl } from "./universalScraper";
 import { saveShowWithDeduplication, quickSyncKnownShow } from "./showService";
+import { parseTitleQuery } from "./metadataEngine";
 import { normalizeTitleKey, isPlausibleTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { isPlausibleYear } from "./metadataMerge";
 import { buildPageUrl } from "./utils/pageUrlBuilder";
@@ -783,6 +785,10 @@ function buildEpisodesFromAnalysis(
             source_site: (typeof s === "object" && s.source_site) ? s.source_site : sourceSite,
             link_type: typeof s === "object" ? s.link_type : undefined,
             host: typeof s === "object" ? s.host : undefined,
+            language: typeof s === "object" ? s.language : undefined,
+            audio_language: typeof s === "object" ? s.audio_language : undefined,
+            subtitle_language: typeof s === "object" ? s.subtitle_language : undefined,
+            subtitles: typeof s === "object" ? s.subtitles : undefined,
           });
           seen.add(u);
         }
@@ -819,6 +825,10 @@ function buildEpisodesFromAnalysis(
             source_site: (typeof s === "object" && s.source_site) ? s.source_site : sourceSite,
             link_type: typeof s === "object" ? s.link_type : undefined,
             host: typeof s === "object" ? s.host : undefined,
+            language: typeof s === "object" ? s.language : undefined,
+            audio_language: typeof s === "object" ? s.audio_language : undefined,
+            subtitle_language: typeof s === "object" ? s.subtitle_language : undefined,
+            subtitles: typeof s === "object" ? s.subtitles : undefined,
           });
           seen.add(u);
         }
@@ -987,10 +997,12 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           state.progress.known++;
           if (existing.episodeCount === 0) withoutEpisodes.push(existing.title);
 
-          const isMovie = itemKind === "movie" || existing.category === "movie";
-          const skipDetailFetch = isMovie
-            ? existing.episodeCount > 0
-            : state.config.sync_known_episodes === false;
+          // Incluso las películas conocidas deben visitar su ficha una vez por
+          // pasada: ahí aparecen los servidores del proveedor actual. Saltar
+          // por tener ya un episodio dejaba obras multiplexadas con una sola
+          // fuente. Solo se omite cuando la sincronización ligera está
+          // desactivada o el catálogo no ofrece una URL de detalle.
+          const skipDetailFetch = state.config.sync_known_episodes === false || !item.url;
 
           // ── SALTO INSTANTÁNEO EN 0ms SI YA ESTÁ COMPLETA ──
           if (skipDetailFetch) {
@@ -1004,6 +1016,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
               const eps = buildEpisodesFromAnalysis(analysis, platform, itemKind);
               const syncResult = await quickSyncKnownShow(existing.id, {
                 title: analysis?.title || item.title,
+                season: parseTitleQuery(`${item.title} ${item.url || ""}`).season,
                 episodes: eps,
                 source_site: analysis?.source_domain || platform,
               });

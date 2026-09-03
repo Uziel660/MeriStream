@@ -66,6 +66,12 @@ export interface RankedStream {
   host: string | null;
   source_site?: string;
   rating?: number;
+  /** Provider-declared rendition label (sub/dub/audio). */
+  link_type?: string;
+  language?: string;
+  audio_language?: string;
+  subtitle_language?: string;
+  subtitles?: SubtitleTrack[];
 }
 
 export interface PlayStreamResponse {

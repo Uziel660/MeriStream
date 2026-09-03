@@ -1,8 +1,28 @@
-// src/utils/streamOptimizer.ts
 import { proxiedStreamUrl } from './proxiedUrl';
 import type { RankedStream } from '../types';
 
 export type DeliveryMode = 'direct' | 'direct_trial' | 'proxy_required' | 'embed';
+
+export interface ExtendedRankedStream extends RankedStream {
+  original_url?: string;
+  canonical_locator?: string;
+  resolution_id?: string;
+  generation?: string;
+  delivery_mode?: DeliveryMode;
+  is_proxyable?: boolean;
+  is_refreshable?: boolean;
+  refresh_after?: number;
+  expires_at?: number;
+  resolved_at?: number;
+  failure_reason?:
+    | 'expired_without_locator'
+    | 'unresolved'
+    | 'unsafe_url'
+    | 'empty_locator'
+    | 'provider_blocked'
+    | 'drm_or_captcha';
+  requiredHeaders?: Record<string, string>;
+}
 
 export interface ScoredServer {
   id: string;
@@ -44,6 +64,12 @@ export interface ScoredServer {
     | 'drm_or_captcha';
   /** Cabeceras que el CDN exige al consumir url (el proxy las inyecta server-side). */
   requiredHeaders?: Record<string, string>;
+  /** Rendition metadata used by the language selector (sub/dub or audio code). */
+  link_type?: string;
+  language?: string;
+  audio_language?: string;
+  subtitle_language?: string;
+  subtitles?: Array<{ id?: string; label?: string; language?: string; url?: string; src?: string; is_default?: boolean }>;
 }
 
 /**
@@ -99,7 +125,9 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('veranimes.net/ver/') ||
       lower.includes('tioplus.app/') ||
       lower.includes('tubepelis.com/pelicula/') ||
-      lower.includes('cinecalidad.am/')) &&
+      lower.includes('cinecalidad.am/') ||
+      lower.includes('hianimes.se/watch/') ||
+      lower.includes('hianimes.se/details/')) &&
     !lower.includes('.m3u8') &&
     !lower.includes('.mp4')
   );
@@ -168,7 +196,19 @@ export function detectQualityFromUrl(url: string): '4K' | '1080p' | '720p' | '48
 /**
  * Obtiene el nombre del proveedor amigable y legible
  */
-export function getProviderName(url: string, index: number): string {
+export function getProviderName(url: string, index: number, sourceSite?: string, host?: string | null): string {
+  if (host && typeof host === 'string' && host.trim()) {
+    const cleanHost = host.trim().replace(/^www\./i, '');
+    const tokens = cleanHost.split('.').filter(Boolean);
+    const hostLabel = tokens.length >= 2 ? tokens[tokens.length - 2] : cleanHost;
+    const capitalizedHost = hostLabel.charAt(0).toUpperCase() + hostLabel.slice(1);
+    if (sourceSite && typeof sourceSite === 'string' && sourceSite.trim()) {
+      const site = sourceSite.trim().toUpperCase();
+      return `${capitalizedHost} (${site})`;
+    }
+    return capitalizedHost;
+  }
+
   const u = url.toLowerCase();
   if (u.includes('/api/v1/stream/mega')) return 'Mega Directo (Nativo)';
   if (u.includes('mux.dev') || u.includes('test-streams')) return 'CDN Ultra HLS (Rápido)';
@@ -189,6 +229,14 @@ export function getProviderName(url: string, index: number): string {
   if (u.includes('uqload')) return 'Uqload Fast';
   if (u.includes('animeflv')) return 'AnimeFLV Server';
   if (u.includes('jkanime')) return 'JKanime Server';
+
+  if (sourceSite && typeof sourceSite === 'string' && sourceSite.trim()) {
+    const site = sourceSite.trim().toUpperCase();
+    if (u.endsWith('.m3u8') || u.includes('/m3u8/')) return `HLS (${site})`;
+    if (u.endsWith('.mp4')) return `MP4 (${site})`;
+    return `Servidor (${site})`;
+  }
+
   if (u.endsWith('.m3u8') || u.includes('/m3u8/')) return `HLS Master ${index + 1}`;
   if (u.endsWith('.mp4')) return `Direct MP4 ${index + 1}`;
   return `Servidor ${index + 1}`;
@@ -197,8 +245,9 @@ export function getProviderName(url: string, index: number): string {
 /**
  * Evalúa y califica un servidor multimedia para ordenar por máxima calidad y mejor salud
  */
-export function scoreServer(rawUrl: string, index: number): ScoredServer {
+export function scoreServer(rawUrl: string, index: number, metadataOverrides?: Partial<ScoredServer>): ScoredServer {
   let url = (rawUrl || '').trim();
+  const provider = metadataOverrides?.provider || getProviderName(url, index, metadataOverrides?.sourceSite);
 
   // Página web cruda (ej. tvmaze.com/episodes/..., animeflv.net/ver/...): no es un
   // medio reproducible y un fetch directo desde el navegador muere por CORS.
@@ -207,14 +256,15 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
     return {
       id: `server-${index}-rawpage`,
       url,
-      label: `No reproducible • ${getProviderName(url, index)}`,
-      provider: getProviderName(url, index),
+      label: `No reproducible • ${provider}`,
+      provider,
       quality: '480p',
       isEmbed: false,
       streamType: 'direct',
       notPlayable: true,
       score: -1000,
       health: 'desconocida',
+      ...metadataOverrides,
     };
   }
 
@@ -254,21 +304,21 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
     return {
       id: `server-${index}-placeholder`,
       url,
-      label: `No reproducible • ${getProviderName(url, index)}`,
-      provider: getProviderName(url, index),
+      label: `No reproducible • ${provider}`,
+      provider,
       quality: '480p',
       isEmbed: false,
       streamType: 'direct',
       notPlayable: true,
       score: -1000,
       health: 'desconocida',
+      ...metadataOverrides,
     };
   }
 
   const isEmbed = isEmbedUrl(url);
   const streamType = isEmbed ? 'embed' : 'direct';
   const quality = detectQualityFromUrl(url);
-  const provider = getProviderName(url, index);
   const u = url.toLowerCase();
 
   let score = 50; // base
@@ -320,7 +370,80 @@ export function scoreServer(rawUrl: string, index: number): ScoredServer {
     streamType,
     score,
     health,
+    ...metadataOverrides,
   };
+}
+
+/**
+ * Convierte directamente un RankedStream del backend a ScoredServer preservando
+ * toda su metadata de entrega (canonical_locator, resolution_id, delivery_mode,
+ * is_proxyable, is_refreshable, refresh_after, expires_at, failure_reason, etc.).
+ */
+export function scoredServerFromRanked(ranked: ExtendedRankedStream | RankedStream, index: number): ScoredServer {
+  const isRaw = isRawWebpageUrl(ranked.url);
+  const provider = getProviderName(ranked.url, index, ranked.source_site, ranked.host);
+  const ext = ranked as ExtendedRankedStream;
+  const isExpired = ext.failure_reason === 'expired_without_locator';
+
+  const base = scoreServer(ranked.url, index, {
+    provider,
+    tier: ranked.tier,
+    sourceSite: ranked.source_site,
+    canonical_locator: ext.canonical_locator,
+    resolution_id: ext.resolution_id,
+    delivery_mode: ext.delivery_mode,
+    is_proxyable: ext.is_proxyable,
+    is_refreshable: ext.is_refreshable,
+    refresh_after: ext.refresh_after,
+    expires_at: ext.expires_at,
+    resolved_at: ext.resolved_at,
+    failure_reason: ext.failure_reason,
+    generation: ext.generation,
+    requiredHeaders: ext.requiredHeaders,
+    link_type: ext.link_type,
+    language: ext.language,
+    audio_language: ext.audio_language,
+    subtitle_language: ext.subtitle_language,
+    subtitles: ext.subtitles,
+    original_url: ext.original_url || ranked.url,
+  });
+
+  if (isExpired) {
+    return {
+      ...base,
+      notPlayable: true,
+      label: `[Expirado] ${provider}`,
+      score: -1000,
+    };
+  }
+
+  if (isRaw) {
+    return {
+      ...base,
+      isEmbed: false,
+      streamType: 'direct',
+      notPlayable: true,
+      label: `No reproducible • ${provider}`,
+      score: -1000,
+    };
+  }
+
+  if (ranked.type === 'embed') {
+    return {
+      ...base,
+      isEmbed: true,
+      streamType: 'embed',
+      delivery_mode: base.delivery_mode || 'embed',
+    };
+  } else if (ranked.type === 'direct') {
+    return {
+      ...base,
+      isEmbed: false,
+      streamType: 'direct',
+    };
+  }
+
+  return base;
 }
 
 function hashString(str: string): number {
@@ -410,13 +533,57 @@ export function rankAndSortServers(urls: string[]): ScoredServer[] {
  * de servidor por plataforma + SiteRating) sobre los servidores ya rankeados.
  * El orden del backend MANDA: los servidores que él ordenó conservan su
  * posición exacta; los que el backend no conoce se añaden al final por score.
+ * Además, conserva TODA la metadata de entrega provista en ranked_streams:
+ * canonical_locator, resolution_id, delivery_mode, is_proxyable, is_refreshable, etc.
  */
-export function applyBackendTiers(servers: ScoredServer[], ranked: RankedStream[] | undefined): ScoredServer[] {
+export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRankedStream | RankedStream)[] | undefined): ScoredServer[] {
   if (!ranked || ranked.length === 0) return servers;
   const metaByUrl = new Map(ranked.map((r) => [r.url, r]));
   const enriched = servers.map((s) => {
-    const m = metaByUrl.get(s.url);
-    return m ? { ...s, tier: m.tier, sourceSite: m.source_site ?? s.sourceSite } : s;
+    const rawM = metaByUrl.get(s.url);
+    if (!rawM) return s;
+    const m = rawM as ExtendedRankedStream;
+    const provider = getProviderName(s.url, 0, m.source_site ?? s.sourceSite, m.host);
+    const isExpired = m.failure_reason === 'expired_without_locator' || s.failure_reason === 'expired_without_locator';
+    const isRaw = isRawWebpageUrl(s.url);
+    const backendProvided = Boolean(m.host || m.source_site);
+    const isGenericProvider = !s.provider || s.provider.startsWith('Servidor') || s.provider.startsWith('HLS Master') || s.provider.startsWith('Direct MP4');
+    const finalProvider = backendProvided || isGenericProvider ? provider : s.provider;
+
+    const label = isExpired
+      ? `[Expirado] ${finalProvider}`
+      : isRaw
+      ? `No reproducible • ${finalProvider}`
+      : s.label.includes('Servidor') || s.label.includes('HLS Master') || s.label.includes('Direct MP4')
+      ? `[${s.quality}] ${finalProvider}`
+      : s.label;
+
+    return {
+      ...s,
+      provider: finalProvider,
+      label,
+      tier: m.tier,
+      sourceSite: m.source_site ?? s.sourceSite,
+      canonical_locator: m.canonical_locator ?? s.canonical_locator,
+      resolution_id: m.resolution_id ?? s.resolution_id,
+      delivery_mode: m.delivery_mode ?? s.delivery_mode,
+      is_proxyable: m.is_proxyable ?? s.is_proxyable,
+      is_refreshable: m.is_refreshable ?? s.is_refreshable,
+      refresh_after: m.refresh_after ?? s.refresh_after,
+      expires_at: m.expires_at ?? s.expires_at,
+      resolved_at: m.resolved_at ?? s.resolved_at,
+      failure_reason: m.failure_reason ?? s.failure_reason,
+      generation: m.generation ?? s.generation,
+      requiredHeaders: m.requiredHeaders ?? s.requiredHeaders,
+      original_url: m.original_url ?? s.original_url,
+      link_type: m.link_type ?? s.link_type,
+      language: m.language ?? s.language,
+      audio_language: m.audio_language ?? s.audio_language,
+      subtitle_language: m.subtitle_language ?? s.subtitle_language,
+      subtitles: m.subtitles ?? s.subtitles,
+      ...(isExpired ? { notPlayable: true, score: -1000 } : {}),
+      ...(isRaw ? { isEmbed: false, streamType: 'direct' as const, notPlayable: true, score: -1000 } : {}),
+    };
   });
   const byUrl = new Map(enriched.map((s) => [s.url, s]));
   const ordered: ScoredServer[] = [];

@@ -335,6 +335,17 @@ async function readPrefix(response: Response, maxBytes = 16 * 1024): Promise<str
   return new TextDecoder().decode(bytes);
 }
 
+/**
+ * Un CDN puede responder 200 con solo la cabecera HLS (por ejemplo
+ * `#EXTM3U\n#EXT-X-VERSION:6`) cuando el token ya no apunta a un recurso real.
+ * Esa respuesta no es reproducible y no debe alimentar el ranking de salud.
+ * Aceptamos tanto playlists de segmentos como manifests maestros.
+ */
+function isPlayableHlsManifest(prefix: string): boolean {
+  if (!prefix.includes("#EXTM3U")) return false;
+  return /#EXTINF\s*:|#EXT-X-(?:STREAM-INF|TARGETDURATION|MEDIA|PLAYLIST-TYPE|MAP|KEY)\s*:|#EXT-X-ENDLIST(?:\s|$)/i.test(prefix);
+}
+
 async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResult> {
   const startedAt = Date.now();
   const { headers, profile } = buildProxyHeaders(url, opts.playerReferer);
@@ -356,8 +367,14 @@ async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResu
         return resultForFailure(url, response.status, reasonForStatus(response.status), undefined, elapsed());
       }
       const prefix = await readPrefix(response);
-      if (!prefix.includes("#EXTM3U")) {
-        return resultForFailure(url, response.status, "invalid_manifest", "HLS manifest missing #EXTM3U", elapsed());
+      if (!isPlayableHlsManifest(prefix)) {
+        return resultForFailure(
+          url,
+          response.status,
+          "invalid_manifest",
+          "HLS manifest missing playlist directives",
+          elapsed(),
+        );
       }
       return resultForSuccess(url, response.status, elapsed());
     }

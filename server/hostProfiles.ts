@@ -60,6 +60,16 @@ export const VIMEOS_REQUIRED_HEADERS = {
  */
 export const HOST_PROFILES: HostProfile[] = [
   {
+    // ZokoAnime HLS CDN: requests without the player Referer return 403.
+    // The canonical embed is zokoanime.video, so pin that Referer for both
+    // manifests and segments while keeping the lightweight undici client.
+    match: ["hls2.aniwatchtv.uk"],
+    refererMode: "fixed",
+    referer: "https://zokoanime.video/",
+    userAgent: CHROME_124_UA,
+    client: "undici",
+  },
+  {
     // AnimeFLV / Playmudos / Ducvomes CDNs:
     // impit-client (Rust HTTP/2) sufre 'Remote protocol error occurred' con los
     // datanodes de ducvomes. undici (fetch estándar) pasa limpio y sin cortes.

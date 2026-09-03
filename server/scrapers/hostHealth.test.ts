@@ -24,6 +24,13 @@ describe("host health probes", () => {
     );
   });
 
+  it("rejects an empty HLS response even when the CDN returns 200", async () => {
+    const fetchMock = vi.fn(async () => new Response("#EXTM3U\n#EXT-X-VERSION:6\n", { status: 200 }));
+    const result = await probeStream("https://cdn.example/empty.m3u8", { fetch: fetchMock });
+
+    expect(result).toMatchObject({ ok: false, state: "degraded", status: 200, reason: "invalid_manifest" });
+  });
+
   it("falls back from MP4 HEAD to a small Range GET", async () => {
     const fetchMock = vi
       .fn()

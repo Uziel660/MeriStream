@@ -6,6 +6,18 @@ export interface ExtractedEpisode {
   url: string;
   source_type?: string;
   server_name?: string;
+  /** All provider candidates found for this episode; url remains the primary. */
+  sources?: Array<{
+    url: string;
+    source_site?: string;
+    link_type?: string;
+    host?: string;
+    is_verified?: boolean;
+    language?: string;
+    audio_language?: string;
+    subtitle_language?: string;
+    subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
+  }>;
 }
 
 export interface ExtractedCatalogItem {
@@ -64,6 +76,11 @@ export interface SourceLinkInput {
   host?: string;
   source_kind?: SourceKind;
   is_verified?: boolean;
+  /** Optional rendition metadata; persisted in nullable SourceLink columns. */
+  language?: string;
+  audio_language?: string;
+  subtitle_language?: string;
+  subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
 }
 
 export type SourceKind = "page" | "embed" | "stable_direct" | "ephemeral_direct";
@@ -97,4 +114,3 @@ export interface PlaybackResolution {
     | "provider_blocked"
     | "drm_or_captcha";
 }
-

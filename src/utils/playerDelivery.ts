@@ -58,6 +58,64 @@ export function isExpiredWithoutLocator(
 }
 
 /**
+ * Comprueba si una URL es una página canónica no resuelta (ej. fichas de LaMovie, CineCalidad, AnimeFLV, etc.)
+ * que NO debe montarse directamente como iframe.
+ */
+export function isUnresolvedCanonical(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const lower = String(url).toLowerCase();
+  if (lower.includes('.m3u8') || lower.includes('.mp4')) return false;
+  return (
+    lower.includes('lamovie.org/') ||
+    lower.includes('cinecalidad.am/') ||
+    lower.includes('animeflv.net/ver/') ||
+    lower.includes('animeflv.to/ver/') ||
+    lower.includes('jkanime.net/ver/') ||
+    lower.includes('tioanime.com/ver/') ||
+    lower.includes('latanime.org/ver/') ||
+    lower.includes('veranimes.net/ver/') ||
+    lower.includes('tioplus.app/') ||
+    lower.includes('tubepelis.com/') ||
+    lower.includes('tvmaze.com/') ||
+    lower.includes('hianimes.se/watch/') ||
+    lower.includes('hianimes.se/details/')
+  );
+}
+
+/**
+ * Comprueba si un servidor califica como un embed real que legítimamente puede
+ * reproducirse en un iframe (fallback controlado).
+ */
+export function isRealPlayableEmbed(server: ScoredServer | null | undefined): boolean {
+  if (!server) return false;
+  if (!server.isEmbed) return false;
+  if (isExpiredWithoutLocator(server)) return false;
+  if (server.notPlayable) return false;
+  if (isUnresolvedCanonical(server.url)) return false;
+  return true;
+}
+
+/**
+ * Ordena candidatos para el primer intento sin perder el orden del backend
+ * dentro de cada grupo. Los directos (incluido direct_trial/proxy_required)
+ * se prueban antes que un embed; los embeds reales quedan como fallback y las
+ * páginas canónicas/no reproducibles al final para que no bloqueen el arranque.
+ */
+export function prioritizeDirectCandidates(servers: ScoredServer[]): ScoredServer[] {
+  const playbackRank = (server: ScoredServer): number => {
+    if (server.notPlayable || isExpiredWithoutLocator(server)) return 2;
+    if (!server.isEmbed) return 0;
+    if (isRealPlayableEmbed(server)) return 1;
+    return 2;
+  };
+
+  return servers
+    .map((server, index) => ({ server, index, rank: playbackRank(server) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ server }) => server);
+}
+
+/**
  * Regla 3: Un fallo directo puede escalar a proxy únicamente si is_proxyable !== false.
  * Regla 1: expired_without_locator jamás entra en requesting_proxy.
  */
@@ -71,8 +129,8 @@ export function canEscalateToProxy(server: ScoredServer | null | undefined): boo
 
 /**
  * Aplica atómicamente el resultado de resolveEmbed() sobre un servidor conservando
- * SIEMPRE el embed original y toda la metadata de resolución. Nunca se propaga un
- * stream resuelto a otros servidores: cada embed conserva su propia identidad.
+ * SIEMPRE el localizador original y toda la metadata de resolución. Nunca se propaga
+ * un stream resuelto a otros servidores: cada candidato conserva su propia identidad.
  */
 export function applyResolution(
   server: ScoredServer,
@@ -95,6 +153,7 @@ export function applyResolution(
     resolved_at: resolution.resolved_at ?? server.resolved_at,
     failure_reason: failureReason,
     requiredHeaders: resolution.requiredHeaders || server.requiredHeaders,
+    subtitles: resolution.subtitles || server.subtitles,
   };
 
   // Si la fuente expiró sin localizador, marcar como no reproducible y no avanzar a directo ni proxy.
@@ -116,8 +175,9 @@ export function applyResolution(
     };
   }
 
-  // Stream resuelto: si el servidor era un embed, la URL nativa pasa a url y el
-  // embed original se conserva en original_url para poder re-resolver/revertir.
+  // Stream resuelto: si el resultado sigue siendo un embed, la URL se monta en
+  // iframe aunque el candidato original fuese una página canónica. Esto evita
+  // enviar una URL HTML a HLS.js como si fuese un manifiesto nativo.
   const wasEmbed = server.isEmbed;
   const resolvedIsEmbed = resolution.type === 'embed' || mode === 'embed';
   const resolvedMetadata = {
@@ -127,13 +187,15 @@ export function applyResolution(
   };
 
   // Si el resolve devuelve un tipo embed (no nativo), mantener el iframe con metadata.
-  if (wasEmbed && resolvedIsEmbed) {
+  // También aplica a páginas canónicas que se resolvieron JIT a un embed real.
+  if (resolvedIsEmbed) {
     return {
       ...server,
       url: resolvedUrl,
       isEmbed: true,
       streamType: 'embed',
       delivery_mode: mode || server.delivery_mode,
+      notPlayable: false,
       ...resolvedMetadata,
     };
   }
@@ -160,12 +222,29 @@ export function buildAttachmentKey(server: ScoredServer | null | undefined): str
 }
 
 /**
- * Firma estable de la lista de servidores: depende SOLO de las URLs (identidad real
- * de los candidatos), no de la identidad del array. Evita reconstruir la lista y
- * volver al índice 0 en cada render por cambios de identidad de props.all_streams.
+ * Firma estable de la lista de servidores: usa la identidad de carga y la
+ * metadata que puede cambiar una resolución JIT (generación, modo, expiración,
+ * localizador y estado reproducible). Así una URL renovada en el mismo índice
+ * vuelve a conectar HLS.js, pero una recreación superficial del array no resetea
+ * la selección del usuario.
  */
 export function serversStableSignature(servers: ScoredServer[]): string {
-  return servers.map((s) => s.url).join('\u0001');
+  return servers
+    .map((s) =>
+      [
+        s.id,
+        s.url,
+        s.original_url || '',
+        s.canonical_locator || '',
+        s.generation || '',
+        s.delivery_mode || '',
+        s.isEmbed ? 'embed' : 'direct',
+        s.notPlayable ? 'blocked' : 'playable',
+        s.refresh_after ?? '',
+        s.expires_at ?? '',
+      ].join('|')
+    )
+    .join('\u0001');
 }
 
 /**

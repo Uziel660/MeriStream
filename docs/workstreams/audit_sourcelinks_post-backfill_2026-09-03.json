@@ -1,0 +1,652 @@
+{
+  "timestamp": "2026-09-03T06:59:52.579Z",
+  "target_sites": [
+    "tioplus.app",
+    "lamovie.org",
+    "cinecalidad.am",
+    "hianimes",
+    "hianimes.se",
+    "tioanime.com",
+    "latanime.org"
+  ],
+  "summary": {
+    "total_links_audited": 20196,
+    "total_episodes_audited": 19233,
+    "categories": {
+      "canonical_page": 7365,
+      "canonical_embed": 8838,
+      "stable_direct": 24,
+      "active_ephemeral_direct": 0,
+      "expired_ephemeral_direct": 329,
+      "invalid_catalog_page": 1,
+      "unknown": 3639
+    },
+    "total_requiring_canonical_reconstruction": 330
+  },
+  "providers": {
+    "tioplus.app": {
+      "provider": "tioplus.app",
+      "total_links": 444,
+      "by_category": {
+        "canonical_page": 96,
+        "canonical_embed": 61,
+        "stable_direct": 24,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 263,
+        "invalid_catalog_page": 0,
+        "unknown": 0
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 263,
+      "sources_requiring_canonical_reconstruction": 263,
+      "episodes_with_sister_canonical_page": 96,
+      "episodes_with_sister_embed": 24,
+      "episodes_without_any_valid_source": 69
+    },
+    "lamovie.org": {
+      "provider": "lamovie.org",
+      "total_links": 7077,
+      "by_category": {
+        "canonical_page": 6901,
+        "canonical_embed": 136,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 40,
+        "invalid_catalog_page": 0,
+        "unknown": 0
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 40,
+      "sources_requiring_canonical_reconstruction": 40,
+      "episodes_with_sister_canonical_page": 23,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 0
+    },
+    "cinecalidad.am": {
+      "provider": "cinecalidad.am",
+      "total_links": 437,
+      "by_category": {
+        "canonical_page": 368,
+        "canonical_embed": 42,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 26,
+        "invalid_catalog_page": 1,
+        "unknown": 0
+      },
+      "invalid_catalog_urls_count": 1,
+      "expired_ephemeral_direct_count": 26,
+      "sources_requiring_canonical_reconstruction": 27,
+      "episodes_with_sister_canonical_page": 9,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 1
+    },
+    "hianimes": {
+      "provider": "hianimes",
+      "total_links": 2185,
+      "by_category": {
+        "canonical_page": 0,
+        "canonical_embed": 0,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 0,
+        "invalid_catalog_page": 0,
+        "unknown": 2185
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 0,
+      "sources_requiring_canonical_reconstruction": 0,
+      "episodes_with_sister_canonical_page": 0,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 2169
+    },
+    "hianimes.se": {
+      "provider": "hianimes.se",
+      "total_links": 132,
+      "by_category": {
+        "canonical_page": 0,
+        "canonical_embed": 0,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 0,
+        "invalid_catalog_page": 0,
+        "unknown": 132
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 0,
+      "sources_requiring_canonical_reconstruction": 0,
+      "episodes_with_sister_canonical_page": 0,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 132
+    },
+    "tioanime.com": {
+      "provider": "tioanime.com",
+      "total_links": 8066,
+      "by_category": {
+        "canonical_page": 0,
+        "canonical_embed": 7004,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 0,
+        "invalid_catalog_page": 0,
+        "unknown": 1062
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 0,
+      "sources_requiring_canonical_reconstruction": 0,
+      "episodes_with_sister_canonical_page": 0,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 1053
+    },
+    "latanime.org": {
+      "provider": "latanime.org",
+      "total_links": 1855,
+      "by_category": {
+        "canonical_page": 0,
+        "canonical_embed": 1595,
+        "stable_direct": 0,
+        "active_ephemeral_direct": 0,
+        "expired_ephemeral_direct": 0,
+        "invalid_catalog_page": 0,
+        "unknown": 260
+      },
+      "invalid_catalog_urls_count": 0,
+      "expired_ephemeral_direct_count": 0,
+      "sources_requiring_canonical_reconstruction": 0,
+      "episodes_with_sister_canonical_page": 0,
+      "episodes_with_sister_embed": 0,
+      "episodes_without_any_valid_source": 242
+    }
+  },
+  "action_plan": [
+    {
+      "id": "PLAN-TIOPLUS-01",
+      "provider": "tioplus.app",
+      "severity": "high",
+      "action": "Reconstruir catálogo canónico para episodios con HLS efímeros vencidos",
+      "rationale": "El 100% de los streams directos de tioplus.app corresponden a acek-cdn y dramiyos-cdn firmados con s+e ya vencidos. No existe ninguna URL de detalle en tioplus.app almacenada.",
+      "affected_count": 263,
+      "execution_safety": "manual_approval_required",
+      "steps": [
+        "Identificar los MediaItems asociados a los episodios afectados.",
+        "Ejecutar scraper canónico de tioplus.app para extraer la URL de página canónica (/pelicula/... o /serie/...) y/o embeds permanentes.",
+        "Insertar las nuevas fuentes canónicas con source_kind='page' o 'embed'.",
+        "Depurar de forma segura los SourceLinks expirados una vez verificada la nueva fuente canónica."
+      ]
+    },
+    {
+      "id": "PLAN-CINECALIDAD-01",
+      "provider": "cinecalidad.am",
+      "severity": "high",
+      "action": "Eliminar / reclasificar URLs de catálogo /page/N/ asociadas erróneamente a episodios",
+      "rationale": "Se detectaron URLs de paginación (ej. https://www.cinecalidad.am/page/1/) guardadas como fuente de reproducción de episodios específicos.",
+      "affected_count": 1,
+      "execution_safety": "manual_approval_required",
+      "steps": [
+        "Aislar los registros de SourceLink que coincidan con regex /page/\\d+/.",
+        "Comprobar si el episodio cuenta con una página canónica hermana (/ver-pelicula/...).",
+        "Si cuenta con hermana, marcar la URL de catálogo para remoción segura en una migración planificada.",
+        "Actualizar el scraper de cinecalidad para evitar que la URL de navegación sea persistida como stream del ítem."
+      ]
+    },
+    {
+      "id": "PLAN-CINECALIDAD-02",
+      "provider": "cinecalidad.am",
+      "severity": "medium",
+      "action": "Remover enlaces directos temporales (Vimeos/Goodstream s+e) que ya cuentan con página canónica",
+      "rationale": "Cinecalidad almacena la página canónica (/ver-pelicula/...) junto a links directos firmados vencidos. Los links directos son redundantes y fallan de inmediato.",
+      "affected_count": 26,
+      "execution_safety": "manual_approval_required",
+      "steps": [
+        "Verificar que cada episodio con link Vimeos/Goodstream s+e tenga su página canónica hermana.",
+        "Validar resolución JIT a demanda desde la página canónica.",
+        "Purgar los registros de SourceLink directos expirados mediante migración controlada."
+      ]
+    },
+    {
+      "id": "PLAN-LAMOVIE-01",
+      "provider": "lamovie.org",
+      "severity": "medium",
+      "action": "Limpiar streams directos efímeros que cuentan con página canónica hermana",
+      "rationale": "Existen enlaces directos temporales a vimeos y goodstream que ya han expirado pero cuentan con su página canónica de lamovie.org/peliculas/.",
+      "affected_count": 40,
+      "execution_safety": "manual_approval_required",
+      "steps": [
+        "Asegurar que la resolución JIT esté operativa para páginas canónicas de lamovie.org.",
+        "Descartar los SourceLinks de tipo direct firmados vencidos."
+      ]
+    }
+  ],
+  "sanitized_samples": [
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://yxqc9c2vqj7vepbl.acek-cdn.com/hls2/01/08557/vplf3hxobboq_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "yxqc9c2vqj7vepbl.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:46:59.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://1hyahuwewhyvwmq.acek-cdn.com/hls2/01/08557/96f7oqqryybs_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "1hyahuwewhyvwmq.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:01.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://yxqc9c2vqj7vepbl.acek-cdn.com/hls2/01/08557/9jh53g0838bl_,l,n,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "yxqc9c2vqj7vepbl.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:02.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://wt4pjiive9agjpl.dramiyos-cdn.com/hls2/01/08557/oj9g4slz0oo6_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "wt4pjiive9agjpl.dramiyos-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:00.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://o5czhgnohwluyzcb.acek-cdn.com/hls2/01/08557/9ooufglnjg3h_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "o5czhgnohwluyzcb.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:04.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://yxqc9c2vqj7vepbl.acek-cdn.com/hls2/01/08545/pjabnk95yjpg_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "yxqc9c2vqj7vepbl.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:07.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://yxqc9c2vqj7vepbl.acek-cdn.com/hls2/01/08557/kg77qljxzf9y_,l,n,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "yxqc9c2vqj7vepbl.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:05.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://o5czhgnohwluyzcb.acek-cdn.com/hls2/01/08545/t9pbs565atnn_,l,n,h,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "o5czhgnohwluyzcb.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:08.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://2zo6sb3myz7fapc.acek-cdn.com/hls2/01/08535/by2x4rc2rfmh_,l,n,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "2zo6sb3myz7fapc.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:10.000Z"
+    },
+    {
+      "provider": "tioplus.app",
+      "category": "expired_ephemeral_direct",
+      "sanitized_url": "https://vyy3aygtehnqnhdr.acek-cdn.com/hls2/01/08535/vsfs8pzhtdip_,l,n,.urlset/master.m3u8?[QUERY_STRIPPED]",
+      "host": "vyy3aygtehnqnhdr.acek-cdn.com",
+      "expires_at_iso": "2026-08-26T09:47:11.000Z"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/bloodshot-2020/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/10-cosas-que-odio-de-ti-1999/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/paprika-el-reino-de-los-suenos-2006/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/no-es-mas-que-el-fin-del-mundo-2016/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/enemigo-de-todos-2016/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/hellraiser-ella-2022/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/animales-fantasticos-3-los-secretos-de-dumbledore-2022/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/animales-fantasticos-2-los-crimenes-de-grindelwald-2018/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/ligeramente-embarazada-2007/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "lamovie.org",
+      "category": "canonical_page",
+      "sanitized_url": "https://lamovie.org/peliculas/desencantada-2022/",
+      "host": "lamovie.org"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "invalid_catalog_page",
+      "sanitized_url": "https://www.cinecalidad.am/page/1/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/intriga-internacional/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/reyes-de-las-olas-2/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/camara-policial/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/pena-de-muerte/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/power-rangers-la-pelicula/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/minions-monstruos/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-pelicula/esta-detras-de-ti/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-el-episodio/bodas-s-a-1x2/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "cinecalidad.am",
+      "category": "canonical_page",
+      "sanitized_url": "https://www.cinecalidad.am/ver-el-episodio/bodas-s-a-1x3/",
+      "host": "www.cinecalidad.am"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-1-p27sqc",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-2-icb3wy",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-3-enjf92",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-4-feye0n",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-5-zmzoz1",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-6-2np8e2",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-7-w7l7w6",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-8-plgpri",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-9-hjlm53",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/my-status-as-an-assassin-obviously-exceeds-the-heros-episode-10-b6m01e",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-1-dgcx0p",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-2-cgjzo2",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-3-d71lfj",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-4-vqyben",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-5-5bi84x",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-6-cuggkf-145",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-7-i0di6h",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-8-h1odgw",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-9-10rrcg",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "hianimes.se",
+      "category": "unknown",
+      "sanitized_url": "https://hianimes.se/watch/2200-nen-neko-no-kuni-nippon-episode-10-v15o4p",
+      "host": "hianimes.se"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/kimetsu-no-yaiba-movie-1-mugenjouhen-akaza-sairai-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/tensei-shitara-slime-datta-ken-movie-2-soukai-no-namidahen-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/the-ribbon-hero-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "unknown",
+      "sanitized_url": "https://tioanime.com/ver/boku-no-hero-academia-i-am-a-hero-too-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "unknown",
+      "sanitized_url": "https://tioanime.com/ver/ansatsu-kyoushitsu-movie-minna-no-jikan-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/nige-jouzu-no-wakagimi-2nd-season-1",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/nige-jouzu-no-wakagimi-2nd-season-2",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/nige-jouzu-no-wakagimi-2nd-season-3",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/nige-jouzu-no-wakagimi-2nd-season-4",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "tioanime.com",
+      "category": "canonical_embed",
+      "sanitized_url": "https://tioanime.com/ver/nige-jouzu-no-wakagimi-2nd-season-5",
+      "host": "tioanime.com"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/kaguya-sama-love-is-war-stairway-to-adulthood-latino-episodio-1",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/kaguya-sama-love-is-war-stairway-to-adulthood-latino-episodio-2",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-1",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-2",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-3",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-4",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-5",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-6",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-7",
+      "host": "latanime.org"
+    },
+    {
+      "provider": "latanime.org",
+      "category": "canonical_embed",
+      "sanitized_url": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-8",
+      "host": "latanime.org"
+    }
+  ]
+}

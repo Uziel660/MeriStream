@@ -5,6 +5,9 @@ import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
 
 const BASE_URL = "https://doramasflix.io";
+const GRAPHQL_URL = "https://user-api.fluxcedene.net/graphql";
+const GRAPHQL_APP = "com.asiapp.doramasgo";
+const CATALOG_PAGE_SIZE = 24;
 // Nuevo Next-Action vigente (descubierto live 2026-08-29 via Playwright intercept: getEpisodeLinks)
 const NEXT_ACTION_ID = "406bdec544eeb53cbefa09322cbda67963eb850496";
 const NEXT_ACTION_FALLBACK = "40c3671ad750012fd1bcbcb050c7894f427d37a8b1";
@@ -70,6 +73,13 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    * Extrae el catálogo de /doramas, /peliculas o /variedades
    */
   private async extractCatalog(url: string): Promise<ExtractedCatalogItem[]> {
+    // Doramasflix migró el listado a GraphQL. La vista HTML solo contiene la
+    // primera página y repetirla con ?page=N provoca que el importador pierda
+    // casi todo el catálogo. Consultamos la API oficial del sitio y dejamos
+    // el HTML como fallback para no romper dominios/instalaciones antiguas.
+    const apiItems = await this.extractCatalogFromGraphql(url);
+    if (apiItems.length > 0) return apiItems;
+
     const html = await this.fetchHtml(url);
     if (!html) throw new Error(`FETCH_FAILED: ${url}`);
 
@@ -110,6 +120,110 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     });
 
     return items;
+  }
+
+  private async extractCatalogFromGraphql(url: string): Promise<ExtractedCatalogItem[]> {
+    const page = this.catalogPageNumber(url);
+    const path = (() => {
+      try { return new URL(url).pathname.toLowerCase(); } catch { return ""; }
+    })();
+    const isMovie = path.includes("/peliculas");
+    const isVariety = path.includes("/variedades");
+    const query = isMovie
+      ? `query PaginationMovie($sort: SortMovie, $limit: Int, $filter: FilterMoviesInput, $page: Int, $excludedLabelSlugs: [String!]) {
+          paginationMovie(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
+            items { _id name name_es slug poster_path poster backdrop_path backdrop release_date }
+          }
+        }`
+      : `query PaginationDorama($sort: SortDorama, $limit: Int, $filter: FilterDoramasInput, $page: Int, $excludedLabelSlugs: [String!]) {
+          paginationDorama(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
+            items { _id name name_es slug isTVShow poster_path poster backdrop_path backdrop first_air_date }
+          }
+        }`;
+    // FilterMoviesInput no incluye isTVShow; los filtros de películas van
+    // vacíos. Doramas sí diferencia telenovelas de programas con isTVShow.
+    const filter = isMovie ? {} : isVariety ? { isTVShow: true } : { isTVShow: false };
+    const variables = { sort: "_ID_DESC", limit: CATALOG_PAGE_SIZE, filter, page, excludedLabelSlugs: null };
+    const response = await this.fetchGraphql(query, variables, url);
+    if (!response || typeof response !== "object") return [];
+
+    const container = isMovie
+      ? (response as { data?: { paginationMovie?: { items?: unknown[] } } }).data?.paginationMovie
+      : (response as { data?: { paginationDorama?: { items?: unknown[] } } }).data?.paginationDorama;
+    const rawItems = container?.items;
+    if (!Array.isArray(rawItems)) return [];
+
+    const prefix = isMovie ? "/peliculas/" : isVariety ? "/variedades/" : "/doramas/";
+    const result: ExtractedCatalogItem[] = [];
+    const seen = new Set<string>();
+    for (const raw of rawItems) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      const slug = typeof item.slug === "string" ? item.slug.trim() : "";
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      const title = this.firstString(item.name_es, item.name, slug);
+      const poster = this.firstString(item.poster, item.poster_path);
+      const backdrop = this.firstString(item.backdrop, item.backdrop_path);
+      const year = this.yearFromValue(item.release_date ?? item.first_air_date);
+      result.push({
+        title,
+        url: `${BASE_URL}${prefix}${encodeURIComponent(slug)}`,
+        image_url: poster || backdrop ? this.resolveRelativeUrl(poster || backdrop, BASE_URL) : null,
+        kind: isMovie ? "movie" : "series",
+        year,
+      });
+    }
+    return result;
+  }
+
+  private async fetchGraphql(query: string, variables: Record<string, unknown>, referer: string): Promise<unknown | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(GRAPHQL_URL, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          ...COMMON_HEADERS,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Origin: BASE_URL,
+          Referer: referer,
+          "X-App": GRAPHQL_APP,
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json() as { errors?: unknown[]; data?: unknown };
+      if (Array.isArray(payload.errors) && payload.errors.length > 0) return null;
+      return payload;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private catalogPageNumber(url: string): number {
+    try {
+      const parsed = new URL(url);
+      const raw = parsed.searchParams.get("page") || parsed.searchParams.get("p") || parsed.searchParams.get("pag") || "1";
+      const page = Number.parseInt(raw, 10);
+      return Number.isFinite(page) && page > 0 ? page : 1;
+    } catch {
+      return 1;
+    }
+  }
+
+  private firstString(...values: unknown[]): string {
+    return values.find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim() || "";
+  }
+
+  private yearFromValue(value: unknown): number | null {
+    if (typeof value !== "string") return null;
+    const match = value.match(/\b(19|20)\d{2}\b/);
+    return match ? Number.parseInt(match[0], 10) : null;
   }
 
   /**
@@ -180,6 +294,11 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     // Normaliza escapes más comunes de Next Flight
     const normalized = html.replace(/\\u0022/g, '"').replace(/\\"/g, '"');
     const candidates = [
+      // El frontend vigente entrega `initialEpisodes[].id` (antes era
+      // `episode._id`). Mantener ambos formatos evita que el adaptador se
+      // quede devolviendo la página del capítulo sin consultar sus servidores.
+      /initialEpisodes[^]{0,800}?\"id\"\s*:\s*\"([a-f0-9]{24})\"/i,
+      /initialEpisodes[^]{0,800}?["']id["']\s*:\s*["']([a-f0-9]{24})["']/i,
       /"episode"\s*:\s*\{[^}]*?"_id"\s*:\s*"([a-f0-9]{24})"/i,
       /'episode'\s*:\s*\{[^}]*?'_id'\s*:\s*['"]([a-f0-9]{24})['"]/i,
       /"_id"\s*:\s*"([a-f0-9]{24})"/i,

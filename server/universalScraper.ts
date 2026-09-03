@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { UniversalAnalysisResult, ExtractedCatalogItem, ScraperPreset } from "./types";
 import { ScraperManager } from "./scrapers/ScraperManager";
+import { dedupeCatalogItems } from "./catalogIntegrity";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
@@ -34,6 +35,14 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     category: "anime",
     description: "Directorio /browse de animes con temporadas completas y servidores multi-fuente.",
     example_url: "https://www3.animeflv.net/browse",
+    icon: "Tv",
+  },
+  {
+    id: "anime-hianimes",
+    name: "HiAnimes Catálogo (Anime multi-host)",
+    category: "anime",
+    description: "Catálogo paginado vía API pública con servidores separados para subtítulos y doblaje.",
+    example_url: "https://hianimes.se/filter?type=All&page=1",
     icon: "Tv",
   },
   {
@@ -247,7 +256,7 @@ export async function extractCatalogListingsBatch(
       try {
         if (opts.beforeRequest) await opts.beforeRequest();
         const items = await extractCatalogListing(url, opts.explicitAdapterId);
-        results[idx] = { page_url: url, items: items || [], error: null };
+        results[idx] = { page_url: url, items: dedupeCatalogItems(items || []) as ExtractedCatalogItem[], error: null };
       } catch (e: any) {
         results[idx] = { page_url: url, items: [], error: String(e?.message || e) };
       }

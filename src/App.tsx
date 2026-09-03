@@ -20,6 +20,7 @@ import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
 import { searchShows } from './utils/searchUtils';
+import { displayEpisodeTitle } from './utils/episodeLabels';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
@@ -29,11 +30,7 @@ const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
 function safeEpisodeTitle(episode: { title?: string; episode_number?: number }): string {
-  const t = (episode.title || '').trim();
-  if (t && !/^undefined$/i.test(t) && !/^null$/i.test(t)) return t;
-  return episode.episode_number != null
-    ? `Episodio ${episode.episode_number}`
-    : 'Episodio';
+  return displayEpisodeTitle(episode.title, episode.episode_number);
 }
 
 export function App() {

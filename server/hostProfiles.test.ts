@@ -34,6 +34,15 @@ describe("hostProfiles", () => {
     expect(headers["Referer"]).toBe("https://jkanime.net/");
   });
 
+  it("aplica el referer fijo de ZokoAnime a su CDN", () => {
+    const target = "https://hls2.aniwatchtv.uk/v/test/master.m3u8";
+    const profile = resolveHostProfile(target);
+    expect(profile.refererMode).toBe("fixed");
+    expect(profile.client).toBe("undici");
+    const { headers } = buildProxyHeaders(target, undefined);
+    expect(headers.Referer).toBe("https://zokoanime.video/");
+  });
+
   it("resuelve vimeos.zip y vimeos.net con cliente undici, sin referer y con timeout de conexión", () => {
     const targetZip = "https://p4.vimeos.zip/hls2/02/00009/drh2cmxggq49_h/seg-12-v1-a1.ts?t=2Jgs0jtVbjaKNVfSqkn";
     const profileZip = resolveHostProfile(targetZip);

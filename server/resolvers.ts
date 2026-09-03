@@ -9,6 +9,18 @@ import { resolveUqload } from "./resolvers/uqloadResolver";
 import { resolveVidhide } from "./resolvers/vidhideResolver";
 import { VIMEOS_REQUIRED_HEADERS } from "./hostProfiles";
 import { parseStreamExpiry } from "./resolutionMetadata";
+import { resolveZokoAnime, isZokoAnimeUrl, ZOKO_REQUIRED_HEADERS } from "./resolvers/zokoanimeResolver";
+import { episodeLinks, fetchHianimesEpisode, hianimesSlugFromUrl, isHianimesWatchUrl } from "./resolvers/hianimesResolver";
+import {
+  isPlatformPageUrl,
+  isLaMoviePageUrl,
+  isCinecalidadPageUrl,
+  isTioPlusPageUrl,
+  resolvePlatformPage,
+  resolveLaMoviePage,
+  resolveCinecalidadPage,
+  resolveTioPlusPage,
+} from "./platformPageResolvers";
 
 // ── Blacklist global de proveedores muertos ──────────────────────────────────
 // Dominios verificados caídos: ninguna resolución server-side rinde con ellos,
@@ -69,6 +81,7 @@ export const SUPPORTED_SERVER_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /divxplayer/i,
   /cvary\.org/i,
   /zilla-networks\.com/i,
+  /zokoanime\.video/i,
 ];
 
 /** true si la URL pertenece a un servidor que EmbedResolvers puede resolver a media renderable. */
@@ -205,6 +218,8 @@ export interface ResolvedStreamMeta {
   provider: string;
   /** Cabeceras que el nodo CDN exige al reproducir (403 sin ellas). */
   requiredHeaders?: Record<string, string>;
+  /** Pistas WebVTT descubiertas junto al stream (cuando el proveedor las expone). */
+  subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
   /** true si la URL directa vigente puede entregarse mediante una sesión proxy. */
   is_proxyable?: boolean;
   /** true si existe un localizador estable capaz de producir una URL nueva. */
@@ -226,6 +241,7 @@ export interface ResolvedStreamMeta {
     | "unsafe_url"
     | "provider_blocked"
     | "drm_or_captcha";
+  delivery_mode?: "direct" | "direct_trial" | "proxy_required" | "embed";
 }
 
 function hasSignedMediaQuery(rawUrl: string): boolean {
@@ -236,6 +252,14 @@ function hasSignedMediaQuery(rawUrl: string): boolean {
       "exp", "s", "e", "sig", "signature", "hash", "auth", "hdnts", "policy",
       "key-pair-id",
     ].some((key) => params.has(key));
+  } catch {
+    return false;
+  }
+}
+
+function isZokoCdnUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase() === "hls2.aniwatchtv.uk";
   } catch {
     return false;
   }
@@ -280,6 +304,10 @@ export class EmbedResolvers {
    */
   public static getProviderName(url: string): string {
     const u = (url || "").toLowerCase();
+    if (u.includes("lamovie.")) return "LaMovie";
+    if (u.includes("cinecalidad")) return "Cinecalidad";
+    if (u.includes("tioplus")) return "TioPlus";
+    if (u.includes("hianimes") || u.includes("zokoanime")) return "HiAnimes";
     if (u.includes("mega.nz")) return "Mega";
     if (u.includes("mp4upload.com")) return "MP4Upload";
     if (u.includes("voe.sx") || u.includes("voe.") || u.includes("byselapuix")) return "VOE";
@@ -326,6 +354,19 @@ export class EmbedResolvers {
     // un embed o localizador estable, no la propia URL firmada. Por eso canonical_locator
     // queda sin definir en URLs firmadas y solo se promueve en URLs estables sin firma.
     if (this.isDirectMediaUrl(rawUrl) && !this.isPlaceholderUrl(rawUrl)) {
+      if (isZokoCdnUrl(rawUrl)) {
+        return {
+          url: rawUrl,
+          original_url: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider,
+          delivery_mode: "direct_trial",
+          is_proxyable: true,
+          is_refreshable: false,
+          requiredHeaders: { ...ZOKO_REQUIRED_HEADERS },
+        };
+      }
       const { expiresAt } = parseStreamExpiry(rawUrl);
       const hasExplicitExpiry = expiresAt !== undefined;
       if (hasExplicitExpiry) {
@@ -333,12 +374,20 @@ export class EmbedResolvers {
         return {
           url: rawUrl,
           original_url: rawUrl,
+          canonical_locator: undefined,
           resolved: !explicitlyExpired,
           type: "direct",
           provider,
+          delivery_mode: !explicitlyExpired ? "direct_trial" : "embed",
           is_proxyable: !explicitlyExpired,
           is_refreshable: false,
-          ...(explicitlyExpired ? { failure_reason: "expired_without_locator" as const } : {}),
+          ...(explicitlyExpired
+            ? {
+                failure_reason: "expired_without_locator" as const,
+                expires_at: expiresAt,
+                refresh_after: expiresAt,
+              }
+            : {}),
         };
       }
       // Un token opaco (por ejemplo `t=...`) también es una firma aunque no revele
@@ -350,10 +399,63 @@ export class EmbedResolvers {
         resolved: true,
         type: "direct",
         provider,
+        delivery_mode: "direct_trial",
         is_proxyable: true,
         is_refreshable: !hasOpaqueSignature,
         ...(!hasOpaqueSignature ? { canonical_locator: rawUrl } : {}),
       };
+    }
+
+    // Si es una página canónica de plataforma soportada (LaMovie, CineCalidad, TioPlus),
+    // resolver mediante su resolutor específico
+    if (isPlatformPageUrl(rawUrl)) {
+      return resolvePlatformPage(rawUrl);
+    }
+
+    // Zoko exposes subtitles and the HLS URL in the same payload; keep both
+    // so the frontend can present captions without a second provider request.
+    if (isZokoAnimeUrl(rawUrl)) {
+      const zoko = await resolveZokoAnime(rawUrl);
+      if (zoko.url && !this.isPlaceholderUrl(zoko.url)) {
+        return {
+          url: zoko.url,
+          original_url: rawUrl,
+          canonical_locator: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider,
+          delivery_mode: "direct_trial",
+          is_proxyable: true,
+          is_refreshable: true,
+          requiredHeaders: { ...zoko.requiredHeaders },
+          subtitles: zoko.subtitles.map((track, index) => ({
+            id: `zoko-sub-${index}`,
+            label: track.label || track.lang || `Subtítulo ${index + 1}`,
+            language: track.lang || "en",
+            src: track.src,
+            is_default: track.default === true,
+          })),
+        };
+      }
+    }
+
+    if (isHianimesWatchUrl(rawUrl)) {
+      const hianimes = await this.resolveHianimesWatchMeta(rawUrl);
+      if (hianimes) {
+        return {
+          url: hianimes.url,
+          original_url: rawUrl,
+          canonical_locator: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider,
+          delivery_mode: "direct_trial",
+          is_proxyable: true,
+          is_refreshable: true,
+          ...(hianimes.requiredHeaders ? { requiredHeaders: hianimes.requiredHeaders } : {}),
+          ...(hianimes.subtitles ? { subtitles: hianimes.subtitles } : {}),
+        };
+      }
     }
 
     const resolvedUrl = await this.resolve(rawUrl);
@@ -387,6 +489,7 @@ export class EmbedResolvers {
       // Cubre tanto embeds como nodos del CDN (s{N}.vimeos.net, vimeos.zip):
       // los headers reales los aplica el proxy vía perfil de hostProfiles.
       ...(provider === "Vimeos" ? { requiredHeaders: { ...VIMEOS_REQUIRED_HEADERS } } : {}),
+      ...(isZokoCdnUrl(resolvedUrl) ? { requiredHeaders: { ...ZOKO_REQUIRED_HEADERS } } : {}),
     };
   }
 
@@ -397,6 +500,21 @@ export class EmbedResolvers {
   public static async resolve(iframeUrl: string): Promise<string> {
     const rawUrl = (iframeUrl || "").trim();
     if (!rawUrl) return "";
+
+    // HiAnimes watch pages are stable canonical locators. Resolve their episode
+    // API just-in-time and then reuse the regular provider resolvers (Zoko first).
+    if (isHianimesWatchUrl(rawUrl)) {
+      const hianimesStream = await this.resolveHianimesWatch(rawUrl);
+      if (hianimesStream) return hianimesStream;
+      return rawUrl;
+    }
+
+    // ZokoAnime exposes a small XOR/base64 payload containing its HLS master.
+    if (isZokoAnimeUrl(rawUrl)) {
+      const zoko = await resolveZokoAnime(rawUrl);
+      if (zoko.url && !this.isPlaceholderUrl(zoko.url)) return zoko.url;
+      return rawUrl;
+    }
 
     // 1. MEGA.NZ: Convertir /file/ a /embed/ para evitar que redirija a la web de Mega
     if (rawUrl.includes("mega.nz/file/")) {
@@ -533,6 +651,53 @@ export class EmbedResolvers {
     // 13. Genérico: intentar extraer .m3u8 o .mp4 del HTML del iframe
     const generic = await this.resolveGeneric(rawUrl);
     return generic || rawUrl;
+  }
+
+  private static async resolveHianimesWatch(rawUrl: string): Promise<string | null> {
+    const slug = hianimesSlugFromUrl(rawUrl) || "";
+    if (!slug) return null;
+    const { episode } = await fetchHianimesEpisode(slug);
+    if (!episode) return null;
+    for (const link of episodeLinks(episode)) {
+      const resolved = link.url.includes("zokoanime.video")
+        ? (await resolveZokoAnime(link.url)).url
+        : await this.resolve(link.url);
+      if (resolved && resolved !== link.url && this.isDirectMediaUrl(resolved) && !this.isPlaceholderUrl(resolved)) return resolved;
+    }
+    return null;
+  }
+
+  private static async resolveHianimesWatchMeta(rawUrl: string): Promise<{
+    url: string;
+    subtitles?: ResolvedStreamMeta["subtitles"];
+    requiredHeaders?: Record<string, string>;
+  } | null> {
+    const slug = hianimesSlugFromUrl(rawUrl) || "";
+    if (!slug) return null;
+    const { episode } = await fetchHianimesEpisode(slug);
+    if (!episode) return null;
+    for (const link of episodeLinks(episode)) {
+      if (isZokoAnimeUrl(link.url)) {
+        const zoko = await resolveZokoAnime(link.url);
+        if (!zoko.url || this.isPlaceholderUrl(zoko.url)) continue;
+        return {
+          url: zoko.url,
+          requiredHeaders: { ...zoko.requiredHeaders },
+          subtitles: zoko.subtitles.map((track, index) => ({
+            id: `zoko-sub-${index}`,
+            label: track.label || track.lang || `Subtítulo ${index + 1}`,
+            language: track.lang || "en",
+            src: track.src,
+            is_default: track.default === true,
+          })),
+        };
+      }
+      const resolved = await this.resolve(link.url);
+      if (resolved && resolved !== link.url && this.isDirectMediaUrl(resolved) && !this.isPlaceholderUrl(resolved)) {
+        return { url: resolved };
+      }
+    }
+    return null;
   }
 
 
@@ -1257,7 +1422,49 @@ export class ProviderResolverRegistry {
       resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
     });
 
-    // 18. Generic Fallback
+    // 18. LaMovie Platform Pages
+    this.register({
+      name: "LaMovie",
+      matches: (url) => isLaMoviePageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveLaMoviePage(locator),
+    });
+
+    // 19. CineCalidad Platform Pages
+    this.register({
+      name: "Cinecalidad",
+      matches: (url) => isCinecalidadPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveCinecalidadPage(locator),
+    });
+
+    // 20. TioPlus Platform Pages
+    this.register({
+      name: "TioPlus",
+      matches: (url) => isTioPlusPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveTioPlusPage(locator),
+    });
+
+    // 21. Generic Fallback
     this.register({
       name: "GenericHtml",
       matches: () => true,

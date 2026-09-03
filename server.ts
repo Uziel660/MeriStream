@@ -13,6 +13,8 @@ import {
 } from "./server/universalScraper";
 import { cleanQueryTitle, parseTitleQuery } from "./server/metadataEngine";
 import { taskWorker } from "./server/taskWorker";
+import { sourceRecoveryWorker, isCanonicalLocator } from "./server/sourceRecoveryWorker";
+import { selectCanonicalPlaybackCandidate } from "./server/legacyCanonicalBridge";
 import {
   saveShowWithDeduplication,
   getShowsFromDb,
@@ -23,7 +25,7 @@ import {
   updateShowFields,
   refreshShowStreams,
 } from "./server/showService";
-import { prisma } from "./server/db";
+import { prisma, normalizeTitle, normalizeBaseTitle } from "./server/db";
 import { EmbedResolvers, isValidProvider } from "./server/resolvers";
 import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUrl, familyKeyOfStreamUrl } from "./server/utils/streamSorter";
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
@@ -95,6 +97,12 @@ const resolutionCoordinator = new ResolutionCoordinator(
 // HTTP/static resolver only; Chromium is intentionally absent from production.
 const playbackSessions = new PlaybackSessionStore({
   resolver: (url) => resolutionCoordinator.resolve(url),
+  // A 2-hour VOD has ~800 ten-second segments per quality. The class default
+  // (300) evicts the first segment ids while rewriting the level playlist,
+  // producing browser-visible 404s. Keep enough opaque locators for one active
+  // user while bounding abandoned sessions for the low-memory ASUS host.
+  maxSessions: 8,
+  maxResourcesPerSession: 2_000,
 });
 const playbackSessionHandlers = createPlaybackSessionHandlers(
   playbackSessions,
@@ -143,13 +151,123 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
 }
 
 /**
+ * Evita que una URL de navegación del catálogo termine como candidato de
+ * reproducción. Las páginas de detalle (/peliculas/<slug>, /ver-pelicula/<slug>)
+ * sí son válidas para resolución JIT; solo se descartan índices/paginaciones.
+ */
+function isInvalidCatalogSource(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    if (/\/page\/\d+(?:\/|$)/i.test(pathname)) return true;
+    for (const key of ["page", "paged"]) {
+      const value = parsed.searchParams.get(key);
+      if (value && /^\d+$/.test(value)) return true;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      (host.includes("cinecalidad.") || host.includes("lamovie.") || host.includes("tioplus.")) &&
+      (/^\/$/.test(pathname) || /\/(?:catalogo|peliculas|series|estrenos|genero|category|categoria)\/?$/i.test(pathname))
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Identidad estable de un candidato para no gastar la cuota de un proveedor
+ * con el mismo HLS firmado varias veces. Los tokens cambian por captura, pero
+ * el host-familia y la ruta del recurso permanecen; se conservan parámetros
+ * funcionales (por ejemplo idioma) y solo se omiten credenciales efímeras.
+ */
+function streamCandidateIdentity(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const volatile = new Set([
+      "t", "s", "e", "exp", "expires", "token", "sig", "signature",
+      "auth", "p1", "p2", "srv", "i", "sp", "asn",
+    ]);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (volatile.has(key.toLowerCase())) parsed.searchParams.delete(key);
+    }
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${familyKeyOfStreamUrl(parsed.toString())}:${path}?${parsed.searchParams.toString()}`;
+  } catch {
+    return url.trim();
+  }
+}
+
+/**
  * Cascada multi-fuente (F4): agrupa SourceLinks por sitio de origen, ordena los
  * sitios por SiteRating DESC y dentro de cada sitio por tier ASC. El frontend
- * recorre esta lista plana como cadena de fallback automÃ¡tica.
+ * recorre esta lista plana como cadena de fallback automática.
  */
-async function buildMultiSourceCascade(sourceLinks: Array<{ url: string; source_site: string }>) {
-  const siteByUrl = new Map<string, string>();
-  for (const link of sourceLinks) siteByUrl.set(link.url, link.source_site);
+export async function buildMultiSourceCascade(
+  sourceLinks: Array<{
+    url: string;
+    source_site: string;
+    priority_tier?: number | null;
+    failure_reason?: string;
+    link_type?: string | null;
+    canonical_locator?: string | null;
+    host?: string | null;
+    source_status?: string | null;
+    extraction_method?: string | null;
+    resolver_version?: string | null;
+    is_verified?: boolean;
+    language?: string | null;
+    audio_language?: string | null;
+    subtitle_language?: string | null;
+    subtitles?: unknown;
+  }>,
+  options: { maxPerSite?: number; maxTotal?: number } = { maxPerSite: 2, maxTotal: 8 }
+) {
+  const rawSiteByUrl = new Map<string, string>();
+  const priorityTierByUrl = new Map<string, number>();
+  const failureReasonByUrl = new Map<string, string>();
+  const canonicalLocatorByUrl = new Map<string, string>();
+  const sourceStatusByUrl = new Map<string, string>();
+  const renditionByUrl = new Map<string, {
+    link_type?: string;
+    language?: string;
+    audio_language?: string;
+    subtitle_language?: string;
+    subtitles?: unknown;
+  }>();
+
+  for (const link of sourceLinks) {
+    if (link?.url) {
+      const cleanUrl = link.url.trim();
+      rawSiteByUrl.set(cleanUrl, link.source_site || "");
+      if (link.priority_tier != null) {
+        priorityTierByUrl.set(cleanUrl, link.priority_tier);
+      }
+      if (link.failure_reason != null) {
+        failureReasonByUrl.set(cleanUrl, link.failure_reason);
+      }
+      const canonicalLocator = typeof link.canonical_locator === "string" ? link.canonical_locator.trim() : "";
+      if (canonicalLocator) canonicalLocatorByUrl.set(cleanUrl, canonicalLocator);
+      if (link.source_status) sourceStatusByUrl.set(cleanUrl, link.source_status);
+      renditionByUrl.set(cleanUrl, {
+        ...(renditionByUrl.get(cleanUrl) || {}),
+        ...(link.link_type ? { link_type: link.link_type } : {}),
+        ...(link.language ? { language: link.language } : {}),
+        ...(link.audio_language ? { audio_language: link.audio_language } : {}),
+        ...(link.subtitle_language ? { subtitle_language: link.subtitle_language } : {}),
+        ...(link.subtitles !== undefined ? { subtitles: link.subtitles } : {}),
+      });
+    }
+  }
+
+  const normalizeSite = (rawSite: string | undefined): string => {
+    if (!rawSite) return "unknown";
+    const domainSite = siteFromDomain(rawSite);
+    return domainSite || rawSite.toLowerCase().trim() || "unknown";
+  };
 
   // Prioridades de servidor definidas por el usuario (probador por plataforma):
   // se combinan las de TODAS las plataformas involucradas en la cascada.
@@ -157,32 +275,70 @@ async function buildMultiSourceCascade(sourceLinks: Array<{ url: string; source_
   const hostPriority: Record<string, number> = {};
   for (const s of sites0) Object.assign(hostPriority, getServerPriorities(s));
 
-  const ranked = rankStreams(sourceLinks.map((s) => s.url), hostPriority);
+  const validUrls = Array.from(
+    new Set(
+      sourceLinks
+        .map((s) => s?.url?.trim())
+        .filter((url): url is string => Boolean(url) && !isInvalidCatalogSource(url))
+    )
+  );
+  const ranked = rankStreams(validUrls, hostPriority);
 
-  const sites = Array.from(new Set(ranked.map((r) => siteByUrl.get(r.url)).filter(Boolean) as string[]));
-  const ratings = await Promise.all(sites.map(async (site) => ({ site, rating: await getSiteRating(siteFromDomain(site)) })));
+  const sites = Array.from(new Set(ranked.map((r) => normalizeSite(rawSiteByUrl.get(r.url)))));
+  const ratings = await Promise.all(sites.map(async (site) => ({ site, rating: await getSiteRating(site) })));
   const ratingBySite = new Map(ratings.map((r) => [r.site, r.rating]));
 
-  return ranked
+  const mapped = ranked
     .map((entry) => {
-      const site = siteFromDomain(siteByUrl.get(entry.url) || "");
+      const rawSite = rawSiteByUrl.get(entry.url) || "";
+      const site = normalizeSite(rawSite);
       const sourceKind = classifySourceKind(entry.url);
-      const canonicalLocator = sourceKind === "ephemeral_direct" ? undefined : entry.url;
-      const expiresAt = sourceKind === "ephemeral_direct" ? parseStreamExpiry(entry.url).expiresAt : undefined;
-      const explicitlyExpired = expiresAt !== undefined && expiresAt <= Date.now();
+      const parsedExpiry = parseStreamExpiry(entry.url).expiresAt;
+      // Respeta el localizador canónico guardado por el importador/resolver.
+      // Para enlaces históricos sin metadata, solo las páginas/directos estables
+      // pueden autodescribirse como localizador; un .m3u8 firmado no se promueve.
+      const persistedLocator = canonicalLocatorByUrl.get(entry.url);
+      const canonicalLocator = persistedLocator || (sourceKind === "ephemeral_direct" ? undefined : entry.url);
+      const expiresAt = sourceKind === "ephemeral_direct" ? parsedExpiry : undefined;
+      const explicitlyExpired = (parsedExpiry !== undefined && parsedExpiry <= Date.now()) ||
+                                (expiresAt !== undefined && expiresAt <= Date.now());
+
+      // Regla 3: Excluye de la cascada URLs explícitamente vencidas sin canonical locator.
+      if (explicitlyExpired && !canonicalLocator) {
+        return null;
+      }
+
+      const explicitTier = priorityTierByUrl.get(entry.url);
+      const tier = explicitTier ?? entry.tier;
+      const renewable = Boolean(canonicalLocator);
+      const failureReason = failureReasonByUrl.get(entry.url) ?? (explicitlyExpired && !canonicalLocator ? ("expired_without_locator" as const) : undefined);
+      const proxyable = entry.type === "direct" && !explicitlyExpired;
+      const rendition = renditionByUrl.get(entry.url) || {};
+      const sourceStatus = sourceStatusByUrl.get(entry.url);
+
       return {
         ...entry,
+        tier,
         original_url: entry.url,
         canonical_locator: canonicalLocator,
-        is_proxyable: entry.type === "direct" && !explicitlyExpired,
-        is_refreshable: Boolean(canonicalLocator),
-        delivery_mode: entry.type === "direct" && !explicitlyExpired ? "direct_trial" as const : "embed" as const,
+        is_proxyable: proxyable,
+        is_refreshable: renewable,
+        // Un directo vencido con localizador canónico sigue siendo un intento
+        // nativo JIT (no un iframe): el frontend renovará el manifiesto antes
+        // de conectarlo y solo entonces decidirá si necesita proxy.
+        delivery_mode:
+          entry.type === "direct" && (proxyable || Boolean(canonicalLocator))
+            ? ("direct_trial" as const)
+            : ("embed" as const),
         ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
-        ...(explicitlyExpired ? { failure_reason: "expired_without_locator" as const } : {}),
-        source_site: site || "unknown",
+        ...(failureReason !== undefined ? { failure_reason: failureReason } : {}),
+        ...(sourceStatus ? { source_status: sourceStatus } : {}),
+        source_site: site,
         rating: ratingBySite.get(site) ?? 5,
+        ...rendition,
       };
     })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
     .sort((a, b) => {
       if (b.rating !== a.rating) return b.rating - a.rating;
       // Dentro de la misma plataforma: primero los hosts con prioridad manual.
@@ -195,6 +351,540 @@ async function buildMultiSourceCascade(sourceLinks: Array<{ url: string; source_
       }
       return a.tier - b.tier;
     });
+
+  // Regla 2: Devuelve una cascada acotada, máximo 2 candidatos por source_site y máximo 8 en total.
+  const maxPerSite = options?.maxPerSite ?? 2;
+  const maxTotal = options?.maxTotal ?? 8;
+  const perSiteCount = new Map<string, number>();
+  const identitiesBySite = new Map<string, Set<string>>();
+  const bounded: typeof mapped = [];
+
+  for (const candidate of mapped) {
+    const s = candidate.source_site;
+    const count = perSiteCount.get(s) || 0;
+    if (count >= maxPerSite) {
+      continue;
+    }
+    const identities = identitiesBySite.get(s) || new Set<string>();
+    const identity = streamCandidateIdentity(candidate.canonical_locator || candidate.url);
+    if (identities.has(identity)) continue;
+    identities.add(identity);
+    identitiesBySite.set(s, identities);
+    perSiteCount.set(s, count + 1);
+    bounded.push(candidate);
+    if (bounded.length >= maxTotal) {
+      break;
+    }
+  }
+
+  return bounded;
+}
+
+/**
+ * If an episode has a canonical page/embed, prefer it over historical signed
+ * manifests from any provider. The page is resolved just in time and can
+ * create a renewable proxy session; the signed manifest remains at the end as
+ * a rescue candidate in case the canonical provider is temporarily unavailable.
+ */
+function keepCanonicalCandidatesFirst(
+  ranked: Awaited<ReturnType<typeof buildMultiSourceCascade>>,
+  sourceLinks: Array<{ url: string; source_site: string; link_type?: string | null }>,
+) {
+  const canonicalSites = new Set(
+    sourceLinks
+      .filter((link) => {
+        const kind = classifySourceKind(link.url);
+        return (link.link_type === "page" || link.link_type === "embed" || kind === "page" || kind === "embed") && isCanonicalLocator(link.url);
+      })
+      .map((link) => siteFromDomain(link.source_site) || link.source_site.toLowerCase().trim())
+      .filter(Boolean),
+  );
+  if (canonicalSites.size === 0) return ranked;
+  const rank = (entry: (typeof ranked)[number]): number => {
+    const kind = classifySourceKind(entry.url);
+    if ((kind === "page" || kind === "embed") && isCanonicalLocator(entry.url)) return 0;
+    if (kind === "stable_direct") return 1;
+    if (kind === "ephemeral_direct") return 2;
+    return 1;
+  };
+  return ranked
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .map(({ entry }) => entry);
+}
+
+/**
+ * Busca episodios de la misma obra en OTRAS plataformas y resuelve sus streams en paralelo.
+ * Devuelve un mapa de plataforma → streams[] para merge con la plataforma primaria.
+ */
+async function resolveCrossPlatformStreams(
+  primaryEpisode: any,
+  primaryShow: any,
+  primarySite: string,
+  maxExtraPlatforms = 3,
+  timeoutMs = 8000
+): Promise<Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>> {
+  const result = new Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>();
+  if (!primaryShow?.title) return result;
+
+  try {
+    const epNum = primaryEpisode.episode_number ?? primaryEpisode.number ?? 1;
+    const season = parseTitleQuery(primaryShow.title).season ?? 1;
+    const kind = primaryShow.category || "anime";
+    const platformMap = new Map<string, string>();
+
+    // La UI todavía reproduce con Episode.id legacy. Recuperar primero los
+    // SourceLink del MediaItem espejo para no perder las demás plataformas.
+    const mediaItems = await prisma.mediaItem.findMany({
+      where: primaryShow.tmdb_id
+        ? { tmdb_id: primaryShow.tmdb_id, kind }
+        : {
+            kind,
+            OR: [
+              { base_normalized_title: primaryShow.base_normalized_title || primaryShow.normalized_title },
+              { normalized_title: primaryShow.normalized_title },
+            ],
+          },
+      select: { id: true },
+      orderBy: { created_at: "asc" },
+    });
+    if (mediaItems.length > 0) {
+      const sourceLinks = await prisma.sourceLink.findMany({
+        where: {
+          media_episode: {
+            media_item_id: { in: mediaItems.map((item) => item.id) },
+            season_number: season,
+            episode_number: epNum,
+          },
+        },
+        select: { url: true, source_site: true },
+        orderBy: [{ priority_tier: "asc" }, { last_checked: "desc" }],
+      });
+      for (const link of sourceLinks) {
+        const site = siteFromDomain(link.source_site) || siteFromDomain(hostOfStreamUrl(link.url));
+        if (!site || site === primarySite) continue;
+        const current = platformMap.get(site);
+        const isOriginPage = siteFromDomain(hostOfStreamUrl(link.url)) === site;
+        const currentIsOriginPage = current
+          ? siteFromDomain(hostOfStreamUrl(current)) === site
+          : false;
+        if (!current || (isOriginPage && !currentIsOriginPage)) platformMap.set(site, link.url);
+      }
+    }
+
+    // Compatibilidad para filas antiguas que todavía no tienen SourceLink.
+    const sameTitleEpisodes = await prisma.episode.findMany({
+      where: {
+        show: primaryShow.tmdb_id ? { tmdb_id: primaryShow.tmdb_id } : { title: primaryShow.title },
+        episode_number: epNum,
+        id: { not: primaryEpisode.id },
+        source_url: { not: "" },
+      },
+      take: 30,
+    });
+    for (const ep of sameTitleEpisodes) {
+      const site = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
+      if (site && site !== primarySite && !platformMap.has(site)) {
+        platformMap.set(site, ep.source_url);
+      }
+    }
+
+    // Tomar solo las plataformas con mejor rating
+    const entries = Array.from(platformMap.entries());
+    const rated = await Promise.all(
+      entries.map(async ([site, url]) => ({
+        site,
+        url,
+        rating: await getSiteRating(site),
+      }))
+    );
+    rated.sort((a, b) => b.rating - a.rating);
+    const topPlatforms = rated.slice(0, maxExtraPlatforms);
+
+    // Resolver en paralelo con timeout
+    const resolutions = await Promise.allSettled(
+      topPlatforms.map(async ({ site, url }) => {
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          const extracted = await Promise.race([
+            extractStreamFromUrl(url),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+            }),
+          ]);
+          const streams = Array.from(
+            new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+          );
+          const ranked = rankStreams(streams, getServerPriorities(site));
+          return { site, ranked };
+        } catch {
+          return { site, ranked: [] as Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }> };
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      })
+    );
+
+    for (const r of resolutions) {
+      if (r.status === "fulfilled" && r.value.ranked.length > 0) {
+        result.set(r.value.site, r.value.ranked);
+      }
+    }
+  } catch (e: any) {
+    // Error silencioso — la plataforma primaria ya tiene streams
+  }
+  return result;
+}
+
+/**
+ * Bridges legacy Show/Episode ids to the canonical MediaEpisode graph.
+ *
+ * Legacy rows often contain the last signed .m3u8 returned by a scraper. That
+ * value is useful as a final compatibility fallback, but it must not be the
+ * first playback candidate: it cannot be renewed and commonly rejects the
+ * browser or proxy with 403. If the catalogue has a matching MediaEpisode,
+ * return its page/embed SourceLinks so the normal JIT resolver can classify
+ * the delivery mode and create a lightweight proxy session when required.
+ */
+async function findCanonicalMediaEpisodeForLegacy(
+  foundEpisode: any,
+  targetShow: any,
+): Promise<{ mediaEpisode: any; ranked: Awaited<ReturnType<typeof buildMultiSourceCascade>> } | null> {
+  if (!targetShow || (!targetShow.title && targetShow.tmdb_id == null)) return null;
+
+  const title = String(targetShow.title || targetShow.normalized_title || "").trim();
+  const normalized = normalizeTitle(title || String(targetShow.normalized_title || ""));
+  const baseNormalized = normalizeBaseTitle(title || String(targetShow.base_normalized_title || ""));
+  const where: Array<Record<string, unknown>> = [];
+  if (targetShow.tmdb_id != null) where.push({ tmdb_id: targetShow.tmdb_id });
+  if (normalized) where.push({ normalized_title: normalized });
+  if (baseNormalized) where.push({ base_normalized_title: baseNormalized });
+  if (where.length === 0) return null;
+  // TMDB comparte el espacio numérico entre películas y TV. El puente legacy
+  // conserva el namespace para no devolver accidentalmente una obra de otro
+  // tipo cuando ambos comparten el mismo entero.
+  const category = String(targetShow.category || "").toLowerCase();
+  const kindFilter = category === "movie"
+    ? { kind: "movie" }
+    : category === "anime" || category === "series"
+      ? { kind: { in: ["anime", "series"] } }
+      : {};
+
+  const rawEpisodeNumber = Number(foundEpisode?.episode_number ?? 1);
+  const episodeNumber = Number.isFinite(rawEpisodeNumber) ? rawEpisodeNumber : 1;
+  const parsedSeason = parseTitleQuery(title).season;
+  const requestedSeason = Number(targetShow.season_number ?? parsedSeason ?? 1);
+  const seasonNumber = Number.isFinite(requestedSeason) && requestedSeason > 0 ? requestedSeason : 1;
+  try {
+    const mediaItems = await prisma.mediaItem.findMany({
+      where: { OR: where, ...kindFilter } as any,
+      include: {
+        episodes: {
+          where: { season_number: seasonNumber, episode_number: episodeNumber },
+          include: { links: true },
+        },
+      },
+      take: 50,
+    });
+
+    const candidates = mediaItems.flatMap((item) => item.episodes.map((episode) => ({
+      id: episode.id,
+      season_number: episode.season_number,
+      episode_number: episode.episode_number,
+      media_item: {
+        title: item.title,
+        normalized_title: item.normalized_title,
+        base_normalized_title: item.base_normalized_title,
+        tmdb_id: item.tmdb_id,
+        year: item.year,
+        // Category names in the legacy schema are not stable (anime/tv/series),
+        // so the pure matcher intentionally does not use this field as a gate.
+        kind: null,
+      },
+      links: episode.links.map((link) => ({ url: link.url, link_type: link.link_type })),
+    })));
+
+    const selected = selectCanonicalPlaybackCandidate(
+      {
+        title: targetShow.title,
+        normalized_title: targetShow.normalized_title,
+        base_normalized_title: targetShow.base_normalized_title,
+        tmdb_id: targetShow.tmdb_id,
+        year: targetShow.year,
+        episode_number: episodeNumber,
+      },
+      foundEpisode ? { episode_number: episodeNumber } : undefined,
+      candidates,
+      normalizeTitle,
+      normalizeBaseTitle,
+      isCanonicalLocator,
+    );
+    if (!selected) return null;
+
+    const selectedEpisode = mediaItems
+      .flatMap((item) => item.episodes)
+      .find((episode) => episode.id === selected.id);
+    if (!selectedEpisode) return null;
+    const rankedRaw = await buildMultiSourceCascade(selectedEpisode.links, { maxPerSite: 2, maxTotal: 8 });
+    const ranked = keepCanonicalCandidatesFirst(rankedRaw, selectedEpisode.links);
+    return ranked.length > 0 ? { mediaEpisode: selectedEpisode, ranked } : null;
+  } catch (error: any) {
+    // The legacy extractor remains available if the optional bridge cannot
+    // query a partially migrated database.
+    console.warn("[Playback] puente canónico legacy omitido:", error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Compatibilidad con MediaEpisode creados durante la migración. Algunos de
+ * esos registros tienen la obra/episodio, pero todavía no tienen SourceLink;
+ * en ese caso el id canónico no debe responder "éxito" con una lista vacía.
+ * Buscamos la fila legacy equivalente para que su localizador se resuelva JIT
+ * y, cuando termina, el enlace pueda consolidarse en el grafo canónico.
+ */
+async function findLegacyEpisodeForMediaEpisode(
+  mediaEpisode: any,
+): Promise<{ episode: any; show: any } | null> {
+  const item = mediaEpisode?.media_item;
+  if (!item) return null;
+  const title = String(item.title || "").trim();
+  const normalized = normalizeTitle(title);
+  const baseNormalized = normalizeBaseTitle(title);
+  const where: Array<Record<string, unknown>> = [];
+  if (item.tmdb_id != null) where.push({ tmdb_id: item.tmdb_id });
+  if (normalized) where.push({ normalized_title: normalized });
+  if (baseNormalized && baseNormalized !== normalized) where.push({ base_normalized_title: baseNormalized });
+  if (where.length === 0) return null;
+
+  try {
+    const shows = await prisma.show.findMany({
+      where: { OR: where } as any,
+      include: { episodes: true },
+      orderBy: { created_at: "asc" },
+      take: 50,
+    });
+    const targetYear = Number(item.year);
+    const ordered = [...shows].sort((a: any, b: any) => {
+      const aExact = item.tmdb_id != null && a.tmdb_id === item.tmdb_id ? 1 : 0;
+      const bExact = item.tmdb_id != null && b.tmdb_id === item.tmdb_id ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      const aYear = Number.isFinite(targetYear) && targetYear > 0 && a.year === targetYear ? 1 : 0;
+      const bYear = Number.isFinite(targetYear) && targetYear > 0 && b.year === targetYear ? 1 : 0;
+      return bYear - aYear;
+    });
+    const itemKind = String(item.kind || "").toLowerCase();
+    const isCompatibleShow = (show: any): boolean => {
+      const showCategory = String(show.category || "").toLowerCase();
+      if (!showCategory || !itemKind) return true;
+      if (itemKind === "movie") return showCategory === "movie";
+      return showCategory === "anime" || showCategory === "series";
+    };
+    const season = Number(mediaEpisode.season_number) || 1;
+    const episodeNumber = Number(mediaEpisode.episode_number);
+    for (const show of ordered) {
+      if (!isCompatibleShow(show)) continue;
+      const episode = (show.episodes || []).find((candidate: any) =>
+        (Number(candidate.episode_number) === episodeNumber) &&
+        (!season || Number(candidate.season_number ?? 1) === season)
+      );
+      if (episode) return { episode, show };
+    }
+  } catch (error: any) {
+    console.warn("[Playback] búsqueda legacy para MediaEpisode omitida:", error?.message || error);
+  }
+  return null;
+}
+
+export async function handlePlayEpisode(req: Request, res: Response) {
+  const targetId = req.params.episode_id;
+  const _playResolveStart = Date.now();
+  let foundEpisode: any = null;
+  let targetShow: any = null;
+
+  try {
+    // 1. Intentar resolver por esquema Multi-fuente v2 (MediaEpisode + SourceLink)
+    const mediaEpisode = await prisma.mediaEpisode.findUnique({
+      where: { id: targetId },
+      include: { media_item: true, links: true },
+    });
+
+    if (mediaEpisode && mediaEpisode.links?.length > 0) {
+      const title = `${mediaEpisode.media_item?.title || "Reproducción"} - Episodio ${mediaEpisode.episode_number}`;
+      // Esta ruta queda deliberadamente DB-only: devuelve las fuentes canónicas
+      // y el frontend resuelve solo la elegida mediante /resolve-embed. Así una
+      // apertura no dispara cuatro scrapers concurrentes en el host de 2 GB.
+      const rankedRaw = await buildMultiSourceCascade(mediaEpisode.links, { maxPerSite: 2, maxTotal: 8 });
+      const ranked = keepCanonicalCandidatesFirst(rankedRaw, mediaEpisode.links);
+      const allMergedStreams = ranked.map((entry) => entry.url);
+      const streamUrl = ranked[0]?.url || "";
+
+      return res.json({
+        episode_id: mediaEpisode.id,
+        stream_url: streamUrl,
+        title,
+        all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : (streamUrl ? [streamUrl] : []),
+        ranked_streams: ranked,
+      });
+    }
+
+    // No devolver 200 con stream_url vacío: enlazar al esquema legacy cuando
+    // el registro canónico aún no recibió SourceLinks por una importación
+    // histórica. La extracción JIT se ejecuta únicamente como último recurso.
+    if (mediaEpisode) {
+      const legacy = await findLegacyEpisodeForMediaEpisode(mediaEpisode);
+      if (legacy) {
+        foundEpisode = legacy.episode;
+        targetShow = legacy.show;
+      } else {
+        return res.status(404).json({
+          detail: "La obra existe, pero todavía no tiene una fuente canónica recuperable.",
+          episode_id: mediaEpisode.id,
+          ranked_streams: [],
+          all_available_streams: [],
+        });
+      }
+    }
+
+    // 2. Fallback Legacy: esquema antiguo (Show / Episode)
+    if (!foundEpisode) {
+      foundEpisode = await prisma.episode.findUnique({
+        where: { id: targetId },
+        include: { show: true },
+      });
+      targetShow = foundEpisode?.show || null;
+    }
+
+    if (!foundEpisode) {
+      const foundShow = await prisma.show.findUnique({
+        where: { id: targetId },
+        include: { episodes: true },
+      });
+
+      if (foundShow) {
+        targetShow = foundShow;
+        if (foundShow.episodes && foundShow.episodes.length > 0) {
+          foundEpisode = { ...foundShow.episodes[0], show: foundShow } as any;
+        }
+      }
+    }
+
+    // 2a. Migrated catalogue bridge: prefer the canonical MediaEpisode graph
+    // before invoking the legacy extractor. This keeps old ids compatible
+    // while preventing a historical signed .m3u8 from becoming the first
+    // browser candidate.
+    const canonicalBridge = await findCanonicalMediaEpisodeForLegacy(foundEpisode, targetShow);
+    if (canonicalBridge) {
+      const title = foundEpisode?.title
+        ? `${targetShow?.title || canonicalBridge.mediaEpisode.media_item?.title || ""} - ${foundEpisode.title}`
+        : targetShow?.title || canonicalBridge.mediaEpisode.media_item?.title || "Reproducción";
+      const allCanonicalStreams = canonicalBridge.ranked.map((entry) => entry.url);
+      return res.json({
+        episode_id: foundEpisode?.id || targetShow?.id || targetId,
+        stream_url: canonicalBridge.ranked[0]?.url || "",
+        title,
+        all_available_streams: allCanonicalStreams,
+        ranked_streams: canonicalBridge.ranked,
+        media_episode_id: canonicalBridge.mediaEpisode.id,
+      });
+    }
+
+    const sourceUrl = foundEpisode?.source_url || (targetShow as any)?.source_url || (targetShow as any)?.url || "";
+    if (!sourceUrl && !foundEpisode) {
+      return res.status(404).json({ detail: "Episodio u obra no encontrada en la base de datos." });
+    }
+
+    const extracted = await extractStreamFromUrl(sourceUrl);
+    const allStreams = Array.from(
+      new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+    );
+
+    const title = foundEpisode?.title
+      ? `${targetShow?.title || ""} - ${foundEpisode.title}`
+      : targetShow?.title || extracted.title || "Reproducción";
+
+    const platformSite = siteFromDomain(hostOfStreamUrl(sourceUrl));
+    const primaryRanked = rankStreams(allStreams, getServerPriorities(platformSite)).map((r) => ({
+      ...r,
+      source_site: platformSite || undefined,
+    }));
+
+    const crossPlatform = await resolveCrossPlatformStreams(
+      foundEpisode,
+      targetShow,
+      platformSite,
+      3,
+      8000
+    );
+
+    const extraEntries = Array.from(crossPlatform.entries());
+    const extraRanked: typeof primaryRanked = [];
+    if (extraEntries.length > 0) {
+      const extraRated = await Promise.all(
+        extraEntries.map(async ([site, streams]) => ({
+          site,
+          streams: streams.map((r) => ({ ...r, source_site: site })),
+          rating: await getSiteRating(site),
+        }))
+      );
+      extraRated.sort((a, b) => b.rating - a.rating);
+      for (const group of extraRated) {
+        extraRanked.push(...group.streams);
+      }
+    }
+
+    const combinedRanked = [...primaryRanked, ...extraRanked];
+    const rankedSites = Array.from(
+      new Set(combinedRanked.map((entry) => entry.source_site).filter(Boolean) as string[])
+    );
+    const rankedRatings = new Map(
+      await Promise.all(
+        rankedSites.map(async (site) => [site, await getSiteRating(site)] as const)
+      )
+    );
+    const seenRankedUrls = new Set<string>();
+    const ranked = combinedRanked
+      .sort((a, b) => {
+        const ratingDiff =
+          (rankedRatings.get(b.source_site || "") ?? 5) -
+          (rankedRatings.get(a.source_site || "") ?? 5);
+        if (ratingDiff !== 0) return ratingDiff;
+        if (a.tier !== b.tier) return a.tier - b.tier;
+        if (a.type !== b.type) return a.type === "direct" ? -1 : 1;
+        return 0;
+      })
+      .filter((entry) => {
+        if (seenRankedUrls.has(entry.url)) return false;
+        seenRankedUrls.add(entry.url);
+        return true;
+      });
+    const allMergedStreams = Array.from(
+      new Set([
+        ...ranked.map((r) => r.url),
+      ].filter(Boolean))
+    );
+
+    const streamUrl =
+      ranked.find((r) => r.url === extracted.stream_url)?.url ||
+      ranked[0]?.url ||
+      sourceUrl;
+
+    res.json({
+      episode_id: foundEpisode?.id || targetShow?.id || targetId,
+      stream_url: streamUrl,
+      title,
+      all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [sourceUrl],
+      ranked_streams: ranked,
+    });
+  } catch (e: any) {
+    logPlayerEvent({
+      eventType: "scraper_failed",
+      serverUrl: targetId,
+      durationBeforeErrorMs: Date.now() - _playResolveStart,
+      details: `Error en extractor JIT: ${e.message}`,
+    });
+    res.status(500).json({ error: e.message });
+  }
 }
 
 async function startServer() {
@@ -647,290 +1337,8 @@ async function startServer() {
     }
   });
 
-  /**
-   * Busca episodios de la misma obra en OTRAS plataformas y resuelve sus streams en paralelo.
-   * Devuelve un mapa de plataforma → streams[] para merge con la plataforma primaria.
-   */
-  async function resolveCrossPlatformStreams(
-    primaryEpisode: any,
-    primaryShow: any,
-    primarySite: string,
-    maxExtraPlatforms = 3,
-    timeoutMs = 8000
-  ): Promise<Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>> {
-    const result = new Map<string, Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }>>();
-    if (!primaryShow?.title) return result;
-
-    try {
-      const epNum = primaryEpisode.episode_number ?? primaryEpisode.number ?? 1;
-      const season = parseTitleQuery(primaryShow.title).season ?? 1;
-      const kind = primaryShow.category || "anime";
-      const platformMap = new Map<string, string>();
-
-      // La UI todavía reproduce con Episode.id legacy. Recuperar primero los
-      // SourceLink del MediaItem espejo para no perder las demás plataformas.
-      const mediaItems = await prisma.mediaItem.findMany({
-        where: primaryShow.tmdb_id
-          ? { tmdb_id: primaryShow.tmdb_id, kind }
-          : {
-              kind,
-              OR: [
-                { base_normalized_title: primaryShow.base_normalized_title || primaryShow.normalized_title },
-                { normalized_title: primaryShow.normalized_title },
-              ],
-            },
-        select: { id: true },
-        orderBy: { created_at: "asc" },
-      });
-      if (mediaItems.length > 0) {
-        const sourceLinks = await prisma.sourceLink.findMany({
-          where: {
-            media_episode: {
-              media_item_id: { in: mediaItems.map((item) => item.id) },
-              season_number: season,
-              episode_number: epNum,
-            },
-          },
-          select: { url: true, source_site: true },
-          orderBy: [{ priority_tier: "asc" }, { last_checked: "desc" }],
-        });
-        for (const link of sourceLinks) {
-          const site = siteFromDomain(link.source_site) || siteFromDomain(hostOfStreamUrl(link.url));
-          if (!site || site === primarySite) continue;
-          const current = platformMap.get(site);
-          const isOriginPage = siteFromDomain(hostOfStreamUrl(link.url)) === site;
-          const currentIsOriginPage = current
-            ? siteFromDomain(hostOfStreamUrl(current)) === site
-            : false;
-          if (!current || (isOriginPage && !currentIsOriginPage)) platformMap.set(site, link.url);
-        }
-      }
-
-      // Compatibilidad para filas antiguas que todavía no tienen SourceLink.
-      const sameTitleEpisodes = await prisma.episode.findMany({
-        where: {
-          show: primaryShow.tmdb_id ? { tmdb_id: primaryShow.tmdb_id } : { title: primaryShow.title },
-          episode_number: epNum,
-          id: { not: primaryEpisode.id },
-          source_url: { not: "" },
-        },
-        take: 30,
-      });
-      for (const ep of sameTitleEpisodes) {
-        const site = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
-        if (site && site !== primarySite && !platformMap.has(site)) {
-          platformMap.set(site, ep.source_url);
-        }
-      }
-
-      // Tomar solo las plataformas con mejor rating
-      const entries = Array.from(platformMap.entries());
-      const rated = await Promise.all(
-        entries.map(async ([site, url]) => ({
-          site,
-          url,
-          rating: await getSiteRating(site),
-        }))
-      );
-      rated.sort((a, b) => b.rating - a.rating);
-      const topPlatforms = rated.slice(0, maxExtraPlatforms);
-
-      // Resolver en paralelo con timeout
-      const resolutions = await Promise.allSettled(
-        topPlatforms.map(async ({ site, url }) => {
-          let timer: NodeJS.Timeout | undefined;
-          try {
-            const extracted = await Promise.race([
-              extractStreamFromUrl(url),
-              new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
-              }),
-            ]);
-            const streams = Array.from(
-              new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
-            );
-            const ranked = rankStreams(streams, getServerPriorities(site));
-            return { site, ranked };
-          } catch {
-            return { site, ranked: [] as Array<{ url: string; type: "direct" | "embed"; tier: number; host: string | null }> };
-          } finally {
-            if (timer) clearTimeout(timer);
-          }
-        })
-      );
-
-      for (const r of resolutions) {
-        if (r.status === "fulfilled" && r.value.ranked.length > 0) {
-          result.set(r.value.site, r.value.ranked);
-        }
-      }
-    } catch (e: any) {
-      // Error silencioso — la plataforma primaria ya tiene streams
-    }
-    return result;
-  }
-
   // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver (Multi-source v2)
-  app.get("/api/v1/play/:episode_id", async (req: Request, res: Response) => {
-    const targetId = req.params.episode_id;
-    const _playResolveStart = Date.now();
-
-    try {
-      // 1. Intentar resolver por esquema Multi-fuente v2 (MediaEpisode + SourceLink)
-      const mediaEpisode = await prisma.mediaEpisode.findUnique({
-        where: { id: targetId },
-        include: { media_item: true, links: true },
-      });
-
-      if (mediaEpisode && mediaEpisode.links.length > 0) {
-        // Agrupar links por sitio y mantener solo el de mayor prioridad por sitio
-        const siteLinks = new Map<string, typeof mediaEpisode.links[0]>();
-        for (const link of mediaEpisode.links) {
-          const site = link.source_site;
-          if (!siteLinks.has(site) || (link.priority_tier || 99) < (siteLinks.get(site)?.priority_tier || 99)) {
-            siteLinks.set(site, link);
-          }
-        }
-
-        // La cascada consulta y ordena ratings una sola vez.
-        const topLinks = Array.from(siteLinks.values());
-
-        let title = `${mediaEpisode.media_item.title} - Episodio ${mediaEpisode.episode_number}`;
-        // Esta ruta queda deliberadamente DB-only: devuelve las fuentes canónicas
-        // y el frontend resuelve solo la elegida mediante /resolve-embed. Así una
-        // apertura no dispara cuatro scrapers concurrentes en el host de 2 GB.
-        const ranked = await buildMultiSourceCascade(topLinks);
-        const allMergedStreams = ranked.map((entry) => entry.url);
-        const streamUrl = ranked[0]?.url || topLinks[0]?.url || "";
-
-        return res.json({
-          episode_id: mediaEpisode.id,
-          stream_url: streamUrl,
-          title,
-          all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [streamUrl],
-          ranked_streams: ranked,
-        });
-      }
-
-      // 2. Fallback Legacy: esquema antiguo (Show / Episode)
-      let foundEpisode = await prisma.episode.findUnique({
-        where: { id: targetId },
-        include: { show: true },
-      });
-
-      let targetShow = foundEpisode?.show || null;
-
-      if (!foundEpisode) {
-        const foundShow = await prisma.show.findUnique({
-          where: { id: targetId },
-          include: { episodes: true },
-        });
-
-        if (foundShow) {
-          targetShow = foundShow;
-          if (foundShow.episodes && foundShow.episodes.length > 0) {
-            foundEpisode = { ...foundShow.episodes[0], show: foundShow } as any;
-          }
-        }
-      }
-
-      const sourceUrl = foundEpisode?.source_url || (targetShow as any)?.source_url || (targetShow as any)?.url || "";
-      if (!sourceUrl && !foundEpisode) {
-        return res.status(404).json({ detail: "Episodio u obra no encontrada en la base de datos." });
-      }
-
-      const extracted = await extractStreamFromUrl(sourceUrl);
-      const allStreams = Array.from(
-        new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
-      );
-
-      const title = foundEpisode?.title
-        ? `${targetShow?.title || ""} - ${foundEpisode.title}`
-        : targetShow?.title || extracted.title || "Reproducción";
-
-      const platformSite = siteFromDomain(hostOfStreamUrl(sourceUrl));
-      const primaryRanked = rankStreams(allStreams, getServerPriorities(platformSite)).map((r) => ({
-        ...r,
-        source_site: platformSite || undefined,
-      }));
-
-      const crossPlatform = await resolveCrossPlatformStreams(
-        foundEpisode,
-        targetShow,
-        platformSite,
-        3,
-        8000
-      );
-
-      const extraEntries = Array.from(crossPlatform.entries());
-      const extraRanked: typeof primaryRanked = [];
-      if (extraEntries.length > 0) {
-        const extraRated = await Promise.all(
-          extraEntries.map(async ([site, streams]) => ({
-            site,
-            streams: streams.map((r) => ({ ...r, source_site: site })),
-            rating: await getSiteRating(site),
-          }))
-        );
-        extraRated.sort((a, b) => b.rating - a.rating);
-        for (const group of extraRated) {
-          extraRanked.push(...group.streams);
-        }
-      }
-
-      const combinedRanked = [...primaryRanked, ...extraRanked];
-      const rankedSites = Array.from(
-        new Set(combinedRanked.map((entry) => entry.source_site).filter(Boolean) as string[])
-      );
-      const rankedRatings = new Map(
-        await Promise.all(
-          rankedSites.map(async (site) => [site, await getSiteRating(site)] as const)
-        )
-      );
-      const seenRankedUrls = new Set<string>();
-      const ranked = combinedRanked
-        .sort((a, b) => {
-          const ratingDiff =
-            (rankedRatings.get(b.source_site || "") ?? 5) -
-            (rankedRatings.get(a.source_site || "") ?? 5);
-          if (ratingDiff !== 0) return ratingDiff;
-          if (a.tier !== b.tier) return a.tier - b.tier;
-          if (a.type !== b.type) return a.type === "direct" ? -1 : 1;
-          return 0;
-        })
-        .filter((entry) => {
-          if (seenRankedUrls.has(entry.url)) return false;
-          seenRankedUrls.add(entry.url);
-          return true;
-        });
-      const allMergedStreams = Array.from(
-        new Set([
-          ...ranked.map((r) => r.url),
-        ].filter(Boolean))
-      );
-
-      const streamUrl =
-        ranked.find((r) => r.url === extracted.stream_url)?.url ||
-        ranked[0]?.url ||
-        sourceUrl;
-
-      res.json({
-        episode_id: foundEpisode?.id || targetShow?.id || targetId,
-        stream_url: streamUrl,
-        title,
-        all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [sourceUrl],
-        ranked_streams: ranked,
-      });
-    } catch (e: any) {
-      logPlayerEvent({
-        eventType: "scraper_failed",
-        serverUrl: targetId,
-        durationBeforeErrorMs: Date.now() - _playResolveStart,
-        details: `Error en extractor JIT: ${e.message}`,
-      });
-      res.status(500).json({ error: e.message });
-    }
-  });
+  app.get("/api/v1/play/:episode_id", handlePlayEpisode);
 
   // La sesión proxy nace solo cuando el navegador demuestra que la entrega
   // directa no sirve o el perfil exige headers protegidos.
@@ -940,10 +1348,6 @@ async function startServer() {
       ? req.body.resolution_id.trim().slice(0, 200)
       : "";
     if (!originalInput) return res.status(400).json({ error: "original_url requerida" });
-    if (runtimeBudget.shouldFallback()) {
-      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
-    }
-
     let originalUrl: string;
     try {
       originalUrl = (await assertSafePublicHttpUrl(originalInput)).toString();
@@ -952,7 +1356,7 @@ async function startServer() {
       return res.status(400).json({ error: "URL no permitida", detail });
     }
 
-    const resolutionLease = runtimeBudget.tryBeginResolution();
+    const resolutionLease = runtimeBudget.tryBeginResolution({ interactive: true });
     if (!resolutionLease) {
       return res.status(503).json({ error: "backend_busy", fallback: "embed" });
     }
@@ -1017,7 +1421,7 @@ async function startServer() {
       const detail = error instanceof UnsafeUrlError ? error.code : "unsafe_url";
       return res.status(400).json({ error: "URL no permitida", detail });
     }
-    const resolutionLease = runtimeBudget.tryBeginResolution();
+    const resolutionLease = runtimeBudget.tryBeginResolution({ interactive: true });
     if (!resolutionLease) {
       return res.status(503).json({ error: "backend_busy", fallback: "embed" });
     }
@@ -1631,17 +2035,35 @@ async function startServer() {
       const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u);
 
       const realStreams = all.filter((u) => (u !== url || isDirectMedia(u)) && !isSourcePage(u));
+      // HiAnimes/Zoko entrega un manifiesto temporal que exige el Referer del
+      // CDN. Recuperar su metadata aquí evita que el JIT lo adjunte sin
+      // cabeceras y termine en un 403 aunque la URL sea correcta.
+      let hianimesMeta: Awaited<ReturnType<typeof EmbedResolvers.resolveWithMeta>> | null = null;
+      if (/hianimes\.se\/watch\//i.test(url)) {
+        try {
+          const meta = await EmbedResolvers.resolveWithMeta(url);
+          if (meta.resolved && meta.url) hianimesMeta = meta;
+        } catch {}
+      }
+      const rankedStreams = rankStreams(realStreams, getServerPriorities(siteFromDomain(hostOfStreamUrl(url)))).map((r) => ({
+        ...r,
+        // Plataforma de origen (sitio cuya página se pidió) para el selector premium.
+        source_site: siteFromDomain(hostOfStreamUrl(url)) || undefined,
+        ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.requiredHeaders
+          ? { requiredHeaders: hianimesMeta.requiredHeaders }
+          : {}),
+        ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.subtitles
+          ? { subtitles: hianimesMeta.subtitles }
+          : {}),
+      }));
       res.json({
         url,
         stream_url: extracted.stream_url,
         all_available_streams: all,
         title: extracted.title,
         resolved: realStreams.length > 0,
-        ranked_streams: rankStreams(realStreams, getServerPriorities(siteFromDomain(hostOfStreamUrl(url)))).map((r) => ({
-          ...r,
-          // Plataforma de origen (sitio cuya pÃ¡gina se pidiÃ³) para el selector premium.
-          source_site: siteFromDomain(hostOfStreamUrl(url)) || undefined,
-        })),
+        ...(hianimesMeta?.requiredHeaders ? { requiredHeaders: hianimesMeta.requiredHeaders } : {}),
+        ranked_streams: rankedStreams,
       });
     } catch (e: any) {
       res.status(500).json({ detail: `Error resolviendo servidores del episodio: ${e.message}` });
@@ -1658,7 +2080,20 @@ async function startServer() {
     try {
       const links = await prisma.sourceLink.findMany({
         where: { media_episode: { media_item_id: mediaItemId, season_number: season } },
-        select: { url: true, source_site: true },
+        select: {
+          url: true,
+          source_site: true,
+          link_type: true,
+          canonical_locator: true,
+          priority_tier: true,
+          failure_reason: true,
+          source_status: true,
+          language: true,
+          audio_language: true,
+          subtitle_language: true,
+          subtitles: true,
+          host: true,
+        },
       });
       if (links.length === 0) {
         return res.status(404).json({ detail: "Sin fuentes registradas para esta obra/temporada." });
@@ -1921,6 +2356,129 @@ async function startServer() {
     const success = await taskWorker.deleteJob(req.params.job_id);
     if (!success) return res.status(404).json({ detail: "Tarea no encontrada" });
     res.json({ status: "ok", message: "Tarea eliminada" });
+  });
+
+  // ── Recuperación canónica de fuentes ────────────────────────────────────
+  // Reconstruye páginas/embed estables para que la resolución JIT obtenga un
+  // stream firmado fresco. Es independiente del crawler normal.
+  app.post("/api/v1/source-recovery/start", async (req: Request, res: Response) => {
+    const rawBody = req.body;
+    if (rawBody !== undefined && (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody))) {
+      return res.status(400).json({ ok: false, detail: "El cuerpo debe ser un objeto JSON" });
+    }
+
+    const body = (rawBody || {}) as Record<string, unknown>;
+    let providers: string[] | undefined;
+    if (body.providers !== undefined) {
+      if (
+        !Array.isArray(body.providers) ||
+        body.providers.length > 16 ||
+        !body.providers.every((provider) => typeof provider === "string" && provider.trim().length > 0 && provider.trim().length <= 80)
+      ) {
+        return res.status(400).json({ ok: false, detail: "providers debe ser un array de hasta 16 nombres válidos" });
+      }
+      providers = body.providers.map((provider) => (provider as string).trim());
+    }
+
+    let limit: number | undefined;
+    if (body.limit !== undefined) {
+      const value = typeof body.limit === "number" ? body.limit : typeof body.limit === "string" ? Number(body.limit.trim()) : NaN;
+      if (!Number.isInteger(value) || value < 1 || value > 50_000) {
+        return res.status(400).json({ ok: false, detail: "limit debe ser un entero entre 1 y 50000" });
+      }
+      limit = value;
+    }
+
+    let delayMs: number | undefined;
+    if (body.delay_ms !== undefined) {
+      const value = typeof body.delay_ms === "number" ? body.delay_ms : typeof body.delay_ms === "string" ? Number(body.delay_ms.trim()) : NaN;
+      if (!Number.isInteger(value) || value < 300 || value > 10_000) {
+        return res.status(400).json({ ok: false, detail: "delay_ms debe ser un entero entre 300 y 10000" });
+      }
+      delayMs = value;
+    }
+
+    let name: string | undefined;
+    if (body.name !== undefined) {
+      if (typeof body.name !== "string" || body.name.trim().length === 0 || body.name.trim().length > 120) {
+        return res.status(400).json({ ok: false, detail: "name debe ser texto no vacío de máximo 120 caracteres" });
+      }
+      name = body.name.trim();
+    }
+
+    let mode: "expired" | "all" = "expired";
+    if (body.mode !== undefined) {
+      if (body.mode !== "expired" && body.mode !== "all") {
+        return res.status(400).json({ ok: false, detail: "mode debe ser 'expired' o 'all'" });
+      }
+      mode = body.mode;
+    }
+
+    try {
+      const job = await sourceRecoveryWorker.createJob({ providers, limit, delay_ms: delayMs, name, mode });
+      return res.status(202).json({ ok: true, job });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, detail: `Error creando recuperación de fuentes: ${detail}` });
+    }
+  });
+
+  // GET /api/v1/source-recovery/jobs - estado de recuperaciones persistidas
+  app.get("/api/v1/source-recovery/jobs", async (req: Request, res: Response) => {
+    const rawLimit = req.query.limit;
+    let limit = 20;
+    if (rawLimit !== undefined) {
+      if (typeof rawLimit !== "string" || !/^\d+$/.test(rawLimit)) {
+        return res.status(400).json({ ok: false, detail: "limit debe ser un entero" });
+      }
+      limit = Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ ok: false, detail: "limit debe estar entre 1 y 100" });
+      }
+    }
+    try {
+      const jobs = await sourceRecoveryWorker.getJobs(limit);
+      res.setHeader("Cache-Control", "private, max-age=1, stale-while-revalidate=4");
+      return res.json({ ok: true, jobs });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, detail: `Error consultando recuperaciones: ${detail}` });
+    }
+  });
+
+  // GET /api/v1/source-recovery/jobs/:job_id - detalle y cola actual
+  app.get("/api/v1/source-recovery/jobs/:job_id", async (req: Request, res: Response) => {
+    try {
+      const job = await sourceRecoveryWorker.getJob(req.params.job_id);
+      if (!job) return res.status(404).json({ ok: false, detail: "Recuperación no encontrada" });
+      return res.json({ ok: true, job });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, detail: `Error consultando recuperación: ${detail}` });
+    }
+  });
+
+  // POST /api/v1/source-recovery/jobs/:job_id/pause|resume
+  app.post("/api/v1/source-recovery/jobs/:job_id/pause", async (req: Request, res: Response) => {
+    try {
+      const success = await sourceRecoveryWorker.pauseJob(req.params.job_id);
+      if (!success) return res.status(400).json({ ok: false, detail: "No se pudo pausar la recuperación" });
+      return res.json({ ok: true, status: "recovery_paused" });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, detail: `Error pausando recuperación: ${detail}` });
+    }
+  });
+
+  app.post("/api/v1/source-recovery/jobs/:job_id/resume", async (req: Request, res: Response) => {
+    try {
+      const success = await sourceRecoveryWorker.resumeJob(req.params.job_id);
+      if (!success) return res.status(400).json({ ok: false, detail: "No se pudo reanudar la recuperación" });
+      return res.json({ ok: true, status: "recovery_pending" });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ ok: false, detail: `Error reanudando recuperación: ${detail}` });
+    }
   });
 
   // â”€â”€ Enriquecimiento diferido (metadatos faltantes en background) â”€â”€
@@ -2370,10 +2928,17 @@ async function startServer() {
 
   // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).
   startWriteBufferDrainer();
+  // Cargar settings persistidos y activar inmediatamente la cola pendiente.
+  // El singleton del worker crea el poller al importar el módulo, pero esta
+  // inicialización explícita evita que un arranque con Prisma lento deje los
+  // trabajos recién encolados esperando indefinidamente.
+  taskWorker.init();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[VoidStream] Servidor PostgreSQL ejecutÃ¡ndose en http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  startServer();
+}

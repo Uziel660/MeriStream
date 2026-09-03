@@ -8,6 +8,7 @@ import { thumbBackdropUrl } from '../utils/imageSizes';
 import { cleanDescription } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
+import { displayEpisodeTitle } from '../utils/episodeLabels';
 import type { ShowDetail, Episode } from '../types';
 import type { WatchProgress } from './ContinueWatching';
 
@@ -105,7 +106,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
       if (showSeason === null) {
         // Try to extract season from title (e.g. "T1E1", "S1 E2", "Season 1", "Temporada 2")
-        const sMatch = ep.title.match(/\b(?:T|S|Season\s*|Temporada\s*)(\d+)\b/i);
+        const rawEpisodeTitle = typeof ep.title === 'string' ? ep.title : '';
+        const sMatch = rawEpisodeTitle.match(/\b(?:T|S|Season\s*|Temporada\s*)(\d+)\b/i);
         if (sMatch) {
           season = parseInt(sMatch[1], 10);
         }
@@ -141,7 +143,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const q = episodeSearch.toLowerCase().trim();
     return seasonEps.filter(
       (ep) =>
-        ep.title.toLowerCase().includes(q) ||
+        displayEpisodeTitle(ep.title, ep.episode_number).toLowerCase().includes(q) ||
         String(ep.episode_number).includes(q)
     );
   }, [seasonData, selectedSeason, episodeSearch]);
@@ -192,7 +194,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       ['pelicula', 'película', 'peliculas', 'películas', 'movie', 'movies', 'cine'].includes(
         (show.category || '').toLowerCase().trim()
       ) ||
-      (episodes.length === 1 && !/episodio|capitulo|capítulo/i.test(episodes[0].title)))
+      (episodes.length === 1 && !/episodio|capitulo|capítulo/i.test(String(episodes[0].title || ''))))
   );
 
   // Progreso de película
@@ -472,7 +474,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                                 <div className="flex items-center justify-between gap-2 w-full pb-1">
                                   <div className="flex flex-col truncate pr-2">
                                     <span className="font-display text-xs font-semibold text-zinc-200 group-hover/ep:text-amber-400 truncate transition-colors">
-                                      {ep.title}
+                                      {displayEpisodeTitle(ep.title, ep.episode_number)}
                                     </span>
                                     <div className="flex items-center gap-2 mt-1">
                                       <span className="text-[11px] text-zinc-500 font-mono">

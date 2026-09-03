@@ -46,6 +46,7 @@ model Show {
 
   @@index([normalized_title])
   @@index([base_normalized_title])
+  @@index([tmdb_id])
 }
 
 model Episode {
@@ -110,6 +111,7 @@ model MediaItem {
   @@unique([normalized_title, kind, year])
   @@index([normalized_title])
   @@index([base_normalized_title])
+  @@index([tmdb_id])
 }
 
 model SiteRating {
@@ -143,10 +145,27 @@ model SourceLink {
   source_site    String
   url            String
   link_type      String    @default("direct")
+  // Metadata opcional de rendición; las filas históricas pueden quedar nulas.
+  language          String?
+  audio_language    String?
+  subtitle_language String?
+  subtitles         Json?
   host           String?
   priority_tier  Int?
   is_verified    Boolean   @default(false)
   last_checked   DateTime?
+  // Estado de evidencia; is_verified se conserva por compatibilidad histórica.
+  source_status  String    @default("discovered")
+  canonical_locator String?
+  external_id    String?
+  extraction_method String?
+  resolver_version String?
+  failure_reason String?
+  last_success   DateTime?
+  last_failure   DateTime?
+  retry_after    DateTime?
 
   @@unique([media_episode_id, source_site, url])
+  @@index([media_episode_id, source_status])
+  @@index([source_site, source_status])
 }

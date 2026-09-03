@@ -73,7 +73,7 @@ const isDeadOrBlocked = (url: string) =>
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
   readonly name = "AnimeFLV / Anime Streaming";
-  readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
+  readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.or.am", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
 
   /** Tope de páginas del AJAX de episodios de jkanime; se detiene antes en last_page. */
   private static readonly JK_PAGES = 1000;
@@ -88,7 +88,34 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
 
   async analyze(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
     const urlOrQuery = input.trim();
-    const urlObj = new URL(urlOrQuery);
+    let urlObj: URL;
+    try {
+      urlObj = new URL(urlOrQuery);
+    } catch {
+      // La recuperación canónica puede pedir una obra por título cuando el
+      // enlace histórico caducó. No inventar una ficha: consultar el espejo
+      // JKanime y devolver sus URLs de detalle como candidatos reutilizables.
+      const query = cleanQueryTitle(urlOrQuery);
+      const searchUrls = await this.searchJkanime(query);
+      if (searchUrls.length > 0) {
+        return {
+          page_type: "catalog",
+          content_type: "anime",
+          title: `Resultados para "${query}" - AnimeFLV`,
+          description: `Candidatos encontrados para "${query}"`,
+          poster_url: null,
+          banner_url: null,
+          rating: 0,
+          year: 0,
+          status: "Publicado",
+          genres: ["Anime"],
+          source_domain: "jkanime.net",
+          episodes: [],
+          catalog_items: searchUrls.map((url) => ({ title: query, url, kind: "anime" as const })),
+        };
+      }
+      return this.fallbackSearch(urlOrQuery);
+    }
     const domain = urlObj.hostname.toLowerCase();
     const isJkanime = domain.includes("jkanime");
 
@@ -581,8 +608,25 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       const slug = tail.slice(0, tail.length - numMatch[0].length).toLowerCase();
       if (!slug) return null;
 
-      const candidates = await this.searchJkanime(slug.replace(/-/g, " "));
-      for (const animeUrl of candidates.slice(0, 3)) {
+      const rawQuery = slug.replace(/-/g, " ");
+      // AnimeFLV suele pegar el honorífico al nombre (yozakurasan), mientras
+      // JKanime lo indexa separado (yozakura san) y no considera "2nd season"
+      // parte de la consulta. Probar variantes pequeñas mantiene el fallback
+      // determinista sin lanzar búsquedas abiertas ni cargar más el servidor.
+      const baseQuery = rawQuery
+        .replace(/\b(?:\d+(?:st|nd|rd|th)?|season)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const queryVariants = Array.from(new Set([
+        rawQuery,
+        baseQuery,
+        baseQuery.replace(/([a-z])((?:san|kun|chan|sama)\b)/gi, "$1 $2"),
+        baseQuery.split(" ").slice(-4).join(" "),
+      ].filter((value) => value.length >= 3)));
+      const candidates = (await Promise.all(queryVariants.map((query) => this.searchJkanime(query))))
+        .flat()
+        .filter((value, index, values) => values.indexOf(value) === index);
+      for (const animeUrl of candidates.slice(0, 6)) {
         const epUrl = `${animeUrl.replace(/\/+$/, "")}/${epNum}/`;
         const html = await this.fetchHtml(epUrl, 12000);
         if (!html) continue;
@@ -602,30 +646,39 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
   }
 
-  /** Búsqueda en jkanime (/buscar?q=): tarjetas .anime__item con enlaces raíz de anime. */
+  /** Búsqueda en jkanime: el formulario actual usa /buscar/<slug>, pero
+   * algunos espejos todavía aceptan ?q=. Se prueban ambas rutas. */
   private async searchJkanime(query: string): Promise<string[]> {
-    const html = await this.fetchHtml(
-      `https://jkanime.net/buscar?q=${encodeURIComponent(query)}`,
-      10000
-    );
-    if (!html) return [];
-
+    const normalized = query.trim().replace(/\s+/g, " ");
+    if (!normalized) return [];
+    const slug = encodeURIComponent(normalized.toLowerCase().replace(/\s+/g, "-"));
+    const targets = [
+      `https://jkanime.net/buscar/${slug}`,
+      `https://jkanime.net/buscar?q=${encodeURIComponent(normalized)}`,
+    ];
     const results: string[] = [];
-    const $ = cheerio.load(html);
-    $(".anime__item a[href]").each((_, el) => {
-      const href = ($(el).attr("href") || "").trim();
-      if (/^https?:\/\/jkanime\.net\/[^/]+\/?$/i.test(href)) {
+    for (const target of targets) {
+      const html = await this.fetchHtml(target, 10000);
+      if (!html) continue;
+      const $ = cheerio.load(html);
+      const navigation = new Set([
+        "notificaciones", "guardado", "historial", "salir", "directorio", "horario",
+        "comunidad", "aplicacion", "pedidos", "estrenos", "top", "login", "registro",
+      ]);
+      $(".anime__item a[href], a[href]").each((_, el) => {
+        const raw = ($(el).attr("href") || "").trim();
+        if (!raw) return;
+        let href = raw;
+        try {
+          href = new URL(raw, "https://jkanime.net").toString();
+        } catch {}
+        if (!/^https?:\/\/jkanime\.net\/[^/]+\/?$/i.test(href)) return;
+        const segment = new URL(href).pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
+        if (!segment || navigation.has(segment) || segment === "#") return;
         const clean = href.replace(/\/+$/, "") + "/";
         if (!results.includes(clean)) results.push(clean);
-      }
-    });
-    if (results.length === 0) {
-      const regex = /href="(https?:\/\/jkanime\.net\/[a-z0-9\-]+\/)"/gi;
-      let m: RegExpExecArray | null;
-      while ((m = regex.exec(html)) !== null) {
-        const clean = m[1].replace(/\/+$/, "") + "/";
-        if (!results.includes(clean)) results.push(clean);
-      }
+      });
+      if (results.length > 0) break;
     }
     return results;
   }

@@ -9,6 +9,7 @@ import { getStreamTier } from "./utils/streamSorter";
 import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 import { extractStreamFromUrl } from "./universalScraper";
+import { canonicalCatalogUrl } from "./catalogIntegrity";
 import {
   enqueueWrite,
   enqueueShowCreate,
@@ -16,9 +17,36 @@ import {
   enqueueMediaItemCreate,
   enqueueMediaItemUpdate,
   enqueueEpisodeCreateMany,
+  enqueueSourceLinkUpdate,
 } from "./writeBuffer";
 
 export type { SourceLinkInput };
+
+// La importación masiva puede procesar decenas de miles de entradas. Escribir
+// una línea de consola por cada deduplicación consume más I/O que la operación
+// de base de datos y atasca la terminal; se deja opt-in para diagnóstico local.
+const VERBOSE_DEDUP_LOGS = process.env.MERISTREAM_VERBOSE_DEDUP === "1";
+const dedupLog = (...args: unknown[]): void => {
+  if (VERBOSE_DEDUP_LOGS) console.log(...args);
+};
+
+function sourceIdentityKey(url: string): string {
+  const kind = classifySourceKind(url);
+  return kind === "page" || kind === "embed" ? canonicalCatalogUrl(url) : url.trim();
+}
+
+/** Para TMDB, anime y series son ambos TV; solo se separan de películas. */
+function tmdbCategoryFilter(kind: ContentKind): { category: string | { in: string[] } } {
+  return kind === "anime" || kind === "series"
+    ? { category: { in: ["anime", "series"] } }
+    : { category: kind };
+}
+
+function tmdbKindFilter(kind: ContentKind): { kind: string | { in: string[] } } {
+  return kind === "anime" || kind === "series"
+    ? { kind: { in: ["anime", "series"] } }
+    : { kind };
+}
 
 export interface SaveShowInput {
   mal_id?: number | null;
@@ -126,27 +154,27 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
       const kind = classifySourceKind(primaryUrl);
       if (kind !== "ephemeral_direct") {
         streamSources.push({ url: primaryUrl, source_site: defaultSite, source_kind: kind });
-        seenUrls.add(primaryUrl);
+        seenUrls.add(sourceIdentityKey(primaryUrl));
       }
     }
     // 2. detected_streams
     for (const st of detectedStreams) {
-      if (st && !seenUrls.has(st)) {
+      if (st && !seenUrls.has(sourceIdentityKey(st))) {
         const kind = classifySourceKind(st);
         if (kind !== "ephemeral_direct") {
           streamSources.push({ url: st, source_site: defaultSite, source_kind: kind });
-          seenUrls.add(st);
+          seenUrls.add(sourceIdentityKey(st));
         }
       }
     }
     // 3. rawEp sources
     if (rawEp?.sources) {
       for (const s of rawEp.sources) {
-        if (s?.url && !seenUrls.has(s.url)) {
+        if (s?.url && !seenUrls.has(sourceIdentityKey(s.url))) {
           const kind = classifySourceKind(s.url);
           if (kind !== "ephemeral_direct") {
             streamSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
-            seenUrls.add(s.url);
+            seenUrls.add(sourceIdentityKey(s.url));
           }
         }
       }
@@ -154,11 +182,11 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
     // 4. input.sources
     if (input.sources) {
       for (const s of input.sources) {
-        if (s?.url && !seenUrls.has(s.url)) {
+        if (s?.url && !seenUrls.has(sourceIdentityKey(s.url))) {
           const kind = classifySourceKind(s.url);
           if (kind !== "ephemeral_direct") {
             streamSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
-            seenUrls.add(s.url);
+            seenUrls.add(sourceIdentityKey(s.url));
           }
         }
       }
@@ -189,17 +217,17 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
         const kind = classifySourceKind(primaryUrl);
         if (kind !== "ephemeral_direct") {
           epSources.push({ url: primaryUrl, source_site: defaultSite, source_kind: kind });
-          seen.add(primaryUrl);
+          seen.add(sourceIdentityKey(primaryUrl));
         }
       }
 
       if (ep.sources) {
         for (const s of ep.sources) {
-          if (s?.url && !seen.has(s.url)) {
+          if (s?.url && !seen.has(sourceIdentityKey(s.url))) {
             const kind = classifySourceKind(s.url);
             if (kind !== "ephemeral_direct") {
               epSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
-              seen.add(s.url);
+              seen.add(sourceIdentityKey(s.url));
             }
           }
         }
@@ -297,7 +325,17 @@ export async function syncEpisodeSources(
           episode_number: episodeNumber,
         },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        language: true,
+        audio_language: true,
+        subtitle_language: true,
+        subtitles: true,
+        canonical_locator: true,
+        host: true,
+        extraction_method: true,
+        resolver_version: true,
+      },
     });
 
     if (!existing) {
@@ -312,13 +350,39 @@ export async function syncEpisodeSources(
           source_site: site,
           url: rawUrl,
           link_type: linkType,
+          language: src.language ?? null,
+          audio_language: src.audio_language ?? null,
+          subtitle_language: src.subtitle_language ?? null,
+          subtitles: src.subtitles ?? undefined,
           host: src.host ?? hostOf(rawUrl),
           priority_tier: getStreamTier(rawUrl),
-          is_verified: src.is_verified ?? false,
+          // La importación solo demuestra que el enlace fue descubierto. La
+          // resolución JIT/revisión del reproductor hará avanzar la evidencia.
+          source_status: "discovered",
+          canonical_locator: kind === "page" || kind === "embed" ? rawUrl : null,
+          extraction_method: "catalog_import",
+          resolver_version: "catalog-v2",
+          // Importar una URL no demuestra que nuestro reproductor la haya
+          // decodificado; la verificación se concede en la fase de media/UI.
+          is_verified: false,
           last_checked: new Date().toISOString(),
         },
       });
       if (queued) sourcesAdded++;
+    } else {
+      // Una reimportación puede descubrir idioma, subtítulos o un localizador
+      // canónico que no existían en la primera pasada. Actualizar solo esos
+      // huecos conserva el estado de salud/verified y evita duplicar enlaces.
+      const evidence: Record<string, unknown> = {};
+      if (src.language && existing.language !== src.language) evidence.language = src.language;
+      if (src.audio_language && existing.audio_language !== src.audio_language) evidence.audio_language = src.audio_language;
+      if (src.subtitle_language && existing.subtitle_language !== src.subtitle_language) evidence.subtitle_language = src.subtitle_language;
+      if (src.subtitles !== undefined && existing.subtitles == null) evidence.subtitles = src.subtitles;
+      if (!existing.canonical_locator && (kind === "page" || kind === "embed")) evidence.canonical_locator = rawUrl;
+      if (!existing.host) evidence.host = src.host ?? hostOf(rawUrl);
+      if (!existing.extraction_method) evidence.extraction_method = "catalog_import";
+      if (!existing.resolver_version) evidence.resolver_version = "catalog-v2";
+      if (Object.keys(evidence).length > 0) enqueueSourceLinkUpdate(existing.id, evidence);
     }
   }
   return sourcesAdded;
@@ -333,10 +397,13 @@ function pickYearCompatible<T extends { year: number | null }>(candidates: T[], 
   return unknownish[0] ?? null;
 }
 
-async function findExistingShowByBase(baseNorm: string, year: number | null) {
+async function findExistingShowByBase(baseNorm: string, year: number | null, category?: ContentKind) {
   if (!baseNorm) return null;
   const candidates = await prisma.show.findMany({
-    where: { base_normalized_title: baseNorm },
+    // El título normalizado es un fallback; nunca debe cruzar una película
+    // con un anime/serie homónimo. La identidad TMDB se resuelve antes y
+    // puede unir aliases reales, pero el fallback local conserva la categoría.
+    where: { base_normalized_title: baseNorm, ...(category ? { category } : {}) },
     include: { episodes: true },
     orderBy: { created_at: "asc" },
   });
@@ -377,7 +444,7 @@ async function findExistingShow(malId: number | null, normTitle: string, normEng
 }
 
 async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpisodes: Array<{ number: number; title: string; url: string }>) {
-  console.log(`[Deduplication] Obra existente detectada: '${existingShow.title}' (ID: ${existingShow.id}). Fusionando datos...`);
+  dedupLog(`[Deduplication] Obra existente detectada: '${existingShow.title}' (ID: ${existingShow.id}). Fusionando datos...`);
 
   const updatePayload: any = {};
   const existingTitleStr = String(existingShow.title ?? "").trim();
@@ -386,7 +453,7 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
 
   // Reparar slug si la obra existente tenía un slug pegado ("sixjoursceprintempsla")
   if (isSlugLikeTitle(existingTitleStr) && !isSlugLikeTitle(incomingTitleStr)) {
-    console.log(`[Deduplication] Título reparado de slug: '${existingTitleStr}' → '${incomingTitleStr}'`);
+    dedupLog(`[Deduplication] Título reparado de slug: '${existingTitleStr}' → '${incomingTitleStr}'`);
     updatePayload.title = incomingTitleStr;
     updatePayload.normalized_title = normalizeTitleKey(incomingTitleStr) || normalizeTitle(incomingTitleStr);
     updatePayload.base_normalized_title = normalizeTitleKey(incomingTitleStr);
@@ -396,7 +463,7 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
     parseRawTitle(existingTitleStr).canonical !== existingTitleStr &&
     normalizeTitleKey(existingTitleStr) === normalizeTitleKey(incomingTitleStr)
   ) {
-    console.log(`[Deduplication] Título normalizado: '${existingTitleStr}' → '${incomingTitleStr}'`);
+    dedupLog(`[Deduplication] Título normalizado: '${existingTitleStr}' → '${incomingTitleStr}'`);
     updatePayload.title = incomingTitleStr;
     updatePayload.normalized_title = normalizeTitleKey(incomingTitleStr) || normalizeTitle(incomingTitleStr);
   }
@@ -501,7 +568,19 @@ async function syncMediaItemSources(
           ? input.year
           : null;
 
-    const tmdbId = input.tmdb_id ?? enrichedAny?.tmdb_id ?? null;
+    // El Show legacy puede tener ya un TMDB ID aunque esta pasada llegue sin
+    // metadata enriquecida (por ejemplo, durante un reescaneo ligero). Usarlo
+    // aquí evita crear MediaItems paralelos sin identidad TMDB y permite que
+    // todas las fuentes de una misma obra converjan en la misma temporada.
+    let legacyTmdbId = input.tmdb_id ?? enrichedAny?.tmdb_id ?? null;
+    if (!legacyTmdbId && legacyShowId) {
+      const legacy = await prisma.show.findUnique({
+        where: { id: legacyShowId },
+        select: { tmdb_id: true },
+      });
+      legacyTmdbId = legacy?.tmdb_id ?? null;
+    }
+    const tmdbId = legacyTmdbId;
     const orConditions = [
       { base_normalized_title: baseNorm, kind },
       ...(baseNorm !== norm ? [{ normalized_title: norm, kind }] : []),
@@ -512,7 +591,7 @@ async function syncMediaItemSources(
     });
     let mediaItem = tmdbId
       ? await prisma.mediaItem.findFirst({
-          where: { tmdb_id: tmdbId, kind },
+          where: { tmdb_id: tmdbId, ...tmdbKindFilter(kind) },
           orderBy: { created_at: "asc" },
         })
       : null;
@@ -638,7 +717,7 @@ async function mergeSequelIntoTwin(
     enqueueShowUpdate(twin.id, patch);
   }
 
-  console.log(
+  dedupLog(
     `[Deduplication] SECUELA fusionada por TMDB ${showData.tmdbId}: "${showData.title}" → "${twin.title}" como temporada ${seasonNumber} (${added} episodios añadidos, numeración continua).`
   );
 
@@ -734,18 +813,28 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   const normEng = showData.englishTitle ? normalizeTitle(showData.englishTitle) : "";
 
   const dedupYear = showData.year > 0 ? showData.year : null;
+  const normalizedEpisodes = buildNormalizedEpisodes(input, kind);
   const existingByTmdb = showData.tmdbId
     ? await prisma.show.findFirst({
-        where: { tmdb_id: showData.tmdbId, category: kind },
+        where: { tmdb_id: showData.tmdbId, ...tmdbCategoryFilter(kind) },
         include: { episodes: true },
         orderBy: { created_at: "asc" },
       })
     : null;
+
+  // Un TMDB compartido con un marcador explícito S2/S3 no es un episodio
+  // adicional de la temporada 1. Encaminarlo al fusionador de secuelas
+  // conserva el Show canónico y escribe las fuentes en la temporada correcta.
+  if (existingByTmdb && season > 1) {
+    const result = await mergeSequelIntoTwin(existingByTmdb, showData, normalizedEpisodes, input, kind, season);
+    enqueueBackfillIfIncomplete(result.show);
+    return { ...result, season };
+  }
+
   const existingShow =
     existingByTmdb ??
-    (await findExistingShowByBase(baseNorm, dedupYear)) ??
+    (await findExistingShowByBase(baseNorm, dedupYear, kind)) ??
     (await findExistingShow(showData.malId ?? showData.tmdbId ? showData.malId : null, normTitle, normEng, normJap));
-  const normalizedEpisodes = buildNormalizedEpisodes(input, kind);
   const titleInfo: CanonicalTitleInfo = {
     canonical: showData.title,
     norm: normTitle,
@@ -762,7 +851,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
 
   if (showData.tmdbId) {
     const twin = await prisma.show.findFirst({
-      where: { tmdb_id: showData.tmdbId, base_normalized_title: { not: baseNorm } },
+      where: { tmdb_id: showData.tmdbId, ...tmdbCategoryFilter(kind), base_normalized_title: { not: baseNorm } },
       orderBy: { created_at: "asc" },
     });
     if (twin) {
@@ -772,7 +861,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     }
   }
 
-  console.log(`[Deduplication] Nueva obra verificada sin duplicados. Encolando en buffer RAM...`);
+  dedupLog(`[Deduplication] Nueva obra verificada sin duplicados. Encolando en buffer RAM...`);
 
   const rawSource = input.source || input.source_site || "";
   const normalizedSource = rawSource.includes(".")
@@ -1152,6 +1241,8 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
 
 export interface QuickSyncInput {
   title?: string;
+  /** Temporada detectada en el título/slug de la ficha reescaneada. */
+  season?: number | null;
   episodes: Array<{ number: number; title: string; url: string; sources?: SourceLinkInput[] }>;
   source_site?: string;
 }
@@ -1177,7 +1268,44 @@ export async function quickSyncKnownShow(
     title: data.title || show.title,
   };
 
-  const result = await mergeShowEpisodes(show, showData, normalizedEpisodes);
+  const season = data.season ?? parseTitleQuery(data.title || "").season ?? parseTitleQuery(show.title).season ?? 1;
+
+  // El modelo legacy `Episode` no tiene columna de temporada. Para una
+  // reimportación S2/S3 debemos conservar la numeración de la fuente en
+  // `MediaEpisode` (más abajo) y, en paralelo, anexar los episodios nuevos al
+  // final del Show legacy; de lo contrario el episodio 1 de S2 se descartaría
+  // como si fuera el episodio 1 de S1.
+  const result = season > 1
+    ? await mergeShowEpisodes(show, showData, [])
+    : await mergeShowEpisodes(show, showData, normalizedEpisodes);
+  let legacyAdded = result.episodesAdded;
+  if (season > 1 && normalizedEpisodes.length > 0) {
+    const knownUrls = new Set(show.episodes.map((episode: any) => String(episode.source_url || "").trim()).filter(Boolean));
+    const knownUntitled = new Set(
+      show.episodes
+        .filter((episode: any) => !episode.source_url)
+        .map((episode: any) => normalizeTitleKey(String(episode.title || "")))
+        .filter(Boolean),
+    );
+    const missingSeasonEpisodes = normalizedEpisodes.filter((episode) =>
+      episode.url ? !knownUrls.has(episode.url) : !knownUntitled.has(normalizeTitleKey(episode.title)),
+    );
+    if (missingSeasonEpisodes.length > 0) {
+      const maxLegacyNumber = show.episodes.reduce(
+        (max: number, episode: any) => Math.max(max, Number(episode.episode_number) || 0),
+        0,
+      );
+      await prisma.episode.createMany({
+        data: missingSeasonEpisodes.map((episode, index) => ({
+          show_id: show.id,
+          episode_number: maxLegacyNumber + index + 1,
+          title: episode.title,
+          source_url: episode.url,
+        })),
+      });
+      legacyAdded = missingSeasonEpisodes.length;
+    }
+  }
 
   const titleInfo: CanonicalTitleInfo = {
     canonical: show.title,
@@ -1186,12 +1314,12 @@ export async function quickSyncKnownShow(
     year: show.year ?? null,
   };
   const sourcesAdded = await syncMediaItemSources(
-    { title: show.title, source_site: data.source_site } as SaveShowInput,
+    { title: show.title, source_site: data.source_site, season } as SaveShowInput,
     kind,
     show.id,
     normalizedEpisodes,
     titleInfo
   );
 
-  return { added: result.episodesAdded, sourcesAdded: sourcesAdded || 0 };
+  return { added: legacyAdded, sourcesAdded: sourcesAdded || 0 };
 }

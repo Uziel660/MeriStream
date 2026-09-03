@@ -1,7 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 import "dotenv/config";
 import { ContentKind } from "./types";
-import { parseRawTitle } from "./utils/titleNormalizer";
+import { normalizeTitleKey, parseRawTitle } from "./utils/titleNormalizer";
 
 export interface EnrichedMetadata {
   title: string;
@@ -172,8 +172,11 @@ function isGenericQuery(lower: string): boolean {
 // devuelven sus catálogos en inglés. Este mapa unifica todo a español.
 const GENRE_ES_ALIASES: Record<string, string> = {
   "action": "Acción",
-  "action adventure": "Acción, Aventura",
-  "action y aventura": "Acción, Aventura",
+  // TMDB TV agrupa estos géneros como una sola etiqueta; conservar la
+  // etiqueta compuesta evita que el multiplexor los trate como categorías
+  // distintas al fusionar obras entre proveedores.
+  "action adventure": "Acción y Aventura",
+  "action y aventura": "Acción y Aventura",
   "adventure": "Aventura",
   "animation": "Animación",
   "anime": "Anime",
@@ -187,14 +190,14 @@ const GENRE_ES_ALIASES: Record<string, string> = {
   "mystery": "Misterio",
   "news": "Noticias",
   "reality": "Reality",
-  "sci fi fantasy": "Ciencia Ficción, Fantasía",
+  "sci fi fantasy": "Ciencia Ficción y Fantasía",
   "science fiction": "Ciencia Ficción",
-  "science fiction fantasy": "Ciencia Ficción, Fantasía",
+  "science fiction fantasy": "Ciencia Ficción y Fantasía",
   "soap": "Telenovela",
   "soap opera": "Telenovela",
   "talk": "Talk Show",
   "talk show": "Talk Show",
-  "war politics": "Guerra, Política",
+  "war politics": "Guerra y Política",
   "war": "Bélico",
   "western": "Western",
   "fantasy": "Fantasía",
@@ -424,16 +427,56 @@ async function fetchTMDBMetadata(
         } else if (kind === "series" || kind === "anime") {
           candidates = candidates.filter((r: any) => r.media_type === "tv");
         }
-        let bestResult = candidates[0];
+        // TMDB devuelve resultados globales ordenados por popularidad. Tomar
+        // siempre el primero asigna IDs equivocados cuando el catálogo trae
+        // títulos de temporada, traducciones o nombres muy parecidos. Se
+        // puntúa el título (incluyendo original/name) y el año antes de elegir.
+        const queryKey = normalizeTitleKey(query);
+        const queryTokens = new Set(queryKey.match(/[a-z0-9]+/g) || []);
+        const candidateScore = (candidate: any): number => {
+          const names = [candidate?.title, candidate?.name, candidate?.original_title, candidate?.original_name]
+            .filter((value): value is string => typeof value === "string" && value.trim())
+            .map((value) => normalizeTitleKey(value));
+          let score = 0;
+          for (const name of names) {
+            if (!name || !queryKey) continue;
+            if (name === queryKey) score = Math.max(score, 1);
+            else if (name.includes(queryKey) || queryKey.includes(name)) score = Math.max(score, 0.82);
+            else {
+              const nameTokens = new Set(name.match(/[a-z0-9]+/g) || []);
+              let overlap = 0;
+              for (const token of queryTokens) if (nameTokens.has(token)) overlap++;
+              const union = new Set([...queryTokens, ...nameTokens]).size;
+              score = Math.max(score, union > 0 ? overlap / union : 0);
+            }
+          }
+          const textualScore = score;
+          const resultYear = Number.parseInt(String(candidate?.release_date || candidate?.first_air_date || "").slice(0, 4), 10);
+          // El año solo desambigua candidatos con una coincidencia textual
+          // mínima; nunca convierte una obra ajena del mismo año en un match.
+          if (textualScore >= 0.15 && yearHint && resultYear === yearHint) score += 0.25;
+          else if (textualScore >= 0.15 && yearHint && Number.isFinite(resultYear) && Math.abs(resultYear - yearHint) > 1) score -= 0.2;
+          // Popularity desempata únicamente candidatos igualmente relevantes.
+          score += Math.min(0.03, Number(candidate?.popularity || 0) / 10000);
+          return score;
+        };
+        const rankedCandidates = candidates
+          .map((candidate: any, index: number) => ({ candidate, index, score: candidateScore(candidate) }))
+          .sort((a: any, b: any) => b.score - a.score || a.index - b.index);
+        let bestResult = rankedCandidates[0]?.candidate;
+        // Un resultado sin ninguna coincidencia textual es peor que no asignar
+        // identidad: el pipeline podrá continuar con AniList/Jikan/TVMaze.
+        if (rankedCandidates[0] && rankedCandidates[0].score < 0.15) bestResult = undefined;
         // Desambiguación por año del título parseado (ej. "Coco 2017")
         if (yearHint != null && Array.isArray(candidates)) {
-          const yearMatch = candidates.find((r: any) => {
+          const yearMatch = rankedCandidates.find(({ candidate, score }: { candidate: any; score: number }) => {
+            if (score < 0.15) return false;
+            const r = candidate;
             const y = Number.parseInt(String(r.release_date || r.first_air_date || "").substring(0, 4), 10);
             return y === yearHint;
-          });
+          })?.candidate;
           if (yearMatch) bestResult = yearMatch;
         }
-        if (!bestResult) bestResult = data.results.find((r: any) => r.media_type !== "person");
 
         // Rescate de overview: TMDB a menudo devuelve entradas sin sinopsis
         // (peliculas por estrenarse, podcasts "Countdown to...", "special looks").

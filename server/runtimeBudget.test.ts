@@ -76,6 +76,17 @@ describe("RuntimeBudget", () => {
     });
   });
 
+  it("reserva un único carril para una resolución interactiva bajo presión", () => {
+    const subject = budget({ careResolutions: 1, saturatedResolutions: 2 });
+    subject.sample({ rssBytes: 601 * MIB, heapUsedBytes: 50 * MIB });
+    expect(subject.tryBeginResolution()).toBeNull();
+    const interactive = subject.tryBeginResolution({ interactive: true });
+    expect(interactive).not.toBeNull();
+    expect(subject.tryBeginResolution({ interactive: true })).toBeNull();
+    interactive?.release();
+    expect(subject.snapshot({ refreshMemory: false }).activeResolutions).toBe(0);
+  });
+
   it("refreshes injected metrics on snapshot and exposes cheap policy flags", () => {
     let rssBytes = 100 * MIB;
     let now = 10;

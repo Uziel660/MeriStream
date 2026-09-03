@@ -4,6 +4,9 @@ import {
   isEmbedUrl,
   rankAndSortServers,
   scoreServer,
+  scoredServerFromRanked,
+  applyBackendTiers,
+  getProviderName,
   isRawWebpageUrl,
   hasExpiringSignature,
 } from './streamOptimizer';
@@ -368,6 +371,121 @@ describe('streamOptimizer', () => {
       const server = scoreServer(url, 7);
 
       expect(server.id).toMatch(/^server-7-\d+$/);
+    });
+  });
+
+  describe('scoredServerFromRanked & metadata preservation', () => {
+    it('construye ScoredServer directamente desde ranked_streams conservando toda la metadata', () => {
+      const ranked = {
+        url: 'https://cdn.example/hls/master.m3u8?token=xyz',
+        type: 'direct' as const,
+        tier: 1,
+        host: 'cdn.example',
+        source_site: 'cinecalidad',
+        canonical_locator: 'https://cinecalidad.am/pelicula/ejemplo.html',
+        resolution_id: 'res-abc-123',
+        delivery_mode: 'direct_trial' as const,
+        is_proxyable: true,
+        is_refreshable: true,
+        refresh_after: 1788160000,
+        expires_at: 1788170000,
+        generation: 'gen-1',
+      };
+
+      const server = scoredServerFromRanked(ranked, 0);
+
+      expect(server.canonical_locator).toBe('https://cinecalidad.am/pelicula/ejemplo.html');
+      expect(server.resolution_id).toBe('res-abc-123');
+      expect(server.delivery_mode).toBe('direct_trial');
+      expect(server.is_proxyable).toBe(true);
+      expect(server.is_refreshable).toBe(true);
+      expect(server.refresh_after).toBe(1788160000);
+      expect(server.expires_at).toBe(1788170000);
+      expect(server.generation).toBe('gen-1');
+      expect(server.tier).toBe(1);
+      expect(server.sourceSite).toBe('cinecalidad');
+      expect(server.provider).toBe('Cdn (CINECALIDAD)');
+      expect(server.isEmbed).toBe(false);
+      expect(server.notPlayable).toBeFalsy();
+    });
+
+    it('una fuente con expired_without_locator se marca notPlayable con label honesto', () => {
+      const expiredRanked = {
+        url: 'https://cdn.example/hls/master.m3u8?token=old',
+        type: 'direct' as const,
+        tier: 1,
+        host: 'cdn.example',
+        source_site: 'cinecalidad',
+        failure_reason: 'expired_without_locator' as const,
+      };
+
+      const server = scoredServerFromRanked(expiredRanked, 1);
+      expect(server.notPlayable).toBe(true);
+      expect(server.failure_reason).toBe('expired_without_locator');
+      expect(server.label.startsWith('[Expirado]')).toBe(true);
+      expect(server.score).toBe(-1000);
+    });
+
+    it('una página web canónica en ranked_streams no queda como embed reproducible', () => {
+      const rawPageRanked = {
+        url: 'https://lamovie.org/peliculas/10-cosas',
+        type: 'embed' as const,
+        tier: 2,
+        host: 'lamovie.org',
+        source_site: 'lamovie',
+      };
+
+      const server = scoredServerFromRanked(rawPageRanked, 0);
+      expect(server.isEmbed).toBe(false);
+      expect(server.notPlayable).toBe(true);
+      expect(server.label.startsWith('No reproducible')).toBe(true);
+    });
+
+    it('un embed real sí queda como embed reproducible', () => {
+      const embedRanked = {
+        url: 'https://streamtape.com/e/abc123xyz',
+        type: 'embed' as const,
+        tier: 3,
+        host: 'streamtape.com',
+        source_site: 'latanime',
+      };
+
+      const server = scoredServerFromRanked(embedRanked, 0);
+      expect(server.isEmbed).toBe(true);
+      expect(server.streamType).toBe('embed');
+      expect(server.notPlayable).toBeFalsy();
+    });
+
+    it('applyBackendTiers enriquece y conserva toda la metadata de entrega', () => {
+      const initial = rankAndSortServers(['https://cdn.example/live.m3u8']);
+      const rankedMeta = [{
+        url: 'https://cdn.example/live.m3u8',
+        type: 'direct' as const,
+        tier: 1,
+        host: 'cdn.example',
+        source_site: 'animeflv',
+        canonical_locator: 'https://animeflv.net/ver/1',
+        resolution_id: 'res-99',
+        delivery_mode: 'proxy_required' as const,
+        is_proxyable: true,
+        is_refreshable: true,
+      }];
+
+      const enriched = applyBackendTiers(initial, rankedMeta);
+      expect(enriched[0].canonical_locator).toBe('https://animeflv.net/ver/1');
+      expect(enriched[0].resolution_id).toBe('res-99');
+      expect(enriched[0].delivery_mode).toBe('proxy_required');
+      expect(enriched[0].sourceSite).toBe('animeflv');
+      expect(enriched[0].provider).toBe('Cdn (ANIMEFLV)');
+    });
+
+    it('getProviderName prioriza provider y source_site sobre Servidor N', () => {
+      const nameWithHostAndSite = getProviderName('https://streamtape.com/e/1', 0, 'cinecalidad', 'streamtape.com');
+      expect(nameWithHostAndSite).toBe('Streamtape (CINECALIDAD)');
+
+      const nameWithSite = getProviderName('https://unknown-cdn.net/stream.m3u8', 0, 'lamovie');
+      expect(nameWithSite).toBe('HLS (LAMOVIE)');
+      expect(nameWithSite).not.toBe('Servidor 1');
     });
   });
 });

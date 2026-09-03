@@ -33,6 +33,14 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
 
     const adapter2 = manager.getAdapter("https://jkanime.net/one-piece");
     expect(adapter2.id).toBe("animeflv");
+
+    const adapter3 = manager.getAdapter("https://animeflv.or.am/anime/one-piece");
+    expect(adapter3.id).toBe("animeflv");
+  });
+
+  it("resolves HiAnimesAdapter for hianimes.se URLs", () => {
+    const adapter = manager.getAdapter("https://hianimes.se/details/your-name.-wdzkfy");
+    expect(adapter.id).toBe("hianimes");
   });
 
 

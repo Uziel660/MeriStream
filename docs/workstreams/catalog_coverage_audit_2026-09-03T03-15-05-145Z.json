@@ -1,0 +1,441 @@
+{
+  "generated_at": "2026-09-03T03:15:05.143Z",
+  "totals": {
+    "media_items": 21175,
+    "media_episodes": 84037,
+    "episodes_without_links": 68812,
+    "episodes_with_multiple_sites": 881
+  },
+  "by_kind": {
+    "anime": {
+      "items": 6237,
+      "episodes": 64904,
+      "linked": 10422
+    },
+    "movie": {
+      "items": 13575,
+      "episodes": 12355,
+      "linked": 2469
+    },
+    "series": {
+      "items": 1363,
+      "episodes": 6778,
+      "linked": 2334
+    }
+  },
+  "providers": [
+    {
+      "provider": "tioanime.com",
+      "links": 8066,
+      "episodes": 7960
+    },
+    {
+      "provider": "lamovie.org",
+      "links": 5456,
+      "episodes": 5270
+    },
+    {
+      "provider": "latanime.org",
+      "links": 1855,
+      "episodes": 1739
+    },
+    {
+      "provider": "www3.animeflv.net",
+      "links": 471,
+      "episodes": 467
+    },
+    {
+      "provider": "tioplus.app",
+      "links": 444,
+      "episodes": 190
+    },
+    {
+      "provider": "cinecalidad.am",
+      "links": 437,
+      "episodes": 152
+    },
+    {
+      "provider": "doramasflix_variedades",
+      "links": 173,
+      "episodes": 173
+    },
+    {
+      "provider": "unknown",
+      "links": 124,
+      "episodes": 124
+    },
+    {
+      "provider": "animeflv.net",
+      "links": 40,
+      "episodes": 40
+    },
+    {
+      "provider": "vidhideplus.com",
+      "links": 24,
+      "episodes": 24
+    },
+    {
+      "provider": "doodstream.com",
+      "links": 7,
+      "episodes": 7
+    },
+    {
+      "provider": "voe.sx",
+      "links": 5,
+      "episodes": 5
+    },
+    {
+      "provider": "test-index.local",
+      "links": 2,
+      "episodes": 2
+    },
+    {
+      "provider": "emturbovid.com",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "localhost",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "127.0.0.1",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "videoapp.zip",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "goodstream.one",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "mega.nz",
+      "links": 1,
+      "episodes": 1
+    }
+  ],
+  "duplicate_media_item_groups": 22,
+  "duplicate_media_item_examples": [
+    [
+      {
+        "id": "cmt8oudui01aa7cpru7li07sh",
+        "title": "Ancien y el Mundo Mágico",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8oudvx01ab7cpr9toysumn",
+        "title": "Ancien y el Mundo Mágico",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ouf3g01dn7cprazct24va",
+        "title": "Hoshi wo Ou Kodomo",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ouf8p01dp7cprcmf7zrag",
+        "title": "Hoshi wo Ou Kodomo",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ouwjt02qn7cpr4pfmhaxw",
+        "title": "Level 1 dakedo Unique Skill de Saikyou desu",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ouwc902po7cprbdd7srx1",
+        "title": "Level 1 dakedo Unique Skill de Saikyou desu",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ouyjy02xj7cpr3ewjhnwg",
+        "title": "Mushikago no Cagaster",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ouyj302xi7cprnjv45xk5",
+        "title": "Mushikago no Cagaster",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ouzib036e7cprwrafey16",
+        "title": "Black Clover: Mahou Tei no Ken",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ouzil03767cprpe70wj1n",
+        "title": "Black Clover: Mahou Tei no Ken",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ov3j603i37cprrh3rupar",
+        "title": "Blood+",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ov3j603i17cprh9raoa6v",
+        "title": "Blood+",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ov64403og7cprwvqiewu9",
+        "title": "Back Street Girls: Gokudolls",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ov4z803m87cpruxcxksht",
+        "title": "Back Street Girls: Gokudolls",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ovkhd04g57cprho6pw3ll",
+        "title": "Kakegurui Twin",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ovkhp04g77cpre3cr6ips",
+        "title": "Kakegurui Twin",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ovm8x04jf7cprgv0ob7v4",
+        "title": "Yakitori",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ovm9l04ky7cprlu1gajkw",
+        "title": "Yakitori",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ovtkn04xd7cprbus4ddjw",
+        "title": "Resident Evil: Degeneration",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ovtla04xe7cprzjsyk9v0",
+        "title": "Resident Evil: Degeneration",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ovyqp056e7cpr1jmdhna3",
+        "title": "Ousama Ranking S2",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ovyrp056f7cpr1brkgzww",
+        "title": "Ousama Ranking S2",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ow4al05h77cprzg1hgwed",
+        "title": "Shuten Doji",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ow4aj05h67cprfw96hetr",
+        "title": "Shuten Doji",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ow7v705ml7cprhxxjezos",
+        "title": "Nanatsu no Taizai Movie 2",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8ow7ye05mm7cpretzrwqqf",
+        "title": "Nanatsu no Taizai Movie 2",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8owbo205wb7cpr3jpug8uo",
+        "title": "Héroes al rescate",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8owbos05wc7cprb8iu28y8",
+        "title": "Héroes al rescate",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8ozume0d4b7cpr6l0c7oqg",
+        "title": "Sonic X",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p00o00dfl7cpri6y1d1yd",
+        "title": "Sonic X",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p047e0dmn7cprm2cg6alb",
+        "title": "Pita Ten",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p045t0dmi7cprmyq8jfrt",
+        "title": "Pita Ten",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p1lo10g6z7cprmt91ejg3",
+        "title": "Dragon Quest: Your Story",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p1lqm0g7d7cpr0rsusgb3",
+        "title": "Dragon Quest: Your Story",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p1m390g7i7cprc5nnjn36",
+        "title": "Dragon Quest: Your Story",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p2tbw0jgw7cprxg2t2trc",
+        "title": "Una carta para Momo (Momo e no Tegami)",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p2tcp0jgx7cpryb42nqcs",
+        "title": "Una carta para Momo (Momo e no Tegami)",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p3vhx0lv37cprijmkhbli",
+        "title": "Redline",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p3v660lty7cprv1ld3gqj",
+        "title": "Redline",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p41hz0med7cprihv8jvpi",
+        "title": "Majutsushi Orphen: Revenge (Orphen: Revenge)",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p412q0mc67cprb647a20r",
+        "title": "Majutsushi Orphen: Revenge (Orphen: Revenge)",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p58f60p907cprqmxsoeyg",
+        "title": "Violet Evergarden",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p58dp0p8z7cprj8q5s01f",
+        "title": "Violet Evergarden",
+        "year": null,
+        "kind": "anime"
+      }
+    ],
+    [
+      {
+        "id": "cmt8p5hch0q8i7cprhu9cc6ar",
+        "title": "Love Hina",
+        "year": null,
+        "kind": "anime"
+      },
+      {
+        "id": "cmt8p5hcj0q8j7cprch5f8enn",
+        "title": "Love Hina",
+        "year": null,
+        "kind": "anime"
+      }
+    ]
+  ],
+  "note": "Los enlaces descubiertos no son prueba de reproducción; source_status debe avanzar mediante resolución JIT y validación del reproductor."
+}

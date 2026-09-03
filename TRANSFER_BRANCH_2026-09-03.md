@@ -7,6 +7,10 @@ código frontend/backend, pruebas, migraciones Prisma, herramientas de
 reimportación y recuperación, reportes, cursores de reanudación, snapshots y
 el bundle generado en `dist/`.
 
+Además, `database/snapshots/crawl-tasks-transfer-20260903.json` conserva las
+33 tareas y sus colas `items_queue` completas en el punto de pausa. Es el
+estado operativo que permite continuar el catálogo sin reconstruir objetivos.
+
 ## Preparar otra PC
 
 ```powershell
@@ -36,6 +40,13 @@ Los snapshots NDJSON comprimidos de `database/snapshots/` son respaldo de
 consulta y auditoría; no se deben restaurar sobre una base activa sin probar el
 procedimiento. Los cursores de `data/` y `docs/workstreams/` permiten reanudar
 TMDB, catálogo y recuperación sin empezar desde cero.
+
+El snapshot NDJSON más reciente disponible en la rama es el respaldo previo de
+la recuperación masiva; el estado posterior de las colas está separado en el
+JSON de `CrawlTask` anterior. Si la nueva PC apunta al mismo PostgreSQL, verá
+inmediatamente todos los registros actuales. Para una base nueva, restaura el
+dump/snapshot y deja que las tareas `pending` completen los registros creados
+después del respaldo.
 
 ## Arranque
 

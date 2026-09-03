@@ -9,7 +9,12 @@ import { createGzip } from "node:zlib";
 import "dotenv/config";
 
 const prisma = new PrismaClient();
-const BATCH_SIZE = 500;
+const BATCH_SIZE = Number(process.env.MERISTREAM_SNAPSHOT_BATCH_SIZE) > 0
+  ? Number(process.env.MERISTREAM_SNAPSHOT_BATCH_SIZE)
+  : 500;
+const TRANSACTION_TIMEOUT_MS = Number(process.env.MERISTREAM_SNAPSHOT_TIMEOUT_MS) > 0
+  ? Number(process.env.MERISTREAM_SNAPSHOT_TIMEOUT_MS)
+  : 10 * 60 * 1000;
 
 type SnapshotManifest = {
   format: "meristream-prisma-ndjson-v1";
@@ -110,7 +115,7 @@ async function main(): Promise<void> {
       tableCounts.WatchProgress = await exportModel(tx, "WatchProgress", (cursor) => tx.watchProgress.findMany({
         ...page, ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
       }), gzip);
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 10 * 60 * 1000 });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: TRANSACTION_TIMEOUT_MS });
 
     await writeWithBackpressure(gzip, { type: "summary", tables: tableCounts });
     gzip.end();

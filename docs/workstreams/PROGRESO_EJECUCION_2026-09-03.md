@@ -173,3 +173,18 @@ y cada importación/recuperación es idempotente por sus claves de base de datos
   servidor al próximo reinicio controlado, después de cerrar los catálogos.
 - `npm run lint` y `npm run build` vuelven a terminar correctamente tras el
   ajuste de la sonda; solo permanecen los avisos CSS/chunk ya conocidos.
+
+### Estado congelado para traslado (03-09-2026)
+
+- Se detuvieron servidor, trabajadores y finalizador de forma intencional para
+  trasladar el entorno sin escrituras concurrentes. Las dos tareas que estaban
+  `running` se devolvieron a `pending`, conservando sus checkpoints.
+- La rama remota `codex/catalog-recovery-transfer-2026-09-03` contiene el código,
+  esquemas, `.env` ya versionado, dump/snapshots, `dist`, reportes, cursores y
+  `database/snapshots/crawl-tasks-transfer-20260903.json` con las 33 colas.
+- La exportación NDJSON de toda la base actual superó el límite de 30 minutos en
+  `MediaEpisode`; por eso el traslado combina el dump/snapshot completo más
+  reciente disponible con el estado operativo exacto de `CrawlTask`. Para una
+  copia 1:1 de los registros actuales, la nueva PC debe apuntar al mismo
+  `DATABASE_URL`; con una base nueva, restaura el dump y deja que las tareas
+  `pending` terminen los registros posteriores.

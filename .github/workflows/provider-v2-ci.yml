@@ -36,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Prepare test database
-        run: npx prisma db push --schema=schema.prisma --skip-generate
+        run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
       - name: Provider V2 typecheck
         run: npx tsc -p tsconfig.provider-v2.json --noEmit
       - name: Full unit test suite

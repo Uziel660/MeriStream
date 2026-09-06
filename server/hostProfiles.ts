@@ -60,6 +60,14 @@ export const VIMEOS_REQUIRED_HEADERS = {
  */
 export const HOST_PROFILES: HostProfile[] = [
   {
+    // Megaplay CDN (imgnex.top): requests without Referer https://megaplay.buzz/ return 403.
+    match: ["imgnex.top", "megaplay.buzz", "megaplay.top", "xoticsky.top"],
+    refererMode: "fixed",
+    referer: "https://megaplay.buzz/",
+    userAgent: CHROME_124_UA,
+    client: "undici",
+  },
+  {
     // ZokoAnime HLS CDN: requests without the player Referer return 403.
     // The canonical embed is zokoanime.video, so pin that Referer for both
     // manifests and segments while keeping the lightweight undici client.

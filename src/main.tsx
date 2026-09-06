@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { MotionConfig } from 'motion/react';
 import App from './App';
 import { AdminGate } from './components/AdminGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -13,12 +14,12 @@ const isAdminRoute = window.location.pathname.startsWith('/admin');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <MotionConfig reducedMotion="user"><ErrorBoundary>
       <AuthProvider>
         <HiddenGenresProvider>
           {isAdminRoute ? <AdminGate /> : <App />}
         </HiddenGenresProvider>
       </AuthProvider>
-    </ErrorBoundary>
+    </ErrorBoundary></MotionConfig>
   </React.StrictMode>
 );

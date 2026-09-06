@@ -52,7 +52,6 @@ const DOWNLOAD_ONLY_HOSTS = ["mediafire.com", "drive.google.com", "4shared.com",
 
 const DEAD_OR_BLOCKED_HOST_PATTERNS = [
   /cfglobalcdn\.com/i,
-  /yourupload\.com/i,
   /streamtape\./i,
   /dsvplay\.com/i,
   /savefiles\.com/i,
@@ -63,8 +62,17 @@ const DEAD_OR_BLOCKED_HOST_PATTERNS = [
   /v\.tioanime\.com/i,
 ];
 
+const CAN_UPGRADE_TO_DIRECT = [
+  "streamwish", "sfastwish", "wishonly", "flaswish", "hlswish", "premilkyway",
+  "vidhide", "vidhidevip", "vixhide", "dramiyos-cdn",
+  "yourupload", "playmudos",
+  "ok.ru", "voe", "goodstream", "byse"
+];
+
 const isKnownEmbedHost = (url: string) =>
   KNOWN_EMBED_HOSTS.some((h) => url.toLowerCase().includes(h));
+const canUpgradeToDirect = (url: string) =>
+  CAN_UPGRADE_TO_DIRECT.some((h) => url.toLowerCase().includes(h));
 const isDownloadOnly = (url: string) =>
   DOWNLOAD_ONLY_HOSTS.some((h) => url.toLowerCase().includes(h));
 const isDeadOrBlocked = (url: string) =>
@@ -295,8 +303,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const html = await this.fetchHtml(cleanUrl);
     if (!html) {
       const mirrored = await this.extractViaJkanimeMirror(cleanUrl);
-      if (mirrored) return mirrored;
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      if (mirrored && mirrored.all_available_streams.length > 0) return mirrored;
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const $ = cheerio.load(html);
@@ -305,18 +313,30 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     if (rawStreams.length === 0) {
       // EVIDENCIA 2026-08-21: www3/www4/m.animeflv.net sirven `var videos = []` para
       // muchas IPs (servidores retenidos server-side). Espejo contra jkanime antes
-      // de devolver la página del episodio como pseudo-stream.
+      // de devolver vacío.
       const mirrored = await this.extractViaJkanimeMirror(cleanUrl);
-      if (mirrored) return mirrored;
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      if (mirrored && mirrored.all_available_streams.length > 0) return mirrored;
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
-    const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    const topStreams: string[] = [];
+    if (directStreams.length > 0) {
+      topStreams.push(directStreams[0]);
+      if (directStreams.length > 1) {
+        topStreams.push(directStreams[1]);
+      } else if (embedStreams.length > 0) {
+        topStreams.push(embedStreams[0]);
+      }
+    } else {
+      topStreams.push(...embedStreams.slice(0, 2));
+    }
+    const finalStreams = topStreams.length > 0 ? topStreams : Array.from(new Set([...directStreams, ...embedStreams])).slice(0, 2);
 
     return {
-      stream_url: finalStreams[0] || cleanUrl,
-      all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
+      stream_url: finalStreams[0] || "",
+      all_available_streams: finalStreams,
     };
   }
 
@@ -346,6 +366,9 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
       } else if (isKnownEmbedHost(normalized)) {
         if (!embedStreams.includes(normalized)) embedStreams.push(normalized);
+        if (canUpgradeToDirect(normalized) && !needResolve.includes(normalized)) {
+          needResolve.push(normalized);
+        }
       } else if (EmbedResolvers.isDirectMediaUrl(normalized)) {
         if (!directStreams.includes(normalized)) directStreams.push(normalized);
       } else if (!needResolve.includes(normalized)) {
@@ -354,9 +377,15 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     const targets = needResolve.slice(0, 6);
+    const withTimeout = (target: string, ms = 3500) => {
+      const timeoutPromise = new Promise<{ url: string; original_url: string; resolved: boolean; type: "direct" | "embed"; provider: string }>((resolve) =>
+        setTimeout(() => resolve({ url: target, original_url: target, resolved: false, type: "embed", provider: "Desconocido" }), ms)
+      );
+      return Promise.race([EmbedResolvers.resolveWithMeta(target), timeoutPromise]);
+    };
     const results = await Promise.allSettled([
-      ...targets.map((t) => EmbedResolvers.resolveWithMeta(t)),
-      ...mp4UploadTargets.map((t) => EmbedResolvers.resolveWithMeta(t)),
+      ...targets.map((t) => withTimeout(t)),
+      ...mp4UploadTargets.map((t) => withTimeout(t)),
     ]);
     results.forEach((r) => {
       if (r.status !== "fulfilled") return;
@@ -517,21 +546,33 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
    */
   private async extractJkanimeStream(url: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const html = await this.fetchHtml(url, 12000);
-    if (!html) return { stream_url: url, all_available_streams: [url] };
+    if (!html) return { stream_url: "", all_available_streams: [] };
 
     const title = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/)?.[1];
     const rawStreams = this.parseJkanimeServers(html);
 
     if (rawStreams.length === 0) {
-      return { stream_url: url, all_available_streams: [url], title };
+      return { stream_url: "", all_available_streams: [], title };
     }
 
     const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
-    const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    const topStreams: string[] = [];
+    if (directStreams.length > 0) {
+      topStreams.push(directStreams[0]);
+      if (directStreams.length > 1) {
+        topStreams.push(directStreams[1]);
+      } else if (embedStreams.length > 0) {
+        topStreams.push(embedStreams[0]);
+      }
+    } else {
+      topStreams.push(...embedStreams.slice(0, 2));
+    }
+    const finalStreams = topStreams.length > 0 ? topStreams : Array.from(new Set([...directStreams, ...embedStreams])).slice(0, 2);
 
     return {
-      stream_url: finalStreams[0] || url,
-      all_available_streams: finalStreams.length > 0 ? finalStreams : [url],
+      stream_url: finalStreams[0] || "",
+      all_available_streams: finalStreams,
       title,
     };
   }
@@ -628,14 +669,25 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         .filter((value, index, values) => values.indexOf(value) === index);
       for (const animeUrl of candidates.slice(0, 6)) {
         const epUrl = `${animeUrl.replace(/\/+$/, "")}/${epNum}/`;
-        const html = await this.fetchHtml(epUrl, 12000);
+        const html = await this.fetchHtml(epUrl, 3500);
         if (!html) continue;
 
         const rawStreams = this.parseJkanimeServers(html);
         if (rawStreams.length === 0) continue;
 
         const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
-        const finalStreams = Array.from(new Set([...directStreams, ...embedStreams]));
+        const topStreams: string[] = [];
+        if (directStreams.length > 0) {
+          topStreams.push(directStreams[0]);
+          if (directStreams.length > 1) {
+            topStreams.push(directStreams[1]);
+          } else if (embedStreams.length > 0) {
+            topStreams.push(embedStreams[0]);
+          }
+        } else {
+          topStreams.push(...embedStreams.slice(0, 2));
+        }
+        const finalStreams = topStreams.length > 0 ? topStreams : Array.from(new Set([...directStreams, ...embedStreams])).slice(0, 2);
         if (finalStreams.length > 0) {
           return { stream_url: finalStreams[0], all_available_streams: finalStreams };
         }

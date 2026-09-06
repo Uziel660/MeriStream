@@ -10,16 +10,33 @@ import { resolveVidhide } from "./resolvers/vidhideResolver";
 import { VIMEOS_REQUIRED_HEADERS } from "./hostProfiles";
 import { parseStreamExpiry } from "./resolutionMetadata";
 import { resolveZokoAnime, isZokoAnimeUrl, ZOKO_REQUIRED_HEADERS } from "./resolvers/zokoanimeResolver";
+import { resolveMegaplay, isMegaplayUrl, MEGAPLAY_REQUIRED_HEADERS } from "./resolvers/megaplayResolver";
 import { episodeLinks, fetchHianimesEpisode, hianimesSlugFromUrl, isHianimesWatchUrl } from "./resolvers/hianimesResolver";
 import {
   isPlatformPageUrl,
   isLaMoviePageUrl,
   isCinecalidadPageUrl,
   isTioPlusPageUrl,
+  isAnimeFlvPageUrl,
+  isJkanimePageUrl,
+  isLatAnimePageUrl,
+  isGnulaPageUrl,
+  isTioAnimePageUrl,
+  isVerAnimesPageUrl,
+  isDoramasflixPageUrl,
+  isTubePelisPageUrl,
   resolvePlatformPage,
   resolveLaMoviePage,
   resolveCinecalidadPage,
   resolveTioPlusPage,
+  resolveAnimeFlvPage,
+  resolveJkanimePage,
+  resolveLatAnimePage,
+  resolveGnulaPage,
+  resolveTioAnimePage,
+  resolveVerAnimesPage,
+  resolveDoramasflixPage,
+  resolveTubePelisPage,
 } from "./platformPageResolvers";
 
 // ── Blacklist global de proveedores muertos ──────────────────────────────────
@@ -55,6 +72,7 @@ export const SUPPORTED_SERVER_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /ok\.ru/i,
   /voe\.sx/i,
   /voe\./i,
+  /byse[a-z0-9-]*\.[a-z]+/i,
   /byselapuix/i,
   /primeload\.co/i,
   /byseqekaho\.com/i,
@@ -279,7 +297,12 @@ export class EmbedResolvers {
   public static isDirectMediaUrl(url: string): boolean {
     if (!url) return false;
     const u = url.toLowerCase();
-    return /\.(m3u8|mp4|webm)(\?|$)/i.test(u) || u.includes("/m3u8/") || u.includes("hls-vod");
+    return (
+      /\.(m3u8|mp4|webm)(\?|$)/i.test(u) ||
+      u.includes("/m3u8/") ||
+      u.includes("hls-vod") ||
+      u.includes("/api/v1/stream/mega")
+    );
   }
 
   /**
@@ -308,14 +331,14 @@ export class EmbedResolvers {
     if (u.includes("cinecalidad")) return "Cinecalidad";
     if (u.includes("tioplus")) return "TioPlus";
     if (u.includes("hianimes") || u.includes("zokoanime")) return "HiAnimes";
-    if (u.includes("mega.nz")) return "Mega";
+    if (u.includes("mega.nz") || u.includes("/api/v1/stream/mega")) return "Mega";
     if (u.includes("mp4upload.com")) return "MP4Upload";
     if (u.includes("voe.sx") || u.includes("voe.") || u.includes("byselapuix")) return "VOE";
     if (u.includes("streamtape")) return "Streamtape";
-    if (u.includes("yourupload.com")) return "YourUpload";
+    if (u.includes("yourupload.com") || u.includes("playmudos")) return "YourUpload";
     if (u.includes("ok.ru")) return "Okru";
     if (u.includes("filemoon")) return "Filemoon";
-    if (u.includes("streamwish") || u.includes("swhoi")) return "StreamWish";
+    if (u.includes("streamwish") || u.includes("swhoi") || u.includes("premilkyway") || u.includes("wishonly") || u.includes("sfastwish") || u.includes("flaswish")) return "StreamWish";
     if (u.includes("vidmoly")) return "Vidmoly";
     if (u.includes("dood") || u.includes("do7go") || u.includes("ds2play")) return "DoodStream";
     // vimeos rota TLD en sus nodos (s{N}.vimeos.net, vimeos.zip, p{N}.vimeos.zip)
@@ -324,6 +347,14 @@ export class EmbedResolvers {
     if (u.includes("hqq.tv") || u.includes("waaw")) return "Netu/HQQ";
     if (u.includes("byseqekaho.com") || u.includes("byselapuix.com") || u.includes("bysekoze")) return "Bysekoze";
     if (u.includes("hexload")) return "Hexload";
+    if (u.includes("uqload")) return "Uqload";
+    if (u.includes("goodstream")) return "Goodstream";
+    if (u.includes("vidhide") || u.includes("vixhide") || u.includes("dramiyos-cdn")) return "Vidhide";
+    if (u.includes("animeflv")) return "AnimeFLV";
+    if (u.includes("jkanime")) return "JKanime";
+    if (u.includes("tioanime")) return "TioAnime";
+    if (u.includes("veranimes")) return "VerAnimes";
+    if (u.includes("latanime")) return "LatAnime";
     if (u.includes("cfglobalcdn.com")) return "Fast CDN (HLS)";
     return "Servidor";
   }
@@ -439,6 +470,31 @@ export class EmbedResolvers {
       }
     }
 
+    if (isMegaplayUrl(rawUrl)) {
+      const megaplay = await resolveMegaplay(rawUrl);
+      if (megaplay.url && !this.isPlaceholderUrl(megaplay.url)) {
+        return {
+          url: megaplay.url,
+          original_url: rawUrl,
+          canonical_locator: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: "Megaplay (AniPulse)",
+          delivery_mode: "direct_trial",
+          is_proxyable: true,
+          is_refreshable: true,
+          requiredHeaders: { ...megaplay.requiredHeaders },
+          subtitles: megaplay.subtitles.map((track, index) => ({
+            id: `megaplay-sub-${index}`,
+            label: track.label || track.lang || `Subtítulo ${index + 1}`,
+            language: track.lang || "en",
+            src: track.src,
+            is_default: track.default === true,
+          })),
+        };
+      }
+    }
+
     if (isHianimesWatchUrl(rawUrl)) {
       const hianimes = await this.resolveHianimesWatchMeta(rawUrl);
       if (hianimes) {
@@ -458,9 +514,41 @@ export class EmbedResolvers {
       }
     }
 
+    if (rawUrl.includes("mega.nz/")) {
+      const megaParsed = parseMegaUrl(rawUrl);
+      if (megaParsed && megaParsed.kind === "file") {
+        return {
+          url: `/api/v1/stream/mega?url=${encodeURIComponent(megaParsed.canonicalUrl)}`,
+          original_url: rawUrl,
+          canonical_locator: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: "Mega",
+          delivery_mode: "direct_trial",
+          is_proxyable: true,
+          is_refreshable: false,
+        };
+      }
+    }
+
     const resolvedUrl = await this.resolve(rawUrl);
-    const isDirect = this.isDirectMediaUrl(resolvedUrl) && !this.isPlaceholderUrl(resolvedUrl);
-    const resolvedExpiry = isDirect ? parseStreamExpiry(resolvedUrl).expiresAt : undefined;
+    let isDirect = this.isDirectMediaUrl(resolvedUrl) && !this.isPlaceholderUrl(resolvedUrl);
+    let finalUrl = resolvedUrl;
+    let finalHeaders: Record<string, string> | undefined;
+
+    // Si la resolución interna no produjo stream directo (quedó como embed), intentar con yt-dlp
+    if (!isDirect && !isPlatformPageUrl(rawUrl)) {
+      try {
+        const ytdlpMeta = await resolveWithYtDlp(rawUrl);
+        if (ytdlpMeta && ytdlpMeta.resolved && ytdlpMeta.url && !this.isPlaceholderUrl(ytdlpMeta.url)) {
+          finalUrl = ytdlpMeta.url;
+          isDirect = true;
+          if (ytdlpMeta.requiredHeaders) finalHeaders = ytdlpMeta.requiredHeaders;
+        }
+      } catch {}
+    }
+
+    const resolvedExpiry = isDirect ? parseStreamExpiry(finalUrl).expiresAt : undefined;
     if (isDirect && resolvedExpiry !== undefined && resolvedExpiry <= Date.now()) {
       return {
         url: rawUrl,
@@ -476,20 +564,26 @@ export class EmbedResolvers {
     }
 
     return {
-      url: resolvedUrl,
+      url: finalUrl,
       original_url: rawUrl,
       resolved: isDirect,
       type: isDirect ? "direct" : "embed",
       provider,
-      // El embed original sí es un locator estable: puede volver a producir un
-      // token nuevo cuando el upstream expire.
       ...(isDirect
-        ? { is_proxyable: true, is_refreshable: true, canonical_locator: rawUrl }
-        : { is_proxyable: false, is_refreshable: false, failure_reason: "unresolved" as const }),
-      // Cubre tanto embeds como nodos del CDN (s{N}.vimeos.net, vimeos.zip):
-      // los headers reales los aplica el proxy vía perfil de hostProfiles.
+        ? {
+            is_proxyable: true,
+            is_refreshable: true,
+            canonical_locator: rawUrl,
+            delivery_mode: "direct_trial" as const,
+          }
+        : {
+            is_proxyable: false,
+            is_refreshable: false,
+            failure_reason: "unresolved" as const,
+          }),
+      ...(finalHeaders ? { requiredHeaders: finalHeaders } : {}),
       ...(provider === "Vimeos" ? { requiredHeaders: { ...VIMEOS_REQUIRED_HEADERS } } : {}),
-      ...(isZokoCdnUrl(resolvedUrl) ? { requiredHeaders: { ...ZOKO_REQUIRED_HEADERS } } : {}),
+      ...(isZokoCdnUrl(finalUrl) ? { requiredHeaders: { ...ZOKO_REQUIRED_HEADERS } } : {}),
     };
   }
 
@@ -513,7 +607,11 @@ export class EmbedResolvers {
     if (isZokoAnimeUrl(rawUrl)) {
       const zoko = await resolveZokoAnime(rawUrl);
       if (zoko.url && !this.isPlaceholderUrl(zoko.url)) return zoko.url;
-      return rawUrl;
+    }
+
+    if (isMegaplayUrl(rawUrl)) {
+      const megaplay = await resolveMegaplay(rawUrl);
+      if (megaplay.url && !this.isPlaceholderUrl(megaplay.url)) return megaplay.url;
     }
 
     // 1. MEGA.NZ: Convertir /file/ a /embed/ para evitar que redirija a la web de Mega
@@ -524,11 +622,17 @@ export class EmbedResolvers {
       return rawUrl;
     }
 
-    // 2. VIMEOS.NET: MP4 directo vía POST download_orig; fallback al propio embed
+    // 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado; fallback a yt-dlp
     // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)
     if (VimeosResolver.isVimeosUrl(rawUrl)) {
       const streams = await VimeosResolver.resolveVimeos(rawUrl);
       if (streams.length > 0 && !this.isPlaceholderUrl(streams[0])) return streams[0];
+      try {
+        const ytdlp = await resolveWithYtDlp(rawUrl);
+        if (ytdlp && ytdlp.resolved && ytdlp.url && !this.isPlaceholderUrl(ytdlp.url)) {
+          return ytdlp.url;
+        }
+      } catch {}
       return rawUrl;
     }
 
@@ -539,7 +643,7 @@ export class EmbedResolvers {
     }
 
     // 4. YOURUPLOAD: Extraer enlace .mp4 directo
-    if (rawUrl.includes("yourupload.com")) {
+    if (rawUrl.includes("yourupload.com") || rawUrl.includes("playmudos.com")) {
       const yuDirect = await this.resolveYourUpload(rawUrl);
       if (yuDirect) return yuDirect;
     }
@@ -597,6 +701,11 @@ export class EmbedResolvers {
     // 8. STREAMWISH / FILEMOON / VIDMOLY / UPSTREAM / FASTRE / STREAMHIDE
     if (
       rawUrl.includes("streamwish") ||
+      rawUrl.includes("wishonly") ||
+      rawUrl.includes("sfastwish") ||
+      rawUrl.includes("flaswish") ||
+      rawUrl.includes("hlswish") ||
+      rawUrl.includes("premilkyway") ||
       rawUrl.includes("filemoon") ||
       rawUrl.includes("vidmoly") ||
       rawUrl.includes("upstream") ||
@@ -623,7 +732,13 @@ export class EmbedResolvers {
     }
 
     // 11. VIDHIDE (tier 3): packed jwplayer → m3u8/mp4 directo; fallback iframe
-    if (rawUrl.includes("vidhide") || rawUrl.includes("vixhide")) {
+    if (
+      rawUrl.includes("vidhide") ||
+      rawUrl.includes("vixhide") ||
+      rawUrl.includes("dramiyos-cdn") ||
+      rawUrl.includes("vidhideplus") ||
+      rawUrl.includes("vidhidevip")
+    ) {
       const vh = await resolveVidhide(rawUrl);
       if (vh.type === "direct") return vh.url;
       return rawUrl;
@@ -785,6 +900,16 @@ export class EmbedResolvers {
       const html = await this.fetchHtml(url);
       if (!html) return null;
 
+      // Detectar videos bloqueados por copyright o restricciones
+      if (
+        html.includes("Access to this video is restricted") ||
+        html.includes("not available") ||
+        html.includes("copyrights") ||
+        html.includes("restricted")
+      ) {
+        return null;
+      }
+
       // OK.RU incluye JSON en data-options o hlsManifestUrl
       const hlsMatch = html.match(/hlsManifestUrl["']?\s*:\s*["']([^"']+)["']/i) ||
                        html.match(/data-options=["']([^"']+)["']/i);
@@ -896,7 +1021,7 @@ export class EmbedResolvers {
    * bysekoze.com verificado 2026-08-23: misma SPA y misma /api/videos/{code}/.
    */
   private static isByseHost(url: string): boolean {
-    return /byseqekaho\.com|byselapuix\.com|bysekoze\.com/i.test(url);
+    return /byse[a-z0-9-]*\.[a-z]+/i.test(url);
   }
 
   /**
@@ -1217,7 +1342,7 @@ export class ProviderResolverRegistry {
       name: "Vimeos",
       matches: (url) => /vimeos\.[a-z]+/i.test(url.hostname) || /p\d+\.vimeos\.zip/i.test(url.hostname),
       capabilities: {
-        supportsDirect: false,
+        supportsDirect: true,
         supportsProxy: true,
         supportsEmbed: true,
         renewable: true,
@@ -1464,7 +1589,119 @@ export class ProviderResolverRegistry {
       resolve: async (locator) => resolveTioPlusPage(locator),
     });
 
-    // 21. Generic Fallback
+    // 21. AnimeFLV Platform Pages
+    this.register({
+      name: "AnimeFLV",
+      matches: (url) => isAnimeFlvPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveAnimeFlvPage(locator),
+    });
+
+    // 22. JKanime Platform Pages
+    this.register({
+      name: "JKanime",
+      matches: (url) => isJkanimePageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveJkanimePage(locator),
+    });
+
+    // 23. LatAnime Platform Pages
+    this.register({
+      name: "LatAnime",
+      matches: (url) => isLatAnimePageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveLatAnimePage(locator),
+    });
+
+    // 24. Gnula Platform Pages
+    this.register({
+      name: "Gnula",
+      matches: (url) => isGnulaPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveGnulaPage(locator),
+    });
+
+    // 25. TioAnime Platform Pages
+    this.register({
+      name: "TioAnime",
+      matches: (url) => isTioAnimePageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveTioAnimePage(locator),
+    });
+
+    // 26. VerAnimes Platform Pages
+    this.register({
+      name: "VerAnimes",
+      matches: (url) => isVerAnimesPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveVerAnimesPage(locator),
+    });
+
+    // 27. Doramasflix Platform Pages
+    this.register({
+      name: "Doramasflix",
+      matches: (url) => isDoramasflixPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveDoramasflixPage(locator),
+    });
+
+    // 28. TubePelis Platform Pages
+    this.register({
+      name: "TubePelis",
+      matches: (url) => isTubePelisPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveTubePelisPage(locator),
+    });
+
+    // 29. Generic Fallback
     this.register({
       name: "GenericHtml",
       matches: () => true,

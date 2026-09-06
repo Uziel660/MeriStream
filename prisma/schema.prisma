@@ -24,7 +24,7 @@ model Show {
   banner_url           String?
   poster_path          String?
   backdrop_path        String?
-  category             String    @default("anime")
+  category             String    @default("movie")
   rating               Float     @default(8.0)
   year                 Int       @default(2024)
   status               String    @default("Finalizado")

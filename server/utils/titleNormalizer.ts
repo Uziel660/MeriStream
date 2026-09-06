@@ -41,6 +41,9 @@ const NOISE_TOKENS = new Set([
   "peliculas", "serie", "series", "capitulo", "episodio", "temporada",
   "latino", "latinos", "castellano", "espanol", "español", "spanish",
   "subtitulado", "subtitulada", "sub", "subs", "vod",
+  // Etiquetas de audio que algunos catálogos pegan al título; no forman
+  // parte de la identidad de la obra y deben quedar fuera de la clave/TMDB.
+  "japones", "japanese", "redoblaje", "doblaje", "doblado", "doblada",
   "hd", "hq", "hdr", "4k", "uhd", "fhd", "fullhd", "bluray", "brrip",
   "dvdrip", "webrip", "webdl", "x264", "x265", "hevc", "h264",
   "1080p", "720p", "480p", "2160p", "1080", "720", "480", "2160",
@@ -145,13 +148,37 @@ export function isPlausibleTitle(title: string | null | undefined): boolean {
     .trim();
   if (SCRAPER_PLACEHOLDER_TITLES.has(normalizedWords)) return false;
 
-  const compact = t.replace(/[^a-zA-Z0-9]/g, "");
+  // Conservar títulos legítimos en alfabetos no latinos (LaMovie y otros
+  // catálogos publican chino, tailandés, cirílico, etc.). El compactado ASCII
+  // puede quedar vacío aunque el título tenga letras Unicode válidas.
+  const hasUnicodeLetter = /\p{L}/u.test(t);
+  const compact = t
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+  if (!compact && hasUnicodeLetter) return true;
   if (!compact) return false;
   const isShort = compact.length <= 2;
   const isNumeric = /^\d+$/.test(compact);
   const knownShort =
     /^[A-ZÁÉÍÓÚÑ]/.test(t) && KNOWN_SHORT_TITLES.has(t.toLowerCase());
   if (isShort && !isNumeric && !knownShort) {
+    // En alfabetos no latinos dos caracteres pueden ser un título completo
+    // (por ejemplo, obras chinas/japonesas). No exigir vocales latinas aquí.
+    if (hasUnicodeLetter && !/[A-Za-z]/.test(t)) return true;
+    // Siglas/títulos íntegramente en mayúsculas de dos letras (p. ej. "XX",
+    // "TV", "AI") también son nombres de obra válidos.
+    if (/^[A-ZÁÉÍÓÚÑ]{2}$/.test(t)) return true;
+    // Títulos alfanuméricos cortos que empiezan por número (p. ej. "3G",
+    // "2D") también son obras válidas; no confundirlos con números puros.
+    if (/^(?=.*[A-ZÁÉÍÓÚÑ])(?=.*\d)[A-ZÁÉÍÓÚÑ0-9]{2,3}$/i.test(t)) return true;
+    // Siglas y títulos estilizados con dígitos/símbolos son comunes:
+    // "SK∞", "C3", "H2", "MM!", "S&X", "W'z", "C³". Si empiezan
+    // con mayúscula, no son basura de navegación y deben conservarse.
+    if (/^[A-ZÁÉÍÓÚÑ]/.test(t) && /[0-9!&'³∞+]/.test(t)) return true;
+    // Un título de una sola letra mayúscula (por ejemplo, "Z") puede ser una
+    // obra real; los títulos minúsculos de un carácter siguen bloqueados.
+    if (/^[A-ZÁÉÍÓÚÑ]$/.test(t)) return true;
     const hasVowel = /[aeiouáéíóúü]/i.test(compact);
     if (!hasVowel || /^[a-zá-ú]/.test(t)) return false;
   }
@@ -176,7 +203,7 @@ function slugify(text: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
+    .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 /**
@@ -225,7 +252,12 @@ export function parseRawTitle(raw: string): ParsedRawTitle {
   const tokens = text.split(" ");
   for (const token of tokens) {
     const norm = slugify(token);
-    if (!norm) continue;
+    // Conservar texto real en alfabetos no latinos aunque no sea indexable
+    // como ASCII (coreano, chino, cirílico, tailandés, etc.).
+    if (!norm) {
+      if (/\p{L}/u.test(token)) kept.push(token);
+      continue;
+    }
     if (NOISE_TOKENS.has(norm)) {
       if (norm === "latino" || norm === "latinos") sawLatino = true;
       else if (norm === "castellano" || norm === "espanol" || norm === "español") sawCastellano = true;

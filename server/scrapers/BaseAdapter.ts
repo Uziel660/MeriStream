@@ -32,34 +32,68 @@ export abstract class BaseScraperAdapter {
    */
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const cleanUrl = targetUrl.trim();
+    const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes("/m3u8/") || u.includes(".m3u8");
+    const isSourceWebPage = (u: string) => {
+      try {
+        if (isDirectMedia(u)) return false;
+        const pathname = new URL(u).pathname.toLowerCase();
+        return /\/(ver|watch|episode|ep|capitulo|pelicula|series|anime)\//.test(pathname);
+      } catch {
+        return false;
+      }
+    };
+
     try {
       const html = await this.fetchHtml(cleanUrl, 6000);
       if (!html) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+        return { stream_url: isDirectMedia(cleanUrl) ? cleanUrl : "", all_available_streams: isDirectMedia(cleanUrl) ? [cleanUrl] : [] };
       }
 
       const $ = cheerio.load(html);
-      const rawStreams = this.extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
+      const rawStreams = this.extractEmbedsAndStreamsFromHtml($, html, cleanUrl)
+        .filter((u) => !isSourceWebPage(u) && (u !== cleanUrl || isDirectMedia(u)));
 
       const resolvedStreams: string[] = [];
       for (const stream of rawStreams) {
         const resolved = await EmbedResolvers.resolve(stream);
-        resolvedStreams.push(resolved || stream);
+        const res = resolved || stream;
+        if (res && !isSourceWebPage(res) && !resolvedStreams.includes(res)) {
+          resolvedStreams.push(res);
+        }
       }
 
       const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-      const finalStreams = validStreams.length > 0 ? validStreams : (resolvedStreams.length > 0 ? resolvedStreams : [cleanUrl]);
-      const allStreams = Array.from(new Set([...finalStreams, ...rawStreams, cleanUrl].filter(Boolean)));
+      const finalStreams = (validStreams.length > 0 ? validStreams : resolvedStreams)
+        .filter((u) => !isSourceWebPage(u) && (u !== cleanUrl || isDirectMedia(u)));
+      const allStreams = Array.from(new Set([...finalStreams, ...rawStreams].filter(Boolean)))
+        .filter((u) => !isSourceWebPage(u) && (u !== cleanUrl || isDirectMedia(u)));
+
+      const directMedia = finalStreams.filter((u) => isDirectMedia(u));
+      const backupEmbeds = allStreams.filter((u) => !directMedia.includes(u));
+      
+      const topStreams: string[] = [];
+      if (directMedia.length > 0) {
+        topStreams.push(directMedia[0]);
+        if (directMedia.length > 1) {
+          topStreams.push(directMedia[1]);
+        } else if (backupEmbeds.length > 0) {
+          topStreams.push(backupEmbeds[0]);
+        }
+      } else {
+        topStreams.push(...backupEmbeds.slice(0, 2));
+      }
+
+      const resultStreams = topStreams.length > 0 ? topStreams : allStreams.slice(0, 2);
 
       return {
-        stream_url: finalStreams[0] || cleanUrl,
-        all_available_streams: allStreams,
+        stream_url: resultStreams[0] || "",
+        all_available_streams: resultStreams,
         title: $("title").text().trim() || undefined,
       };
     } catch {
       return {
-        stream_url: cleanUrl,
-        all_available_streams: [cleanUrl],
+        stream_url: isDirectMedia(cleanUrl) ? cleanUrl : "",
+        all_available_streams: isDirectMedia(cleanUrl) ? [cleanUrl] : [],
       };
     }
   }

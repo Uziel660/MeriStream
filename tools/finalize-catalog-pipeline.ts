@@ -43,9 +43,12 @@ async function waitForTmdbRepair(): Promise<void> {
   }
 }
 
-async function runFinalTmdbRepair(): Promise<void> {
-  const cursorFile = path.resolve("data/tmdb-repair-final.cursor.json");
-  const reportFile = path.resolve("docs/reports/tmdb-repair-final-2026-09-03.json");
+async function runFinalTmdbRepair(stage: "post-catalog" | "post-verification" = "post-catalog"): Promise<void> {
+  // Cada cierre posterior al catálogo necesita un cursor propio. Reutilizar
+  // el cursor de la pasada anterior (ya marcado como `done`) dejaría sin
+  // revisar las obras incorporadas durante la verificación actual.
+  const cursorFile = path.resolve(`data/tmdb-repair-${stage}.cursor.json`);
+  const reportFile = path.resolve(`docs/reports/tmdb-repair-${stage}-2026-09-05.json`);
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, [
@@ -53,12 +56,12 @@ async function runFinalTmdbRepair(): Promise<void> {
       "tools/repair-tmdb-identities.ts",
       "--apply",
       "--concurrency",
-      "4",
+      "12",
       "--cursor-file",
       cursorFile,
       "--report",
       reportFile,
-    ], { cwd: process.cwd(), stdio: "inherit", windowsHide: true });
+    ], { cwd: process.cwd(), stdio: "inherit", windowsHide: true, shell: process.platform === "win32" });
     child.once("error", reject);
     child.once("close", (code) => {
       if (code === 0) resolve();
@@ -82,7 +85,7 @@ async function runLegacySourceBridge(): Promise<void> {
       cursorFile,
       "--report",
       reportFile,
-    ], { cwd: process.cwd(), stdio: "inherit", windowsHide: true });
+    ], { cwd: process.cwd(), stdio: "inherit", windowsHide: true, shell: process.platform === "win32" });
     child.once("error", reject);
     child.once("close", (code) => {
       if (code === 0) resolve();
@@ -94,6 +97,14 @@ async function runLegacySourceBridge(): Promise<void> {
 async function waitForCatalogJobs(): Promise<void> {
   let retriedFailed = false;
   for (;;) {
+    // No son fallos ejecutables: son tareas históricas creadas contra rutas
+    // que los adaptadores ya no usan (0 descubrimientos). Mantenerlas como
+    // `cancelled` evita que el panel las muestre como errores pendientes sin
+    // borrar su trazabilidad ni reabrir bucles de 404/429.
+    await prisma.crawlTask.updateMany({
+      where: { scope: "full_catalog", status: "failed", total_discovered: 0 },
+      data: { status: "cancelled", error_message: "Ruta histórica obsoleta; reemplazada por el catálogo vigente" },
+    });
     // Esta ejecución está autorizada a completar la pasada: una pausa dejada
     // por un cierre/transitorio no debe impedir que el pipeline continúe.
     await prisma.crawlTask.updateMany({
@@ -107,12 +118,16 @@ async function waitForCatalogJobs(): Promise<void> {
       // Algunos adaptadores fallan por un bloqueo temporal (521/Cloudflare)
       // aunque la implementación ya haya cambiado durante esta ejecución.
       // Reintentar una vez los jobs fallidos recupera esos casos sin crear un
-      // bucle infinito; TubePelis permanece fuera del alcance.
+      // bucle infinito; todos los proveedores configurados participan.
       const retry = await prisma.crawlTask.updateMany({
         where: {
           scope: "full_catalog",
           status: "failed",
-          NOT: { name: { contains: "TubePelis", mode: "insensitive" } },
+          // Las tareas históricas que no descubrieron ni una sola obra son
+          // rutas obsoletas (por ejemplo /browse en proveedores que ya usan
+          // /directorio o la API WP). No volver a lanzarlas en cada cierre:
+          // conservarlas como evidencia evita reabrir ruido y 429 inútiles.
+          total_discovered: { gt: 0 },
         },
         data: { status: "pending", error_message: null },
       });
@@ -140,6 +155,50 @@ async function adminCookie(): Promise<string> {
   const cookie = cookies.find((value: string) => value.includes("meristream_admin_session="));
   if (!cookie) throw new Error("la API no devolvió cookie administrativa");
   return cookie.split(";", 1)[0];
+}
+
+async function runCatalogCoverageAudit(): Promise<void> {
+  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, ["tsx", "tools/catalog_coverage_audit.ts"], {
+      cwd: process.cwd(),
+      stdio: "inherit",
+      windowsHide: true,
+      shell: process.platform === "win32",
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`la auditoría global del catálogo terminó con código ${code ?? "desconocido"}`));
+    });
+  });
+}
+
+/**
+ * La reparación/reconciliación escribe identidades y mueve episodios. Nunca
+ * debe competir con la pasada de verificación que todavía puede crear obras,
+ * episodios o SourceLinks. Se consulta con una cadencia larga (5 min): el
+ * endpoint es solo lectura y no tiene sentido golpearlo cada pocos segundos.
+ */
+async function waitForVerificationIdle(cookie: string): Promise<void> {
+  for (;;) {
+    let response: Response;
+    try {
+      response = await fetch(`${BASE_URL}/api/v1/verification`, { headers: { Cookie: cookie } });
+    } catch (error) {
+      console.warn(`[finalize-catalog-pipeline] API no disponible al esperar verificación: ${String(error)}`);
+      await sleep(30_000);
+      continue;
+    }
+    const payload = await response.json().catch(() => ({})) as {
+      running?: boolean;
+      phase?: string;
+    };
+    if (!response.ok) throw new Error(`consulta de verificación HTTP ${response.status}`);
+    if (!payload.running && payload.phase === "idle") return;
+    console.log(`[finalize-catalog-pipeline] verificación activa (${payload.phase || "desconocida"}); próximo chequeo en 5 min.`);
+    await sleep(300_000);
+  }
 }
 
 async function post(path: string, cookie: string, body: unknown): Promise<unknown> {
@@ -238,8 +297,12 @@ async function reconcileTmdbAndSeasons(): Promise<void> {
 async function main(): Promise<void> {
   await waitForCatalogJobs();
   await waitForTmdbRepair();
-  await runFinalTmdbRepair();
   const cookie = await adminCookie();
+  // La verificación completa puede haber sido lanzada de forma independiente
+  // después del cierre de catálogos. Esperarla aquí evita carreras de escritura
+  // y garantiza que el cursor TMDB nuevo incluya todas las obras descubiertas.
+  await waitForVerificationIdle(cookie);
+  await runFinalTmdbRepair();
   // No crear otra cola masiva mientras la recuperación all anterior sigue
   // ejecutándose: esperar aquí evita duplicar llamadas a proveedores y RAM.
   await waitForActiveRecoveries(cookie);
@@ -259,6 +322,13 @@ async function main(): Promise<void> {
   console.log("[finalize-catalog-pipeline] puente legacy completado; iniciando verificación.");
   const verification = await post("/api/v1/verification/run", cookie, { mode: "full" });
   console.log(JSON.stringify({ verification }, null, 2));
+  // La pasada final puede descubrir obras/episodios nuevos. Una segunda
+  // reparación con cursor independiente cierra esa ventana antes de generar
+  // los informes de cobertura que se entregan como evidencia.
+  await waitForVerificationIdle(cookie);
+  await runFinalTmdbRepair("post-verification");
+  await reconcileTmdbAndSeasons();
+  await runCatalogCoverageAudit();
 }
 
 main()

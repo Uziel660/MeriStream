@@ -53,19 +53,34 @@ export class HiAnimesAdapter extends BaseScraperAdapter {
 
   async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const slug = hianimesSlugFromUrl(targetUrl);
-    if (!slug) return { stream_url: targetUrl.trim(), all_available_streams: [targetUrl.trim()] };
+    if (!slug) return { stream_url: "", all_available_streams: [] };
     const { anime, episode } = await fetchHianimesEpisode(slug);
-    if (!episode) return { stream_url: targetUrl.trim(), all_available_streams: [targetUrl.trim()], title: anime?.title };
+    if (!episode) return { stream_url: "", all_available_streams: [], title: anime?.title };
 
     const candidates: string[] = [];
     for (const link of episodeLinks(episode)) {
       const resolved = await this.resolveCandidate(link.url);
       if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
-      if (!candidates.includes(link.url)) candidates.push(link.url);
+      const isDirect = /\.(m3u8|mp4|webm)(\?|#|$)/i.test(resolved);
+      if (!isDirect && !candidates.includes(link.url)) candidates.push(link.url);
     }
+    const directMedia = candidates.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const backupEmbeds = candidates.filter((u) => !directMedia.includes(u));
+    const topStreams: string[] = [];
+    if (directMedia.length > 0) {
+      topStreams.push(directMedia[0]);
+      if (backupEmbeds.length > 0) {
+        topStreams.push(backupEmbeds[0]);
+      } else if (directMedia.length > 1) {
+        topStreams.push(directMedia[1]);
+      }
+    } else {
+      topStreams.push(...backupEmbeds.slice(0, 2));
+    }
+    const resultStreams = topStreams.length > 0 ? topStreams : candidates.slice(0, 2);
     return {
-      stream_url: candidates[0] || targetUrl.trim(),
-      all_available_streams: candidates.length > 0 ? candidates : [targetUrl.trim()],
+      stream_url: resultStreams[0] || "",
+      all_available_streams: resultStreams,
       title: episode.title || anime?.title,
     };
   }

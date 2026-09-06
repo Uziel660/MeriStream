@@ -26,7 +26,6 @@ const numericArg = (name: string, fallback: number): number => {
 const sampleLimit = Math.min(4, numericArg("--samples", 2));
 const timeoutMs = Math.min(30_000, numericArg("--timeout-ms", 15_000));
 const pageLimit = Math.min(8, numericArg("--pages", 2));
-const skipPreset = (id: string): boolean => id.includes("tubepelis");
 
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -186,7 +185,7 @@ function toMarkdown(report: { generated_at: string; options: object; adapters: A
     `# Auditoría de adaptadores de catálogo`,
     `Generado: ${report.generated_at}`,
     "",
-    "Solo lectura; TubePelis fue excluido por configuración del proyecto. Un embed cuenta como extracción encontrada, no como reproducción nativa verificada.",
+    "Solo lectura. Un embed cuenta como extracción encontrada, no como reproducción nativa verificada.",
     "",
     "| Preset | Adaptador | Catálogo | Tarjetas únicas | Páginas | Repetidas | Muestras OK | Directos | Embeds | Páginas HTML | Errores |",
     "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
@@ -206,7 +205,10 @@ function toMarkdown(report: { generated_at: string; options: object; adapters: A
 }
 
 async function main(): Promise<void> {
-  const presets = getActivePresets().filter((preset) => preset.category !== "direct" && !skipPreset(preset.id));
+  // Auditar todos los presets activos, incluido TubePelis. La exclusión que
+  // existía aquí era histórica y dejaba fuera un proveedor requerido por el
+  // catálogo real.
+  const presets = getActivePresets().filter((preset) => preset.category !== "direct");
   const adapters: AdapterAudit[] = [];
   for (const preset of presets) {
     console.log(`[catalog-audit] ${preset.id} → ${preset.example_url}`);
@@ -217,7 +219,7 @@ async function main(): Promise<void> {
 
   const report = {
     generated_at: new Date().toISOString(),
-    options: { sampleLimit, timeoutMs, pageLimit, excluded: ["tubepelis"] },
+    options: { sampleLimit, timeoutMs, pageLimit, excluded: [] },
     adapters,
   };
   const outputDir = path.join(process.cwd(), "docs", "workstreams");

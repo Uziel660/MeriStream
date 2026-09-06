@@ -43,7 +43,7 @@ export async function getSiteRating(site: string): Promise<number> {
 
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) {
-    return hit.enabled ? hit.rating : DEFAULT_RATING;
+    return hit.enabled ? hit.rating : 0;
   }
 
   try {
@@ -54,7 +54,7 @@ export async function getSiteRating(site: string): Promise<number> {
         enabled: row.enabled,
         expiresAt: Date.now() + CACHE_TTL_MS,
       });
-      return row.enabled ? row.rating : DEFAULT_RATING;
+      return row.enabled ? row.rating : 0;
     }
     cache.set(key, { rating: DEFAULT_RATING, enabled: true, expiresAt: Date.now() + CACHE_TTL_MS });
     return DEFAULT_RATING;

@@ -20,6 +20,21 @@ export interface TmdbImagePaths {
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 
+/**
+ * Reduce URLs TMDB ya materializadas (incluido `/original/`) al tamaño que
+ * necesita el layout. Algunos registros antiguos solo guardan `banner_url` o
+ * `poster_url`, por lo que no pasan por `poster_path`/`backdrop_path`.
+ */
+export function sizedImageUrl(url: string | null | undefined, size: TmdbImageSize): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(
+    /https?:\/\/image\.tmdb\.org\/t\/p\/(?:original|w\d+)(\/[^?#]+)([?#].*)?$/i,
+    `${TMDB_IMAGE_BASE}${size}$1$2`,
+  );
+}
+
 /** Regenera una URL TMDB desde la ruta cruda; null si no hay path utilizable. */
 export function tmdbImageUrl(path: string | null | undefined, size: TmdbImageSize): string | null {
   if (!path || typeof path !== 'string') return null;
@@ -39,9 +54,9 @@ export type ImageSourceMedia = Partial<TmdbImagePaths> & {
 export function heroBackdropUrl(m: ImageSourceMedia): string | null {
   return (
     tmdbImageUrl(m.backdrop_path, 'w1280') ||
-    m.banner_url ||
-    m.backdrop_url ||
-    m.poster_url ||
+    sizedImageUrl(m.banner_url, 'w1280') ||
+    sizedImageUrl(m.backdrop_url, 'w1280') ||
+    sizedImageUrl(m.poster_url, 'w1280') ||
     null
   );
 }
@@ -50,9 +65,9 @@ export function heroBackdropUrl(m: ImageSourceMedia): string | null {
 export function bentoBackdropUrl(m: ImageSourceMedia): string | null {
   return (
     tmdbImageUrl(m.backdrop_path, 'w1280') ||
-    m.banner_url ||
-    m.backdrop_url ||
-    m.poster_url ||
+    sizedImageUrl(m.banner_url, 'w1280') ||
+    sizedImageUrl(m.backdrop_url, 'w1280') ||
+    sizedImageUrl(m.poster_url, 'w1280') ||
     null
   );
 }
@@ -61,9 +76,9 @@ export function bentoBackdropUrl(m: ImageSourceMedia): string | null {
 export function cardPosterUrl(m: ImageSourceMedia): string | null {
   return (
     tmdbImageUrl(m.poster_path, 'w185') ||
-    m.poster_url ||
-    m.banner_url ||
-    m.backdrop_url ||
+    sizedImageUrl(m.poster_url, 'w342') ||
+    sizedImageUrl(m.banner_url, 'w342') ||
+    sizedImageUrl(m.backdrop_url, 'w342') ||
     null
   );
 }
@@ -72,9 +87,9 @@ export function cardPosterUrl(m: ImageSourceMedia): string | null {
 export function thumbBackdropUrl(m: ImageSourceMedia): string | null {
   return (
     tmdbImageUrl(m.backdrop_path, 'w780') ||
-    m.backdrop_url ||
-    m.banner_url ||
-    m.poster_url ||
+    sizedImageUrl(m.backdrop_url, 'w780') ||
+    sizedImageUrl(m.banner_url, 'w780') ||
+    sizedImageUrl(m.poster_url, 'w780') ||
     null
   );
 }

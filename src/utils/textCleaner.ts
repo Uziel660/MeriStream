@@ -96,12 +96,15 @@ export function cleanDescription(rawDescription?: string | null, title?: string 
   // 5. Quitar prefijos comunes de scrapers ("Sinopsis:", "Ver online:", "Descripción:", etc.)
   text = text.replace(/^(?:sinopsis|descripci[oó]n|resumen|overview|summary)\s*:\s*/i, "");
 
+  // 5b. Quitar boilerplates de scrapers tipo Cinecalidad / Cuevana ("Ver Pelicula X Online Gratis en Cinecalidad en español latino sin registrarse")
+  text = text.replace(/^ver\s+(?:pel[ií]cula|serie|anime)?\s*.*?\s*online\s+gratis(?:\s+en\s+cinecalidad)?(?:\s+en\s+español\s+latino)?(?:\s+sin\s+registrarse)?\.?\s*/i, "");
+
   // 6. Si el título está duplicado al principio ("The Sneak Over Es el verano..."), removerlo limpiamente
   if (title) {
     const trimmedTitle = title.trim();
     if (trimmedTitle.length >= 3) {
       const escapedTitle = trimmedTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const titlePrefixRegex = new RegExp(`^${escapedTitle}\\s*[-:–—]?\\s*`, "i");
+      const titlePrefixRegex = new RegExp(`^${escapedTitle}\\s*[-:\\u2013\\u2014]?\\s*`, "i");
       text = text.replace(titlePrefixRegex, "");
     }
   }
@@ -111,3 +114,66 @@ export function cleanDescription(rawDescription?: string | null, title?: string 
 
   return text;
 }
+
+/**
+ * Limpia títulos para visualización, eliminando residuos SEO de scrapers ("Online Gratis HD", "Latino", etc.)
+ */
+export function cleanDisplayTitle(rawTitle?: string | null): string {
+  if (!rawTitle) return "";
+  let text = String(rawTitle).trim();
+
+  // Quitar etiquetas SEO típicas
+  text = text
+    .replace(/\s+online\s+gratis(\s+hd)?/gi, "")
+    .replace(/\s+en\s+español\s+latino/gi, "")
+    .replace(/\s+sub\s+español/gi, "")
+    .replace(/\s+latino\s+hd/gi, "")
+    .replace(/\s+castellano\s+hd/gi, "")
+    .replace(/\s+1080p\s+hd/gi, "")
+    .replace(/\s+hd\s+rip/gi, "")
+    .replace(/[:\-\u2013\u2014]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text || String(rawTitle).trim();
+}
+
+/**
+ * Limpia la lista de géneros en la UI, filtrando el conocido volcado masivo de categorías del menú de Cinecalidad
+ */
+export function cleanDisplayGenres(rawGenres?: string | string[] | null): string[] {
+  if (!rawGenres) return [];
+  const list = Array.isArray(rawGenres)
+    ? rawGenres.map((g) => String(g).trim()).filter(Boolean)
+    : String(rawGenres)
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean);
+
+  // Si tiene más de 8 géneros y contiene etiquetas específicas del menú de Cinecalidad ("dc comics", "marvel")
+  const lowerList = list.map((g) => g.toLowerCase());
+  const isCinecalidadMenuDump =
+    list.length >= 10 ||
+    (list.length >= 7 && (lowerList.includes("dc comics") || lowerList.includes("marvel") || lowerList.includes("película de tv")));
+
+  if (isCinecalidadMenuDump) {
+    // Filtrar etiquetas que no son géneros reales o que son exclusivas de menú
+    const filtered = list.filter((g) => {
+      const low = g.toLowerCase();
+      return (
+        low !== "dc comics" &&
+        low !== "marvel" &&
+        low !== "anime" &&
+        low !== "documental" &&
+        low !== "música" &&
+        low !== "historia" &&
+        low !== "familia"
+      );
+    });
+    // Limitar a los 3-4 géneros más representativos
+    return filtered.slice(0, 4);
+  }
+
+  return list.slice(0, 6);
+}
+

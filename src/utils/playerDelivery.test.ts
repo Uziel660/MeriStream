@@ -249,6 +249,8 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(isUnresolvedCanonical('https://animeflv.net/ver/anime-1')).toBe(true);
     expect(isUnresolvedCanonical('https://tioanime.com/ver/anime-2')).toBe(true);
     expect(isUnresolvedCanonical('https://hianimes.se/watch/anime-episode-1')).toBe(true);
+    expect(isUnresolvedCanonical('https://ww3.gnulahd.nu/ver/batman-knightfall-part-1-knightfall/')).toBe(true);
+    expect(isUnresolvedCanonical('https://ww3.gnulahd.nu/bleach-1x96/')).toBe(true);
     expect(isUnresolvedCanonical('https://streamtape.com/e/abc123xyz')).toBe(false);
     expect(isUnresolvedCanonical('https://edge.cdn.com/master.m3u8')).toBe(false);
   });

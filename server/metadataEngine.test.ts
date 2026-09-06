@@ -4,6 +4,7 @@ import {
   cleanQueryTitle,
   enrichUniversalMetadata,
   isSubstantiveDescription,
+  isLikelyNonSpanishDescription,
   parseTitleQuery,
   translateGenresToEs,
   __resetEngineCaches,
@@ -51,6 +52,8 @@ describe("cleanQueryTitle", () => {
     expect(cleanQueryTitle("Show S01E02")).toBe("Show");
     // Case insensitivity
     expect(cleanQueryTitle("Naruto sUB esPañol")).toBe("Naruto");
+    expect(cleanQueryTitle("The Daily Life of the Immortal King S3 Japonés")).toBe("The Daily Life of the Immortal King");
+    expect(cleanQueryTitle("Code Geass Redoblaje")).toBe("Code Geass");
   });
 
   it("should strip (TV) anywhere", () => {
@@ -262,6 +265,13 @@ describe("isSubstantiveDescription", () => {
 
   it("should accept real descriptions", () => {
     expect(isSubstantiveDescription("Un grupo de turistas debe luchar por sus vidas contra un hipopótamo desbocado.")).toBe(true);
+  });
+});
+
+describe("isLikelyNonSpanishDescription", () => {
+  it("detects an English synopsis while preserving a Spanish one", () => {
+    expect(isLikelyNonSpanishDescription("The young hero returns to the world and must save their family from danger.".padEnd(70, " "))).toBe(true);
+    expect(isLikelyNonSpanishDescription("El joven héroe regresa al mundo y debe salvar a su familia del peligro.".padEnd(70, " "))).toBe(false);
   });
 });
 

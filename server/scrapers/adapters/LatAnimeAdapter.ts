@@ -7,7 +7,6 @@ const BASE_URL = "https://latanime.org";
 
 const DEAD_OR_BLOCKED_HOST_PATTERNS = [
   /cfglobalcdn\.com/i,
-  /yourupload\.com/i,
   /streamtape\./i,
   /dsvplay\.com/i,
   /savefiles\.com/i,
@@ -331,7 +330,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const html = await this.fetchHtml(cleanUrl, 12000);
 
     if (!html) {
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const $ = cheerio.load(html);
@@ -350,11 +349,15 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       return { ...genericStreams, title };
     }
 
-    // Resolver todos los iframes en paralelo (cada uno puede tardar hasta ~8s)
+    // Resolver todos los iframes en paralelo con timeout de seguridad (4.5s)
     const resolutions = await Promise.all(
       iframeUrls.map(async (iframeUrl) => {
         try {
-          return { iframeUrl, resolved: await EmbedResolvers.resolve(iframeUrl) };
+          const timeoutPromise = new Promise<{ iframeUrl: string; resolved: string }>((resolve) =>
+            setTimeout(() => resolve({ iframeUrl, resolved: "" }), 4500)
+          );
+          const resolvePromise = EmbedResolvers.resolve(iframeUrl).then((resolved) => ({ iframeUrl, resolved }));
+          return await Promise.race([resolvePromise, timeoutPromise]);
         } catch {
           return { iframeUrl, resolved: "" };
         }
@@ -373,17 +376,35 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       if (isDirectMedia && !isDeadOrBlocked(resolved) && !directStreams.includes(resolved)) {
         directStreams.push(resolved);
       }
-      // El iframe crudo como última alternativa
-      if (!isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
+      // El iframe crudo solo si no se obtuvo media directa para ese player
+      if (!isDirectMedia && !isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
         all_available_streams.push(iframeUrl);
       }
     }
 
     const finalStreams = directStreams.length > 0 ? [...directStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))] : all_available_streams;
 
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    const directMedia = finalStreams.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const backupEmbeds = finalStreams.filter((u) => !directMedia.includes(u));
+    
+    const topStreams: string[] = [];
+    if (directMedia.length > 0) {
+      topStreams.push(directMedia[0]);
+      if (directMedia.length > 1) {
+        topStreams.push(directMedia[1]);
+      } else if (backupEmbeds.length > 0) {
+        topStreams.push(backupEmbeds[0]);
+      }
+    } else {
+      topStreams.push(...backupEmbeds.slice(0, 2));
+    }
+
+    const resultStreams = topStreams.length > 0 ? topStreams : finalStreams.slice(0, 2);
+
     return {
-      stream_url: finalStreams[0] || cleanUrl,
-      all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
+      stream_url: resultStreams[0] || "",
+      all_available_streams: resultStreams,
       title,
     };
   }

@@ -241,17 +241,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  // --- Probador de Stream & Anti-CORS ---// removed unused state// removed unused state// removed unused state// removed unused state// removed unused state
-
   // --- Biblioteca & Catálogo ---
   const [libraryShows, setLibraryShows] = useState<Show[]>([]);
   const [librarySearch, setLibrarySearch] = useState('');
+  const [libraryTotal, setLibraryTotal] = useState(0);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [libraryPage, setLibraryPage] = useState(1);
-  const LIBRARY_PAGE_SIZE = 100;
-  // const [isImporting, setIsImporting] = useState(false);
+  const LIBRARY_PAGE_SIZE = 50;
 
   // Cargar presets y settings de worker al montar
   useEffect(() => {
@@ -266,12 +264,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       .catch(() => {});
   }, []);
 
-  // Polling continuo de la lista de tareas del Worker (independiente de cerrar la pestaña)
+  // Polling eficiente de la lista de tareas del Worker
   useEffect(() => {
+    let isMounted = true;
     const fetchWorkerJobs = async () => {
       try {
         const res = await fetch('/api/v1/worker/jobs');
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const jobs: BackgroundWorkerJob[] = await res.json();
           setWorkerJobs(jobs);
 
@@ -287,43 +286,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     };
 
     fetchWorkerJobs();
-    const interval = setInterval(fetchWorkerJobs, 1500);
-    return () => clearInterval(interval);
-  }, [activeTaskId]);
+    // Ritmo inteligente: 2.5s en la pestaña del worker; 15s en otras pestañas
+    const pollIntervalMs = activeTab === 'worker_tasks' ? 2500 : 15000;
+    const interval = setInterval(fetchWorkerJobs, pollIntervalMs);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTaskId, activeTab]);
 
-  // Polling detallado de la tarea seleccionada / activa
+  // Polling detallado de la tarea seleccionada / activa (solo si está activa y no finalizada)
   useEffect(() => {
+    if (activeTab !== 'worker_tasks') return;
     const targetId = selectedJobId || activeTaskId;
     if (!targetId) return;
 
+    const current = workerJobs.find((j) => j.id === targetId);
+    if (current && (current.status === 'completed' || current.status === 'failed' || current.status === 'cancelled')) {
+      return;
+    }
+
+    let isMounted = true;
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/v1/tasks/${targetId}`);
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = await res.json();
           setWorkerJobs((prev) =>
             prev.map((job) => (job.id === targetId ? { ...job, ...data } : job))
           );
           if (data.status === 'completed') {
-            loadLibrary();
+            loadLibrary(librarySearch, 1, false);
           }
         }
       } catch (e) {
         console.error(e);
       }
-    }, 1200);
+    }, 2000);
 
-    return () => clearInterval(interval);
-  }, [activeTaskId, selectedJobId]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTaskId, selectedJobId, activeTab, workerJobs, librarySearch]);
 
-  const loadLibrary = async () => {
+  const loadLibrary = async (searchQuery = librarySearch, page = 1, append = false) => {
     try {
       setIsLoadingLibrary(true);
-      const res = await fetch('/api/v1/shows?lite=true&limit=25000');
+      const q = searchQuery.trim();
+      const searchParam = q ? `&search=${encodeURIComponent(q)}` : '';
+      const res = await fetch(`/api/v1/shows?lite=true${searchParam}&page=${page}&limit=${LIBRARY_PAGE_SIZE}`);
       if (res.ok) {
         const data = await res.json();
-        const list = Array.isArray(data) ? data : data.shows || [];
-        setLibraryShows(list);
+        const list: Show[] = Array.isArray(data) ? data : data.shows || [];
+        const total = typeof data.total === 'number' ? data.total : list.length;
+        setLibraryShows((prev) => (append ? [...prev, ...list] : list));
+        setLibraryTotal(total);
       }
     } catch (e) {
       console.error(e);
@@ -333,8 +351,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   };
 
   useEffect(() => {
-    if (activeTab === 'library') loadLibrary();
-  }, [activeTab]);
+    if (activeTab === 'library') {
+      const timer = setTimeout(() => {
+        setLibraryPage(1);
+        loadLibrary(librarySearch, 1, false);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, librarySearch]);
 
   if (isOpen === false) return null;
 
@@ -533,6 +557,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       const res = await fetch(`/api/v1/shows/${showId}`, { method: 'DELETE' });
       if (res.ok) {
         setLibraryShows((prev) => prev.filter((s) => s.id !== showId));
+        setLibraryTotal((prev) => Math.max(0, prev - 1));
       }
     } catch (e) {
       console.error(e);
@@ -567,7 +592,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     try {
       const res = await fetch('/api/v1/catalog/reset-sample', { method: 'POST' });
       if (res.ok) {
-        await loadLibrary();
+        await loadLibrary(librarySearch, 1, false);
         setImportMessage('Catálogo de muestra restaurado correctamente.');
       }
     } catch (e) {
@@ -577,20 +602,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     }
   };
 
-  // Filtro de biblioteca
-  const filteredLibrary = libraryShows.filter((s) => {
-    const q = librarySearch.toLowerCase();
-    const genresStr = Array.isArray(s.genres) ? s.genres.join(", ") : (s.genres || "");
-    return (
-      s.title.toLowerCase().includes(q) ||
-      (s.japanese_title || '').toLowerCase().includes(q) ||
-      (s.category || '').toLowerCase().includes(q) ||
-      genresStr.toLowerCase().includes(q)
-    );
-  });
-
-  const paginatedLibrary = filteredLibrary.slice(0, libraryPage * LIBRARY_PAGE_SIZE);
-  const hasMoreLibrary = filteredLibrary.length > paginatedLibrary.length;
+  const hasMoreLibrary = libraryShows.length < libraryTotal;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
@@ -699,7 +711,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             }`}
           >
             <Database size={14} />
-            Catálogo ({libraryShows.length})
+            Catálogo ({libraryTotal > 0 ? libraryTotal.toLocaleString() : libraryShows.length})
           </button>
 
           <button
@@ -1375,16 +1387,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     {workerJobs.map((job) => {
                       const isSelected = (selectedJobId || activeTaskId) === job.id;
                       const progressPct =
-                        job.items_queue.length > 0
+                        job.status === 'completed'
+                          ? 100
+                          : Array.isArray(job.items_queue) && job.items_queue.length > 0
                           ? Math.round(
                               (job.items_queue.filter((q) => q.status === 'done').length /
                                 job.items_queue.length) *
                                 100
                             )
-                          : job.status === 'completed'
-                          ? 100
                           : job.status === 'running'
-                          ? 25
+                          ? (job.total_discovered > 0
+                              ? Math.min(99, Math.round((job.shows_imported / Math.max(1, job.total_discovered)) * 100))
+                              : 25)
                           : 0;
 
                       return (
@@ -1512,7 +1526,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 )}
                               </span>
                               <span className="font-mono">
-                                {job.shows_imported} guardadas / {job.items_queue.length || job.total_discovered} descubiertas ({progressPct}%)
+                                {job.shows_imported} guardadas / {job.total_discovered || (Array.isArray(job.items_queue) ? job.items_queue.length : 0)} descubiertas ({progressPct}%)
                               </span>
                             </div>
                             <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
@@ -1718,18 +1732,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           {activeTab === 'library' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-sm">
+                <div className="relative flex-1 max-w-md">
                   <Search size={14} className="absolute left-3 top-2.5 text-zinc-500" />
                   <input
                     type="text"
                     value={librarySearch}
-                    onChange={(e) => { setLibrarySearch(e.target.value); setLibraryPage(1); }}
-                    placeholder="Filtrar por título, categoría o género..."
-                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white focus:outline-none focus:border-amber-500/60"
+                    onChange={(e) => {
+                      setLibrarySearch(e.target.value);
+                      setLibraryPage(1);
+                    }}
+                    placeholder="Buscar por título, categoría o género en todo el catálogo..."
+                    className="w-full pl-9 pr-8 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white focus:outline-none focus:border-amber-500/60"
                   />
+                  {librarySearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLibrarySearch('');
+                        setLibraryPage(1);
+                      }}
+                      className="absolute right-2.5 top-2 text-zinc-500 hover:text-zinc-300 p-0.5"
+                      title="Limpiar búsqueda"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-zinc-500 font-mono">
+                    {isLoadingLibrary ? (
+                      <span className="flex items-center gap-1 text-amber-400">
+                        <Loader2 size={11} className="animate-spin" /> Buscando...
+                      </span>
+                    ) : (
+                      `${libraryShows.length} de ${libraryTotal.toLocaleString()} obras`
+                    )}
+                  </span>
                   <button
                     type="button"
                     disabled={isResetting}
@@ -1742,7 +1781,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                   </button>
                   <button
                     type="button"
-                    onClick={loadLibrary}
+                    onClick={() => loadLibrary(librarySearch, 1, false)}
                     className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 transition-colors"
                     title="Recargar catálogo"
                   >
@@ -1753,13 +1792,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
               {/* Lista de series */}
               <div className="space-y-2">
-                {filteredLibrary.length === 0 ? (
+                {libraryShows.length === 0 && !isLoadingLibrary ? (
                   <div className="p-8 text-center text-xs text-zinc-500 rounded-xl border border-zinc-900 bg-zinc-950/40">
                     No se encontraron obras que coincidan con la búsqueda.
                   </div>
                 ) : (
                   <>
-                    {paginatedLibrary.map((show) => (
+                    {libraryShows.map((show) => (
                       <div
                         key={show.id}
                         className="flex items-center justify-between p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors group"
@@ -1813,10 +1852,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                       <div className="flex justify-center pt-2">
                         <button
                           type="button"
-                          onClick={() => setLibraryPage(prev => prev + 1)}
-                          className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 border border-zinc-700 transition-colors"
+                          disabled={isLoadingLibrary}
+                          onClick={() => {
+                            const nextPage = libraryPage + 1;
+                            setLibraryPage(nextPage);
+                            loadLibrary(librarySearch, nextPage, true);
+                          }}
+                          className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 border border-zinc-700 transition-colors flex items-center gap-2"
                         >
-                          Cargar más ({filteredLibrary.length - paginatedLibrary.length} restantes)
+                          {isLoadingLibrary ? <Loader2 size={12} className="animate-spin" /> : null}
+                          Cargar más ({libraryTotal - libraryShows.length} restantes)
                         </button>
                       </div>
                     )}
@@ -1830,7 +1875,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                   onClose={() => setEditingShow(null)}
                   onSaved={() => {
                     setEditingShow(null);
-                    loadLibrary();
+                    loadLibrary(librarySearch, 1, false);
                   }}
                 />
               )}

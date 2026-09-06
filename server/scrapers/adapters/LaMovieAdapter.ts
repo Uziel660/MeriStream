@@ -4,6 +4,7 @@ import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalo
 import { unpackGeneric, extractMediaUrlsFromCode } from "../utils/jsUnpacker";
 import { EmbedResolvers } from "../../resolvers";
 import { VimeosResolver } from "../vimeosResolver";
+import { familyKeyOfStreamUrl } from "../../utils/streamSorter";
 
 /**
  * Adaptador para lamovie.org - Extrae catálogo de sitemaps XML, detalles de páginas estáticas,
@@ -615,7 +616,6 @@ export class LaMovieAdapter extends BaseScraperAdapter {
           directStreams.push(direct);
         }
 
-        // Siempre mantener el reproductor embed como alternativa 100% funcional
         if (!LaMovieAdapter.isDeadOrBlocked(embedUrl) && !embedStreams.includes(embedUrl)) {
           embedStreams.push(embedUrl);
         }
@@ -635,22 +635,63 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       // Defecto #5: filtrar fuentes no reproducibles (.rar/.zip de MediaFire,
       // páginas crudas) antes de exponerlas al player o a la BD.
       const playableDirects = LaMovieAdapter.filterPlayableSources(directStreams);
-      const playableEmbeds = LaMovieAdapter.filterPlayableSources(embedStreams);
+      const directFamilies = new Set(playableDirects.map((u) => familyKeyOfStreamUrl(u)));
 
-      const finalStreams =
+      // Omitir embeds redundantes cuando ya existe un stream directo del mismo proveedor (ej. Goodstream, Vimeos)
+      const playableEmbeds = LaMovieAdapter.filterPlayableSources(embedStreams)
+        .filter((u) => !directFamilies.has(familyKeyOfStreamUrl(u)));
+
+      const rawFinal =
         playableDirects.length > 0
           ? [...playableDirects, ...playableEmbeds]
           : playableEmbeds;
 
+      // Normalizar y deduplicar Mega por File ID
+      const seenMegaIds = new Set<string>();
+      const finalStreams: string[] = [];
+      for (const u of rawFinal) {
+        if (u.includes("mega.nz/")) {
+          const m = u.match(/mega\.nz\/(?:embed\/|file\/|#!)?([A-Za-z0-9_-]{8,})/i);
+          const fileId = m ? m[1] : u;
+          if (seenMegaIds.has(fileId)) continue;
+          seenMegaIds.add(fileId);
+          if (u.includes("mega.nz/file/")) {
+            finalStreams.push(u.replace("mega.nz/file/", "mega.nz/embed/"));
+          } else {
+            finalStreams.push(u);
+          }
+        } else {
+          finalStreams.push(u);
+        }
+      }
+
+      // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+      const directMedia = finalStreams.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+      const backupEmbeds = finalStreams.filter((u) => !directMedia.includes(u));
+      
+      const topStreams: string[] = [];
+      if (directMedia.length > 0) {
+        topStreams.push(directMedia[0]);
+        if (directMedia.length > 1) {
+          topStreams.push(directMedia[1]);
+        } else if (backupEmbeds.length > 0) {
+          topStreams.push(backupEmbeds[0]);
+        }
+      } else {
+        topStreams.push(...backupEmbeds.slice(0, 2));
+      }
+
+      const resultStreams = topStreams.length > 0 ? topStreams : finalStreams.slice(0, 2);
+
       return {
-        stream_url: finalStreams[0] || cleanUrl,
-        all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
+        stream_url: resultStreams[0] || "",
+        all_available_streams: resultStreams,
         title: title || undefined,
       };
     } catch {
       return {
-        stream_url: cleanUrl,
-        all_available_streams: [cleanUrl],
+        stream_url: "",
+        all_available_streams: [],
       };
     }
   }

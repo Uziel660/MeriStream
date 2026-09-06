@@ -19,7 +19,7 @@ interface ExploreCatalogViewProps {
   onLoadMore: () => void;
   availableYears: number[];
   onSelectMedia: (m: Show) => void;
-  onHoverMedia: (m: Show | null) => void;
+  onHoverMedia?: (m: Show | null) => void;
 }
 
 export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({

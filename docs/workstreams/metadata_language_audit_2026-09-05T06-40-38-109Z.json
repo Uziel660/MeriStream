@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-09-05T06:40:38.108Z",
+  "read_only": true,
+  "shows": {
+    "total": 37232,
+    "tmdb": 30301,
+    "title": 37232,
+    "description": 36412,
+    "nonSpanishDescription": 2917,
+    "poster": 37230,
+    "backdrop": 37215,
+    "genres": 37232,
+    "coverage": {
+      "tmdb_pct": 81.38,
+      "descriptions_pct": 97.8,
+      "spanish_description_pct": 91.99,
+      "poster_pct": 99.99,
+      "backdrop_pct": 99.95,
+      "genres_pct": 100
+    }
+  },
+  "media_items": {
+    "total": 38161,
+    "tmdb": 26790,
+    "title": 38161,
+    "description": 0,
+    "nonSpanishDescription": 0,
+    "poster": 37814,
+    "backdrop": 11827,
+    "genres": 0,
+    "coverage": {
+      "tmdb_pct": 70.2,
+      "poster_pct": 99.09,
+      "backdrop_pct": 30.99
+    }
+  },
+  "note": "La detección de idioma es heurística y conservadora; no sustituye revisión humana de nombres propios."
+}

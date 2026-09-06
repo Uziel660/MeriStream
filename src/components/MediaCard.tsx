@@ -1,8 +1,9 @@
-// src/components/MediaCard.tsx
 import React from 'react';
-import { Play, Star, Tv } from 'lucide-react';
+import { ArrowUpRight, Star, Film } from 'lucide-react';
 import { SmartImage } from './SmartImage';
 import { contentLabel } from '../utils/labels';
+import { cardPosterUrl } from '../utils/imageSizes';
+import { cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
 import type { Show } from '../types';
 
 interface MediaCardProps {
@@ -12,96 +13,26 @@ interface MediaCardProps {
   isNew?: boolean;
 }
 
-export const MediaCard: React.FC<MediaCardProps> = React.memo(({
-  media,
-  onSelectMedia,
-  onHover,
-}) => {
-  const poster = media.poster_url || media.banner_url || media.backdrop_url;
-
-  // Primary genre formatted
-  const getPrimaryGenre = (): string => {
-    if (!media.genres) return contentLabel(media.category);
-    if (Array.isArray(media.genres)) return media.genres[0] || contentLabel(media.category);
-    if (typeof media.genres === 'string') {
-      const split = media.genres.split(',')[0];
-      return split ? split.trim() : contentLabel(media.category);
-    }
-    return contentLabel(media.category);
-  };
-
+export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelectMedia, onHover }) => {
+  const title = cleanDisplayTitle(media.title);
+  const genre = cleanDisplayGenres(media.genres)[0] || contentLabel(media.category);
   return (
-    <article
-      id={`card-${media.id}`}
-      onClick={() => onSelectMedia && onSelectMedia(media)}
-      onMouseEnter={() => onHover && onHover(media)}
-      className="group/card relative flex flex-col cursor-pointer select-none text-left w-full"
-    >
-      {/* POSTER CONTAINER WITH CLEAN ELEVATION */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 shadow-sm transition-[border-color] duration-300 group-hover/card:border-zinc-700">
-        {poster ? (
-          <SmartImage
-            src={poster}
-            alt={media.title}
-            className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover/card:scale-105"
-            fallback={
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-zinc-600 bg-zinc-950 p-3 text-center">
-                <Tv size={28} className="text-zinc-600" />
-                <span className="text-[11px] font-medium text-zinc-500">Sin Portada</span>
-              </div>
-            }
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-zinc-600 bg-zinc-950 p-3 text-center">
-            <Tv size={28} className="text-zinc-600" />
-            <span className="text-[11px] font-medium text-zinc-500">Sin Portada</span>
-          </div>
-        )}
-
-        {/* SUBTLE GRADIENT OVERLAY */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-transparent pointer-events-none" />
-
-        {/* HOVER PLAY BUTTON */}
-        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/card:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-transform duration-200 group-hover/card:scale-110">
-            <Play size={18} className="ml-0.5 fill-black text-black" />
-          </span>
-        </div>
-
-        {/* CLEAN RATING BADGE */}
-        {media.rating && (
-          <div className="absolute top-2 right-2 rounded-md bg-zinc-950/80 px-2 py-0.5 text-[10px] font-semibold text-amber-300 border border-zinc-800 backdrop-blur-md flex items-center gap-1">
-            <Star size={10} className="fill-amber-400 text-amber-400" />
-            <span>{typeof media.rating === 'number' ? media.rating.toFixed(1) : media.rating}</span>
-          </div>
-        )}
-      </div>
-
-      {/* TYPOGRAPHY & CLEAN METADATA */}
-      <div className="mt-2 px-0.5 space-y-0.5">
-        <h4 className="font-display text-sm font-semibold text-zinc-100 group-hover/card:text-amber-400 truncate transition-colors duration-150">
-          {media.title}
-        </h4>
-        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-          <span className="text-zinc-400">{getPrimaryGenre()}</span>
-          {media.year && (
-            <>
-              <span className="text-zinc-600">•</span>
-              <span className="text-zinc-500 text-[11px] font-mono">{media.year}</span>
-            </>
-          )}
-        </div>
-      </div>
-    </article>
+    <button type="button" className="media-card" onClick={() => onSelectMedia?.(media)}
+      onMouseEnter={() => onHover?.(media)} aria-label={`Ver detalles de ${title}`}>
+      <span className="media-poster">
+        <SmartImage src={cardPosterUrl(media)} alt="" sizes="(min-width: 1280px) 200px, (min-width: 640px) 180px, 44vw"
+          className="media-poster-image" fallback={<span className="poster-placeholder"><Film size={24} /><span>{title}</span><small>Portada no disponible</small></span>} />
+        <span className="media-card-open" aria-hidden="true"><ArrowUpRight size={19} /></span>
+        <span className="media-kind">{contentLabel(media.category)}</span>
+      </span>
+      <span className="media-card-title" title={title}>{title}</span>
+      <span className="media-card-meta"><span>{genre}{media.year ? ` · ${media.year}` : ''}</span>
+        {!!media.rating && <span className="rating"><Star size={11} />{typeof media.rating === 'number' ? media.rating.toFixed(1) : media.rating}</span>}
+      </span>
+    </button>
   );
 });
 
-export const MediaCardSkeleton: React.FC = () => {
-  return (
-    <div className="flex flex-col space-y-2 animate-pulse select-none w-full">
-      <div className="aspect-[2/3] w-full rounded-xl bg-zinc-900 border border-zinc-800" />
-      <div className="h-3.5 w-3/4 rounded bg-zinc-800" />
-      <div className="h-2.5 w-1/2 rounded bg-zinc-850" />
-    </div>
-  );
-};
+export const MediaCardSkeleton: React.FC = () => (
+  <div className="media-skeleton" aria-hidden="true"><div /><span /><span /></div>
+);

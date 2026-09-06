@@ -2,6 +2,8 @@ export type ContentKind = "movie" | "series" | "anime" | "documentary" | "open_a
 
 export interface ExtractedEpisode {
   number: number;
+  /** Temporada de origen cuando la ficha expone series multi-temporada. */
+  season?: number;
   title: string;
   url: string;
   source_type?: string;

@@ -64,12 +64,128 @@ export function isTioPlusPageUrl(rawUrl: string | URL): boolean {
 }
 
 /**
+ * Detecta si la URL corresponde a una página canónica de AnimeFLV (animeflv.net, animeflv.or.at, etc.).
+ */
+export function isAnimeFlvPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)animeflv\.(?:net|or\.at|me|to|ac|or\.am)$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de JKanime (jkanime.net).
+ */
+export function isJkanimePageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)jkanime\.net$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de LatAnime (latanime.org, lat-anime.net, etc.).
+ */
+export function isLatAnimePageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)lat(?:-)?anime\.(?:org|net|io)$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de GNULA (gnulahd.nu, ww3.gnulahd.nu, etc.).
+ */
+export function isGnulaPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)gnulahd\.nu$/i.test(host) || /(?:^|\.)gnula\.(?:nu|se|cc)$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de TioAnime (tioanime.com).
+ */
+export function isTioAnimePageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)tioanime\.com$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de VerAnimes (veranimes.net, wwv.veranimes.net).
+ */
+export function isVerAnimesPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)veranimes\.net$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de Doramasflix (doramasflix.io, etc.).
+ */
+export function isDoramasflixPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)doramasflix\.(?:io|co|in)$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detecta si la URL corresponde a una página canónica de TubePelis (tubepelis.com).
+ */
+export function isTubePelisPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)tubepelis\.com$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Detecta si la URL pertenece a cualquiera de las plataformas canónicas soportadas (no siendo stream directo).
  */
 export function isPlatformPageUrl(rawUrl: string | URL): boolean {
   const urlStr = typeof rawUrl === "string" ? rawUrl : rawUrl.href;
   if (EmbedResolvers.isDirectMediaUrl(urlStr)) return false;
-  return isLaMoviePageUrl(rawUrl) || isCinecalidadPageUrl(rawUrl) || isTioPlusPageUrl(rawUrl);
+  return (
+    isLaMoviePageUrl(rawUrl) ||
+    isCinecalidadPageUrl(rawUrl) ||
+    isTioPlusPageUrl(rawUrl) ||
+    isAnimeFlvPageUrl(rawUrl) ||
+    isJkanimePageUrl(rawUrl) ||
+    isLatAnimePageUrl(rawUrl) ||
+    isGnulaPageUrl(rawUrl) ||
+    isTioAnimePageUrl(rawUrl) ||
+    isVerAnimesPageUrl(rawUrl) ||
+    isDoramasflixPageUrl(rawUrl) ||
+    isTubePelisPageUrl(rawUrl)
+  );
 }
 
 /**
@@ -79,6 +195,14 @@ export function getPlatformProviderName(rawUrl: string | URL): string {
   if (isLaMoviePageUrl(rawUrl)) return "LaMovie";
   if (isCinecalidadPageUrl(rawUrl)) return "Cinecalidad";
   if (isTioPlusPageUrl(rawUrl)) return "TioPlus";
+  if (isAnimeFlvPageUrl(rawUrl)) return "AnimeFLV";
+  if (isJkanimePageUrl(rawUrl)) return "JKanime";
+  if (isLatAnimePageUrl(rawUrl)) return "LatAnime";
+  if (isGnulaPageUrl(rawUrl)) return "Gnula";
+  if (isTioAnimePageUrl(rawUrl)) return "TioAnime";
+  if (isVerAnimesPageUrl(rawUrl)) return "VerAnimes";
+  if (isDoramasflixPageUrl(rawUrl)) return "Doramasflix";
+  if (isTubePelisPageUrl(rawUrl)) return "TubePelis";
   return "Desconocido";
 }
 
@@ -229,7 +353,12 @@ export async function resolvePlatformPage(
     // producción solo importa el scraper cuando realmente se solicita JIT.
     const extractor = options.streamExtractor ?? (async (url: string) => {
       const { extractStreamFromUrl } = await import("./universalScraper");
-      return extractStreamFromUrl(url);
+      return Promise.race([
+        extractStreamFromUrl(url),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout resolviendo plataforma (6.5s)")), 6500)
+        ),
+      ]);
     });
     extracted = await extractor(cleanUrl);
   } catch {
@@ -263,28 +392,51 @@ export async function resolvePlatformPage(
   scoredList.sort((a, b) => b.score - a.score);
   const best = scoredList[0];
 
+  let resolvedStreamUrl = best.url;
+  let isDirect = best.isDirect;
   let requiredHeaders: Record<string, string> | undefined;
-  if (/vimeos\.[a-z]+/i.test(best.url) || /p\d+\.vimeos\.zip/i.test(best.url)) {
-    requiredHeaders = { ...VIMEOS_REQUIRED_HEADERS };
-  } else if (/goodstream\./i.test(best.url)) {
-    requiredHeaders = { Referer: "https://goodstream.one/" };
+
+  // Si el mejor candidato es un embed (YourUpload, Vimeos, Goodstream, Mega, StreamWish),
+  // intentar desofuscarlo a stream directo de inmediato probando los mejores candidatos
+  if (!isDirect) {
+    for (const cand of scoredList.slice(0, 3)) {
+      try {
+        const subMeta = await EmbedResolvers.resolveWithMeta(cand.url);
+        if (subMeta.resolved && subMeta.url && subMeta.type === "direct") {
+          resolvedStreamUrl = subMeta.url;
+          isDirect = true;
+          if (subMeta.requiredHeaders) {
+            requiredHeaders = { ...subMeta.requiredHeaders };
+          }
+          break;
+        }
+      } catch {}
+    }
   }
 
-  const isProxyable = best.isDirect;
+  if (/vimeos\.[a-z]+/i.test(resolvedStreamUrl) || /p\d+\.vimeos\.zip/i.test(resolvedStreamUrl)) {
+    requiredHeaders = { ...VIMEOS_REQUIRED_HEADERS, ...(requiredHeaders || {}) };
+  } else if (/goodstream\./i.test(resolvedStreamUrl)) {
+    requiredHeaders = { Referer: "https://goodstream.one/", ...(requiredHeaders || {}) };
+  } else if (/playmudos\.com|yourupload\.com/i.test(resolvedStreamUrl)) {
+    requiredHeaders = { Referer: "https://yourupload.com/", ...(requiredHeaders || {}) };
+  }
+
+  const isProxyable = isDirect;
   const timing = createResolutionTiming({
     originalUrl: cleanUrl,
-    upstreamUrl: best.url,
+    upstreamUrl: resolvedStreamUrl,
     provider,
     now,
   });
 
   const partialMeta = {
-    url: best.url,
+    url: resolvedStreamUrl,
     original_url: cleanUrl,
     canonical_locator: cleanUrl,
     provider,
     resolved: true,
-    type: best.isDirect ? ("direct" as const) : ("embed" as const),
+    type: isDirect ? ("direct" as const) : ("embed" as const),
     is_proxyable: isProxyable,
     is_refreshable: true,
     requiredHeaders,
@@ -322,6 +474,70 @@ export async function resolveCinecalidadPage(
 
 /** Resolutor específico para tioplus.app */
 export async function resolveTioPlusPage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para animeflv */
+export async function resolveAnimeFlvPage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para jkanime.net */
+export async function resolveJkanimePage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para latanime */
+export async function resolveLatAnimePage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para gnulahd.nu */
+export async function resolveGnulaPage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para tioanime.com */
+export async function resolveTioAnimePage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para veranimes.net */
+export async function resolveVerAnimesPage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para doramasflix */
+export async function resolveDoramasflixPage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para tubepelis.com */
+export async function resolveTubePelisPage(
   locator: string,
   options?: PlatformPageResolveOptions
 ): Promise<PlatformPlaybackResolution> {

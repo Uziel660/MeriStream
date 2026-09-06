@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node --max-old-space-size=384 dist/server.cjs",
+    "start": "cross-env NODE_ENV=production node --max-old-space-size=8192 dist/server.cjs",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "vitest run",
@@ -15,6 +15,7 @@
     "deploy": "python tools/deploy_fast.py",
     "fast-start": "npx tsx tools/fast-start.ts",
     "repair:tmdb": "npx tsx tools/repair-tmdb-identities.ts",
+    "repair:catalog-links": "npx tsx tools/cleanup-landing-pages-from-episodes.ts",
     "reconcile:tmdb": "npx tsx tools/reconcile-tmdb-seasons.ts",
     "backfill:canonical": "npx tsx tools/backfill-canonical-locators.ts",
     "backfill:legacy-sources": "npx tsx tools/backfill-legacy-source-links.ts",
@@ -25,11 +26,13 @@
     "test:e2e:list": "playwright test --project=chromium --list"
   },
   "dependencies": {
+    "@browserbasehq/stagehand": "^4.0.2",
     "@crawlee/impit-client": "^3.18.1",
     "@electric-sql/pglite": "^0.5.5",
     "@libsql/client": "^0.17.4",
     "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^5.22.0",
+    "ai": "^7.0.93",
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.2.0",
     "colorthief": "^3.5.0",
@@ -46,7 +49,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sanitize-html": "^2.17.7",
-    "undici": "^8.10.0"
+    "undici": "^8.10.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

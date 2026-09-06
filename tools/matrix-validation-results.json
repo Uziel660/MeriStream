@@ -1,0 +1,3492 @@
+[
+  {
+    "provider": "animeflv",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 38,
+    "totalServersDirect": 18,
+    "averageLatencyMs": 807,
+    "works": [
+      {
+        "workId": "cmt7rna9n000c3qu5veqktbga",
+        "title": "Yozakura-san Chi no Daisakusen",
+        "category": "anime",
+        "locatorUrl": "https://animeflv.net/ver/yozakurasan-chi-no-daisakusen-2nd-season-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://nika.playmudos.com/Z1NJQVhadXhyUllURTcxdE15SWpLbTdEOVQ2RjJnMUZ1d3NuSlB3ejZoMHAvRkE5OWJiK3E2WGY4cDhYWWF1Nw.m3u8?st=DyEsTVRajeoWZreTWB21Tg&e=1788652845",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/Z1NJQVhadXhyUllURTcxdE15SWpLbTdEOVQ2RjJnMUZ1d3NuSlB3ejZoMHAvRkE5OWJiK3E2WGY4cDhYWWF1Nw.m3u8?st=DyEsTVRajeoWZreTWB21Tg&e=1788652845",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 465,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/JqcwEIgQ#u_M50lHixKQ-Q8XpBE6HStSSx0v0rmTppsHJmIw8ZM4",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FJqcwEIgQ%23u_M50lHixKQ-Q8XpBE6HStSSx0v0rmTppsHJmIw8ZM4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6018,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/tl33mw4hw18r",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://cyyroro04xrqr.premilkyway.com/hls2/01/03530/tl33mw4hw18r_,n,h,x,.urlset/master.m3u8?t=FkAjfO3hhbVx363C84q_h73JyGHzZLGE5sDmH63lzFo&s=1788642053&e=129600&f=17650985&srv=fbIjIZy3pIBwE0S&i=0.4&sp=500&p1=fbIjIZy3pIBwE0S&p2=fbIjIZy3pIBwE0S&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 791,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/sj0xnadjmz2u",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/h4wfp7m1ecpg",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://pfabiWMFmEza.dramiyos-cdn.com/hls2/01/01662/h4wfp7m1ecpg_n/master.m3u8?t=U-Ih-uCou68de2zi-9R73hvs3bwDAyja_eXbBg4qz2o&s=1788642056&e=129600&f=8310303&srv=am0tYdygczyc&i=0.4&sp=500&p1=am0tYdygczyc&p2=am0tYdygczyc&asn=174",
+            "isDirect": true,
+            "httpStatus": 502,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 898,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://mixdrop.is/e/wn1j0qjwip3e67",
+            "hostName": "mixdrop.is",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-ga0txufm9z6q.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a2.mp4upload.com:183/d/xwxxss7yz3b4quuoxoqr2myqkuftgbjrsi2zyb5xvae4uyquara4ljujkebiox3u3tutqzzg/video.mp4",
+            "isDirect": true,
+            "httpStatus": 206,
+            "contentType": "application/octet-stream",
+            "latencyMs": 836,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rndew001x3qu5a69pxty3",
+        "title": "The Classroom of a Black Cat and a Witch",
+        "category": "anime",
+        "locatorUrl": "https://animeflv.net/ver/kuroneko-to-majo-no-kyoushitsu-1",
+        "serversCount": 8,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11093/pylcah8g7aj3_h/master.m3u8?t=7zq-4yPgXabz56fiClla13oy4JZ7tClPDK9geTuViIo&s=1788642061&e=10800&f=55469218&srv=1070&asn=174&sp=4000&p=0",
+            "hostName": "edge1-moscow-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11093/pylcah8g7aj3_h/master.m3u8?t=7zq-4yPgXabz56fiClla13oy4JZ7tClPDK9geTuViIo&s=1788642061&e=10800&f=55469218&srv=1070&asn=174&sp=4000&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 661,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/THNaVC9uQnJvN2E5QWxCQmQ4TU1WdExZZFhkZmpyZ3pRcDNRa1pCNUF4MEszN1Exbkgyc1M3S254UEgzT1RvNnVyQVVqMUxKYjZySnZqMjhzeTVzNUE9PQ.m3u8?st=SccKbJpFzrp-GBG1Uy71kQ&e=1788652860",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/THNaVC9uQnJvN2E5QWxCQmQ4TU1WdExZZFhkZmpyZ3pRcDNRa1pCNUF4MEszN1Exbkgyc1M3S254UEgzT1RvNnVyQVVqMUxKYjZySnZqMjhzeTVzNUE9PQ.m3u8?st=SccKbJpFzrp-GBG1Uy71kQ&e=1788652860",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 403,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/P15niAKZ#HYxZWkbLjmARwjJyWUeOCCa68xh4gwxz6RmB2KChHpQ",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FP15niAKZ%23HYxZWkbLjmARwjJyWUeOCCa68xh4gwxz6RmB2KChHpQ",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6004,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/ecfs80seap1q",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://OkqtSs1gBbNcA8e.premilkyway.com/hls2/01/14062/ecfs80seap1q_n/master.m3u8?t=hkaWUZymTmJDvIPWUi6zvxanOQfl2wcNXtbkLHM6eiE&s=1788642068&e=129600&f=70311098&srv=zukkcg9r2ba2&i=0.4&sp=500&p1=zukkcg9r2ba2&p2=zukkcg9r2ba2&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 813,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/ikjo15n8dtaf",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/m7vluhk627lr",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://eTOjdo3Yv1iw.dramiyos-cdn.com/hls2/01/07886/m7vluhk627lr_,l,n,h,.urlset/master.m3u8?t=T31lrwhgLiWL8Nxi292lBSRiXYIS8fVsNLXjI-4ScRA&s=1788642071&e=129600&f=39431882&srv=4sKTDBOXVQ4f9c0G&i=0.4&sp=500&p1=4sKTDBOXVQ4f9c0G&p2=4sKTDBOXVQ4f9c0G&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1511,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/9w1p4d41hnv7vn",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-1icmy31pr0q7.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkxz655az3b4quuozkruwo2djs4ivc7z7h6lcddghmsw52drtkrmfelch6hwiuxg3oupsozo/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rngv2003q3qu5iw1ll4wa",
+        "title": "Dandelion",
+        "category": "anime",
+        "locatorUrl": "https://animeflv.net/ver/dandelion-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/04/11120/wl1e10mbzudm_h/master.m3u8?t=ar7f6FvkoO7swekGIJjHORWe-7B6a0h2dZcf2K_ZFro&s=1788642081&e=10800&f=55602579&srv=1055&asn=174&sp=4000&p=0",
+            "hostName": "edge1-moscow-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/04/11120/wl1e10mbzudm_h/master.m3u8?t=ar7f6FvkoO7swekGIJjHORWe-7B6a0h2dZcf2K_ZFro&s=1788642081&e=10800&f=55602579&srv=1055&asn=174&sp=4000&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 662,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/dandelion/TDJHb1dSbERNMnNzRGpURUQ3SFNDaFVhbmFHWm51ak8rVjhxNXVqMmJOWT0.m3u8?st=ren0_VGeVlBIYYJk4HyJIA&e=1788652881",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/dandelion/TDJHb1dSbERNMnNzRGpURUQ3SFNDaFVhbmFHWm51ak8rVjhxNXVqMmJOWT0.m3u8?st=ren0_VGeVlBIYYJk4HyJIA&e=1788652881",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 393,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/YyBCDaZY#oyJ9FWM_uEyeIl8lS6KtE6zJwXQMo7W5excF0qAfxbg",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FYyBCDaZY%23oyJ9FWM_uEyeIl8lS6KtE6zJwXQMo7W5excF0qAfxbg",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6014,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/3xkuag0gazo3",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://wnsa7jyhmnmt12.premilkyway.com/hls2/01/14115/3xkuag0gazo3_n/master.m3u8?t=w8qwO2-MpDOI4kq7qi1TmVMzn4WxwIMcg9ckzPM0pg8&s=1788642089&e=129600&f=70575322&srv=fbIjIZy3pIBwE0S&i=0.4&sp=500&p1=fbIjIZy3pIBwE0S&p2=fbIjIZy3pIBwE0S&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 784,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/fx78sd00foax",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/7b87bvqdoxde",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://pfabiWMFmEza.dramiyos-cdn.com/hls2/01/07955/7b87bvqdoxde_,l,n,h,.urlset/master.m3u8?t=V1u-P6oKd_03JPpyKhPueQ0ZkfN_RLWiRSdXP29ubJQ&s=1788642093&e=129600&f=39775061&srv=uZMYvw8Oc8R7B2ub&i=0.4&sp=500&p1=uZMYvw8Oc8R7B2ub&p2=uZMYvw8Oc8R7B2ub&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 978,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/l7n8zz0kcqxkdk",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rniee004b3qu5pfibg5az",
+        "title": "I Want to End This Love Game",
+        "category": "anime",
+        "locatorUrl": "https://animeflv.net/ver/aishiteru-game-wo-owarasetai-1",
+        "serversCount": 8,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/02/11103/vfy20nosjc21_h/master.m3u8?t=nKJiwaMWwcv_yyDF9tWzBsf0PxSzFHqvqdn_0ZCbnhc&s=1788642097&e=10800&f=55519158&srv=1070&asn=174&sp=4000&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/02/11103/vfy20nosjc21_h/master.m3u8?t=nKJiwaMWwcv_yyDF9tWzBsf0PxSzFHqvqdn_0ZCbnhc&s=1788642097&e=10800&f=55519158&srv=1070&asn=174&sp=4000&p=0",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6003,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/NjhFYk1UZGZrK0w2Z3pacjZWTUszQU9QazB5TmVDcElLSVdpSVRuSFFhSVFUdWRleXZHaEhXNWw1ZjJKY0dLTQ.m3u8?st=zPRMVZ7lOnT8Xkn9PPI0xQ&e=1788652897",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/NjhFYk1UZGZrK0w2Z3pacjZWTUszQU9QazB5TmVDcElLSVdpSVRuSFFhSVFUdWRleXZHaEhXNWw1ZjJKY0dLTQ.m3u8?st=zPRMVZ7lOnT8Xkn9PPI0xQ&e=1788652897",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 404,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/28wDERwJ#Ju8WsUBL5eD_5O5II3Oocb2Inb1DFxtVhoJJWX95XLM",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2F28wDERwJ%23Ju8WsUBL5eD_5O5II3Oocb2Inb1DFxtVhoJJWX95XLM",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6003,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/fy90ippa7vwx",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://cuyyro04xrqrh.premilkyway.com/hls2/01/14081/fy90ippa7vwx_n/master.m3u8?t=eCcVNkVttMXQOszSQ-NZFpyB9cQwfCDb6vSa2rZBTWI&s=1788642110&e=129600&f=70407947&srv=refp3mq9fppl&i=0.4&sp=500&p1=refp3mq9fppl&p2=refp3mq9fppl&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 784,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/mhvwyqjsw2gk",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/nh2ic75catjn",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://WPvsAhSVL0YO.dramiyos-cdn.com/hls2/01/07913/nh2ic75catjn_,l,n,h,.urlset/master.m3u8?t=RkDufT1PVK49wleasLLT8tvOdSjByySDs6tYcZqtcEY&s=1788642113&e=129600&f=39567130&srv=4sKTDBOXVQ4f9c0G&i=0.4&sp=500&p1=4sKTDBOXVQ4f9c0G&p2=4sKTDBOXVQ4f9c0G&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1244,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/3697xxd0fm66qvl",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-7uy5z8mnxwb7.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsx65g5dz3b4quuozoru2j2zct4xn5o7cldbjc6a7hcfyhuwth27gl7q7d4nizq5ivjwwqsv/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6013,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7ymz2200h8j7riwfd1ux8l",
+        "title": "Yowayowa Sensei",
+        "category": "anime",
+        "locatorUrl": "https://www3.animeflv.net/ver/yowayowa-sensei-1",
+        "serversCount": 8,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/06/11088/b29cpkn4ut9p_h/master.m3u8?t=cpMiGHbQvSkgphCXkY9s9NU3y3Xm9XNnlRyDviOWnGw&s=1788642123&e=10800&f=55442867&srv=1070&asn=174&sp=4000&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/06/11088/b29cpkn4ut9p_h/master.m3u8?t=cpMiGHbQvSkgphCXkY9s9NU3y3Xm9XNnlRyDviOWnGw&s=1788642123&e=10800&f=55442867&srv=1070&asn=174&sp=4000&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1850,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/VEM3cSs0YmNPMzZNZGdjVUZZSU5jalllWW5XWjQrSVpKRzlHTjlpWjkyamFJS2dWUUhvK1FpejN6YWpXNjZHTQ.m3u8?st=vVisAeFWLCRjmAJW7AQ0XQ&e=1788652923",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/VEM3cSs0YmNPMzZNZGdjVUZZSU5jalllWW5XWjQrSVpKRzlHTjlpWjkyamFJS2dWUUhvK1FpejN6YWpXNjZHTQ.m3u8?st=vVisAeFWLCRjmAJW7AQ0XQ&e=1788652923",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 388,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/dVNkECZL#Yk8e-gXc0sB6_msNkt2Yc8GmoideV5Jx7U0f64O5C0E",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FdVNkECZL%23Yk8e-gXc0sB6_msNkt2Yc8GmoideV5Jx7U0f64O5C0E",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6001,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/zd3271bulv4i",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://g6m5vwc8rl.premilkyway.com/hls2/01/14051/zd3271bulv4i_n/master.m3u8?t=C-9d9_ekHRcCyia5vEL8ZXHPJEelSIfDHHfpNJsTBS4&s=1788642132&e=129600&f=70258885&srv=551lgwlbaa5pe&i=0.4&sp=500&p1=551lgwlbaa5pe&p2=551lgwlbaa5pe&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 804,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/y0h2w4jzpokg",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/e95zi08yx4mx",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://h85MclLE5sxF9yF.acek-cdn.com/hls2/01/07871/e95zi08yx4mx_,l,n,h,.urlset/master.m3u8?t=JAqRiq2LyEPOhOyUtb6P6uX6nDQuKDCyFFhk608vTug&s=1788642135&e=129600&f=39355933&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 755,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/gj0mpen0tz4r8m",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-htp1tcj27f8x.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsx7synaz3b4quuozgrrejsqcarh2rf6mjz7a2bueqlidkapxplzu3p2iftdluigwshjdsoi/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6008,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "jkanime",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 39,
+    "totalServersDirect": 21,
+    "averageLatencyMs": 966,
+    "works": [
+      {
+        "workId": "cmt7rpj1100j53qu5w5af90zt",
+        "title": "Thunder 3",
+        "category": "anime",
+        "locatorUrl": "https://jkanime.net/thunder-3/1/",
+        "serversCount": 8,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/08/11619/3ir3xr3id5b1_x/master.m3u8?t=zHO4OmMRUk4OyYxZHw7UYr0jZRvq7NGI9rQ92i397BQ&s=1788642151&e=10800&f=58095326&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/08/11619/3ir3xr3id5b1_x/master.m3u8?t=zHO4OmMRUk4OyYxZHw7UYr0jZRvq7NGI9rQ92i397BQ&s=1788642151&e=10800&f=58095326&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 665,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/WnZsK0xESjNHb3UrUDVNQXdoY21mekh1TnVkUEd0TkNhaE5WZ0p2Nmt4K1RTV0dMMjJKY1FMQ1JqcnJtQlpCWA.m3u8?st=DLSUIHszwahy_i6huOm_5g&e=1788652951",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/WnZsK0xESjNHb3UrUDVNQXdoY21mekh1TnVkUEd0TkNhaE5WZ0p2Nmt4K1RTV0dMMjJKY1FMQ1JqcnJtQlpCWA.m3u8?st=DLSUIHszwahy_i6huOm_5g&e=1788652951",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 392,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/snBGFAZL#08wQpqVAr2Y_rOCM1aqPHdoh8vl2piz1xnC8hF5gmuU",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FsnBGFAZL%2308wQpqVAr2Y_rOCM1aqPHdoh8vl2piz1xnC8hF5gmuU",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6013,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/7s310toalhuk",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://VDKZfuWkpzZ7Q.premilkyway.com/hls2/01/14631/7s310toalhuk_n/master.m3u8?t=I8WckVzq13hTVKt3V6_0eO0HmuKJ8mdkjcTzv4Ldo-I&s=1788642161&e=129600&f=73155053&srv=GqJ5X7BzMA2D&i=0.4&sp=500&p1=GqJ5X7BzMA2D&p2=GqJ5X7BzMA2D&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1974,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/e0wyvfj6lhul",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/wxywsdyd3jq7",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://m5QqjwpATPzb.acek-cdn.com/hls2/01/08427/wxywsdyd3jq7_,l,n,h,.urlset/master.m3u8?t=VutYBm-QdWL7dnb1un74bqIqxOls6tL-xbLltEI2m-s&s=1788642164&e=129600&f=42139113&srv=VCgmDWaexkLPOOE2&i=0.4&sp=500&p1=VCgmDWaexkLPOOE2&p2=VCgmDWaexkLPOOE2&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1324,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/pj4rgrdoag74l4o",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-1vcloihwqumh.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkx2ydnmz3b4quuo7cruwjcdjxiiaznqachcvubcpjqrb4lialeljqrndy5cdkgsjb7ju5gt/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6016,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7z9l7m03n313r487wy3vbo",
+        "title": "Kimi no Koto ga Daidaidaidaidaisuki na 100-nin no Kanojo",
+        "category": "anime",
+        "locatorUrl": "https://jkanime.net/kimi-no-koto-ga-daidaidaidaidaisuki-na-100-nin-no-kanojo-3rd-season/5/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/02/11736/4k2tvv4qejbo_x/master.m3u8?t=yWPyDPuLcwV_j9fJ2f8MXoQUISi1b_G74mPkgCriJDI&s=1788642175&e=10800&f=58683983&srv=1050&asn=174&sp=5500&p=0",
+            "hostName": "edge1-madrid-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/02/11736/4k2tvv4qejbo_x/master.m3u8?t=yWPyDPuLcwV_j9fJ2f8MXoQUISi1b_G74mPkgCriJDI&s=1788642175&e=10800&f=58683983&srv=1050&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 664,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/YVA5UE8yMHVDcUxCL015bVlENDZwS1IyQUU3TEdFL2JLZXJkVzRFRVZTMjh6dmhDNCt0SVRvWGdMeDZBSXpDV2ErdVdMYVVEa3VUY0Y1S0FFdVJNZVE9PQ.m3u8?st=R-1E6Dha6Cgj_-ZXYtWOeA&e=1788652975",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/YVA5UE8yMHVDcUxCL015bVlENDZwS1IyQUU3TEdFL2JLZXJkVzRFRVZTMjh6dmhDNCt0SVRvWGdMeDZBSXpDV2ErdVdMYVVEa3VUY0Y1S0FFdVJNZVE9PQ.m3u8?st=R-1E6Dha6Cgj_-ZXYtWOeA&e=1788652975",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 392,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/lZJBiKYA#xPGLcV0EcVHRUlWlvX_2WxjW1Rbyry0f3VNXfsMtNgM",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FlZJBiKYA%23xPGLcV0EcVHRUlWlvX_2WxjW1Rbyry0f3VNXfsMtNgM",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6016,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/yykfm87w1z40",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://54pkdcyxbsxbermn.premilkyway.com/hls2/01/14726/yykfm87w1z40_n/master.m3u8?t=6nejm_cUxPaNkqs8pAK0MgnC6a90aGRiR-syBLBOewo&s=1788642183&e=129600&f=73634138&srv=ts09ruf2imyzcv&i=0.4&sp=500&p1=ts09ruf2imyzcv&p2=ts09ruf2imyzcv&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 761,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/gcl0jka64o5b",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/ow79ng3phndp90",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-cnp3psuheiws.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxtgh5pz3b4quuob2sbspcqcl3yc5pdslvgu4h47rw5s2ab2me6k2uv4jpv55ldhpspxrpp/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6006,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt80bwoe0095vvriw95u70ig",
+        "title": "Seihantai na Kimi to Boku 2nd Season",
+        "category": "anime",
+        "locatorUrl": "https://jkanime.net/seihantai-na-kimi-to-boku-2nd-season/3/",
+        "serversCount": 9,
+        "nativePlayableServersCount": 5,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/08/11665/vajfgb7kxe4s_x/master.m3u8?t=cOYPj1RpXk1iF3PCqfreStseuE5h_DH4fybWHk8yfFo&s=1788642192&e=10800&f=58329596&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/08/11665/vajfgb7kxe4s_x/master.m3u8?t=cOYPj1RpXk1iF3PCqfreStseuE5h_DH4fybWHk8yfFo&s=1788642192&e=10800&f=58329596&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 925,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/QThpWUptYnZyZm53S0xMb041S0Y4MkkwWkgrcCswbENBU1lhZHg2SGhRdmF6akJzUkdYRkNDSDU0V1JMWTVaa0RFa3ZnQWFvRE5jdUFqbnpMR1d2Tmc9PQ.m3u8?st=f6xTsVC8DADgaEzhUkFvJQ&e=1788652993",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/QThpWUptYnZyZm53S0xMb041S0Y4MkkwWkgrcCswbENBU1lhZHg2SGhRdmF6akJzUkdYRkNDSDU0V1JMWTVaa0RFa3ZnQWFvRE5jdUFqbnpMR1d2Tmc9PQ.m3u8?st=f6xTsVC8DADgaEzhUkFvJQ&e=1788652993",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 395,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/QThpWUptYnZyZm53S0xMb041S0Y4MkkwWkgrcCswbENBU1lhZHg2SGhRdmF6akJzUkdYRkNDSDU0V1JMWTVaa0RFa3ZnQWFvRE5jdUFqbnpMR1d2Tmc9PQ.m3u8?st=Og1OsQHqQWD_aDjpzOcu4Q&e=1788652995",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/QThpWUptYnZyZm53S0xMb041S0Y4MkkwWkgrcCswbENBU1lhZHg2SGhRdmF6akJzUkdYRkNDSDU0V1JMWTVaa0RFa3ZnQWFvRE5jdUFqbnpMR1d2Tmc9PQ.m3u8?st=Og1OsQHqQWD_aDjpzOcu4Q&e=1788652995",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 399,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/UVdHTLQA#mqSBCl89u9hPUeHgnEtM1hUCJHaaVYhhGQk1BALGKrI",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FUVdHTLQA%23mqSBCl89u9hPUeHgnEtM1hUCJHaaVYhhGQk1BALGKrI",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6004,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/s1w8av8z4prb",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://vCVkQwY2zRcK.premilkyway.com/hls2/01/14672/s1w8av8z4prb_n/master.m3u8?t=ONX_5m63CX7Vlpfs7acoCqgBqL6rhZkObexmWcPiQhE&s=1788642203&e=129600&f=73360367&srv=uk2y0xwy2xup0&i=0.4&sp=500&p1=uk2y0xwy2xup0&p2=uk2y0xwy2xup0&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 652,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/rrouxniwpscr",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/asf1dpwryr19",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://dD2STLiWT0bC.dramiyos-cdn.com/hls2/01/08456/asf1dpwryr19_,l,n,h,.urlset/master.m3u8?t=ZazxbFl3VINETX6QzTXim-obSdL6OmYP2znCn56-NyA&s=1788642206&e=129600&f=42282567&srv=saxUmh9ijq3T&i=0.4&sp=500&p1=saxUmh9ijq3T&p2=saxUmh9ijq3T&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1261,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/pjkp317gbrlzjq",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-6tfzhmzmyqqy.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxruwfmz3b4quuo6wruyjsglolr5momzoppy2m3sqfof3qrn2f4kp5cwg3xn772hrt6frhz/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6011,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7w8k6a00z9fvrw7tufmjg5",
+        "title": "BLACK TORCH",
+        "category": "anime",
+        "locatorUrl": "https://jkanime.net/black-torch/4/",
+        "serversCount": 8,
+        "nativePlayableServersCount": 5,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/03/11699/b0gvtfnobpnj_x/master.m3u8?t=U8pZqGFqpreXHDMjeyfWCdY1RinorHBIZ0jHhqtvoAE&s=1788642216&e=10800&f=58495654&srv=1055&asn=174&sp=5500&p=0",
+            "hostName": "edge1-madrid-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/03/11699/b0gvtfnobpnj_x/master.m3u8?t=U8pZqGFqpreXHDMjeyfWCdY1RinorHBIZ0jHhqtvoAE&s=1788642216&e=10800&f=58495654&srv=1055&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 615,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/L2dhK1ljQW1SSzlVdXFiaDRkYlQzU3dqZXVjMGRNVlA4dVVaZkhlZDhNSVdscmJrVzhjbGxiejcxM1RsZGZybQ.m3u8?st=hyzWs9rBE7tyUPBiZO9p7w&e=1788653016",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/L2dhK1ljQW1SSzlVdXFiaDRkYlQzU3dqZXVjMGRNVlA4dVVaZkhlZDhNSVdscmJrVzhjbGxiejcxM1RsZGZybQ.m3u8?st=hyzWs9rBE7tyUPBiZO9p7w&e=1788653016",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 779,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/IBN0STjQ#A5sxgAYHwMN0tjkV5FzjeIFtxYlMHtfsjL6IO8iyRGQ",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FIBN0STjQ%23A5sxgAYHwMN0tjkV5FzjeIFtxYlMHtfsjL6IO8iyRGQ",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6002,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/1w5hthljbch3",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://mx9skjnui4es.premilkyway.com/hls2/01/14709/1w5hthljbch3_n/master.m3u8?t=iEew7jWjgqup7keJJW54j-0GMDXeTxrl7yMZ21cEIts&s=1788642224&e=129600&f=73545585&srv=jubDiYuWLQCqfHI&i=0.4&sp=500&p1=jubDiYuWLQCqfHI&p2=jubDiYuWLQCqfHI&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 742,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/snnurt7pviqp",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/sf88psnzavmo",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://dD2STLiWT0bC.dramiyos-cdn.com/hls2/01/08473/sf88psnzavmo_,l,n,h,.urlset/master.m3u8?t=rG7oCx-CgT6VKU3Zb4A5hTlkVxELXPiZXIcfclUfBHY&s=1788642226&e=129600&f=42368108&srv=JVW37qsJlOto&i=0.4&sp=500&p1=JVW37qsJlOto&p2=JVW37qsJlOto&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 733,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/r6wdkjnzizmpjw",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-8w02hllbr1k4.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkx33fvpz3b4quuo6cruejiqcm6d4bvoj7mwykgetbslthmgxwipc4doo6iyv2jburxp6ghu/video.mp4",
+            "isDirect": true,
+            "httpStatus": 206,
+            "contentType": "application/octet-stream",
+            "latencyMs": 4058,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt80btxt008ovvrizq48moka",
+        "title": "Tenmaku no Jaadugar",
+        "category": "anime",
+        "locatorUrl": "https://jkanime.net/tenmaku-no-jaadugar/10/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/04/11905/z751n93d7m0t_x/master.m3u8?t=DalLjLAUXpUZ92cIxO15FHlS7jQ3UfIEB_JaHRuNtWA&s=1788642233&e=10800&f=59528634&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-madrid-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/04/11905/z751n93d7m0t_x/master.m3u8?t=DalLjLAUXpUZ92cIxO15FHlS7jQ3UfIEB_JaHRuNtWA&s=1788642233&e=10800&f=59528634&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 666,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://nika.playmudos.com/V0xFd3hjL282Z243R1pURFZMM3JDbXpPUHFrN1lMTmQ5S2x3YTIyVkNjbUtoVGE4dlNOblBtaGh5U3EvM0FDbw.m3u8?st=GFddkwsOAHiL5wE-Te_k9Q&e=1788653033",
+            "hostName": "nika.playmudos.com",
+            "resolvedDirectUrl": "https://nika.playmudos.com/V0xFd3hjL282Z243R1pURFZMM3JDbXpPUHFrN1lMTmQ5S2x3YTIyVkNjbUtoVGE4dlNOblBtaGh5U3EvM0FDbw.m3u8?st=GFddkwsOAHiL5wE-Te_k9Q&e=1788653033",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 401,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/QBhQnTwY#PUxZ1pd54ua60k9xsnqqakV3ZN1gWcYeu1MjIo5BWmg",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FQBhQnTwY%23PUxZ1pd54ua60k9xsnqqakV3ZN1gWcYeu1MjIo5BWmg",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6015,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://sfastwish.com/e/c1b36os4u6ym",
+            "hostName": "sfastwish.com",
+            "resolvedDirectUrl": "https://OkqtSs1gBbNcA8e.premilkyway.com/hls2/01/14846/c1b36os4u6ym_n/master.m3u8?t=A9eV1DiCACoO9-i7N-_BLSF9lSgpORkvYeT87d5mO24&s=1788642241&e=129600&f=74230850&srv=Gy4KXLg7mXRDXE7k&i=0.4&sp=500&p1=Gy4KXLg7mXRDXE7k&p2=Gy4KXLg7mXRDXE7k&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 1694,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/awwxr0qjsvto",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidhidevip.com/embed/53403n5ymdrw",
+            "hostName": "vidhidevip.com",
+            "resolvedDirectUrl": "https://RNzT2t4XVKU08.acek-cdn.com/hls2/01/08569/53403n5ymdrw_,l,n,h,.urlset/master.m3u8?t=PYpOJ__XIzWDPB6WNFRDmkvwqc03_ORhqqz9uQJkfwA&s=1788642245&e=129600&f=42846751&srv=Z8VeXJnplmoxw&i=0.4&sp=500&p1=Z8VeXJnplmoxw&p2=Z8VeXJnplmoxw&asn=174",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 800,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/wlnrwg06idond6",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "tioanime",
+    "totalWorksTested": 5,
+    "worksPassedNative": 3,
+    "totalServersTested": 8,
+    "totalServersDirect": 3,
+    "averageLatencyMs": 583,
+    "works": [
+      {
+        "workId": "cmt7rotul00ai3qu56cberj1a",
+        "title": "Kimetsu no Yaiba Movie 1: Mugenjou-hen Akaza Sairai",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/kimetsu-no-yaiba-movie-1-mugenjouhen-akaza-sairai-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://mega.nz/embed/!xGt32Y5B!DaMgtiX2llxWYsYz0-mJwHibYJ1w1NJkJYqHjXcuBQU",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FxGt32Y5B%23DaMgtiX2llxWYsYz0-mJwHibYJ1w1NJkJYqHjXcuBQU",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6011,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rouwt00ap3qu539sy7swf",
+        "title": "Tensei shitara Slime Datta Ken Movie 2: Soukai no Namida-hen",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/tensei-shitara-slime-datta-ken-movie-2-soukai-no-namidahen-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://mega.nz/embed/!0etREBTA!OsUXJy9I-xG9niG5piLxDBdK3VZfO5sb08UwIPWQJ2E",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2F0etREBTA%23OsUXJy9I-xG9niG5piLxDBdK3VZfO5sb08UwIPWQJ2E",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rovvc00aw3qu5ub5e17rq",
+        "title": "The Ribbon Hero",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/the-ribbon-hero-1",
+        "serversCount": 2,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3ftvc2s1bgoifftbi.cloudwindow-route.com/engine/hls2-c/01/17920/vm2nswtcxj5q_,n,.urlset/master.m3u8?t=jlU0K5-4tgNktBmCtYFynd1t4xSky6Aj4syFGdLABoA&s=1788642262&e=14400&f=89604901&node=CatogKv06NyslfS3spcIlYvR8c+jX7buY1Hn4Peu8/4=&i=38.224&sp=2500&asn=272962&q=n&rq=mTotDjzSJ3ivMrQJ4gXBZNrw0QVdX9BDAYTkKVSz",
+            "hostName": "ugc-cdn-caching-n3ftvc2s1bgoifftbi.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3ftvc2s1bgoifftbi.cloudwindow-route.com/engine/hls2-c/01/17920/vm2nswtcxj5q_,n,.urlset/master.m3u8?t=jlU0K5-4tgNktBmCtYFynd1t4xSky6Aj4syFGdLABoA&s=1788642262&e=14400&f=89604901&node=CatogKv06NyslfS3spcIlYvR8c+jX7buY1Hn4Peu8/4=&i=38.224&sp=2500&asn=272962&q=n&rq=mTotDjzSJ3ivMrQJ4gXBZNrw0QVdX9BDAYTkKVSz",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 548,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/!4WUjXYKb!TNbb3H8v7KEaKktVU3YntA6byEiVllgP5TbJEMsUTCo",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2F4WUjXYKb%23TNbb3H8v7KEaKktVU3YntA6byEiVllgP5TbJEMsUTCo",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6008,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rowzt00b33qu53u9opsoa",
+        "title": "Boku no Hero Academia: I Am a Hero Too",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/boku-no-hero-academia-i-am-a-hero-too-1",
+        "serversCount": 2,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3utzguzfstc6qeiys.cloudwindow-route.com/engine/hls2-c/01/17884/9ma8hzh1gnxv_,n,.urlset/master.m3u8?t=jW39fdEvhiCXXLoyWcP2A6xXcGRG_t9VhpwlY_160Fg&s=1788642270&e=14400&f=89424801&node=XiW5cec0hXw2ZUbR38dNrfYLIjxa2UfNT5vzbxCNkaE=&i=38.224&sp=2500&asn=272962&q=n&rq=PFO3ZuekmNfZTDmOkzEeKVfEaGIhTFGiuS6ftOdw",
+            "hostName": "ugc-cdn-caching-n3utzguzfstc6qeiys.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3utzguzfstc6qeiys.cloudwindow-route.com/engine/hls2-c/01/17884/9ma8hzh1gnxv_,n,.urlset/master.m3u8?t=jW39fdEvhiCXXLoyWcP2A6xXcGRG_t9VhpwlY_160Fg&s=1788642270&e=14400&f=89424801&node=XiW5cec0hXw2ZUbR38dNrfYLIjxa2UfNT5vzbxCNkaE=&i=38.224&sp=2500&asn=272962&q=n&rq=PFO3ZuekmNfZTDmOkzEeKVfEaGIhTFGiuS6ftOdw",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 578,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/!UKdRgJwY!Xyx4wRfLkA3OE0_T2TaHKjr4j9rwBZuDt5aw1hXRXqo",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FUKdRgJwY%23Xyx4wRfLkA3OE0_T2TaHKjr4j9rwBZuDt5aw1hXRXqo",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6009,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7roy6z00ba3qu5tjwmjfaj",
+        "title": "Ansatsu Kyoushitsu Movie: Minna no Jikan",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/ansatsu-kyoushitsu-movie-minna-no-jikan-1",
+        "serversCount": 2,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3dzlrqbh8qr5lcobm.cloudwindow-route.com/engine/hls2-c/01/17829/cnfallbldyv5_,n,.urlset/master.m3u8?t=XymjYZeMBqdQYsJ9KCNoSYIa1zq35iPorjfuyiX4M50&s=1788642278&e=14400&f=89146637&node=owJCo2JIfhK+pCG/ybkyG9l2lOXy6iqC2mJAncqKWSQ=&i=38.224&sp=2500&asn=272962&q=n&rq=qiRKkW45gMiugVQpUxCQk19xXrC4A3Nb1kpmPQh8",
+            "hostName": "ugc-cdn-caching-n3dzlrqbh8qr5lcobm.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3dzlrqbh8qr5lcobm.cloudwindow-route.com/engine/hls2-c/01/17829/cnfallbldyv5_,n,.urlset/master.m3u8?t=XymjYZeMBqdQYsJ9KCNoSYIa1zq35iPorjfuyiX4M50&s=1788642278&e=14400&f=89146637&node=owJCo2JIfhK+pCG/ybkyG9l2lOXy6iqC2mJAncqKWSQ=&i=38.224&sp=2500&asn=272962&q=n&rq=qiRKkW45gMiugVQpUxCQk19xXrC4A3Nb1kpmPQh8",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 624,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/!pf9hmbJJ!17E8Bm-EEafpBw59g3KUtLACx2PYOg_LN3BUhetmoJo",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2Fpf9hmbJJ%2317E8Bm-EEafpBw59g3KUtLACx2PYOg_LN3BUhetmoJo",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "latanime",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 34,
+    "totalServersDirect": 12,
+    "averageLatencyMs": 982,
+    "works": [
+      {
+        "workId": "cmt7s176b0003lifnzyayze5h",
+        "title": "Kaguya-sama: Love Is War -Stairway to Adulthood",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/kaguya-sama-love-is-war-stairway-to-adulthood-latino-episodio-1",
+        "serversCount": 6,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11849/2gymagcd1gib_x/master.m3u8?t=6RSqp0cxKuka3BtCirJ6nejZePTySRb2JfpYQxi70Pw&s=1788642286&e=10800&f=59248096&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-frankfurt-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11849/2gymagcd1gib_x/master.m3u8?t=6RSqp0cxKuka3BtCirJ6nejZePTySRb2JfpYQxi70Pw&s=1788642286&e=10800&f=59248096&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 757,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://bysekoze.com/e/2gymagcd1gib",
+            "hostName": "bysekoze.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11849/2gymagcd1gib_x/master.m3u8?t=juiI25nVYZmwN5JKai_zrvlbFs7Ipw6lwbgzu_xMr3Q&s=1788642288&e=10800&f=59248096&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 213,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hexload.com/embed-2vcxi6ns0rbn",
+            "hostName": "hexload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/gjnle33kbw7rx7",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/1rzaivy55edc",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-8n1o4z1jlvkn.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkxviffoz3b4quuodsseeparj3duuj4hnbhdrbgighukuqwpulwhskl3bhumobfah5jjzwpv/video.mp4",
+            "isDirect": true,
+            "httpStatus": 206,
+            "contentType": "application/octet-stream",
+            "latencyMs": 5262,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt7s1809000llifnd9o03ho8",
+        "title": "Star Wars Visions: La Jedi número 9",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/star-wars-visions-la-jedi-numero-9-episodio-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/05/11770/6jx85ccsarri_x/master.m3u8?t=XHfMEYUyiSHB9WFnpxHCpPS2aziQcKlc2pB5VUrrz3A&s=1788642295&e=10800&f=58853489&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/05/11770/6jx85ccsarri_x/master.m3u8?t=XHfMEYUyiSHB9WFnpxHCpPS2aziQcKlc2pB5VUrrz3A&s=1788642295&e=10800&f=58853489&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 853,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://bysekoze.com/e/6jx85ccsarri",
+            "hostName": "bysekoze.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/05/11770/6jx85ccsarri_x/master.m3u8?t=8U8FyMCiQljkrzPhy99kAJKKQ05K47LcdBo9qa7ZSJY&s=1788642297&e=10800&f=58853489&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 174,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hexload.com/embed-jtxtmkt0yyws",
+            "hostName": "hexload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/#!K2RgwKSA!kNmm0nGba0JBL8PFWFSrN18HnuLNmepGDJ18j1Jn0kg",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/l766jlzvtq4glk",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/abhc2h11ujqf",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-tpy4axtzhdne.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxyjhfoz3b4quuoawsa4iszcuk5mciusmqvud4k3i5logok7y6jve5hhcshwzsqf3dybxdr/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6006,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7w5xuz0095fvrwxqzh32jx",
+        "title": "Blue Exorcist: Ao no Exorcist: Yosuga-hen",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/blue-exorcist-ao-no-exorcist-yosuga-hen-episodio-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/10/11752/cs8gljpakpwe_x/master.m3u8?t=WkCkCGmRQQBX-ozW2Ne9egC71tc2DUfGE2bF5fskGzo&s=1788642306&e=10800&f=58764048&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge2-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/10/11752/cs8gljpakpwe_x/master.m3u8?t=WkCkCGmRQQBX-ozW2Ne9egC71tc2DUfGE2bF5fskGzo&s=1788642306&e=10800&f=58764048&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 676,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://bysekoze.com/e/cs8gljpakpwe",
+            "hostName": "bysekoze.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/10/11752/cs8gljpakpwe_x/master.m3u8?t=7f_dyxzZL1L5yd4QyKNQH4idn5pNjzMeAcigD1kY4KQ&s=1788642308&e=10800&f=58764048&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 167,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hexload.com/embed-iznpcus7ga3p",
+            "hostName": "hexload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/#!r2xFhAbb!OmzIchnnwaQ_dMbmFXM_tnIq83bgh_dQheu4mGy-PLE",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/xwole1l9fwr1dn",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/215vp18ihfli",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-j72bco3jo5cm.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxsernpz3b4quuobgsbazisimsbi4776l6dcr5owgzb5bfcfv6jbljkxmr7uudpqudjhsyg/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6004,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7w610c00b2fvrwwpudey2u",
+        "title": "Oshi no Ko S2",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/oshi-no-ko-s2-latino-episodio-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11748/c8k9c70sbcqo_x/master.m3u8?t=Yni8YMW5XMp_1AS7oXRyQ2cya-fh0eUirKs4nEcsad4&s=1788642317&e=10800&f=58741688&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge1-frankfurt-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11748/c8k9c70sbcqo_x/master.m3u8?t=Yni8YMW5XMp_1AS7oXRyQ2cya-fh0eUirKs4nEcsad4&s=1788642317&e=10800&f=58741688&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 574,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://bysekoze.com/e/c8k9c70sbcqo",
+            "hostName": "bysekoze.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/06/11748/c8k9c70sbcqo_x/master.m3u8?t=Sv7mQkN1EwQuTXhOYfps5DVSnoJq6FxKCf-XautrhdM&s=1788642318&e=10800&f=58741688&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 144,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hexload.com/embed-ljdm74uwpc50",
+            "hostName": "hexload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/#!OSp2gCxT!jzayyt1RcBah9_LaZhzdK0CyeMhXWVq0I8Od1VkAs6o",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/7krpl7k1fvnqpj",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/zaoe4njl1foa",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-129ueyj6bsir.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkxv6n5pz3b4quuobcsewyazkqc5jb5zrxzblg2bx36wbomhampai4ku4ds4thmjkdfhesro/video.mp4",
+            "isDirect": true,
+            "httpStatus": 206,
+            "contentType": "application/octet-stream",
+            "latencyMs": 1789,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt7w664e00d0fvrwmtqwjpd0",
+        "title": "Enen no Shouboutai S3",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/enen-no-shouboutai-s3-castellano-episodio-1",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/06/11752/auz8g9x1y661_x/master.m3u8?t=C3YN_8pzirp7Fd7BDO39wdp_Swqq3pd4zlqRdtVnUrM&s=1788642323&e=10800&f=58764894&srv=1055&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/06/11752/auz8g9x1y661_x/master.m3u8?t=C3YN_8pzirp7Fd7BDO39wdp_Swqq3pd4zlqRdtVnUrM&s=1788642323&e=10800&f=58764894&srv=1055&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 634,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://bysekoze.com/e/auz8g9x1y661",
+            "hostName": "bysekoze.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/06/11752/auz8g9x1y661_x/master.m3u8?t=P5dHV1WBtJJC7nc1MVmNCl3BKaWYNq1PJ2NCpdMaLVY&s=1788642325&e=10800&f=58764894&srv=1055&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 540,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hexload.com/embed-ij0wj856nmba",
+            "hostName": "hexload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/#!nCYGyAIZ!QO-Oe3c32U_XPyj7vXN1prkkmSGSWWwT1KJ1oVfY9Ac",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mixdrop.top/e/k0nw8n64iqjknm",
+            "hostName": "mixdrop.top",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/2ewvkq2sklro",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://www.mp4upload.com/embed-6q3w1zbk69n7.html",
+            "hostName": "www.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkxx2q5pz3b4quuobgseyiytk3ypcdrr6dw64e4xoceoshpi3mrnhxdzddobwwomm3m6islk/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "veranimes",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 20,
+    "totalServersDirect": 9,
+    "averageLatencyMs": 899,
+    "works": [
+      {
+        "workId": "mt8t35afj1o30rx1",
+        "title": "Otome Game Sekai wa Mob ni Kibishii Sekai desu 2 Anime",
+        "category": "anime",
+        "locatorUrl": "https://wwv.veranimes.net/ver/otome-game-sekai-wa-mob-ni-kibishii-sekai-desu-2-3",
+        "serversCount": 4,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/04/11680/3sqtdiglgvgj_x/master.m3u8?t=_ceilEKZcVpJOGifWcCaBBzTVRyj3CS2EJEgCD2-e6E&s=1788642335&e=10800&f=58404303&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge1-moscow-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/04/11680/3sqtdiglgvgj_x/master.m3u8?t=_ceilEKZcVpJOGifWcCaBBzTVRyj3CS2EJEgCD2-e6E&s=1788642335&e=10800&f=58404303&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 428,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://strm3.uqload.vc/hls2/02/05375/l5o62dogds3b_,l,n,.urlset/master.m3u8?t=qDTSpgyisEM1G8HA5TZmPTg285mz11JjlDysynEhrBA&s=1788642335&e=43200&v=3071522&i=0.0&sp=0",
+            "hostName": "strm3.uqload.vc",
+            "resolvedDirectUrl": "https://strm3.uqload.vc/hls2/02/05375/l5o62dogds3b_,l,n,.urlset/master.m3u8?t=qDTSpgyisEM1G8HA5TZmPTg285mz11JjlDysynEhrBA&s=1788642335&e=43200&v=3071522&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 560,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://streamwish.to/e/fxrvq6vo3hrh",
+            "hostName": "streamwish.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://a4.mp4upload.com:183/d/xkx5i65mz3b4quuo62ruqzssckntnpukgsncjnwkuula4ji5rlemb3dgzoqdm4rw377qx7rd/video.mp4",
+            "hostName": "a4.mp4upload.com",
+            "resolvedDirectUrl": "https://a4.mp4upload.com:183/d/xkx5i65mz3b4quuo62ruqzssckntnpukgsncjnwkuula4ji5rlemb3dgzoqdm4rw377qx7rd/video.mp4",
+            "isDirect": true,
+            "httpStatus": 206,
+            "contentType": "application/octet-stream",
+            "latencyMs": 5047,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt80061700lfwti2vdfxhchy",
+        "title": "Tai-Ari deshita. Ojousama wa Kakutou Game nante Shinai",
+        "category": "anime",
+        "locatorUrl": "https://wwv.veranimes.net/ver/tai-ari-deshita-ojousama-wa-kakutou-game-nante-shinai-8",
+        "serversCount": 4,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/01/11877/p5xdum62pbkt_x/master.m3u8?t=CwUNZa34m3jEfv-jNd3CsHUEsjPh1vjELy22tJgrsFg&s=1788642347&e=10800&f=59385454&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/01/11877/p5xdum62pbkt_x/master.m3u8?t=CwUNZa34m3jEfv-jNd3CsHUEsjPh1vjELy22tJgrsFg&s=1788642347&e=10800&f=59385454&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 210,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://strm2.uqload.vc/hls2/02/05517/5cb829rqryye_,l,n,.urlset/master.m3u8?t=3RA2x75ViPzx3drX_fHZ8JS__e6uPoSw7bFTa1XJiKA&s=1788642348&e=43200&v=3072197&i=0.0&sp=0",
+            "hostName": "strm2.uqload.vc",
+            "resolvedDirectUrl": "https://strm2.uqload.vc/hls2/02/05517/5cb829rqryye_,l,n,.urlset/master.m3u8?t=3RA2x75ViPzx3drX_fHZ8JS__e6uPoSw7bFTa1XJiKA&s=1788642348&e=43200&v=3072197&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 557,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://streamwish.to/e/laxjz59pzez2",
+            "hostName": "streamwish.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://a3.mp4upload.com:183/d/xsxzaqfoz3b4quuod2se2icmkduhbn7znhz3brk54tk2gxhzvmuwkqvmskaju5pegseon4ud/video.mp4",
+            "hostName": "a3.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxzaqfoz3b4quuod2se2icmkduhbn7znhz3brk54tk2gxhzvmuwkqvmskaju5pegseon4ud/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6008,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mt8t4jq4ytjp2256",
+        "title": "Kuroneko to Majo no Kyoushitsu Anime",
+        "category": "anime",
+        "locatorUrl": "https://wwv.veranimes.net/ver/kuroneko-to-majo-no-kyoushitsu-1",
+        "serversCount": 4,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/03/11093/6m5u5shizopc_x/master.m3u8?t=rY3g_PlLCgJ8WH4vtEiepQo4TQl_QDyI-XTFdWGHyQ4&s=1788642361&e=10800&f=55469517&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/03/11093/6m5u5shizopc_x/master.m3u8?t=rY3g_PlLCgJ8WH4vtEiepQo4TQl_QDyI-XTFdWGHyQ4&s=1788642361&e=10800&f=55469517&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 155,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://streamwish.to/e/mbvvshroqiue",
+            "hostName": "streamwish.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://uqload.is/embed-vrwiuxf3g4jj.html",
+            "hostName": "uqload.is",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://a3.mp4upload.com:183/d/xsxtk55az3b4quuozkrr2zkgkcxb6dfb7ujsrf4ujx4qawgborkib5ysapaqvf7sccq4cyer/video.mp4",
+            "hostName": "a3.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsxtk55az3b4quuozkrr2zkgkcxb6dfb7ujsrf4ujx4qawgborkib5ysapaqvf7sccq4cyer/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6005,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mt8t4kp19nv5s6nd",
+        "title": "Kabushikigaisha Magi-Lumière 2nd Season Anime",
+        "category": "anime",
+        "locatorUrl": "https://wwv.veranimes.net/ver/kabushikigaisha-magi-lumiere-2nd-season-4",
+        "serversCount": 4,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/01/11699/o20hbsrnr6fx_x/master.m3u8?t=2_jGeZSRgrvehIzO_J82ZbnDITC0Zk7lQUEIP9MTD7A&s=1788642374&e=10800&f=58498457&srv=1075&asn=174&sp=5500&p=0",
+            "hostName": "edge1-frankfurt-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/01/11699/o20hbsrnr6fx_x/master.m3u8?t=2_jGeZSRgrvehIzO_J82ZbnDITC0Zk7lQUEIP9MTD7A&s=1788642374&e=10800&f=58498457&srv=1075&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 144,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://strm9.uqload.vc/hls2/01/05383/x6iu3pbto7su_,l,n,.urlset/master.m3u8?t=zit0XDT_oQtnK734-cesUuXr_Amg5JABsrWbL7IBl2o&s=1788642374&e=43200&v=3073679&i=0.0&sp=0",
+            "hostName": "strm9.uqload.vc",
+            "resolvedDirectUrl": "https://strm9.uqload.vc/hls2/01/05383/x6iu3pbto7su_,l,n,.urlset/master.m3u8?t=zit0XDT_oQtnK734-cesUuXr_Amg5JABsrWbL7IBl2o&s=1788642374&e=43200&v=3073679&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 138,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://streamwish.to/e/blf2dxl9la28",
+            "hostName": "streamwish.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://a3.mp4upload.com:183/d/xsx5pe5pz3b4quuo6crugocsioqo3k2p67d57k2vgn6vrap5w3zszmhktzy2afz2tba76c6m/video.mp4",
+            "hostName": "a3.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsx5pe5pz3b4quuo6crugocsioqo3k2p67d57k2vgn6vrap5w3zszmhktzy2afz2tba76c6m/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6011,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mt8t57avtpd082gh",
+        "title": "LasTame S2 Anime",
+        "category": "anime",
+        "locatorUrl": "https://wwv.veranimes.net/ver/lastame-s2-2",
+        "serversCount": 4,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://streamwish.to/e/8e3439o2h8m7",
+            "hostName": "streamwish.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/04/11103/r49k980qnzyr_x/master.m3u8?t=RcSoN_sDSZikv5nCHRrjPdTZMsjDOT3wS5c1fGLFCg4&s=1788642383&e=10800&f=55517686&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/04/11103/r49k980qnzyr_x/master.m3u8?t=RcSoN_sDSZikv5nCHRrjPdTZMsjDOT3wS5c1fGLFCg4&s=1788642383&e=10800&f=55517686&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 853,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://strm2.uqload.vc/hls2/01/05113/tsnnecdn79wd_n/master.m3u8?t=k7Lv4rFmIGNaLeTzCV9ubnWgaRkPo2H6K_NyBeptVQo&s=1788642383&e=43200&v=3074233&i=0.0&sp=0",
+            "hostName": "strm2.uqload.vc",
+            "resolvedDirectUrl": "https://strm2.uqload.vc/hls2/01/05113/tsnnecdn79wd_n/master.m3u8?t=k7Lv4rFmIGNaLeTzCV9ubnWgaRkPo2H6K_NyBeptVQo&s=1788642383&e=43200&v=3074233&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 404,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 556,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://a3.mp4upload.com:183/d/xsx2vhfdz3b4quuozorq2kyskxxjsx2mbrua2msgk4yb2kzgmzncbdxleeqo6vxtjiy5gi3t/video.mp4",
+            "hostName": "a3.mp4upload.com",
+            "resolvedDirectUrl": "https://a3.mp4upload.com:183/d/xsx2vhfdz3b4quuozorq2kyskxxjsx2mbrua2msgk4yb2kzgmzncbdxleeqo6vxtjiy5gi3t/video.mp4",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6009,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "hianimes",
+    "totalWorksTested": 5,
+    "worksPassedNative": 1,
+    "totalServersTested": 10,
+    "totalServersDirect": 4,
+    "averageLatencyMs": 232,
+    "works": [
+      {
+        "workId": "cmt82arp202sw1eypbgabxd2i",
+        "title": "OKITSURA: Fell in Love with an Okinawan Girl, but I Just Wish I Know What She's Saying",
+        "category": "anime",
+        "locatorUrl": "https://hianimes.se/watch/okitsura%3A-fell-in-love-with-an-okinawan-girl-but-i-just-wish-i-know-what-she's-saying-episode-1-episode-1-nqqxwp",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/131398/sub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "mt8tcv6ys2mnx0uo",
+        "title": "Momentary Lily",
+        "category": "anime",
+        "locatorUrl": "https://hianimes.se/watch/momentary-lily-episode-1-episode-1-49vvla",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/135955/sub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt8oyg4d0ajt7cprepgr9lit",
+        "title": "Sorairo Utility",
+        "category": "anime",
+        "locatorUrl": "https://hianimes.se/watch/sorairo-utility-episode-1-episode-1-igvvum",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/131349/sub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "mtmbgrams061qa83",
+        "title": "The Daily Life of a Middle-Aged",
+        "category": "anime",
+        "locatorUrl": "https://hianimes.se/watch/the-daily-life-of-a-middle-aged-online-shopper-in-another-world-episode-1-qlrinp",
+        "serversCount": 6,
+        "nativePlayableServersCount": 4,
+        "servers": [
+          {
+            "rawUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/s4ou1wga31mngg/master.m3u8",
+            "hostName": "hls2.aniwatchtv.uk",
+            "resolvedDirectUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/s4ou1wga31mngg/master.m3u8",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 402,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://zokoanime.video/stream/mal/59561/1/sub?color=35d5bf",
+            "hostName": "zokoanime.video",
+            "resolvedDirectUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/s4ou1wga31mngg/master.m3u8",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 168,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/131688/sub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/zrmd6ttyqeubgo/master.m3u8",
+            "hostName": "hls2.aniwatchtv.uk",
+            "resolvedDirectUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/zrmd6ttyqeubgo/master.m3u8",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 189,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://zokoanime.video/stream/mal/59561/1/dub?color=35d5bf",
+            "hostName": "zokoanime.video",
+            "resolvedDirectUrl": "https://hls2.aniwatchtv.uk/v/scxqicy/u0z2801l5d/hhke91a8ed/zrmd6ttyqeubgo/master.m3u8",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 170,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/131688/dub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt82a1p302nv1eypirs5wbn8",
+        "title": "I'm a Noble on the Brink of Ruin, So I Might as Well Try Mastering Magic",
+        "category": "anime",
+        "locatorUrl": "https://hianimes.se/watch/im-a-noble-on-the-brink-of-ruin-so-i-might-as-well-try-mastering-magic-episode-12-4mh495",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://megaplay.buzz/stream/s-2/135019/sub",
+            "hostName": "megaplay.buzz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "cinecalidad",
+    "totalWorksTested": 5,
+    "worksPassedNative": 4,
+    "totalServersTested": 29,
+    "totalServersDirect": 8,
+    "averageLatencyMs": 496,
+    "works": [
+      {
+        "workId": "cmt7ztt8t00ojnh81j0ne186i",
+        "title": "OFICIAL",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/page/1/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://www.cinecalidad.am/page/1/",
+            "hostName": "www.cinecalidad.am",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt80418a003erlb5ws519ld0",
+        "title": "Intriga internacional",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/intriga-internacional/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://s11.vimeos.net/hls2/02/00012/2d266unp6jqd_,n,h,.urlset/master.m3u8?t=gPlOqgEK_BzgiWQwRv5haTgfHU5byQPC4F6hy_Xk6Pg&s=1788642418&e=43200&v=348135759&i=0.0&sp=0&fr=2d266unp6jqd&r=e",
+            "hostName": "s11.vimeos.net",
+            "resolvedDirectUrl": "https://s11.vimeos.net/hls2/02/00012/2d266unp6jqd_,n,h,.urlset/master.m3u8?t=gPlOqgEK_BzgiWQwRv5haTgfHU5byQPC4F6hy_Xk6Pg&s=1788642418&e=43200&v=348135759&i=0.0&sp=0&fr=2d266unp6jqd&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 491,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hls1.goodstream.one/hls2/01/00099/m7ctia6gqgni_,l,n,h,x,.urlset/master.m3u8?t=8RrudtOxcESLkwsRQ5p2HqFFslSOPMWSQmlloh6ADdU&s=1788642418&e=43200&v=382357798&srv=enc6&i=0.3&sp=0&fr=m7ctia6gqgni",
+            "hostName": "hls1.goodstream.one",
+            "resolvedDirectUrl": "https://hls1.goodstream.one/hls2/01/00099/m7ctia6gqgni_,l,n,h,x,.urlset/master.m3u8?t=8RrudtOxcESLkwsRQ5p2HqFFslSOPMWSQmlloh6ADdU&s=1788642418&e=43200&v=382357798&srv=enc6&i=0.3&sp=0&fr=m7ctia6gqgni",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 562,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://doodstream.com/e/qwgp2pa2qpnf",
+            "hostName": "doodstream.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://videoapp.zip/e/movie/213",
+            "hostName": "videoapp.zip",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vimeos.net/embed-2d266unp6jqd.html",
+            "hostName": "vimeos.net",
+            "resolvedDirectUrl": "https://vimeos.zip/hls2/02/00012/2d266unp6jqd_,n,h,.urlset/master.m3u8?t=PD9b4scEtDGIABEgj8Ig2NagoODcrTXewun470r5Re4&s=1788642421&e=43200&v=348135759&srv=s11&i=0.0&sp=0&fr=2d266unp6jqd&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 494,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/oc0vtwuullok",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-m7ctia6gqgni.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://hls1.goodstream.one/hls2/01/00099/m7ctia6gqgni_,l,n,h,x,.urlset/master.m3u8?t=f4n3PZAjK-rt2MCCR6ajOaEyVxCQKXQS1Hw81Rg9D04&s=1788642424&e=43200&v=382357798&srv=enc6&i=0.3&sp=0&fr=m7ctia6gqgni",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 168,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt804ifm006prlb5om04i8i9",
+        "title": "Reyes de las olas 2",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/reyes-de-las-olas-2/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://s9.vimeos.net/hls2/03/00012/ddth0l3zy9kv_,n,h,.urlset/master.m3u8?t=ZPb5K-eOUGQ2rAt0UvcOm6lBM8x8wTcLXi-sZX6jrp4&s=1788642427&e=43200&v=348135921&i=0.0&sp=0&fr=ddth0l3zy9kv&r=e",
+            "hostName": "s9.vimeos.net",
+            "resolvedDirectUrl": "https://s9.vimeos.net/hls2/03/00012/ddth0l3zy9kv_,n,h,.urlset/master.m3u8?t=ZPb5K-eOUGQ2rAt0UvcOm6lBM8x8wTcLXi-sZX6jrp4&s=1788642427&e=43200&v=348135921&i=0.0&sp=0&fr=ddth0l3zy9kv&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 482,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://enc12.goodstream.one/hls2/01/00099/1oukujjas0ur_,l,n,h,x,.urlset/master.m3u8?t=tEXgXxajWos0GX23-TnlqKxa0OQvh__1dPHTY0WwZeM&s=1788642427&e=43200&v=382357893&srv=enc7&i=0.3&sp=0&fr=1oukujjas0ur",
+            "hostName": "enc12.goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/01/00099/1oukujjas0ur_,l,n,h,x,.urlset/master.m3u8?t=tEXgXxajWos0GX23-TnlqKxa0OQvh__1dPHTY0WwZeM&s=1788642427&e=43200&v=382357893&srv=enc7&i=0.3&sp=0&fr=1oukujjas0ur",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6007,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://doodstream.com/e/9es9msle52kd",
+            "hostName": "doodstream.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://videoapp.zip/e/movie/411840",
+            "hostName": "videoapp.zip",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vimeos.net/embed-s05clmes6qvf.html",
+            "hostName": "vimeos.net",
+            "resolvedDirectUrl": "https://p6.vimeos.zip/hls2/03/00012/ddth0l3zy9kv_,n,h,.urlset/master.m3u8?t=wsY-5J77ixBmU3XVMkk99pE3DDQZvLUo1U3OeoUe5FY&s=1788642435&e=43200&v=348135921&srv=s9&i=0.0&sp=0&fr=ddth0l3zy9kv&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 491,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/stxuw8hysnc6",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-1h3cx1mwqgd7.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/01/00099/1oukujjas0ur_,l,n,h,x,.urlset/master.m3u8?t=YAcqbpfsa-54NY0qgrz4h8js7Q9kEhOg8E7iFq1kVKI&s=1788642438&e=43200&v=382357893&srv=enc7&i=0.3&sp=0&fr=1oukujjas0ur",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6013,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt80b6ri001jvvrikfeaeyrl",
+        "title": "Cámara Policial",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/camara-policial/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://p5.vimeos.zip/hls2/03/00012/txuul1g5iycj_,n,h,.urlset/master.m3u8?t=mfkU2IJDKajFy7bXGr4M1tgrzOzy7sq24bC0wipNHyk&s=1788642447&e=43200&v=348136250&srv=s9&i=0.0&sp=0&fr=txuul1g5iycj&r=e",
+            "hostName": "p5.vimeos.zip",
+            "resolvedDirectUrl": "https://p5.vimeos.zip/hls2/03/00012/txuul1g5iycj_,n,h,.urlset/master.m3u8?t=mfkU2IJDKajFy7bXGr4M1tgrzOzy7sq24bC0wipNHyk&s=1788642447&e=43200&v=348136250&srv=s9&i=0.0&sp=0&fr=txuul1g5iycj&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 542,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://enc12.goodstream.one/hls2/01/00099/129s060431mm_,l,n,h,.urlset/master.m3u8?t=Sw1HlF11gUey2DdUf3roHj1KYjmC-eWUWr_sH4x5jno&s=1788642447&e=43200&v=382358132&srv=enc5&i=0.3&sp=0&fr=129s060431mm",
+            "hostName": "enc12.goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/01/00099/129s060431mm_,l,n,h,.urlset/master.m3u8?t=Sw1HlF11gUey2DdUf3roHj1KYjmC-eWUWr_sH4x5jno&s=1788642447&e=43200&v=382358132&srv=enc5&i=0.3&sp=0&fr=129s060431mm",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6007,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://doodstream.com/e/58oy3rlzh5jj",
+            "hostName": "doodstream.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://videoapp.zip/e/movie/513268",
+            "hostName": "videoapp.zip",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vimeos.net/embed-txuul1g5iycj.html",
+            "hostName": "vimeos.net",
+            "resolvedDirectUrl": "https://s9.vimeos.net/hls2/03/00012/txuul1g5iycj_,n,h,.urlset/master.m3u8?t=ZWFFcfS4e1bMdHGZ3rxUUsnMMGM1p7_jx5zVJiWDmHM&s=1788642456&e=43200&v=348136250&i=0.0&sp=0&fr=txuul1g5iycj&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 498,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/otoyqekgjca2",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-129s060431mm.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/01/00099/129s060431mm_,l,n,h,.urlset/master.m3u8?t=Nk-WRh2PfdDEenJVqNbAkIHKyd6zJARVjR6zrShiXvA&s=1788642458&e=43200&v=382358132&srv=enc5&i=0.3&sp=0&fr=129s060431mm",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6000,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt80bbzc002yvvri7xn8oqj5",
+        "title": "Power Rangers: La",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/power-rangers-la-pelicula/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://p5.vimeos.zip/hls2/03/00012/zjpr6midwvkm_,n,h,.urlset/master.m3u8?t=vNUyR7cki27Hr_2CE7EBQJOGb9qvhs7cCCrmpHjGu_E&s=1788642468&e=43200&v=348136611&srv=s9&i=0.0&sp=0&fr=zjpr6midwvkm&r=e",
+            "hostName": "p5.vimeos.zip",
+            "resolvedDirectUrl": "https://p5.vimeos.zip/hls2/03/00012/zjpr6midwvkm_,n,h,.urlset/master.m3u8?t=vNUyR7cki27Hr_2CE7EBQJOGb9qvhs7cCCrmpHjGu_E&s=1788642468&e=43200&v=348136611&srv=s9&i=0.0&sp=0&fr=zjpr6midwvkm&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 498,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://enc12.goodstream.one/hls2/01/00099/p512vi4hu8js_,l,n,h,x,.urlset/master.m3u8?t=zIXOr_8cv9uP9VGZH86eGqO1k7HXClsq_9nM0fizjxo&s=1788642467&e=43200&v=382358351&srv=enc5&i=0.3&sp=0&fr=p512vi4hu8js",
+            "hostName": "enc12.goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/01/00099/p512vi4hu8js_,l,n,h,x,.urlset/master.m3u8?t=zIXOr_8cv9uP9VGZH86eGqO1k7HXClsq_9nM0fizjxo&s=1788642467&e=43200&v=382358351&srv=enc5&i=0.3&sp=0&fr=p512vi4hu8js",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6007,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://doodstream.com/e/q3uaz1xmxug3",
+            "hostName": "doodstream.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://videoapp.zip/e/movie/9070",
+            "hostName": "videoapp.zip",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vimeos.net/embed-m6jx4f7evu1x.html",
+            "hostName": "vimeos.net",
+            "resolvedDirectUrl": "https://p6.vimeos.zip/hls2/03/00012/zjpr6midwvkm_,n,h,.urlset/master.m3u8?t=nNrhXFC3_teEyEUoIgoG-R9UzctVLTbc4G0WqHk9Po4&s=1788642477&e=43200&v=348136611&srv=s9&i=0.0&sp=0&fr=zjpr6midwvkm&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 473,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/l2mzvp477j8x",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-dkhqrw9wpcgt.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://enc11.goodstream.one/hls2/01/00099/p512vi4hu8js_,l,n,h,x,.urlset/master.m3u8?t=vMnRMD0W_926_DqUyocuRd3nQUo3vXrx6g7yKjdcvYQ&s=1788642479&e=43200&v=382358351&srv=enc5&i=0.3&sp=0&fr=p512vi4hu8js",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 613,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "tubepelis",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 5,
+    "totalServersDirect": 5,
+    "averageLatencyMs": 619,
+    "works": [
+      {
+        "workId": "mtmdmsm4jj0bmc9j",
+        "title": "El final de la Calle Oak",
+        "category": "movie",
+        "locatorUrl": "https://www.tubepelis.com/pelicula/4667/el-final-de-oak-street.html",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/06/11834/euoy2mtnyqh2_x/master.m3u8?t=qMjY-ARycssexuHpWDwBgsiRnr-KjyNdB3FvGOoCOpg&s=1788642481&e=10800&f=59170228&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/06/11834/euoy2mtnyqh2_x/master.m3u8?t=qMjY-ARycssexuHpWDwBgsiRnr-KjyNdB3FvGOoCOpg&s=1788642481&e=10800&f=59170228&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 589,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtmdluizisdg8ysp",
+        "title": "Yellow Mirror",
+        "category": "movie",
+        "locatorUrl": "https://www.tubepelis.com/pelicula/4705/los-simpson-yellow-mirror.html",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/04/11908/kwc180pgkypc_x/master.m3u8?t=9jTLZcw17YFiRd-YNt3V-A0lyb_O5HffCEN0vOl9jnY&s=1788642482&e=10800&f=59543322&srv=1050&asn=174&sp=5500&p=0",
+            "hostName": "edge1-madrid-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/04/11908/kwc180pgkypc_x/master.m3u8?t=9jTLZcw17YFiRd-YNt3V-A0lyb_O5HffCEN0vOl9jnY&s=1788642482&e=10800&f=59543322&srv=1050&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 820,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtmdllpi95oz9rfq",
+        "title": "MOBILE SUIT GUNDAM HATHAWAY The Sorcery of Nymph Circe",
+        "category": "movie",
+        "locatorUrl": "https://www.tubepelis.com/pelicula/4742/mobile-suit-gundam-hathaway-el-hechizo-de-una-ninfa.html",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/07/11936/06wdr4ejujp6_x/master.m3u8?t=VwpubAZIuib8hWi8u5FKbIymI5oDaojAa17SUmNszkk&s=1788642484&e=10800&f=59681782&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-moscow-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/07/11936/06wdr4ejujp6_x/master.m3u8?t=VwpubAZIuib8hWi8u5FKbIymI5oDaojAa17SUmNszkk&s=1788642484&e=10800&f=59681782&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 726,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt7ro6p400863qu5wdo6xdl5",
+        "title": "Nando entre dos mundos",
+        "category": "movie",
+        "locatorUrl": "https://www.tubepelis.com/pelicula/4644/nando-entre-dos-mundos-una-pelicula-de-sintonia.html",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/01/11809/z1h1g6jl2gfn_x/master.m3u8?t=LMY7eeHhBMH1Vam5BksWYBgSEmEZZVzOZonUYp9kzMI&s=1788642485&e=10800&f=59047862&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-madrid-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/01/11809/z1h1g6jl2gfn_x/master.m3u8?t=LMY7eeHhBMH1Vam5BksWYBgSEmEZZVzOZonUYp9kzMI&s=1788642485&e=10800&f=59047862&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 179,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mt9maotqhticgohx",
+        "title": "Supergirl: Woman of Tomorrow",
+        "category": "movie",
+        "locatorUrl": "https://www.tubepelis.com/pelicula/4491/supergirl-woman-of-tomorrow.html",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11725/tq1egk50n16t_x/master.m3u8?t=mIeuouTpVX-PmufpQp5iMnP9bv5r4l3vHZdwmLgAMds&s=1788642486&e=10800&f=58628413&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11725/tq1egk50n16t_x/master.m3u8?t=mIeuouTpVX-PmufpQp5iMnP9bv5r4l3vHZdwmLgAMds&s=1788642486&e=10800&f=58628413&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 779,
+            "isHlsOrMp4": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "tioplus",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 30,
+    "totalServersDirect": 6,
+    "averageLatencyMs": 700,
+    "works": [
+      {
+        "workId": "cmt7rnts0005u3qu5bk3a7cxk",
+        "title": "La captura",
+        "category": "movie",
+        "locatorUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/vplf3hxobboq_,l,n,h,.urlset/master.m3u8?t=wncHfQkYEfyV7_D-53hwfRJm1BFxo_dEcsuWPhz_eZA&s=1787608019&e=129600&f=42786965&srv=KurDwBvf3IESNvT&i=0.4&sp=500&p1=KurDwBvf3IESNvT&p2=KurDwBvf3IESNvT&asn=174",
+        "serversCount": 4,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/vplf3hxobboq_,l,n,h,.urlset/master.m3u8?t=ZvCuD41hlYH_O66on-VUGWdF3BFULAEFWQoQSK18IJk&s=1787609544&e=129600&f=42786965&srv=KurDwBvf3IESNvT&i=0.4&sp=500&p1=KurDwBvf3IESNvT&p2=KurDwBvf3IESNvT&asn=174",
+            "hostName": "yxqc9c2vqj7vepbl.acek-cdn.com",
+            "resolvedDirectUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/vplf3hxobboq_,l,n,h,.urlset/master.m3u8?t=ZvCuD41hlYH_O66on-VUGWdF3BFULAEFWQoQSK18IJk&s=1787609544&e=129600&f=42786965&srv=KurDwBvf3IESNvT&i=0.4&sp=500&p1=KurDwBvf3IESNvT&p2=KurDwBvf3IESNvT&asn=174",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 719,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://vidara.to/e/MTRL12p12Dc59",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/ver/la-captura/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/zyiqcp2olcxr",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/03/11846/zyiqcp2olcxr_x/master.m3u8?t=rNg6dCEEva4faIKrBnPevEN-yM71Nyfyssz0M_XUyYU&s=1788642491&e=10800&f=59233076&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 646,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rnuuw00633qu50x9o2d6o",
+        "title": "Engendro",
+        "category": "movie",
+        "locatorUrl": "https://1hyahuweWHyVWmq.acek-cdn.com/hls2/01/08557/96f7oqqryybs_,l,n,h,.urlset/master.m3u8?t=oeAbpwLSWVrFLyuDnL8XguVDZJuXQOWywqV2RvnxOwc&s=1787608021&e=129600&f=42786961&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+        "serversCount": 5,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://1hyahuweWHyVWmq.acek-cdn.com/hls2/01/08557/96f7oqqryybs_,l,n,h,.urlset/master.m3u8?t=rP9pcXSGx622ejJPC8OCyjRm7Jo8p0Bkimo2yH_ZPvY&s=1787609542&e=129600&f=42786961&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+            "hostName": "1hyahuwewhyvwmq.acek-cdn.com",
+            "resolvedDirectUrl": "https://1hyahuweWHyVWmq.acek-cdn.com/hls2/01/08557/96f7oqqryybs_,l,n,h,.urlset/master.m3u8?t=rP9pcXSGx622ejJPC8OCyjRm7Jo8p0Bkimo2yH_ZPvY&s=1787609542&e=129600&f=42786961&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 728,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://vidaraa.cc/e/wWTNQ3sgcOStb",
+            "hostName": "vidaraa.cc",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/ver/engendro/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/7zib2ewluvia",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/02/11748/7zib2ewluvia_x/master.m3u8?t=JkXYLmlH5MrNqyINJnVDi2SvUEWU88_SoKdNx3xJQLM&s=1788642495&e=10800&f=58743438&srv=1050&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 675,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/15176827800148",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rnvxe006a3qu5llpivp1d",
+        "title": "Regreso a los 90",
+        "category": "movie",
+        "locatorUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/9jh53g0838bl_,l,n,.urlset/master.m3u8?t=FN_YIZlncIYV96-hXi_OS1_8hwiWy_9_Pa_iGbhkf0c&s=1787608022&e=129600&f=42786958&srv=Z8VeXJnplmoxw&i=0.4&sp=500&p1=Z8VeXJnplmoxw&p2=Z8VeXJnplmoxw&asn=174",
+        "serversCount": 9,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/9jh53g0838bl_,l,n,.urlset/master.m3u8?t=uwlkvxq09JWyrdfj5OqQICQsnGKiUR1AaGMPUxPWseo&s=1787609543&e=129600&f=42786958&srv=Z8VeXJnplmoxw&i=0.4&sp=500&p1=Z8VeXJnplmoxw&p2=Z8VeXJnplmoxw&asn=174",
+            "hostName": "yxqc9c2vqj7vepbl.acek-cdn.com",
+            "resolvedDirectUrl": "https://yXqC9C2Vqj7VEPBl.acek-cdn.com/hls2/01/08557/9jh53g0838bl_,l,n,.urlset/master.m3u8?t=uwlkvxq09JWyrdfj5OqQICQsnGKiUR1AaGMPUxPWseo&s=1787609543&e=129600&f=42786958&srv=Z8VeXJnplmoxw&i=0.4&sp=500&p1=Z8VeXJnplmoxw&p2=Z8VeXJnplmoxw&asn=174",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 723,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://vidara.to/e/ep35LHwYIKNns",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/ziyelcj4pzsz",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11846/ziyelcj4pzsz_x/master.m3u8?t=JKe0ZJOh2T1saFgepPvNf8AnmcqhDcegCusEvaBbbjk&s=1788642499&e=10800&f=59234434&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 733,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://savefiles.com/e/il567vxrmptl",
+            "hostName": "savefiles.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/rd6nivgupuov",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/nhvcgpfuia8o",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://vidara.to/e/f3CtRBgzvtRHc",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/47atvv19red9",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/08/11846/47atvv19red9_x/master.m3u8?t=pMsrIOCpeA5i7QD2JL-Q0v5M2ke4FST7Pd70dQLN00Q&s=1788642502&e=10800&f=59234358&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 788,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://savefiles.com/e/yo6o8s3xr9i1",
+            "hostName": "savefiles.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rnx0i006f3qu5xthpjosg",
+        "title": "Girls Like Girls",
+        "category": "movie",
+        "locatorUrl": "https://wt4PjIIVE9AGjPL.dramiyos-cdn.com/hls2/01/08557/oj9g4slz0oo6_,l,n,h,.urlset/master.m3u8?t=xWEeNTuDGhoophKiUIlmTLJVxRIC8cNMw5SbpQax1fk&s=1787608020&e=129600&f=42786935&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+        "serversCount": 6,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://wt4PjIIVE9AGjPL.dramiyos-cdn.com/hls2/01/08557/oj9g4slz0oo6_,l,n,h,.urlset/master.m3u8?t=v46Z3Q4bLnjUcfOB0MhtzD6QmFzkIGU5-gV8c1QfrW0&s=1787609542&e=129600&f=42786935&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+            "hostName": "wt4pjiive9agjpl.dramiyos-cdn.com",
+            "resolvedDirectUrl": "https://wt4PjIIVE9AGjPL.dramiyos-cdn.com/hls2/01/08557/oj9g4slz0oo6_,l,n,h,.urlset/master.m3u8?t=v46Z3Q4bLnjUcfOB0MhtzD6QmFzkIGU5-gV8c1QfrW0&s=1787609542&e=129600&f=42786935&srv=LFDu7HStkKAt&i=0.4&sp=500&p1=LFDu7HStkKAt&p2=LFDu7HStkKAt&asn=174",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 595,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://vidara.to/e/g6hKsqnVMDw1Y",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/ver/girls-like-girls/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/b9gaetec0qgx",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/5sk72j1y46o8",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/02/11678/5sk72j1y46o8_x/master.m3u8?t=sTqR5PtPr1IwrAfqUKaqWnG6JFJy1LlUIj2tQHF5s-k&s=1788642508&e=10800&f=58393367&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 659,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://dtpg.rpmplay.xyz/#9gqdyg",
+            "hostName": "dtpg.rpmplay.xyz",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7rnxz9006m3qu52vwvd0xe",
+        "title": "Islas",
+        "category": "movie",
+        "locatorUrl": "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08557/9ooufglnjg3h_,l,n,h,.urlset/master.m3u8?t=iSc9l8m0tGsAhKD9l72g_nETNM0qCdEaUAbqzL6u4Ro&s=1787608024&e=129600&f=42786926&srv=5TICbOQKpSaA&i=0.4&sp=500&p1=5TICbOQKpSaA&p2=5TICbOQKpSaA&asn=174",
+        "serversCount": 6,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08557/9ooufglnjg3h_,l,n,h,.urlset/master.m3u8?t=ouzBSUkKtcBQImvWCHRP7iVbJYcyHeM-vFjLolRLYEc&s=1787609547&e=129600&f=42786926&srv=5TICbOQKpSaA&i=0.4&sp=500&p1=5TICbOQKpSaA&p2=5TICbOQKpSaA&asn=174",
+            "hostName": "o5czhgnohwluyzcb.acek-cdn.com",
+            "resolvedDirectUrl": "https://O5czhGNoHwluyZCb.acek-cdn.com/hls2/01/08557/9ooufglnjg3h_,l,n,h,.urlset/master.m3u8?t=ouzBSUkKtcBQImvWCHRP7iVbJYcyHeM-vFjLolRLYEc&s=1787609547&e=129600&f=42786926&srv=5TICbOQKpSaA&i=0.4&sp=500&p1=5TICbOQKpSaA&p2=5TICbOQKpSaA&asn=174",
+            "isDirect": true,
+            "httpStatus": 403,
+            "contentType": "text/html; charset=utf-8",
+            "latencyMs": 578,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/0bnujmu1w5pu",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-madrid-sprintcdn.r66nv9ed.com/hls2/05/11873/0bnujmu1w5pu_x/master.m3u8?t=LhVjAqc0MOK6f3UeXD6PnwP_7S71iDaMUSskZ28nDG4&s=1788642510&e=10800&f=59367579&srv=1055&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 697,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://vidara.to/e/3lys234Np3xuj",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://savefiles.com/e/mdzf13oehncz",
+            "hostName": "savefiles.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/ovibrowjx50v",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://player.gnulahd.nu/embed.php?id=1fbeeb866fa7f910a4b0aa445eec02fc300cd53d",
+            "hostName": "player.gnulahd.nu",
+            "resolvedDirectUrl": "https://megaup.net/fdfd4c72d749800cb788e934f108f60d/VGhlLk91dHJ1bi4yMDI0.VOSE.mp4",
+            "isDirect": true,
+            "httpStatus": 404,
+            "contentType": "text/html; charset=UTF-8",
+            "latencyMs": 502,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "lamovie",
+    "totalWorksTested": 5,
+    "worksPassedNative": 4,
+    "totalServersTested": 26,
+    "totalServersDirect": 4,
+    "averageLatencyMs": 1266,
+    "works": [
+      {
+        "workId": "cmt7svn9v006qar5br86kpy7z",
+        "title": "Bloodshot",
+        "category": "movie",
+        "locatorUrl": "https://lamovie.org/peliculas/bloodshot-2020/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/ver/bloodshot/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7svnum006xar5bcgqq2ds7",
+        "title": "10 cosas que odio de ti",
+        "category": "movie",
+        "locatorUrl": "https://lamovie.org/peliculas/10-cosas-que-odio-de-ti-1999/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://enc12.goodstream.one/hls2/02/00008/v4hjikwlwqps_,l,n,h,x,.urlset/master.m3u8?t=jOl8Zw93us0w5vnPeFHy-tkcADreYAhLBnXCiG7FLXg&s=1788642520&e=43200&v=382343006&srv=s1&i=0.3&sp=0",
+            "hostName": "enc12.goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/02/00008/v4hjikwlwqps_,l,n,h,x,.urlset/master.m3u8?t=jOl8Zw93us0w5vnPeFHy-tkcADreYAhLBnXCiG7FLXg&s=1788642520&e=43200&v=382343006&srv=s1&i=0.3&sp=0",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6007,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://p4.vimeos.zip/hls2/03/00000/ds8dejl06j9m_,n,h,.urlset/master.m3u8?t=tg3_Ex-dz5HoSxZZXsmO9KbVUbWlbRKkcDnEu1N7Ai4&s=1788642521&e=43200&v=348111619&srv=s10&i=0.0&sp=0&r=e",
+            "hostName": "p4.vimeos.zip",
+            "resolvedDirectUrl": "https://p4.vimeos.zip/hls2/03/00000/ds8dejl06j9m_,n,h,.urlset/master.m3u8?t=tg3_Ex-dz5HoSxZZXsmO9KbVUbWlbRKkcDnEu1N7Ai4&s=1788642521&e=43200&v=348111619&srv=s10&i=0.0&sp=0&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 504,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-v4hjikwlwqps.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/02/00008/v4hjikwlwqps_,l,n,h,x,.urlset/master.m3u8?t=miAi_pjzo3dNMl-RIZb8T4Xb6S-9q4C0Iutpm83NJ-k&s=1788642529&e=43200&v=382343006&srv=s1&i=0.3&sp=0",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6010,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://hlswish.com/e/jq7quesn5mdw",
+            "hostName": "hlswish.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/gbaypnomsjcl",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://filemoon.sx/e/6ebw674w2d8w",
+            "hostName": "filemoon.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/P1ozUQJA#Vz6i82I7cHu0h2dApX0IkKyswR9ViPPAVVYMF8JA9fQ",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FP1ozUQJA%23Vz6i82I7cHu0h2dApX0IkKyswR9ViPPAVVYMF8JA9fQ",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7svokb0074ar5bjt2v5yiz",
+        "title": "Paprika: El reino de los sueños",
+        "category": "movie",
+        "locatorUrl": "https://lamovie.org/peliculas/paprika-el-reino-de-los-suenos-2006/",
+        "serversCount": 7,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://enc12.goodstream.one/hls2/02/00012/z7x14yq6rmcp_,l,n,h,x,.urlset/master.m3u8?t=ayhmo402_h1IbstFLDiZCyLtvcN-Q_qHv6tAEsYnkuw&s=1788642548&e=43200&v=382343382&srv=s1&i=0.3&sp=0",
+            "hostName": "enc12.goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/02/00012/z7x14yq6rmcp_,l,n,h,x,.urlset/master.m3u8?t=ayhmo402_h1IbstFLDiZCyLtvcN-Q_qHv6tAEsYnkuw&s=1788642548&e=43200&v=382343382&srv=s1&i=0.3&sp=0",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6008,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://s9.vimeos.net/hls2/02/00003/i0x5pvtxb0h0_,n,h,.urlset/master.m3u8?t=q7Q4IbEFekQ-t4Q9aXA1jVYxI16jXg45Tp5g694Q8Hc&s=1788642548&e=43200&v=348112338&i=0.0&sp=0&r=e",
+            "hostName": "s9.vimeos.net",
+            "resolvedDirectUrl": "https://s9.vimeos.net/hls2/02/00003/i0x5pvtxb0h0_,n,h,.urlset/master.m3u8?t=q7Q4IbEFekQ-t4Q9aXA1jVYxI16jXg45Tp5g694Q8Hc&s=1788642548&e=43200&v=348112338&i=0.0&sp=0&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 483,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://hlswish.com/e/m4enb5vxvvbv",
+            "hostName": "hlswish.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/gyto9tfssu2p",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://filemoon.sx/e/5dcab1z1s7pr",
+            "hostName": "filemoon.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-q4qn07jpnk3b.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": "https://enc12.goodstream.one/hls2/02/00012/z7x14yq6rmcp_,l,n,h,x,.urlset/master.m3u8?t=xwD_Kr1YkgKa0jDCpdJKEpmM4uFf1Quabwcu735ITig&s=1788642559&e=43200&v=382343382&srv=s1&i=0.3&sp=0",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6001,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/BSVEVQYB#GLV2JtfDFH3KR3PHommesvVOZSP3Jwu2cUfHkBsybsQ",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FBSVEVQYB%23GLV2JtfDFH3KR3PHommesvVOZSP3Jwu2cUfHkBsybsQ",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6013,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "cmt7svp46007bar5br57w8l12",
+        "title": "No es más que el fin del mundo",
+        "category": "movie",
+        "locatorUrl": "https://lamovie.org/peliculas/no-es-mas-que-el-fin-del-mundo-2016/",
+        "serversCount": 5,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://s10.vimeos.net/hls2/03/00000/csovh3k7xp8m_h/master.m3u8?t=lwtsZJZgBdhvMjuaYFSG5lYyAmZlbUw-yunnJ7wwnps&s=1788642576&e=43200&v=348138432&i=0.0&sp=0&r=e",
+            "hostName": "s10.vimeos.net",
+            "resolvedDirectUrl": "https://s10.vimeos.net/hls2/03/00000/csovh3k7xp8m_h/master.m3u8?t=lwtsZJZgBdhvMjuaYFSG5lYyAmZlbUw-yunnJ7wwnps&s=1788642576&e=43200&v=348138432&i=0.0&sp=0&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 545,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-q3kmakyti346.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://hlswish.com/e/3wx1az8j9kv4",
+            "hostName": "hlswish.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/mhg9inw2zt1z",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://filemoon.sx/e/e7abweo1p5tz",
+            "hostName": "filemoon.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt7svpqr007iar5bzrd1bh3p",
+        "title": "Enemigo de todos",
+        "category": "movie",
+        "locatorUrl": "https://lamovie.org/peliculas/enemigo-de-todos-2016/",
+        "serversCount": 6,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://s13.vimeos.net/hls2/03/00000/hawvs6coil9k_h/master.m3u8?t=jtfKaNWoQjzPhk2W5UFtKuhHuthw9sS9rfZ8BT2myno&s=1788642597&e=43200&v=348138593&i=0.0&sp=0&r=e",
+            "hostName": "s13.vimeos.net",
+            "resolvedDirectUrl": "https://s13.vimeos.net/hls2/03/00000/hawvs6coil9k_h/master.m3u8?t=jtfKaNWoQjzPhk2W5UFtKuhHuthw9sS9rfZ8BT2myno&s=1788642597&e=43200&v=348138593&i=0.0&sp=0&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 3531,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://goodstream.one/embed-9a3uxhkkjuds.html",
+            "hostName": "goodstream.one",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://hlswish.com/e/ksr17irfggn2",
+            "hostName": "hlswish.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://voe.sx/e/vbsqzfkq9ahc",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://filemoon.sx/e/p3sq9fqkyh95",
+            "hostName": "filemoon.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://mega.nz/embed/LtJBjZIB#x-mKy8GKA6SQ31Jw73VrW2GBdO381XfpkczC0JZs3HE",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FLtJBjZIB%23x-mKy8GKA6SQ31Jw73VrW2GBdO381XfpkczC0JZs3HE",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6002,
+            "isHlsOrMp4": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "gnula",
+    "totalWorksTested": 5,
+    "worksPassedNative": 4,
+    "totalServersTested": 22,
+    "totalServersDirect": 7,
+    "averageLatencyMs": 670,
+    "works": [
+      {
+        "workId": "mt8xtty8c77vzb3f",
+        "title": "¡Asu Mare! 2",
+        "category": "movie",
+        "locatorUrl": "https://ww3.gnulahd.nu/ver/asu-mare-2/",
+        "serversCount": 3,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://bysevepoin.com/e/xlmi2p45vihh",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/05/10986/xlmi2p45vihh_x/master.m3u8?t=raGN3Qaeu16nzM_SWLPqCjCjPhwlob3mutdu5gOrtmo&s=1788642617&e=10800&f=54930778&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 712,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/prsjflsjau8h",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/12655546337907",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": "https://vd336.okcdn.ru/video.m3u8?cmd=videoPlayerCdn\\u0026expires=1788729018950\\u0026srcIp=38.224.239.37\\u0026pr=10\\u0026srcAg=CHROME\\u0026ch=-1946753598\\u0026ms=185.180.203.83\\u0026type=2\\u0026sig=O7ZTcj-FxMo\\u0026ct=8\\u0026urls=95.163.35.44\\u0026clientType=0\\u0026zs=43\\u0026id=12138239756915",
+            "isDirect": true,
+            "httpStatus": 400,
+            "contentType": "",
+            "latencyMs": 753,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mt8x86hkbxtkk345",
+        "title": "¡Asu Mare! 3",
+        "category": "movie",
+        "locatorUrl": "https://ww3.gnulahd.nu/ver/asu-mare-3/",
+        "serversCount": 3,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://bysevepoin.com/e/abp31fd1xpk4",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/10986/abp31fd1xpk4_x/master.m3u8?t=lC047Bpib1mCz0DHopMbi6Q9gba-u5zwHGWGzcY6-tM&s=1788642621&e=10800&f=54930883&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 699,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/zszu4bygpxt5",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/12655742421619",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": "https://vd593.okcdn.ru/video.m3u8?cmd=videoPlayerCdn\\u0026expires=1788729023150\\u0026srcIp=38.224.239.37\\u0026pr=10\\u0026srcAg=CHROME\\u0026ch=-1362258494\\u0026ms=185.226.55.113\\u0026type=2\\u0026sig=JahJmXBN1jM\\u0026ct=8\\u0026urls=95.163.35.86\\u0026clientType=0\\u0026zs=43\\u0026id=12138409626227",
+            "isDirect": true,
+            "httpStatus": 400,
+            "contentType": "",
+            "latencyMs": 754,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mt8wec09qkgl6axw",
+        "title": "¡Ánimo Juventud!",
+        "category": "movie",
+        "locatorUrl": "https://ww3.gnulahd.nu/ver/animo-juventud/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://waaw.to/f/bQOcTy3zEnPm",
+            "hostName": "waaw.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt8or6ys27nhv1vf8ph5zen2",
+        "title": "¡Armados!",
+        "category": "movie",
+        "locatorUrl": "https://ww3.gnulahd.nu/ver/armados/",
+        "serversCount": 6,
+        "nativePlayableServersCount": 2,
+        "servers": [
+          {
+            "rawUrl": "https://bysevepoin.com/e/hbyh3z664i0f",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/09/09607/hbyh3z664i0f_x/master.m3u8?t=UNlc5J_D7nalpJ96mYJEvkiS9eXf4ndm754J8YyxilY&s=1788642627&e=10800&f=48035391&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 773,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/avashyx3g4wk",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://gdtvid.p2pplay.pro/#ubva9",
+            "hostName": "gdtvid.p2pplay.pro",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/itogdsb8r1gy",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/09/09607/itogdsb8r1gy_x/master.m3u8?t=VpLJqNm8-cNFngrYfbrTSax93iMEUmhJhjeAw_RRpaU&s=1788642629&e=10800&f=48035423&srv=1050&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 738,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/zkrmxgkv8k54",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://gdtvid.p2pplay.pro/#pm1jo",
+            "hostName": "gdtvid.p2pplay.pro",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmt8pldy20113wczblxapk0r1",
+        "title": "¡Ayuda!",
+        "category": "movie",
+        "locatorUrl": "https://ww3.gnulahd.nu/ver/ayuda/",
+        "serversCount": 9,
+        "nativePlayableServersCount": 3,
+        "servers": [
+          {
+            "rawUrl": "https://bysevepoin.com/e/8almof0wrc19",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/04/11004/8almof0wrc19_x/master.m3u8?t=8O9LR9eV9PxW0Qo7c9ulM_0s9X49taVzZsVtCvTHoVo&s=1788642632&e=10800&f=55020445&srv=1075&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 760,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/ulgonby7swws",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/12759926770291",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/2jkiw5aponla",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/07/11006/2jkiw5aponla_x/master.m3u8?t=brHFlNOlpon9j-N339OzWz_6j3Zg24F4U9nSxuliH7o&s=1788642637&e=10800&f=55031346&srv=1055&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 739,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/pxjb11x4mpvt",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/12776974125683",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://bysevepoin.com/e/uyfih06y6xb7",
+            "hostName": "bysevepoin.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/10/11004/uyfih06y6xb7_x/master.m3u8?t=l_k3shLi-pd4GA4v4J4HWSQapUt7BiIbeNlLpr0Q7n0&s=1788642640&e=10800&f=55020441&srv=1075&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 267,
+            "isHlsOrMp4": true
+          },
+          {
+            "rawUrl": "https://voe.sx/e/ojwpwtknl3oo",
+            "hostName": "voe.sx",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          },
+          {
+            "rawUrl": "https://ok.ru/videoembed/12776597424755",
+            "hostName": "ok.ru",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "doramasflix",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 5,
+    "totalServersDirect": 5,
+    "averageLatencyMs": 589,
+    "works": [
+      {
+        "workId": "mt8r5psek1nninyi",
+        "title": "Vampire Hunter D: Bloodlust",
+        "category": "movie",
+        "locatorUrl": "https://doramasflix.io/capitulos/a-trap-called-desire-1x3",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11886/c3bmm1seyjmh_x/master.m3u8?t=EtiwklPVl1oVf1KuRWKcWL8UMHwfp3LHHkFPIFNC5Jo&s=1788642643&e=10800&f=59433109&srv=1065&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/01/11886/c3bmm1seyjmh_x/master.m3u8?t=EtiwklPVl1oVf1KuRWKcWL8UMHwfp3LHHkFPIFNC5Jo&s=1788642643&e=10800&f=59433109&srv=1065&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 690,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtbxrrew4dsmk7ez",
+        "title": "The Early Spring",
+        "category": "series",
+        "locatorUrl": "https://doramasflix.io/capitulos/the-early-spring-1x8",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/01/11894/00ctw0r7pm0h_x/master.m3u8?t=ZeUwi3vDE8IfwNOGFyt5rzXKafayr_8dDGokHO6ng2I&s=1788642649&e=10800&f=59474651&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-frankfurt-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-frankfurt-sprintcdn.owphbf24.com/hls2/01/11894/00ctw0r7pm0h_x/master.m3u8?t=ZeUwi3vDE8IfwNOGFyt5rzXKafayr_8dDGokHO6ng2I&s=1788642649&e=10800&f=59474651&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 632,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtbxvnl9yv96ukhh",
+        "title": "Remnants of Gold",
+        "category": "series",
+        "locatorUrl": "https://doramasflix.io/capitulos/remnants-of-gold-1x2",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/06/11894/9g77oyzlinli_x/master.m3u8?t=No0vbTDmp_jwLycwx3l5VknuhR0AC70NiqU3KL3Vl2U&s=1788642656&e=10800&f=59474751&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge1-moscow-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/06/11894/9g77oyzlinli_x/master.m3u8?t=No0vbTDmp_jwLycwx3l5VknuhR0AC70NiqU3KL3Vl2U&s=1788642656&e=10800&f=59474751&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 646,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmt8oulw601ve7cprav648h42",
+        "title": "Zom 100: Bucket List of the Dead",
+        "category": "anime",
+        "locatorUrl": "https://doramasflix.io/capitulos/physical-100-1x8",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://strm5.uqload.vc/hls2/04/01984/z2kfj9dvjuaw_n/master.m3u8?t=I0PxmUD_rXe-Y3MQjhBbpCSawdwytyhhQIdIwO8UiC8&s=1788642662&e=43200&v=3088596&i=0.0&sp=0",
+            "hostName": "strm5.uqload.vc",
+            "resolvedDirectUrl": "https://strm5.uqload.vc/hls2/04/01984/z2kfj9dvjuaw_n/master.m3u8?t=I0PxmUD_rXe-Y3MQjhBbpCSawdwytyhhQIdIwO8UiC8&s=1788642662&e=43200&v=3088596&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 420,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtmbvwa2bt1vs1a8",
+        "title": "Mean No Harm",
+        "category": "series",
+        "locatorUrl": "https://doramasflix.io/capitulos/mean-no-harm-1x4",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://strm7.uqload.vc/hls2/03/01272/kar5j3er6ysw_n/master.m3u8?t=cfH-e0vbLXxDNNvRgMvZh09xede-sc5TWNY08dnZsPA&s=1788642664&e=43200&v=3019348&i=0.0&sp=0",
+            "hostName": "strm7.uqload.vc",
+            "resolvedDirectUrl": "https://strm7.uqload.vc/hls2/03/01272/kar5j3er6ysw_n/master.m3u8?t=cfH-e0vbLXxDNNvRgMvZh09xede-sc5TWNY08dnZsPA&s=1788642664&e=43200&v=3019348&i=0.0&sp=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 556,
+            "isHlsOrMp4": true
+          }
+        ]
+      }
+    ]
+  }
+]

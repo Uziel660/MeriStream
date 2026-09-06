@@ -178,7 +178,9 @@ describe("15 Real Works Playback & Delivery Verification Suite", () => {
         expect(session.id).toBeDefined();
         expect(session.current.url).toBe(meta.url);
       }
-    }, 15000);
+    // Las fichas reales dependen de proveedores externos; 15 s provocaba
+    // falsos negativos cuando Cinecalidad tardaba unos milisegundos más.
+    }, 30000);
   }
 
   it("real probe on direct HLS stream (Mux) downloads manifest and parses variants", async () => {

@@ -4,6 +4,7 @@ import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalo
 import { EmbedResolvers } from "../../resolvers";
 import { VimeosResolver } from "../vimeosResolver";
 import { MediaValidator } from "../../validator";
+import { familyKeyOfStreamUrl } from "../../utils/streamSorter";
 
 const BASE_URL = "https://www.cinecalidad.am";
 
@@ -177,10 +178,14 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const poster_url = posterRaw ? this.resolveRelativeUrl(posterRaw, url) : undefined;
 
     const genres: string[] = [];
-    $('a[href*="/genero-de-la-pelicula/"]').each((_, g) => {
+    $('.single_post_cat a, .custom_post_cat a, .meta-genre a, article a[href*="/genero-de-la-pelicula/"]').each((_, g) => {
       const genre = $(g).text().trim();
       if (genre && !genres.includes(genre)) genres.push(genre);
     });
+    // Si capturó el menú global completo (>8 géneros), acotar para evitar contaminar categorías
+    const finalGenres = genres.length > 8
+      ? genres.filter(g => !/^(anime|animación|dc comics|marvel|multimedia)$/i.test(g)).slice(0, 3)
+      : genres;
 
     const ratingMatch =
       html.match(/class="rating">\s*([\d.,]+)\s*</i) ||
@@ -212,7 +217,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       year,
       original_title: originalTitle || undefined,
       tmdb_id: tmdbMatch ? parseInt(tmdbMatch[1], 10) : undefined,
-      genres,
+      genres: finalGenres,
       duration: durationMatch ? durationMatch[1] : null,
       content_type: this.kindFromUrl(url),
     };
@@ -236,20 +241,52 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
 
       const fullUrl = this.resolveRelativeUrl(href, baseUrl);
       const numerando = $li.find(".numerando").first().text().trim();
-      const numMatch = numerando.match(/E\s*(\d+)/i) || fullUrl.match(/-(\d+)x(\d+)\/?$/);
-      const number = numMatch ? parseInt(numMatch[numMatch.length - 1], 10) : episodes.length + 1;
+      let parsedSeason = 1;
+      let parsedNumber = episodes.length + 1;
+
+      // 1. Probar numerando (ej: "5 - 1", "5x1", "T5 E1", "S05E01")
+      const numSeasonMatch = numerando.match(/(?:T|S|Temporada\s*)?(\d+)\s*(?:[-xXEe]|\s+E|\s+Capitulo)\s*(\d+)/i);
+      if (numSeasonMatch) {
+        parsedSeason = parseInt(numSeasonMatch[1], 10) || 1;
+        parsedNumber = parseInt(numSeasonMatch[2], 10) || 1;
+      } else {
+        // 2. Probar slug tipo "-5x1/" o "_5x1/"
+        const slugNxM = fullUrl.match(/[-_](\d+)x(\d+)(?:\/|$)/i);
+        if (slugNxM) {
+          parsedSeason = parseInt(slugNxM[1], 10) || 1;
+          parsedNumber = parseInt(slugNxM[2], 10) || 1;
+        } else {
+          // 3. Probar slug tipo "temporada-5-episodio-1" o "episodio-1-de-temporada-5"
+          const slugTempEp = fullUrl.match(/temporada[-_](\d+).*?(?:episodio|capitulo)[-_](\d+)/i);
+          const slugEpTemp = fullUrl.match(/(?:episodio|capitulo)[-_](\d+).*?temporada[-_](\d+)/i);
+          if (slugTempEp) {
+            parsedSeason = parseInt(slugTempEp[1], 10) || 1;
+            parsedNumber = parseInt(slugTempEp[2], 10) || 1;
+          } else if (slugEpTemp) {
+            parsedSeason = parseInt(slugEpTemp[2], 10) || 1;
+            parsedNumber = parseInt(slugEpTemp[1], 10) || 1;
+          } else {
+            const singleNum = numerando.match(/E\s*(\d+)/i) || numerando.match(/(\d+)/);
+            if (singleNum) {
+              parsedNumber = parseInt(singleNum[1], 10) || (episodes.length + 1);
+            }
+          }
+        }
+      }
+
       const linkText = $a.text().replace(/\s+/g, " ").trim();
 
       episodes.push({
-        number,
-        title: linkText || `Episodio ${number}`,
+        number: parsedNumber,
+        season: parsedSeason,
+        title: linkText || `Temporada ${parsedSeason} - Episodio ${parsedNumber}`,
         url: fullUrl,
         source_type: this.id,
         server_name: "Cinecalidad",
       });
     });
 
-    return episodes.sort((a, b) => a.number - b.number);
+    return episodes.sort((a, b) => (a.season || 1) - (b.season || 1) || a.number - b.number);
   }
 
   /**
@@ -540,7 +577,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const cleanUrl = targetUrl.trim();
     const html = await this.fetchHtml(cleanUrl, 12000);
     if (!html) {
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const $ = cheerio.load(html);
@@ -567,10 +604,10 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       const cleanStreams = generic.all_available_streams.filter((u) => !this.isJunkUrl(u));
       const genericStreamUrl = cleanStreams.includes(generic.stream_url)
         ? generic.stream_url
-        : cleanStreams[0] || cleanUrl;
+        : cleanStreams[0] || "";
       return {
         stream_url: genericStreamUrl,
-        all_available_streams: cleanStreams.length > 0 ? cleanStreams : [cleanUrl],
+        all_available_streams: cleanStreams,
         title,
       };
     }
@@ -578,7 +615,11 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const resolutions = await Promise.all(
       candidates.map(async (candidate) => {
         try {
-          return { candidate, resolved: await EmbedResolvers.resolve(candidate) };
+          const timeoutPromise = new Promise<{ candidate: string; resolved: string }>((resolve) =>
+            setTimeout(() => resolve({ candidate, resolved: "" }), 4500)
+          );
+          const resolvePromise = EmbedResolvers.resolve(candidate).then((resolved) => ({ candidate, resolved }));
+          return await Promise.race([resolvePromise, timeoutPromise]);
         } catch {
           return { candidate, resolved: "" };
         }
@@ -587,8 +628,11 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
 
     const rawResolvedList: string[] = [];
     for (const { candidate, resolved } of resolutions) {
-      if (resolved && !rawResolvedList.includes(resolved)) rawResolvedList.push(resolved);
-      if (!rawResolvedList.includes(candidate)) rawResolvedList.push(candidate);
+      if (resolved && !rawResolvedList.includes(resolved)) {
+        rawResolvedList.push(resolved);
+      } else if (!resolved && !rawResolvedList.includes(candidate)) {
+        rawResolvedList.push(candidate);
+      }
     }
 
     // EmbedResolvers puede devolver el embed de vimeos sin resolver: re-aplicar
@@ -598,14 +642,19 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const validated = await MediaValidator.validateUrls(resolvedList);
     const usableValidated = validated.filter((u) => !this.isJunkUrl(u));
     const directMedia = usableValidated.filter((u) => /\.(m3u8|mp4|webm)(\?|$)/i.test(u));
-    const validatedEmbeds = usableValidated.filter((u) => !directMedia.includes(u));
+    const directFamilies = new Set(directMedia.map((u) => familyKeyOfStreamUrl(u)));
+
+    // Suprimir el embed crudo si ya tenemos un stream directo del mismo proveedor (ej. Vimeos, Goodstream)
+    const validatedEmbeds = usableValidated
+      .filter((u) => !directMedia.includes(u))
+      .filter((u) => !directFamilies.has(familyKeyOfStreamUrl(u)));
 
     let finalStreams: string[];
     if (directMedia.length > 0) {
       finalStreams = [
         ...directMedia,
         ...validatedEmbeds,
-        ...resolvedList.filter((u) => !usableValidated.includes(u) && !this.isJunkUrl(u)),
+        ...resolvedList.filter((u) => !usableValidated.includes(u) && !this.isJunkUrl(u) && !directFamilies.has(familyKeyOfStreamUrl(u))),
       ];
     } else if (validatedEmbeds.length > 0) {
       finalStreams = [
@@ -615,11 +664,53 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     } else {
       finalStreams = resolvedList.filter((u) => !this.isJunkUrl(u));
     }
-    finalStreams = Array.from(new Set(finalStreams)).filter((u) => /^https?:\/\//i.test(u));
+
+    // Normalizar y deduplicar Mega a un solo embed canónico por archivo
+    const seenMegaIds = new Set<string>();
+    const deduplicatedMegaStreams: string[] = [];
+    for (const u of finalStreams) {
+      if (u.includes("mega.nz/")) {
+        const m = u.match(/mega\.nz\/(?:embed\/|file\/|#!)?([A-Za-z0-9_-]{8,})/i);
+        const fileId = m ? m[1] : u;
+        if (seenMegaIds.has(fileId)) continue;
+        seenMegaIds.add(fileId);
+        if (u.includes("mega.nz/file/")) {
+          deduplicatedMegaStreams.push(u.replace("mega.nz/file/", "mega.nz/embed/"));
+        } else if (u.includes("#confirm")) {
+          continue;
+        } else {
+          deduplicatedMegaStreams.push(u);
+        }
+      } else {
+        deduplicatedMegaStreams.push(u);
+      }
+    }
+
+    finalStreams = Array.from(new Set(deduplicatedMegaStreams)).filter((u) => /^https?:\/\//i.test(u));
+
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    // 1º Mejor stream directo (HLS .m3u8 o MP4)
+    // 2º Mejor backup (segundo directo distinto o embed oficial estable tipo Mega/Vimeos)
+    const finalDirectMedia = finalStreams.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const backupEmbeds = finalStreams.filter((u) => !finalDirectMedia.includes(u));
+    
+    const topStreams: string[] = [];
+    if (finalDirectMedia.length > 0) {
+      topStreams.push(finalDirectMedia[0]);
+      if (finalDirectMedia.length > 1) {
+        topStreams.push(finalDirectMedia[1]);
+      } else if (backupEmbeds.length > 0) {
+        topStreams.push(backupEmbeds[0]);
+      }
+    } else {
+      topStreams.push(...backupEmbeds.slice(0, 2));
+    }
+
+    const resultStreams = topStreams.length > 0 ? topStreams : finalStreams.slice(0, 2);
 
     return {
-      stream_url: finalStreams[0] || cleanUrl,
-      all_available_streams: finalStreams.length > 0 ? finalStreams : [cleanUrl],
+      stream_url: resultStreams[0] || "",
+      all_available_streams: resultStreams,
       title,
     };
   }

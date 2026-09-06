@@ -64,7 +64,10 @@ export interface RankedStream {
   type: "direct" | "embed";
   tier: number;
   host: string | null;
+  /** Nombre legible opcional que entrega el endpoint JIT. */
+  provider?: string;
   source_site?: string;
+  requiredHeaders?: Record<string, string>;
   rating?: number;
   /** Provider-declared rendition label (sub/dub/audio). */
   link_type?: string;
@@ -87,6 +90,8 @@ export interface SubtitleTrack {
   label: string;
   language: string;
   url: string;
+  /** Algunos resolutores entregan `src` en vez de `url`; se normaliza en el reproductor. */
+  src?: string;
   is_default: boolean;
 }
 

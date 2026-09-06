@@ -1,10 +1,11 @@
 // src/components/AuthModal.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, User, Lock, LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 import { useAuth } from "../contexts/AuthContext";
 
 const AVATAR_OPTIONS = [
-  { id: "amber", bg: "bg-amber-500", label: "Ámbar Dorado", border: "border-amber-400" },
+  { id: "amber", bg: "bg-[#f59e0b]", label: "Ámbar Dorado", border: "border-amber-400" },
   { id: "emerald", bg: "bg-emerald-500", label: "Esmeralda", border: "border-emerald-400" },
   { id: "crimson", bg: "bg-red-600", label: "Carmesí", border: "border-red-400" },
   { id: "indigo", bg: "bg-indigo-600", label: "Índigo", border: "border-indigo-400" },
@@ -22,6 +23,14 @@ export const AuthModal: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const dialogRef = useDialogFocus(isAuthModalOpen);
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeAuthModal(); };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [isAuthModalOpen, closeAuthModal]);
 
   if (!isAuthModalOpen) return null;
 
@@ -62,12 +71,12 @@ export const AuthModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="auth-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) closeAuthModal();
       }}
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-zinc-950/95 border border-zinc-800/80 shadow-2xl shadow-amber-500/10 p-6 sm:p-8">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1} className="auth-panel relative w-full max-w-md overflow-hidden rounded-2xl bg-zinc-950/95 border border-zinc-800/80 shadow-2xl shadow-amber-500/10 p-6 sm:p-8">
         {/* Glow de fondo */}
         <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-amber-500/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-indigo-500/15 blur-3xl" />
@@ -84,7 +93,7 @@ export const AuthModal: React.FC = () => {
 
         {/* Encabezado */}
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-white tracking-tight font-display">
+          <h2 id="auth-title" className="text-2xl font-bold text-white tracking-tight font-display">
             {mode === "login" ? "Bienvenido a MeriStream" : "Únete a MeriStream"}
           </h2>
           <p className="text-xs sm:text-sm text-zinc-400 mt-1">
@@ -146,7 +155,7 @@ export const AuthModal: React.FC = () => {
         {/* Formulario */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-1.5">
+            <label htmlFor="auth-username" className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-1.5">
               Usuario
             </label>
             <div className="relative">
@@ -155,6 +164,8 @@ export const AuthModal: React.FC = () => {
               </div>
               <input
                 type="text"
+                id="auth-username"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="ej. animefan99"
@@ -166,7 +177,7 @@ export const AuthModal: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-1.5">
+            <label htmlFor="auth-password" className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-1.5">
               Contraseña
             </label>
             <div className="relative">
@@ -174,6 +185,8 @@ export const AuthModal: React.FC = () => {
                 <Lock size={16} />
               </div>
               <input
+                id="auth-password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -184,6 +197,7 @@ export const AuthModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                 className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300"
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -197,7 +211,7 @@ export const AuthModal: React.FC = () => {
               <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
                 Color de Perfil
               </label>
-              <div className="flex items-center gap-3">
+              <div className="auth-avatar-options flex items-center gap-3">
                 {AVATAR_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
@@ -209,6 +223,8 @@ export const AuthModal: React.FC = () => {
                         : "opacity-60 hover:opacity-100 hover:scale-105"
                     }`}
                     title={opt.label}
+                    aria-label={opt.label}
+                    aria-pressed={selectedAvatar === opt.id}
                   />
                 ))}
               </div>

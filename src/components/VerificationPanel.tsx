@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Square,
   Video,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import {
@@ -212,6 +213,22 @@ const VerificationPanel: React.FC = () => {
     }
   };
 
+  const [repairing, setRepairing] = useState(false);
+
+  const repairCatalogLinks = async () => {
+    setRepairing(true);
+    setActionFeedback(null);
+    try {
+      const result = await api.repairCatalogLinks();
+      setActionFeedback({ tone: "success", message: result.message || "Auditoría completada exitosamente." });
+      await loadStatus(true);
+    } catch (error) {
+      setActionFeedback({ tone: "error", message: errorMessage(error) });
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const saveConfig = async () => {
     const minMinutes = 5;
     const computedMinutes = Math.round(intervalValue || 1) * intervalUnit;
@@ -375,6 +392,15 @@ const VerificationPanel: React.FC = () => {
               >
                 {runningMode === "full" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Verificación
                 completa
+              </button>
+              <button
+                type="button"
+                onClick={() => void repairCatalogLinks()}
+                disabled={isRunning || loading || repairing}
+                className="col-span-full flex items-center justify-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2.5 text-xs font-semibold text-purple-200 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Audita la base de datos y purga enlaces de landing pages (URLs de series completas) erróneamente asignados a episodios individuales"
+              >
+                {repairing ? <Loader2 size={14} className="animate-spin" /> : <Wrench size={14} />} Sanear Enlaces de Catálogo (Purga de Landing Pages)
               </button>
             </>
           ) : isPaused ? (

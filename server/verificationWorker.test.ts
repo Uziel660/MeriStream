@@ -350,7 +350,7 @@ describe("Verification Worker - Behavioral Tests", () => {
     // full
     runVerification({ trigger: "manual", mode: "full", platforms: ["animeflv"], limit: 1 });
     await waitForStatus((s) => !s.running);
-    expect(vi.mocked(extractCatalogListing)).toHaveBeenCalledWith("https://www3.animeflv.net/browse");
+    expect(vi.mocked(extractCatalogListing)).toHaveBeenCalledWith("https://animeflv.or.at/anime/");
     expect(getVerificationStatus().progress.total).toBe(1);
   });
 

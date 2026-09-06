@@ -14,12 +14,21 @@
 
 import fs from "fs";
 import path from "path";
+import readline from "readline";
 import { prisma } from "./db";
 
 const DEFAULT_BUFFER_PATH = path.join(process.cwd(), "data", "write-buffer.jsonl");
+const DEFAULT_FAILED_BUFFER_SUFFIX = ".failed.jsonl";
 let bufferPath = DEFAULT_BUFFER_PATH;
 const MAX_ATTEMPTS = 5;
 const RAM_SOFT_LIMIT = 500; // Si la cola RAM supera esto, se vierte a JSONL
+const JSONL_FLUSH_BATCH_SIZE = 500;
+// PostgreSQL soporta escrituras concurrentes; procesar una sola operación por
+// vez dejaba el backlog limitado por la latencia de cada RTT. Este pool acotado
+// mantiene el orden lógico mediante reintentos para dependencias FK (show →
+// episode, mediaItem → sourceLink) sin volver a saturar el proceso.
+const WRITER_CONCURRENCY = 16;
+let isLoadingJsonl = false;
 
 // ── Tipos de operación ─────────────────────────────────────────
 
@@ -137,39 +146,117 @@ export function enqueueSourceLinkUpdate(id: string, data: Record<string, unknown
 
 function ensureDir(): void {
   const dir = path.dirname(bufferPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync({ recursive: true });
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+/** Conserva operaciones agotadas para poder diagnosticarlas/reintentarlas. */
+function recordFailedOp(op: BufferedOp, error: unknown): void {
+  try {
+    ensureDir();
+    const failure = {
+      failed_at: new Date().toISOString(),
+      attempts: op.attempts,
+      error: String((error as any)?.message || error || "operación rechazada").slice(0, 1000),
+      op,
+    };
+    fs.appendFileSync(`${bufferPath}${DEFAULT_FAILED_BUFFER_SUFFIX}`, `${JSON.stringify(failure)}\n`, "utf8");
+  } catch (persistError) {
+    // La cola principal ya agotó sus reintentos; no ocultar el fallo de
+    // persistencia, pero tampoco detener el resto del drenaje.
+    console.error("[WriteBuffer] No se pudo guardar la operación agotada:", String((persistError as any)?.message || persistError));
+  }
 }
 
 export function flushRamToJsonl(): void {
   if (ramQueue.length === 0) return;
   ensureDir();
-  const tmp = bufferPath + ".tmp";
-  const existing = fs.existsSync(bufferPath) ? fs.readFileSync(bufferPath, "utf8") : "";
-  fs.writeFileSync(tmp, existing + ramQueue.map((o) => JSON.stringify(o)).join("\n") + "\n", "utf8");
-  fs.renameSync(tmp, bufferPath);
-  ramQueue = [];
+  // Nunca concatenar todo el JSONL previo con toda la cola: durante un import
+  // grande esa cadena puede superar el límite de V8 (`Invalid string length`).
+  // El append por lote conserva cada operación y limita el pico de memoria.
+  const batch = ramQueue.splice(0, JSONL_FLUSH_BATCH_SIZE);
+  try {
+    fs.appendFileSync(bufferPath, `${batch.map((o) => JSON.stringify(o)).join("\n")}\n`, "utf8");
+  } catch (error) {
+    // La persistencia es el respaldo de recuperación: no se pierde el lote si
+    // el disco falla o la escritura es interrumpida.
+    ramQueue.unshift(...batch);
+    throw error;
+  }
 }
 
-export function loadJsonlToRam(): void {
-  if (!fs.existsSync(bufferPath)) return;
+/**
+ * Recupera el outbox sin construir una cadena de 1+ GB con readFileSync().
+ * Se renombra primero para que nuevas escrituras puedan continuar en un
+ * archivo fresco mientras este lote se procesa.
+ */
+export async function loadJsonlToRam(): Promise<void> {
+  if (isLoadingJsonl) return;
+  // Si un proceso murió después de renombrar el outbox, retomar ese archivo
+  // ingest en lugar de dejarlo abandonado para siempre.
+  let sourcePath = bufferPath;
+  if (!fs.existsSync(sourcePath)) {
+    try {
+      const stale = fs.readdirSync(path.dirname(bufferPath))
+        .filter((name) => name.startsWith(`${path.basename(bufferPath)}.ingest-`))
+        .sort()[0];
+      if (stale) sourcePath = path.join(path.dirname(bufferPath), stale);
+    } catch {}
+  }
+  if (!fs.existsSync(sourcePath)) return;
+  isLoadingJsonl = true;
   try {
+    let size = 0;
+    try { size = fs.statSync(sourcePath).size; } catch { return; }
+
+    // Mantener la ruta síncrona para los outboxes pequeños (y para los tests);
+    // solo los archivos grandes necesitan el lector por chunks.
+    if (size < 8 * 1024 * 1024) {
+      const ops: BufferedOp[] = [];
+      for (const line of fs.readFileSync(sourcePath, "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const op = JSON.parse(line) as BufferedOp;
+          ops.push(op);
+          if (op.kind === "sourceLink.create") pendingSourceLinkKeys.add(sourceLinkKey(op));
+        } catch {}
+      }
+      if (ops.length > 0) ramQueue = ops.concat(ramQueue);
+      fs.writeFileSync(sourcePath, "", "utf8");
+      return;
+    }
+    const ingestPath = `${bufferPath}.ingest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    try { fs.renameSync(sourcePath, ingestPath); } catch { return; }
+
     const ops: BufferedOp[] = [];
-    for (const line of fs.readFileSync(bufferPath, "utf8").split("\n")) {
-      if (!line.trim()) continue;
+    try {
+      const input = fs.createReadStream(ingestPath, { encoding: "utf8" });
+      const lines = readline.createInterface({ input, crlfDelay: Infinity });
       try {
-        const op = JSON.parse(line) as BufferedOp;
-        ops.push(op);
-        if (op.kind === "sourceLink.create") {
-          pendingSourceLinkKeys.add(sourceLinkKey(op));
+        for await (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const op = JSON.parse(line) as BufferedOp;
+            ops.push(op);
+            if (op.kind === "sourceLink.create") pendingSourceLinkKeys.add(sourceLinkKey(op));
+          } catch {
+            // Una línea truncada no debe impedir recuperar las demás.
+          }
         }
-      } catch {}
+      } finally {
+        lines.close();
+        input.destroy();
+      }
+      if (ops.length > 0) ramQueue = ops.concat(ramQueue);
+    } catch (error) {
+      // Si el archivo quedó ilegible, conservarlo para diagnóstico/reintento.
+      console.error("[WriteBuffer] No se pudo leer el outbox JSONL:", error);
+      try { if (!fs.existsSync(bufferPath)) fs.renameSync(ingestPath, bufferPath); } catch {}
+      return;
     }
-    if (ops.length > 0) {
-      ramQueue.unshift(...ops);
-      // Limpiar el archivo
-      fs.writeFileSync(bufferPath, "", "utf8");
-    }
-  } catch {}
+    try { fs.unlinkSync(ingestPath); } catch {}
+  } finally {
+    isLoadingJsonl = false;
+  }
 }
 
 // ── Aplicar operación a SQLite (SOLO el writer llama esto) ──────
@@ -294,40 +381,45 @@ async function applyOp(op: BufferedOp): Promise<boolean> {
   }
 }
 
-// ── Writer continuo (procesa 1 op cada 50-100ms) ───────────────
+// ── Writer continuo ───────────────────────────────────────────
 
 async function writerLoop(): Promise<void> {
   if (isWriting) return;
   isWriting = true;
   try {
     // Recuperar JSONL pendiente si existe
-    loadJsonlToRam();
+    await loadJsonlToRam();
 
     while (ramQueue.length > 0) {
-      const op = ramQueue.shift()!;
-      try {
-        const ok = await applyOp(op);
-        if (ok) {
-          totalApplied++;
-          releasePendingSourceLink(op);
-        } else {
+      const batch = ramQueue.splice(0, WRITER_CONCURRENCY);
+      await Promise.all(batch.map(async (op) => {
+        try {
+          const ok = await applyOp(op);
+          if (ok) {
+            totalApplied++;
+            releasePendingSourceLink(op);
+          } else {
+            op.attempts++;
+            if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
+            else {
+              totalFailed++;
+              releasePendingSourceLink(op);
+              recordFailedOp(op, "applyOp devolvió false");
+            }
+          }
+        } catch (error) {
           op.attempts++;
           if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
           else {
             totalFailed++;
             releasePendingSourceLink(op);
+            recordFailedOp(op, error);
           }
         }
-      } catch {
-        op.attempts++;
-        if (op.attempts < MAX_ATTEMPTS) ramQueue.push(op);
-        else {
-          totalFailed++;
-          releasePendingSourceLink(op);
-        }
-      }
-      // Pequeña pausa entre ops (PostgreSQL maneja concurrencia nativamente)
-      await new Promise((r) => setTimeout(r, 5));
+      }));
+      // Ceder el event-loop por lote para que Express y los resolvers JIT no
+      // pierdan respuesta mientras el outbox se vacía.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
 
     // No borrar el JSONL aquí: otro tick puede haber persistido operaciones
@@ -342,11 +434,14 @@ async function writerLoop(): Promise<void> {
 /** Arranca el writer continuo (100ms). Llamar una vez al boot. */
 export function startWriteBufferDrainer(): void {
   // Cargar JSONL residual al arrancar
-  loadJsonlToRam();
+  void loadJsonlToRam().catch(() => {});
   // Writer continuo: cada 100ms chequea si hay algo
   setInterval(() => {
     // Volcar a JSONL si la cola RAM crece demasiado
-    if (ramQueue.length > RAM_SOFT_LIMIT) {
+    // Mientras el writer está activo no mover la cola que ya está en RAM al
+    // disco: ese ida-y-vuelta convertía un backlog finito en I/O constante.
+    // El límite sigue protegiendo el caso en que el productor crece sin writer.
+    if (!isWriting && ramQueue.length > RAM_SOFT_LIMIT) {
       flushRamToJsonl();
     }
     // También despierta el writer cuando el trabajo quedó persistido mientras
@@ -382,6 +477,10 @@ export function resetWriteBufferForTesting(): void {
   isWriting = false;
   if (fs.existsSync(bufferPath)) {
     try { fs.unlinkSync(bufferPath); } catch {}
+  }
+  const failedPath = `${bufferPath}${DEFAULT_FAILED_BUFFER_SUFFIX}`;
+  if (fs.existsSync(failedPath)) {
+    try { fs.unlinkSync(failedPath); } catch {}
   }
 }
 

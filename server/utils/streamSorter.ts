@@ -19,10 +19,10 @@
  * resolvers.ts).
  */
 const TIERS: ReadonlyArray<{ tier: number; tokens: readonly string[] }> = [
-  { tier: 1, tokens: ["ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos."] },
-  // Genéricos AnimeFLV verificados sin 403 en validador + doodstream
-  { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream"] },
-  { tier: 3, tokens: ["vidhide"] },
+  { tier: 1, tokens: ["streamwish", "premilkyway", "sfastwish", "flaswish", "yourupload", "vidcache", "ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos.", "zilla-networks", "/api/v1/stream/mega"] },
+  // Genéricos AnimeFLV verificados sin 403 en validador y Doodstream
+  { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream", "dood"] },
+  { tier: 3, tokens: ["ok.ru", "okru", "vidhide", "vixhide"] },
   { tier: 4, tokens: ["mega.nz", "mega.io", "mega.co.nz", "mp4upload"] },
 ];
 
@@ -34,7 +34,7 @@ const UNKNOWN_TIER = 3.5;
 
 /** Tokens de proveedores en lista negra (muertos/anuncio-basura): nunca reproducir.
  *  "mxdrop" cubre la variante mxdrop.to de Mixdrop (reportado por stream-agent). */
-export const BLACKLISTED_HOST_TOKENS = ["voe", "mixdrop", "mxdrop", "filemoon"] as const;
+export const BLACKLISTED_HOST_TOKENS = ["voe", "mixdrop", "mxdrop", "filemoon", "vudeo"] as const;
 
 /** true si la URL pertenece a un host en lista negra (voe/mixdrop/filemoon). */
 export function isBlacklistedHost(url: string): boolean {

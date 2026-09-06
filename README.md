@@ -2,6 +2,8 @@
 
 **Versión 7.1** | Node.js + Express + TypeScript + React 18 + PostgreSQL 16
 
+> 📋 **DOCUMENTO DE TRASPASO PARA IA / DESARROLLADOR:** Consulta [HANDOVER.md](HANDOVER.md) o [PROJECT_HANDOVER_STATE.md](PROJECT_HANDOVER_STATE.md) para conocer el estado actual del sistema, restricciones críticas de producción (servidor en laptop de 2 GB de RAM, regla obligatoria "NADA DE EMBED"), soluciones de búsqueda y simulación de reproducción implementadas.
+
 ---
 
 ## Qué es esto

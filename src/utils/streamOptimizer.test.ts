@@ -24,6 +24,8 @@ describe('streamOptimizer — URL honesty helpers', () => {
         'https://lamovie.org/peliculas/10-cosas',
         'https://www.tubepelis.com/pelicula/algo',
         'https://cinecalidad.am/pelicula/x.html',
+        'https://ww3.gnulahd.nu/ver/batman-knightfall-part-1-knightfall/',
+        'https://ww3.gnulahd.nu/bleach-1x96/',
       ];
       rawPages.forEach((u) => expect(isRawWebpageUrl(u)).toBe(true));
     });

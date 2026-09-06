@@ -8,8 +8,7 @@ import { classifySourceKind } from "./resolutionMetadata";
 import { getStreamTier } from "./utils/streamSorter";
 import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
-import { extractStreamFromUrl } from "./universalScraper";
-import { canonicalCatalogUrl } from "./catalogIntegrity";
+import { canonicalCatalogUrl, isInvalidCatalogSource } from "./catalogIntegrity";
 import {
   enqueueWrite,
   enqueueShowCreate,
@@ -213,7 +212,7 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
       const epSources: SourceLinkInput[] = [];
       const seen = new Set<string>();
 
-      if (primaryUrl) {
+      if (primaryUrl && !isInvalidCatalogSource(primaryUrl)) {
         const kind = classifySourceKind(primaryUrl);
         if (kind !== "ephemeral_direct") {
           epSources.push({ url: primaryUrl, source_site: defaultSite, source_kind: kind });
@@ -223,7 +222,7 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
 
       if (ep.sources) {
         for (const s of ep.sources) {
-          if (s?.url && !seen.has(sourceIdentityKey(s.url))) {
+          if (s?.url && !isInvalidCatalogSource(s.url) && !seen.has(sourceIdentityKey(s.url))) {
             const kind = classifySourceKind(s.url);
             if (kind !== "ephemeral_direct") {
               epSources.push({ ...s, source_site: s.source_site || defaultSite, source_kind: kind });
@@ -233,8 +232,10 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
         }
       }
 
+      const epSeason = Number(ep.season);
       return {
         number: epNum,
+        ...(Number.isFinite(epSeason) && epSeason > 0 ? { season: epSeason } : {}),
         title: ep.title || (kind === "movie" ? "Película Completa" : `Episodio ${epNum}`),
         url: epSources[0]?.url || "",
         sources: epSources,
@@ -243,11 +244,13 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
     .filter((episode) => Boolean(episode.url));
 
   if (normalizedEpisodes.length === 0) {
+    // Para series/anime NUNCA se debe usar la landing page/URL de serie como stream de un episodio.
+    // Solo se permite fallback si es película o si la URL es un medio/stream directo válido.
     const fallbackUrl = detectedStreams[0] || (input as any).source_url || (input as any).url || "";
-    if (fallbackUrl) {
+    if (fallbackUrl && (kind === "movie" || !isInvalidCatalogSource(fallbackUrl))) {
       const fallbackKind = classifySourceKind(fallbackUrl);
       const fallbackSources = detectedStreams
-        .filter((st) => classifySourceKind(st) !== "ephemeral_direct")
+        .filter((st) => !isInvalidCatalogSource(st) && classifySourceKind(st) !== "ephemeral_direct")
         .map((st) => ({ url: st, source_site: defaultSite, source_kind: classifySourceKind(st) }));
       const persistentFallbacks = fallbackSources.length > 0
         ? fallbackSources
@@ -286,7 +289,9 @@ export async function syncEpisodeSources(
   sources: SourceLinkInput[],
   defaultSite: string
 ): Promise<number> {
-  const cleanSources = (sources || []).filter((s) => s && s.url && typeof s.url === "string" && s.url.trim());
+  const cleanSources = (sources || []).filter(
+    (s) => s && s.url && typeof s.url === "string" && s.url.trim() && !isInvalidCatalogSource(s.url.trim())
+  );
   if (cleanSources.length === 0) return 0;
 
   const persistentSources = cleanSources.filter((s) => {
@@ -550,7 +555,7 @@ async function syncMediaItemSources(
   input: SaveShowInput,
   kind: ContentKind,
   legacyShowId: string,
-  normalizedEpisodes: Array<{ number: number; title: string; url: string; sources: SourceLinkInput[] }>,
+  normalizedEpisodes: Array<{ number: number; season?: number; title: string; url: string; sources: SourceLinkInput[] }>,
   titleInfo: CanonicalTitleInfo
 ) {
   try {
@@ -633,7 +638,8 @@ async function syncMediaItemSources(
           sources.unshift({ url: ep.url, source_kind: epKind });
         }
       }
-      const added = await syncEpisodeSources(mediaItem.id, season, ep.number, sources, defaultSite);
+      const targetSeason = (ep as any).season || season;
+      const added = await syncEpisodeSources(mediaItem.id, targetSeason, ep.number, sources, defaultSite);
       sourcesAdded += added || 0;
     }
     return sourcesAdded;
@@ -936,21 +942,51 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   };
 }
 
+export function expandSearchVariants(query: string): string[] {
+  const romanToArabic: Record<string, string> = {
+    i: "1", ii: "2", iii: "3", iv: "4", v: "5",
+    vi: "6", vii: "7", viii: "8", ix: "9", x: "10"
+  };
+  const arabicToRoman: Record<string, string> = {
+    "1": "i", "2": "ii", "3": "iii", "4": "iv", "5": "v",
+    "6": "vi", "7": "vii", "8": "viii", "9": "ix", "10": "x"
+  };
+
+  const variants = new Set<string>([query.toLowerCase()]);
+
+  for (const [arabic, roman] of Object.entries(arabicToRoman)) {
+    const reg = new RegExp(`\\b${arabic}\\b`, "gi");
+    if (reg.test(query)) {
+      variants.add(query.replace(reg, roman).toLowerCase());
+    }
+  }
+
+  for (const [roman, arabic] of Object.entries(romanToArabic)) {
+    const reg = new RegExp(`\\b${roman}\\b`, "gi");
+    if (reg.test(query)) {
+      variants.add(query.replace(reg, arabic).toLowerCase());
+    }
+  }
+
+  return Array.from(variants);
+}
+
 export async function getShowsFromDb(search?: string, category?: string) {
   let where: any = {};
 
   if (category) {
-    where.category = { contains: category };
+    where.category = { contains: category, mode: "insensitive" };
   }
 
   if (search) {
-    const s = search.toLowerCase().trim();
-    where.OR = [
-      { title: { contains: s } },
-      { english_title: { contains: s } },
-      { japanese_title: { contains: s } },
-      { genres: { contains: s } },
-    ];
+    const s = search.trim();
+    const variants = expandSearchVariants(s);
+    where.OR = variants.flatMap((v) => [
+      { title: { contains: v, mode: "insensitive" } },
+      { english_title: { contains: v, mode: "insensitive" } },
+      { japanese_title: { contains: v, mode: "insensitive" } },
+      { genres: { contains: v, mode: "insensitive" } },
+    ]);
   }
 
   const shows = await prisma.show.findMany({
@@ -976,19 +1012,39 @@ export async function getShowsFromDbLite(
   const pageSize = Math.min(50000, Math.max(1, limit || 500));
   const skip = (pageNum - 1) * pageSize;
 
-  if (search && search.trim().length >= 2) {
+  if (search && search.trim().length >= 1) {
     const s = search.trim();
-    const tsQuery = s.split(/\s+/).join(" & ");
+    const tsQuery = s;
+    const variants = expandSearchVariants(s);
 
-    let categoryFilter = "";
-    const params: any[] = [tsQuery, s.toLowerCase(), pageSize, skip];
-    let paramIdx = 4;
+    const showsParams: any[] = [tsQuery];
+    const countParams: any[] = [tsQuery];
 
-    if (category) {
-      paramIdx++;
-      params.push(`%${category.toLowerCase()}%`);
-      categoryFilter = `AND LOWER(category) LIKE $${paramIdx}`;
+    const likeConditions: string[] = [];
+    for (const v of variants) {
+      showsParams.push(`%${v}%`);
+      countParams.push(`%${v}%`);
+      const paramIdx = showsParams.length;
+      likeConditions.push(
+        `(LOWER(title) LIKE $${paramIdx} OR LOWER("english_title") LIKE $${paramIdx} OR LOWER("japanese_title") LIKE $${paramIdx} OR LOWER(genres) LIKE $${paramIdx})`
+      );
     }
+    const orLikeSql = likeConditions.join(" OR ");
+
+    let categoryFilterShows = "";
+    let categoryFilterCount = "";
+    if (category) {
+      showsParams.push(`%${category.toLowerCase()}%`);
+      countParams.push(`%${category.toLowerCase()}%`);
+      const catParamIdx = showsParams.length;
+      categoryFilterShows = `AND LOWER(category) LIKE $${catParamIdx}`;
+      categoryFilterCount = `AND LOWER(category) LIKE $${catParamIdx}`;
+    }
+
+    showsParams.push(pageSize, skip);
+    const limitIdx = showsParams.length - 1;
+    const offsetIdx = showsParams.length;
+    const limitOffsetPlaceholder = `LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
 
     const showsQuery = `
       SELECT
@@ -1000,14 +1056,21 @@ export async function getShowsFromDbLite(
       FROM "Show"
       WHERE (
         search_vector @@ plainto_tsquery('simple', $1)
-        OR LOWER(title) LIKE $2
-        OR LOWER("english_title") LIKE $2
-        OR LOWER("japanese_title") LIKE $2
-        OR LOWER(genres) LIKE $2
+        OR ${orLikeSql}
       )
-      ${categoryFilter}
-      ORDER BY rank DESC, "created_at" DESC
-      LIMIT $3 OFFSET $4
+      ${categoryFilterShows}
+      ORDER BY 
+        CASE 
+          WHEN LOWER(title) = LOWER($1) THEN 0
+          WHEN LOWER(title) LIKE $2 THEN 1
+          ${variants[1] ? `WHEN LOWER(title) LIKE $3 THEN 1` : ""}
+          WHEN LOWER("english_title") = LOWER($1) THEN 2
+          WHEN LOWER("english_title") LIKE $2 THEN 3
+          ELSE 4
+        END,
+        rank DESC, 
+        "created_at" DESC
+      ${limitOffsetPlaceholder}
     `;
 
     const countQuery = `
@@ -1015,17 +1078,14 @@ export async function getShowsFromDbLite(
       FROM "Show"
       WHERE (
         search_vector @@ plainto_tsquery('simple', $1)
-        OR LOWER(title) LIKE $2
-        OR LOWER("english_title") LIKE $2
-        OR LOWER("japanese_title") LIKE $2
-        OR LOWER(genres) LIKE $2
+        OR ${orLikeSql}
       )
-      ${categoryFilter}
+      ${categoryFilterCount}
     `;
 
     const [shows, countResult] = await Promise.all([
-      prisma.$queryRawUnsafe(showsQuery, ...params),
-      prisma.$queryRawUnsafe(countQuery, tsQuery, `%${s.toLowerCase()}%`, ...(category ? [`%${category.toLowerCase()}%`] : [])),
+      prisma.$queryRawUnsafe(showsQuery, ...showsParams),
+      prisma.$queryRawUnsafe(countQuery, ...countParams),
     ]);
 
     const total = (countResult as any[])[0]?.total || 0;
@@ -1034,7 +1094,7 @@ export async function getShowsFromDbLite(
 
   let where: any = {};
   if (category) {
-    where.category = { contains: category };
+    where.category = { contains: category, mode: "insensitive" };
   }
 
   const [shows, total] = await Promise.all([

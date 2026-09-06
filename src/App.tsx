@@ -9,17 +9,15 @@ import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
 import { HLSPlayerModal } from './components/HLSPlayerModal';
 import { AdminPanel } from './components/AdminPanel';
-import { AmbientGlow } from './components/AmbientGlow';
 import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
 import { AuthModal } from './components/AuthModal';
 import { ExploreCatalogView } from './components/ExploreCatalogView';
 import { useAuth } from './contexts/AuthContext';
-import { extractDominantColor, getFallbackColor } from './utils/colorExtractor';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
-import { searchShows } from './utils/searchUtils';
+import { normalizeText } from './utils/searchUtils';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
@@ -38,6 +36,7 @@ export function App() {
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [serverSearchResults, setServerSearchResults] = useState<Show[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [gridPageSize, setGridPageSize] = useState(100);
   const [yearFilter, setYearFilter] = useState<number | null>(null);
@@ -45,9 +44,6 @@ export function App() {
   const [catalogPageSize, setCatalogPageSize] = useState(100);
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
-
-  // Ambient Glow State
-  const [ambientRgb, setAmbientRgb] = useState<[number, number, number]>([245, 158, 11]);
 
   // Continue Watching State
   const [continueWatchingItems, setContinueWatchingItems] = useState<WatchProgress[]>(() => {
@@ -165,6 +161,62 @@ export function App() {
     fetchGenres();
   }, []);
 
+  // Búsqueda server-side en PostgreSQL con debounce: consulta toda la base de
+  // Búsqueda server-side en PostgreSQL: consulta toda la base de
+  // datos de 38,000+ obras para títulos que no entraron en el lote inicial de 25k.
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setServerSearchResults([]);
+      return;
+    }
+    let isCancelled = false;
+    const fetchServerSearch = async () => {
+      try {
+        const res = await fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`);
+        if (res.ok && !isCancelled) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : data.shows || [];
+          if (Array.isArray(list)) {
+            const mapped: Show[] = list.map((s: any) => ({
+              id: s.id || `show-${Math.random()}`,
+              title: s.title || 'Sin Título',
+              original_title: s.original_title || null,
+              english_title: s.english_title || null,
+              japanese_title: s.japanese_title || null,
+              normalized_title: s.normalized_title || null,
+              description: s.description || s.synopsis || '',
+              synopsis: s.description || s.synopsis || '',
+              poster_url: s.poster_url || '',
+              banner_url: s.banner_url || s.poster_url || '',
+              backdrop_url: s.backdrop_url || s.banner_url || '',
+              poster_path: s.poster_path ?? null,
+              backdrop_path: s.backdrop_path ?? null,
+              category: s.category || 'movie',
+              rating: s.rating || 8.2,
+              year: s.year || 2024,
+              genres: Array.isArray(s.genres)
+                ? s.genres
+                : String(s.genres || '').split(',').map((g: string) => g.trim()).filter(Boolean),
+              episode_count: s._count?.episodes || 0,
+              sources: {
+                master_m3u8: `/api/v1/media/${s.id}/stream`,
+                fallback_mp4: null,
+                qualities: [],
+                subtitles: [],
+              },
+            }) as Show);
+            setServerSearchResults(mapped);
+          }
+        }
+      } catch (e) {
+        console.warn('Error en búsqueda server-side:', e);
+      }
+    };
+    fetchServerSearch();
+    return () => { isCancelled = true; };
+  }, [searchQuery]);
+
   // LIMPIEZA DE HUÉRFANOS EN "SEGUIR VIENDO" (#2/R2): tras re-scrapes, las
   // tarjetas pueden apuntar a episodios borrados (404 al reproducir) o mostrar
   // "Episodio undefined". Al cargar el catálogo se valida cada item contra la
@@ -256,10 +308,10 @@ export function App() {
             backdrop_url: s.backdrop_url || s.banner_url || '',
             poster_path: s.poster_path ?? null,
             backdrop_path: s.backdrop_path ?? null,
-            category: s.category || 'anime',
+            category: s.category || 'movie',
             rating: s.rating || 8.2,
             year: s.year || 2024,
-            genres: s.genres || ['Anime'],
+            genres: s.genres || ['Multimedia'],
             episode_count: s._count?.episodes || 0,
             sources: {
               master_m3u8: `/api/v1/media/${s.id}/stream`,
@@ -337,15 +389,7 @@ export function App() {
   const handleOpenDetails = (show: Show) => {
     if (show?.id) {
       setSelectedShowId(show.id);
-      const img = show.poster_url || show.banner_url;
-      if (img) {
-        extractDominantColor(img, show.title).then(setAmbientRgb);
-      }
     }
-  };
-
-  const handleHoverMedia = (show: Show | null) => {
-    if (show) setAmbientRgb(getFallbackColor(show.title));
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
@@ -431,38 +475,47 @@ export function App() {
   const filteredShows = useMemo(() => {
     let result = shows;
 
-    // Filtro por categoría
-    if (activeFilter !== 'all') {
-      const filterKey = activeFilter.toLowerCase();
-      result = result.filter((s) => {
-        const cat = (s.category || '').toLowerCase();
-        const title = (s.title || '').toLowerCase();
-        const genresStr = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
-
-        if (filterKey === 'anime') return cat.includes('anime') || genresStr.includes('anime');
-        if (filterKey === 'movie') return cat.includes('pel') || cat.includes('movie');
-        if (filterKey === 'series') return cat.includes('serie') || cat.includes('tv');
-        if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror');
-        if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror');
-        if (filterKey === 'acción' || filterKey === 'accion') return genresStr.includes('acci') || genresStr.includes('action');
-        if (filterKey === 'fantasía' || filterKey === 'fantasia') return genresStr.includes('fantas') || genresStr.includes('fantasy');
-        if (filterKey === 'ciencia ficción' || filterKey === 'sci-fi' || filterKey === 'scifi') return genresStr.includes('sci-fi') || genresStr.includes('ciencia') || genresStr.includes('futuro');
-        if (filterKey === 'suspenso') return genresStr.includes('suspen') || genresStr.includes('thriller');
-        if (filterKey === 'shounen' || filterKey === 'shonen') return genresStr.includes('shounen') || genresStr.includes('shonen') || title.includes('piece') || title.includes('naruto') || title.includes('dragon');
-        if (filterKey === 'seinen') return genresStr.includes('seinen') || genresStr.includes('psicológico') || genresStr.includes('drama');
-        if (filterKey === 'romance') return genresStr.includes('romance') || genresStr.includes('amor');
-        return genresStr.includes(filterKey) || cat.includes(filterKey) || title.includes(filterKey);
+    // Si hay búsqueda activa, priorizar resultados server-side (PostgreSQL ts_rank sobre las 38,000+ obras)
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      const qNorm = normalizeText(searchQuery);
+      const serverIds = new Set(serverSearchResults.map((s) => s.id));
+      const localMatches = shows.filter((s) => {
+        if (serverIds.has(s.id)) return false;
+        const t = normalizeText(s.title || '');
+        const e = normalizeText(s.english_title || '');
+        const o = normalizeText(s.original_title || '');
+        return t.includes(qNorm) || e.includes(qNorm) || o.includes(qNorm);
       });
+      result = [...serverSearchResults, ...localMatches];
+    } else {
+      // Filtro por categoría únicamente cuando no hay búsqueda activa
+      if (activeFilter !== 'all') {
+        const filterKey = activeFilter.toLowerCase();
+        result = result.filter((s) => {
+          const cat = (s.category || '').toLowerCase();
+          const title = (s.title || '').toLowerCase();
+          const genresStr = Array.isArray(s.genres) ? s.genres.join(' ').toLowerCase() : String(s.genres || '').toLowerCase();
+
+          if (filterKey === 'anime') return cat === 'anime' || (cat !== 'movie' && cat !== 'series' && genresStr.includes('anime'));
+          if (filterKey === 'movie') return cat.includes('pel') || cat.includes('movie');
+          if (filterKey === 'series') return cat.includes('serie') || cat.includes('tv');
+          if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror');
+          if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror');
+          if (filterKey === 'acción' || filterKey === 'accion') return genresStr.includes('acci') || genresStr.includes('action');
+          if (filterKey === 'fantasía' || filterKey === 'fantasia') return genresStr.includes('fantas') || genresStr.includes('fantasy');
+          if (filterKey === 'ciencia ficción' || filterKey === 'sci-fi' || filterKey === 'scifi') return genresStr.includes('sci-fi') || genresStr.includes('ciencia') || genresStr.includes('futuro');
+          if (filterKey === 'suspenso') return genresStr.includes('suspen') || genresStr.includes('thriller');
+          if (filterKey === 'shounen' || filterKey === 'shonen') return genresStr.includes('shounen') || genresStr.includes('shonen') || title.includes('piece') || title.includes('naruto') || title.includes('dragon');
+          if (filterKey === 'seinen') return genresStr.includes('seinen') || genresStr.includes('psicológico') || genresStr.includes('drama');
+          if (filterKey === 'romance') return genresStr.includes('romance') || genresStr.includes('amor');
+          return genresStr.includes(filterKey) || cat.includes(filterKey) || title.includes(filterKey);
+        });
+      }
     }
 
     // Filtro por año
     if (yearFilter !== null) {
       result = result.filter((s) => Number(s.year) === yearFilter);
-    }
-
-    // Búsqueda con scoring: prioriza coincidencias exactas y normaliza tildes
-    if (searchQuery && searchQuery.trim().length >= 2) {
-      result = searchShows(result, searchQuery);
     }
 
     // Orden (recientes = orden de ingesta tal cual llega)
@@ -475,7 +528,7 @@ export function App() {
     }
 
     return result;
-  }, [shows, activeFilter, searchQuery, yearFilter, sortBy]);
+  }, [shows, serverSearchResults, activeFilter, searchQuery, yearFilter, sortBy]);
 
   // Años disponibles para el filtro (de más nuevo a más viejo)
   const availableYears = useMemo(() => {
@@ -618,18 +671,19 @@ export function App() {
   }, [shows, heroRecommendation, continueWatchingItems]);
 
   return (
-    <div className="relative min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-x-hidden">
+    <div className="app-shell relative min-h-screen text-zinc-100 flex flex-col">
       {/* 1. DYNAMIC AMBIENT GLOW (RESPONDE AL COLOR DOMINANTE DEL CONTENIDO EN FOCO) */}
-      <AmbientGlow dominantRgb={ambientRgb} />
+      <a className="skip-link" href="#main-content">Ir al contenido</a>
 
       {/* HEADER UNIFICADO: LOGO, BUSCADOR Y CATEGORÍAS EN LA MISMA BARRA SUPERIOR */}
       <UnifiedHeader
+        searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         activeFilter={activeFilter}
         onSelectCategory={(f) => { setActiveFilter(f); setGridPageSize(100); }}
       />
 
-      <main className="relative z-10 flex-1 pb-24">
+      <main id="main-content" tabIndex={-1} className="relative z-10 flex-1 pb-24">
         {/* AVISO DE CONTENIDO HUÉRFANO ELIMINADO DE "SEGUIR VIENDO" (#2/R2) */}
         {orphanNotice && (
           <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-4">
@@ -657,83 +711,14 @@ export function App() {
               />
             )}
 
-            <div className={`max-w-7xl mx-auto px-4 sm:px-8 space-y-12 ${featuredShow && !searchQuery && activeFilter === 'all' ? '-mt-12 sm:-mt-16' : 'pt-8'}`}>
+            <div className="catalog-content space-y-12">
 
-              {/* CASO A: SI LA PESTAÑA ACTIVA ES 'RECOMMENDATIONS', MOSTRAR RIELES INTELIGENTES */}
-              {activeFilter === 'recommendations' ? (
-                <section className="space-y-10">
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
-                    <div>
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-2">
-                        <Sparkles size={13} />
-                        <span>Algoritmo de Recomendación Nitiflix</span>
-                      </div>
-                      <h3 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                        {isAuthenticated && user ? `Recomendaciones para ${user.username}` : 'Recomendaciones y Tendencias'}
-                      </h3>
-                      <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-                        {isAuthenticated
-                          ? 'Seleccionado inteligentemente según tu historial y hábitos de reproducción.'
-                          : 'Inicia sesión para que el algoritmo aprenda tus gustos exactos con el tiempo.'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={fetchRecommendations}
-                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-xs font-medium text-zinc-300 border border-zinc-800 transition shadow-sm hover:border-zinc-700"
-                    >
-                      <RefreshCw size={13} className={isLoadingRecs ? 'animate-spin text-amber-400' : ''} />
-                      <span>Actualizar Recomendaciones</span>
-                    </button>
-                  </div>
-
-                  {/* RIELES DE RECOMENDACIÓN GENERADOS POR EL ALGORITMO */}
-                  {recommendationRails.map((rail) => (
-                    <MediaRow
-                      key={rail.id}
-                      title={rail.title}
-                      subtitle={rail.subtitle}
-                      items={rail.shows}
-                      onSelectMedia={handleOpenDetails}
-                      onHoverMedia={handleHoverMedia}
-                      isLoading={isLoadingRecs}
-                    />
-                  ))}
-
-                  {recommendationRails.length === 0 && !isLoadingRecs && (
-                    <div className="py-16 text-center space-y-3">
-                      <Sparkles size={36} className="mx-auto text-amber-400/50" />
-                      <p className="text-sm text-zinc-400 font-medium">
-                        Empieza a reproducir contenido para que el algoritmo aprenda tus gustos.
-                      </p>
-                    </div>
-                  )}
-                </section>
-              ) : activeFilter === 'explore' ? (
-                /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
-                <ExploreCatalogView
-                  shows={shows}
-                  allGenresList={allGenresList}
-                  showsCountByGenre={showsCountByGenre}
-                  genreFilter={exploreGenreFilter}
-                  onGenreFilter={setExploreGenreFilter}
-                  yearFilter={yearFilter}
-                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
-                  sortBy={sortBy}
-                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
-                  catalogPageSize={catalogPageSize}
-                  onLoadMore={() => setCatalogPageSize((prev) => prev + 100)}
-                  availableYears={availableYears}
-                  onSelectMedia={handleOpenDetails}
-                  onHoverMedia={handleHoverMedia}
-                />
-              ) : searchQuery || activeFilter !== 'all' ? (
+              {/* CASO 0: SI HAY BÚSQUEDA ACTIVA, MOSTRAR RESULTADOS (TIENE PRIORIDAD SOBRE CUALQUIER PESTAÑA O VISTA) */}
+              {searchQuery && searchQuery.trim().length >= 2 ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
                     <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
-                      {searchQuery
-                        ? `Resultados para "${searchQuery}"`
-                        : `Catálogo: ${activeFilter.toUpperCase()}`}
+                      Resultados para "{searchQuery}"
                     </h3>
                     <span className="font-mono text-xs text-zinc-500">
                       {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
@@ -774,7 +759,133 @@ export function App() {
                             key={item.id}
                             media={item}
                             onSelectMedia={handleOpenDetails}
-                            onHover={handleHoverMedia}
+                          />
+                        ))}
+                      </div>
+                      {filteredShows.length > gridPageSize && (
+                        <div className="flex justify-center pt-6">
+                          <button
+                            type="button"
+                            onClick={() => setGridPageSize(prev => prev + 100)}
+                            className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
+                          >
+                            Cargar más ({filteredShows.length - gridPageSize} restantes)
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </section>
+              ) : activeFilter === 'recommendations' ? (
+                <section className="space-y-10">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-2">
+                        <Sparkles size={13} />
+                        <span>Selección MeriStream</span>
+                      </div>
+                      <h3 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                        {isAuthenticated && user ? `Recomendaciones para ${user.username}` : 'Recomendaciones y Tendencias'}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+                        {isAuthenticated
+                          ? 'Historias elegidas a partir de lo que ves.'
+                          : 'Inicia sesión para descubrir recomendaciones según tus gustos.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchRecommendations}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-xs font-medium text-zinc-300 border border-zinc-800 transition shadow-sm hover:border-zinc-700"
+                    >
+                      <RefreshCw size={13} className={isLoadingRecs ? 'animate-spin text-amber-400' : ''} />
+                      <span>Actualizar Recomendaciones</span>
+                    </button>
+                  </div>
+
+                  {/* RIELES DE RECOMENDACIÓN GENERADOS POR EL ALGORITMO */}
+                  {recommendationRails.map((rail) => (
+                    <MediaRow
+                      key={rail.id}
+                      title={rail.title}
+                      subtitle={rail.subtitle}
+                      items={rail.shows}
+                      onSelectMedia={handleOpenDetails}
+                      isLoading={isLoadingRecs}
+                    />
+                  ))}
+
+                  {recommendationRails.length === 0 && !isLoadingRecs && (
+                    <div className="py-16 text-center space-y-3">
+                      <Sparkles size={36} className="mx-auto text-amber-400/50" />
+                      <p className="text-sm text-zinc-400 font-medium">
+                        Mira tu primer título para descubrir recomendaciones para ti.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              ) : activeFilter === 'explore' ? (
+                /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
+                <ExploreCatalogView
+                  shows={shows}
+                  allGenresList={allGenresList}
+                  showsCountByGenre={showsCountByGenre}
+                  genreFilter={exploreGenreFilter}
+                  onGenreFilter={setExploreGenreFilter}
+                  yearFilter={yearFilter}
+                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                  sortBy={sortBy}
+                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
+                  catalogPageSize={catalogPageSize}
+                  onLoadMore={() => setCatalogPageSize((prev) => prev + 100)}
+                  availableYears={availableYears}
+                  onSelectMedia={handleOpenDetails}
+                />
+              ) : activeFilter !== 'all' ? (
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                    <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
+                      {({ movie: 'Películas', series: 'Series', anime: 'Anime' } as Record<string, string>)[activeFilter] || activeFilter}
+                    </h3>
+                    <span className="font-mono text-xs text-zinc-500">
+                      {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
+                    </span>
+                  </div>
+
+                  <CatalogFilters
+                    years={availableYears}
+                    year={yearFilter}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    sort={sortBy}
+                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
+                  />
+
+                  {filteredShows.length === 0 ? (
+                    <div className="py-20 text-center space-y-3">
+                      <Film size={36} className="mx-auto text-zinc-600" />
+                      <p className="text-sm text-zinc-400 font-medium">
+                        No se encontraron títulos para este criterio.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setActiveFilter('all');
+                          setGridPageSize(100);
+                        }}
+                        className="text-xs text-amber-400 hover:underline font-semibold"
+                      >
+                        Restablecer filtros
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+                        {filteredShows.slice(0, gridPageSize).map((item) => (
+                          <MediaCard
+                            key={item.id}
+                            media={item}
+                            onSelectMedia={handleOpenDetails}
                           />
                         ))}
                       </div>
@@ -817,27 +928,24 @@ export function App() {
                       subtitle={rail.subtitle}
                       items={rail.shows}
                       onSelectMedia={handleOpenDetails}
-                      onHoverMedia={handleHoverMedia}
                       isLoading={isLoadingRecs}
                     />
                   ))}
 
                   {/* RECÉN AGREGADOS (por fecha de ingesta, lo más nuevo primero) */}
                   <MediaRow
-                    title="Recién Agregados"
+                    title="Recién agregados"
                     items={shows.slice(0, 50)}
                     onSelectMedia={handleOpenDetails}
-                    onHoverMedia={handleHoverMedia}
                     isLoading={isLoading}
                   />
 
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
                   {topRatedShows.length >= 3 && (
                     <BentoCollection
-                      title="Destacados por la Crítica"
+                      title="Destacados por la crítica"
                       items={topRatedShows}
                       onSelectMedia={handleOpenDetails}
-                      onHover={handleHoverMedia}
                     />
                   )}
 
@@ -849,7 +957,6 @@ export function App() {
                       subtitle={rail.subtitle}
                       items={rail.shows}
                       onSelectMedia={handleOpenDetails}
-                      onHoverMedia={handleHoverMedia}
                       isLoading={isLoadingRecs}
                     />
                   ))}
@@ -861,7 +968,6 @@ export function App() {
                       title={row.genre}
                       items={row.items}
                       onSelectMedia={handleOpenDetails}
-                      onHoverMedia={handleHoverMedia}
                       isLoading={isLoading}
                     />
                   ))}
@@ -895,7 +1001,6 @@ export function App() {
                               key={item.id}
                               media={item}
                               onSelectMedia={handleOpenDetails}
-                              onHover={handleHoverMedia}
                             />
                           ))}
                         </div>
@@ -988,6 +1093,7 @@ export function App() {
           )
         )}
       </main>
+      <footer className="site-footer"><span className="footer-brand">meristream.</span><span>Cine, series y anime. A tu ritmo.</span></footer>
 
       {/* 3. VISTA DE DETALLES (DRAWER / PANEL LATERAL FLOTANTE QUE SE DESLIZA DESDE LA DERECHA) */}
       <MediaDetailsModal

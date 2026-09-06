@@ -137,3 +137,11 @@ npx prisma migrate deploy
 
 Al terminar cada etapa, actualiza `docs/workstreams/PROGRESO_EJECUCION_2026-09-03.md` con fecha/hora, archivos tocados, comandos, resultados, conteos y pendientes. Ejecuta al menos la regresión dirigida relacionada; antes de entregar, ejecuta lint, suite completa, build y la prueba visual mínima.
 
+## Addendum operativo — 2026-09-05
+
+La instrucción posterior del usuario requiere validar e integrar todos los
+proveedores mostrados en la interfaz, incluido TubePelis. Por tanto, la
+exclusión histórica de TubePelis queda superada: su adaptador se audita en vivo
+y sus episodios legacy deben puentearse al grafo `MediaEpisode/SourceLink` con
+las mismas guardas de identidad y de URL que el resto.
+

@@ -46,7 +46,6 @@ import {
   canEscalateToProxy,
   isExpiredWithoutLocator,
   isUnresolvedCanonical,
-  isRealPlayableEmbed,
   prioritizeDirectCandidates,
   hasAttemptedMode,
   recordAttemptedMode,
@@ -174,6 +173,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [hoverTime, setHoverTime] = useState<{ time: number; posPercent: number } | null>(null);
   const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers'>('none');
+
+  // Listener de eventos postMessage para ZokoAnime embed
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://zokoanime.video') return;
+      const { type, payload } = event.data || {};
+      if (type === 'progress' && payload && typeof payload.currentTime === 'number') {
+        const duration = payload.duration || 0;
+        props.onProgressUpdate?.(payload.currentTime, duration);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [props.onProgressUpdate]);
 
   // Menús de Configuración de Video
   const [qualityLevels, setQualityLevels] = useState<{ index: number; label: string; height?: number }[]>([]);
@@ -350,33 +363,32 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
       setIsLoadingStream(false);
 
-      // Comprobar salud en segundo plano para enriquecer la UI sin retrasar el inicio (máx 4 candidatos)
+      // Inicializar todos los servidores como disponibles ('online') por defecto.
+      // Probar latencia en segundo plano para enriquecer la UI sin bloquear ni marcar servidores falsamente como muertos.
       const initialMap: Record<string, 'online' | 'checking' | 'failed'> = {};
       ranked.forEach((s) => {
-        initialMap[s.id] = s.isEmbed ? 'online' : 'checking';
+        initialMap[s.id] = 'online';
       });
       setServerHealthMap(initialMap);
 
       const probeCandidates = ranked.slice(0, MAX_PROBE_CANDIDATES);
       probeCandidates.forEach((srv) => {
-        if (!srv.isEmbed) {
-          quickProbeServerHealth(srv, 1500).then((lat) => {
-            if (!cancelled) {
+        if (!srv.isEmbed && !srv.notPlayable) {
+          quickProbeServerHealth(srv, 2500).then((lat) => {
+            if (!cancelled && lat !== null) {
               setServerHealthMap((prev) => ({
                 ...prev,
-                [srv.id]: lat !== null ? 'online' : 'failed',
+                [srv.id]: 'online',
               }));
-              if (lat !== null) {
-                setServers((prev) => {
-                  const targetIdx = prev.findIndex((p) => p.id === srv.id);
-                  if (targetIdx !== -1) {
-                    const copy = [...prev];
-                    copy[targetIdx] = { ...copy[targetIdx], latencyMs: lat };
-                    return copy;
-                  }
-                  return prev;
-                });
-              }
+              setServers((prev) => {
+                const targetIdx = prev.findIndex((p) => p.id === srv.id);
+                if (targetIdx !== -1) {
+                  const copy = [...prev];
+                  copy[targetIdx] = { ...copy[targetIdx], latencyMs: lat };
+                  return copy;
+                }
+                return prev;
+              });
             }
           });
         }
@@ -445,16 +457,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // usuario ya eligió.
   useEffect(() => {
     const server = activeServer;
-    // Un candidato marcado como página canónica/no reproducible no es un
-    // iframe: es un localizador que debe resolverse Just-In-Time. Los embeds
-    // reales sí permanecen en el flujo iframe y no se consultan aquí.
-    if (!server || (server.isEmbed && !isUnresolvedCanonical(server.url))) return;
+    if (!server) return;
+
+    const isDirectMedia =
+      /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(server.url) ||
+      server.url.includes('/m3u8/') ||
+      server.url.includes('/api/v1/stream/mega');
 
     const signedNeedsJit =
       hasExpiringSignature(server.url) &&
       (!server.expires_at || server.expires_at <= Date.now()) &&
       !server.resolved_at;
-    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit;
+
+    const embedNeedsJit = server.isEmbed && !server.resolved_at && !isDirectMedia;
+    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit || embedNeedsJit;
     if (!needsJit) {
       setCanonicalResolveError(null);
       return;
@@ -479,7 +495,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     // receta correcta de catálogo → episodio → media.
     const resolutionPromise = isUnresolvedCanonical(locator)
       ? api.getEpisodeServers(locator).then((episodeResult) => {
-          const isMediaUrl = (value: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(value) || value.includes('/m3u8/');
+          const isMediaUrl = (value: string) =>
+            /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(value) ||
+            value.includes('/m3u8/') ||
+            value.includes('.m3u8') ||
+            value.includes('/api/v1/proxy/stream');
           const ranked = Array.isArray(episodeResult.ranked_streams) ? episodeResult.ranked_streams : [];
           const first = ranked.find((candidate) => candidate?.url && (candidate.type === 'direct' || isMediaUrl(candidate.url))) || ranked[0];
           const resolvedUrl = first?.url || episodeResult.stream_url || '';
@@ -495,16 +515,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             is_refreshable: true,
             provider: first?.provider,
             requiredHeaders: first?.requiredHeaders || episodeResult.requiredHeaders,
+            extraStreams: ranked,
             subtitles: first?.subtitles?.flatMap((track) => {
               const src = track.src || track.url;
               return src ? [{ ...track, src }] : [];
             }),
-          } as PlaybackResolution;
+          } as PlaybackResolution & { extraStreams?: any[] };
         })
       : api.resolveEmbed(locator);
 
     resolutionPromise
-      .then((res) => {
+      .then((res: any) => {
         if (cancelled || attemptId !== attemptIdRef.current) return;
 
         if (res.failure_reason === 'expired_without_locator') {
@@ -531,10 +552,65 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           return;
         }
 
-        setServers((prev) => prev.map((candidate) => {
-          if (candidate.id !== targetId) return candidate;
-          return { ...applyResolution(candidate, res), notPlayable: false };
-        }));
+        setServers((prev) => {
+          let updated = prev.map((candidate) => {
+            if (candidate.id !== targetId) return candidate;
+            return { ...applyResolution(candidate, res), notPlayable: false };
+          });
+
+          // Si la resolución trajo streams reales para esta fuente/plataforma,
+          // eliminamos cualquier otro placeholder de página no resuelta de la misma plataforma
+          const targetPlatform = server.sourceSite || server.provider || (server as any).platform || (server as any).source_site;
+          if (targetPlatform) {
+            updated = updated.filter((c) => {
+              if (c.id === targetId) return true;
+              const cPlatform = c.sourceSite || c.provider || (c as any).platform || (c as any).source_site;
+              if (cPlatform && String(cPlatform).toLowerCase() === String(targetPlatform).toLowerCase() && isUnresolvedCanonical(c.url)) {
+                return false;
+              }
+              return true;
+            });
+          }
+
+          if (Array.isArray(res.extraStreams) && res.extraStreams.length > 1) {
+            const extra = res.extraStreams.slice(1);
+            const existingUrls = new Set(updated.map((s) => s.url));
+            const existingHosts = new Set(
+              updated.map((s) => {
+                try {
+                  const h = new URL(s.url).hostname.replace(/^www\./, "");
+                  const parts = h.split(".");
+                  return parts.length >= 2 ? parts.slice(-2).join(".") : h;
+                } catch {
+                  return s.provider || "";
+                }
+              }).filter(Boolean)
+            );
+
+            for (const r of extra) {
+              if (!r?.url || existingUrls.has(r.url)) continue;
+              let hostFamily = "";
+              try {
+                const h = new URL(r.url).hostname.replace(/^www\./, "");
+                const parts = h.split(".");
+                hostFamily = parts.length >= 2 ? parts.slice(-2).join(".") : h;
+              } catch {
+                hostFamily = r.provider || "";
+              }
+              if (hostFamily && existingHosts.has(hostFamily)) {
+                // Mismo host/familia que ya tenemos -> descartar duplicado
+                continue;
+              }
+              existingUrls.add(r.url);
+              if (hostFamily) existingHosts.add(hostFamily);
+              updated.push(scoredServerFromRanked(r, updated.length));
+              // Máximo 1 servidor alternativo extra por resolución de proveedor
+              break;
+            }
+          }
+
+          return updated;
+        });
         setCanonicalResolveError(null);
       })
       .catch(() => {
@@ -779,11 +855,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           if (attemptId !== attemptIdRef.current) return;
           // MANIFEST_PARSED => el directo arrancó: cancelar el watchdog directo.
           if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
+          playbackConfirmedRef.current = true;
           // Un intento anterior puede haber dejado un mensaje de fallo mientras
           // este manifiesto se resolvía. Un manifiesto válido invalida ese aviso.
           setPlaybackError(null);
           setEmbedStall(null);
           setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
+          if (activeServer) {
+            setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
+          }
           const levels: { index: number; label: string; height?: number }[] = data.levels.map((lvl: Level, idx: number) => ({
             index: idx,
             label: lvl.height ? `${lvl.height}p` : `${Math.round((lvl.bitrate ?? 0) / 1000)} kbps`,
@@ -880,17 +960,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           }
 
           console.warn('HLS Fatal Error:', data.type, data.details);
-          if (activeServer) {
-            setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
-            api.reportPlayerEvent({
-              eventType: "playback_error",
-              provider: activeServer.provider || "Servidor",
-              serverUrl: activeServer.url,
-              mediaTitle: currentTitle,
-              durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
-              details: `HLS fatal: ${data.type} - ${data.details}`,
-            });
-          }
 
           // Regla 3: Un fallo directo puede escalar a proxy únicamente si is_proxyable !== false
           if (
@@ -908,6 +977,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             });
             attachSource(url);
             return;
+          }
+
+          // Servidor falló definitivamente en ambos modos (directo y proxy)
+          if (activeServer) {
+            setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
+            api.reportPlayerEvent({
+              eventType: "playback_error",
+              provider: activeServer.provider || "Servidor",
+              serverUrl: activeServer.url,
+              mediaTitle: currentTitle,
+              durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
+              details: `HLS fatal: ${data.type} - ${data.details}`,
+            });
           }
 
           // Si hay más servidores en la lista, pasar automáticamente al siguiente una sola vez
@@ -1068,7 +1150,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         video.play().catch(() => {});
         playbackConfirmedRef.current = true;
         setDeliveryState('playing_direct');
-        setDeliveryCapability(url, 'direct_ok', activeServer.provider);
+        setDeliveryCapability(url, 'direct_ok', activeServer?.provider);
+        if (activeServer) {
+          setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
+        }
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
       };
       video.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -1091,8 +1176,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       activeServer && (activeServer.notPlayable || isUnresolvedCanonical(activeServer.url))
     );
     if (activeServer && !activeServer.isEmbed && !isCanonicalPending && lastAttachmentKey.current !== key) {
-      lastAttachmentKey.current = key;
-      attachSource(activeServer.url || '');
+      if (videoRef.current) {
+        lastAttachmentKey.current = key;
+        attachSource(activeServer.url || '');
+      } else {
+        // Si el elemento <video> aún no está montado (transición desde iframe), reintentar en el siguiente frame
+        const timer = requestAnimationFrame(() => {
+          if (videoRef.current) {
+            lastAttachmentKey.current = key;
+            attachSource(activeServer.url || '');
+          }
+        });
+        return () => cancelAnimationFrame(timer);
+      }
     }
     if (!activeServer) {
       lastAttachmentKey.current = '';
@@ -1792,7 +1888,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 (Antes dependía de serverSelectorVisible, pero un embed que falla
                 "silenciosamente" —ej. Mega con archivo muerto— nunca activaba
                 playbackError y el selector jamás aparecía.) */}
-            {servers.length > 1 && (
+            {/* SELECTOR DE SERVIDORES DESDE EL HEADER SUPERIOR (Visible siempre que haya al menos 1 servidor) */}
+            {servers.length >= 1 && (
               <div className="relative">
                 <button
                   type="button"
@@ -1802,11 +1899,18 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       ? 'bg-zinc-800 text-white border-zinc-600'
                       : 'bg-zinc-900/80 text-zinc-300 hover:text-white border-zinc-700/60'
                   }`}
-                  title="Cambiar Servidor de Streaming"
+                  title="Cambiar o Inspeccionar Servidor de Streaming"
                 >
                   <Server size={13} className="text-emerald-400" />
                   <span className="hidden sm:inline">
-                    {activeServer?.provider || (activeServer?.sourceSite ? activeServer.sourceSite.toUpperCase() : `Servidor ${activeServerIndex + 1}`)} ({activeServerIndex + 1}/{servers.length})
+                    {(() => {
+                      const site = activeServer?.sourceSite ? String(activeServer.sourceSite).toUpperCase() : '';
+                      const prov = activeServer?.provider || `Servidor ${activeServerIndex + 1}`;
+                      if (site && prov && !prov.toUpperCase().includes(site)) {
+                        return `${prov} · ${site}`;
+                      }
+                      return site || prov;
+                    })()} ({activeServerIndex + 1}/{servers.length})
                   </span>
                   <ChevronRight size={12} className={activeMenu === 'servers' ? 'rotate-90' : ''} />
                 </button>
@@ -1836,27 +1940,24 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                             seenSites.add(site);
                             premium.push({ srv, idx, site });
                           } else {
-                            rest.push({ srv, idx, site: '' });
+                            rest.push({ srv, idx, site: site || (srv.sourceSite ? String(srv.sourceSite).toLowerCase() : '') });
                           }
                         });
                         const row = (srv: (typeof servers)[number], idx: number, siteLabel?: string) => {
-                          const status = serverHealthMap[srv.id] || (srv.isEmbed ? 'online' : 'checking');
-                          const disabled = Boolean(srv.notPlayable);
+                          const status = serverHealthMap[srv.id] || 'online';
+                          const isJit = Boolean(isUnresolvedCanonical(srv.url) || srv.canonical_locator || srv.is_refreshable);
+                          const effectiveSiteLabel = siteLabel || (srv.sourceSite ? String(srv.sourceSite).toUpperCase() : '');
                           return (
                             <button
                               key={srv.id}
                               type="button"
-                              disabled={disabled}
                               onClick={() => {
-                                if (disabled) return;
                                 handleServerChange(idx);
                                 setActiveMenu('none');
                               }}
                               className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
                                 activeServerIndex === idx
                                   ? 'bg-zinc-800 text-white font-semibold'
-                                  : disabled || status === 'failed'
-                                  ? 'text-zinc-500 opacity-60 cursor-not-allowed'
                                   : 'text-zinc-300 hover:bg-zinc-800/60'
                               }`}
                             >
@@ -1864,46 +1965,44 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                                 {/* Indicador visual de salud */}
                                 <span
                                   className={`h-2 w-2 rounded-full shrink-0 ${
-                                    disabled || status === 'failed'
+                                    status === 'failed'
                                       ? 'bg-rose-500'
-                                      : status === 'online'
-                                      ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
-                                      : 'bg-amber-400 animate-pulse'
+                                      : status === 'checking'
+                                      ? 'bg-amber-400 animate-pulse'
+                                      : isJit && !srv.resolved_at
+                                      ? 'bg-sky-400 shadow-sm shadow-sky-400/50'
+                                      : 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
                                   }`}
                                   title={
-                                    disabled
-                                      ? 'No reproducible: es una página web, no un stream de video'
-                                      : status === 'online'
-                                      ? 'Servidor Verificado (Online)'
+                                    status === 'failed'
+                                      ? 'Falló reproducción previa (clic para reintentar)'
                                       : status === 'checking'
                                       ? 'Comprobando respuesta...'
-                                      : 'Servidor no disponible'
+                                      : isJit && !srv.resolved_at
+                                      ? 'Servidor Canónico (Resolución JIT)'
+                                      : 'Servidor Verificado (Online)'
                                   }
                                 />
                                 <div className="flex flex-col truncate">
-                                  <span
-                                    className={`truncate ${
-                                      disabled || status === 'failed' ? 'line-through' : ''
-                                    }`}
-                                  >
-                                    {disabled ? `No reproducible • ${srv.provider}` : srv.label}
+                                  <span className="truncate">
+                                    {srv.label}
                                   </span>
                                   <span className="text-[10px] text-zinc-500 font-mono">
-                                    {disabled
-                                      ? 'Página web sin video (requiere resolución no disponible)'
+                                    {isJit && !srv.resolved_at
+                                      ? 'Resolución JIT al reproducir'
                                       : srv.isEmbed
                                       ? 'Reproductor Web (Embed)'
                                       : srv.url.includes('/api/v1/stream/mega')
                                       ? 'Mega Directo (Nativo, con subtítulos)'
                                       : 'Stream Directo (HLS)'}
-                                    {!disabled && srv.latencyMs ? ` • ${srv.latencyMs}ms` : ''}
-                                    {!disabled && status === 'failed' ? ' • No disponible' : ''}
+                                    {srv.latencyMs ? ` • ${srv.latencyMs}ms` : ''}
+                                    {status === 'failed' ? ' • Clic para reintentar' : ''}
                                   </span>
                                 </div>
                               </div>
-                              {siteLabel && (
+                              {effectiveSiteLabel && (
                                 <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 uppercase font-bold tracking-wide">
-                                  {siteLabel}
+                                  {effectiveSiteLabel}
                                 </span>
                               )}
                               {activeServerIndex === idx && (
@@ -1925,7 +2024,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                                 Otros servidores
                               </div>
                             )}
-                            {rest.map((r) => row(r.srv, r.idx))}
+                            {rest.map((r) => row(r.srv, r.idx, r.site))}
                           </>
                         );
                       })()}
@@ -2040,26 +2139,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {!isLoadingStream && !loadError && activeServer && (
             <>
-              {activeServer.isEmbed && isRealPlayableEmbed(activeServer) ? (
-                /* MODO EMBED IFRAME REAL */
-                <iframe
-                  key={activeServer.url}
-                  src={activeServer.url}
-                  title={`Reproductor embebido de ${activeServer.provider || activeServer.sourceSite || 'la fuente seleccionada'}`}
-                  className="h-full w-full border-0 bg-black"
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-                  allowFullScreen
-                  onLoad={() => {
-                    // En iframes cross-origin no existe una señal fiable de
-                    // `playing`; la carga del documento es la única señal
-                    // segura y evita mostrar un falso aviso de stall a los
-                    // 20 s cuando el reproductor ya está activo.
-                    playbackConfirmedRef.current = true;
-                    setDeliveryState('playing_embed');
-                    setEmbedStall(null);
-                  }}
-                />
-              ) : isUnresolvedCanonical(activeServer.url) || activeServer.notPlayable ? (
+              {isUnresolvedCanonical(activeServer.url) || activeServer.notPlayable ? (
                 /* ESTADO RESOLVIENDO FUENTE CANÓNICA NO RESUELTA */
                 <div className="flex flex-col items-center gap-4 text-white z-20 px-6 text-center animate-in fade-in duration-200">
                   <div className="relative flex items-center justify-center">
@@ -2095,20 +2175,22 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     )}
                   </div>
                 </div>
-              ) : activeServer.isEmbed ? (
-                /* Embed no reproducible */
-                <div className="flex flex-col items-center gap-3 px-6 text-center z-20">
-                  <Info className="h-8 w-8 text-amber-400" />
-                  <p className="text-sm text-zinc-200">Servidor embebido no disponible directamente.</p>
-                  {servers.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleServerChange((activeServerIndex + 1) % servers.length, false)}
-                      className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs text-white hover:bg-zinc-700 transition"
-                    >
-                      Pasar al siguiente servidor
-                    </button>
-                  )}
+              ) : activeServer.isEmbed && !isUnresolvedCanonical(activeServer.url) ? (
+                /* REPRODUCTOR EMBEBIDO CON PROTECCIÓN SANDBOX ANTI-POPUPS */
+                <div className="relative w-full h-full flex flex-col items-center justify-center bg-black">
+                  <iframe
+                    key={activeServer.id}
+                    src={activeServer.url}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    sandbox={
+                      activeServer.url.includes('megaplay') || activeServer.url.includes('zokoanime')
+                        ? undefined
+                        : 'allow-forms allow-scripts allow-same-origin allow-presentation'
+                    }
+                    title={activeServer.label || 'Reproductor Embebido'}
+                  />
                 </div>
               ) : (
                 /* MODO NATIVO HLS */

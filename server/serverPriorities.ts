@@ -48,7 +48,9 @@ function familyOf(hostOrUrl: string): string {
 /** Host de una URL (sin www), o el string recortado si no parsea. */
 export function hostOfUrl(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    if (url.startsWith("/api/v1/stream/mega")) return "mega.nz";
+    const u = url.startsWith("http") ? url : `https://${url}`;
+    return new URL(u).hostname.replace(/^www\./, "").toLowerCase();
   } catch {
     return String(url || "").slice(0, 40).toLowerCase();
   }

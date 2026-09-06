@@ -415,6 +415,67 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
   }
 
   /**
+   * Obtiene los enlaces del episodio desde la API GraphQL pública del sitio.
+   * El Server Action de Next cambia con frecuencia y puede responder 504 a
+   * clientes Node; GraphQL es el canal estable que usa el propio frontend.
+   */
+  private async fetchEpisodeLinks(episodeId: string, referer: string): Promise<any[] | null> {
+    const query = `query EpisodeLinksOnline($episode_id: ID!) {
+      getEpisodeLinks(id: $episode_id, app: "${GRAPHQL_APP}") {
+        links_online {
+          server
+          lang
+          link
+          _id
+          is_recommended
+          subtitles { language_code type }
+        }
+      }
+    }`;
+    const payload = await this.fetchGraphql(query, { episode_id: episodeId }, referer) as any;
+    const links = payload?.data?.getEpisodeLinks?.links_online;
+    return Array.isArray(links) ? links : null;
+  }
+
+  /** Decodifica, resuelve y comprueba todos los servidores de un episodio. */
+  private async resolveServerEntries(rawServers: any[], cleanUrl: string): Promise<string[]> {
+    const embedUrls = [...new Set(rawServers
+      .map((server) => typeof server?.link === "string" ? this.decodeEmbedShortenerLink(server.link) : null)
+      .filter((url): url is string => Boolean(url)))];
+    if (embedUrls.length === 0) return [];
+
+    const resolvedStreams = (await Promise.all(embedUrls.map(async (embedUrl) => {
+      try {
+        const resolved = await EmbedResolvers.resolve(embedUrl);
+        return resolved || embedUrl;
+      } catch {
+        return embedUrl;
+      }
+    }))).filter((candidate) => candidate.toLowerCase() !== cleanUrl.toLowerCase());
+    if (resolvedStreams.length === 0) return [];
+
+    const validStreams = await MediaValidator.validateUrls(resolvedStreams);
+    const filteredValid = validStreams.filter((url) => url.toLowerCase() !== cleanUrl.toLowerCase());
+    const filteredResolved = resolvedStreams.filter((url) =>
+      url.toLowerCase() !== cleanUrl.toLowerCase() && !url.includes("embedshortener.co"));
+    const candidates = filteredValid.length > 0
+      ? filteredValid
+      : filteredResolved.length > 0
+        ? filteredResolved
+        : resolvedStreams;
+    const directCandidates = [...new Set(candidates.filter((url) => this.isDirectMediaUrl(url)))];
+    if (directCandidates.length === 0) return [];
+
+    const reachable = await Promise.all(directCandidates.map(async (url) =>
+      (await this.isDirectReachable(url)) ? url : null));
+    return reachable.filter((url): url is string => Boolean(url));
+  }
+
+  /**
+   * Extrae y desencripta los servidores/embeds reales de un episodio mediante Next-Action + JWT decoding
+   */
+
+  /**
    * Extrae y desencripta los servidores/embeds reales de un episodio mediante Next-Action + JWT decoding
    */
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
@@ -423,7 +484,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     try {
       const html = await this.fetchHtml(cleanUrl, 8000);
       if (!html) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+        return { stream_url: "", all_available_streams: [] };
       }
 
       const $ = cheerio.load(html);
@@ -431,7 +492,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
 
       const episodeId = this.extractEpisodeId(html);
       if (!episodeId) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
+        return { stream_url: "", all_available_streams: [], title: pageTitle };
       }
 
       // Descubrir acción vigente (resiliente a rotación)
@@ -484,36 +545,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         const rawServers = this.parseActionServers(actionText);
         if (!rawServers || !Array.isArray(rawServers) || rawServers.length === 0) continue;
 
-        const embedUrls: string[] = [];
-        for (const s of rawServers) {
-          if (!s.link) continue;
-          const decoded = this.decodeEmbedShortenerLink(s.link);
-          if (decoded) embedUrls.push(decoded);
-        }
-        if (embedUrls.length === 0) continue;
-
-        const resolvedStreams: string[] = [];
-        for (const embedUrl of embedUrls) {
-          const resolved = await EmbedResolvers.resolve(embedUrl);
-          const candidate = resolved || embedUrl;
-          if (candidate.toLowerCase() === cleanUrl.toLowerCase()) continue;
-          resolvedStreams.push(candidate);
-        }
-        if (resolvedStreams.length === 0) continue;
-
-        const validStreams = await MediaValidator.validateUrls(resolvedStreams);
-        const filteredValid = validStreams.filter((u) => u.toLowerCase() !== cleanUrl.toLowerCase());
-        const filteredResolved = resolvedStreams.filter((u) => u.toLowerCase() !== cleanUrl.toLowerCase() && !u.includes("embedshortener.co"));
-        const candidates = filteredValid.length > 0 ? filteredValid : filteredResolved.length > 0 ? filteredResolved : resolvedStreams;
-
-        const directCandidates = candidates.filter((u) => this.isDirectMediaUrl(u));
-        if (directCandidates.length === 0) continue;
-
-        const reachable: string[] = [];
-        for (const u of directCandidates) {
-          // eslint-disable-next-line no-await-in-loop
-          if (await this.isDirectReachable(u)) reachable.push(u);
-        }
+        const reachable = await this.resolveServerEntries(rawServers, cleanUrl);
         if (reachable.length > 0) {
           finalReachable = reachable;
           break;
@@ -522,8 +554,20 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         if (attempt < 2) await new Promise((r) => setTimeout(r, 300));
       }
 
+      // Fallback estable: la consulta GraphQL es la operación que usa el
+      // frontend para obtener los enlaces y sobrevive cuando Next-Action rota,
+      // se bloquea por WAF o devuelve 504 al cliente Node.
       if (finalReachable.length === 0) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title: pageTitle };
+        try {
+          const graphServers = await this.fetchEpisodeLinks(episodeId, cleanUrl);
+          if (graphServers?.length) {
+            finalReachable = await this.resolveServerEntries(graphServers, cleanUrl);
+          }
+        } catch {}
+      }
+
+      if (finalReachable.length === 0) {
+        return { stream_url: "", all_available_streams: [], title: pageTitle };
       }
 
       return {
@@ -533,8 +577,8 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       };
     } catch {
       return {
-        stream_url: cleanUrl,
-        all_available_streams: [cleanUrl],
+        stream_url: "",
+        all_available_streams: [],
       };
     } finally {
       // Limpiar timers pendientes

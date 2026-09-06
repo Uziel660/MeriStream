@@ -48,7 +48,7 @@ export class MediaValidator {
   ];
 
   /** Lista negra del usuario: muertos/anuncio-basura, se descartan sin fetch. */
-  private static readonly BLACKLISTED_HOSTS = ["voe", "mixdrop", "filemoon"];
+  private static readonly BLACKLISTED_HOSTS = ["voe", "mixdrop", "filemoon", "vudeo"];
 
   /**
    * Filtra y valida enlaces directos realizando peticiones HEAD/GET range ultra-rápidas

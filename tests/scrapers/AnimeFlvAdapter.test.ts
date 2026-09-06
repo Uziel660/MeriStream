@@ -186,6 +186,7 @@ describe("AnimeFlvAdapter - integración live JKAnime (animeflv.net obsoleto)", 
         try {
           const res = await fetch(url, {
             redirect: "follow",
+            signal: AbortSignal.timeout(6000),
             headers: { "User-Agent": UA_CHROME, Referer: "https://jkanime.net/", Accept: "*/*" },
           });
           console.log(`GET ${url.slice(0, 110)} -> ${res.status}`);

@@ -466,14 +466,14 @@ export class TubePelisAdapter extends BaseScraperAdapter {
       const html = `<iframe src="${cleanUrl}"></iframe>`;
       const result = await this.resolveStreamsFromHtml(html);
       return {
-        stream_url: result.stream_url || cleanUrl,
-        all_available_streams: result.all_available_streams.length > 0 ? result.all_available_streams : [cleanUrl],
+        stream_url: result.stream_url || "",
+        all_available_streams: result.all_available_streams,
       };
     }
 
     const html = await this.fetchHtml(cleanUrl, 12000);
     if (!html) {
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const $ = cheerio.load(html);
@@ -500,7 +500,7 @@ export class TubePelisAdapter extends BaseScraperAdapter {
     }
 
     return {
-      stream_url: result.stream_url || cleanUrl,
+      stream_url: result.stream_url || "",
       all_available_streams: result.all_available_streams,
       title,
     };

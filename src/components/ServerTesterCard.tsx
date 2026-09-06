@@ -5,7 +5,8 @@
 // flechas. La prioridad aplica a cualquier obra de esa plataforma.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlaskConical, Loader2, RefreshCw } from 'lucide-react';
+import { FlaskConical, Loader2, RefreshCw, Play } from 'lucide-react';
+import { TestPlayerModal } from './TestPlayerModal';
 
 /** Extrae la "familia" de un hostname: "s12.vimeos.net" → "vimeos" */
 function hostFamily(host: string): string {
@@ -33,6 +34,7 @@ const ServerTesterCard: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [showTestPlayer, setShowTestPlayer] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -119,9 +121,19 @@ const ServerTesterCard: React.FC = () => {
 
   return (
     <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
-      <div className="flex items-center gap-2">
-        <FlaskConical size={14} className="text-sky-400" />
-        <h4 className="text-xs font-bold text-white">Probador de Servidores por Plataforma</h4>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FlaskConical size={14} className="text-sky-400" />
+          <h4 className="text-xs font-bold text-white">Probador de Servidores por Plataforma</h4>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowTestPlayer(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600/90 hover:bg-sky-500 text-white text-xs font-semibold shadow-md transition-colors"
+        >
+          <Play size={12} className="fill-current" />
+          Reproductor Aislado de Pruebas (ZokoAnime / AniPulse / GitHub)
+        </button>
       </div>
       <p className="text-[11px] text-zinc-400">
         Elige una obra que venga de la plataforma, prueba TODOS sus servidores (status + latencia) y reordena cuál va
@@ -243,6 +255,9 @@ const ServerTesterCard: React.FC = () => {
           </p>
         </div>
       )}
+
+      {/* MODAL DE REPRODUCTOR AISLADO DE PRUEBAS */}
+      <TestPlayerModal isOpen={showTestPlayer} onClose={() => setShowTestPlayer(false)} />
     </div>
   );
 };

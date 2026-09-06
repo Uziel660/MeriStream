@@ -13,6 +13,7 @@ import { VerAnimesAdapter } from "./adapters/VerAnimesAdapter";
 import { DoramasflixAdapter } from "./adapters/DoramasflixAdapter";
 import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
 import { HiAnimesAdapter } from "./adapters/HiAnimesAdapter";
+import { GnulaAdapter } from "./adapters/GnulaAdapter";
 
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
 
@@ -38,6 +39,7 @@ export class ScraperManager {
     this.registerAdapter(new VerAnimesAdapter());
     this.registerAdapter(new DoramasflixAdapter());
     this.registerAdapter(new HiAnimesAdapter());
+    this.registerAdapter(new GnulaAdapter());
   }
 
   public static getInstance(): ScraperManager {

@@ -9,13 +9,13 @@
 //  - SOLO escribe en campos vacíos/nulos, y SOLO con datos REALES del
 //    enrichment. Los defaults falsos del pipeline (rating 8.0, status
 //    "Finalizado", genres "Multimedia") NO son datos y nunca se escriben.
-//  - Rate-limit amable: 1 obra cada ~2s. TMDB tolera 40-50 req/s; esto
-//    ni lo roza.
+//  - Paralelismo alto con limitador global de TMDB (35 req/s por proceso).
+//    El número de obras/s depende de cuántos campos necesite cada obra.
 // ══════════════════════════════════════════════════════════════════
 
 import { prisma } from "./db";
 import { enqueueWrite } from "./writeBuffer";
-import { enrichUniversalMetadata } from "./metadataEngine";
+import { enrichUniversalMetadata, isLikelyNonSpanishDescription } from "./metadataEngine";
 import { endsWithTruncationEllipsis } from "./metadataMerge";
 import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
@@ -32,6 +32,11 @@ interface BackfillResult {
 const state = {
   queue: [] as string[],
   queued: new Set<string>(),
+  // Evita que llamadas consecutivas al endpoint vuelvan a seleccionar las
+  // mismas obras antiguas antes de que cambien sus campos en la BD. Se
+  // reinicia al arrancar el proceso, de modo que una nueva ejecución puede
+  // reevaluar obras que hayan quedado sin resolver.
+  attempted: new Set<string>(),
   processed: 0,
   failed: 0,
   activeWorkers: 0,
@@ -105,6 +110,11 @@ export function showNeedsBackfill(show: {
   if (isAnomalousDescription(show.description, show.title)) {
     return true;
   }
+  // El catálogo histórico contiene sinopsis en inglés aunque no estén vacías;
+  // volver a enriquecerlas permite guardarlas en español sin perder el TMDB.
+  if (isLikelyNonSpanishDescription(show.description)) {
+    return true;
+  }
   // Portada horizontal en lugar de poster vertical, o imagen de baja calidad/placeholder
   if (isLandscapePosterUrl(show.poster_url) || isLowQualityImage(show.poster_url) || isLowQualityImage(show.banner_url) || show.banner_url === show.poster_url) {
     return true;
@@ -130,7 +140,7 @@ export function showNeedsBackfill(show: {
   );
 }
 
-/** Encola una obra (idempotente). La procesa el worker interno a 1 cada ~2s. */
+/** Encola una obra (idempotente). La procesa el pool paralelo con límite TMDB. */
 export function enqueueShowBackfill(showId: string): void {
   if (!showId || state.queued.has(showId)) return;
   state.queued.add(showId);
@@ -138,11 +148,11 @@ export function enqueueShowBackfill(showId: string): void {
   startWorker();
 }
 
-const BACKFILL_POOL = 20; // Aumentado a 20 workers simultáneos (TMDB permite 40-50 req/s)
+const BACKFILL_POOL = 20; // Workers simultáneos; metadataEngine limita TMDB a 35 req/s.
 function startWorker(): void {
   if (state.timer) return;
-  // POOL PARALELO: hasta 8 backfills simultáneos (antes: 1 cada 2.5s serial
-  // = 1000 obras en 42+ min; ahora ~8× más rápido y TMDB sobra de ancho).
+  // POOL PARALELO: hasta 20 backfills simultáneos (antes era serial). El
+  // limitador de metadataEngine evita exceder el techo de TMDB.
   state.timer = setInterval(() => {
     if (state.queue.length === 0 && state.activeWorkers === 0) {
       if (state.timer) clearInterval(state.timer);
@@ -251,9 +261,9 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
   } else if (
     // Reparación de truncados o anomalías severas
     currentDesc !== "" &&
-    (currentDescTruncated || isAnomalousDescription(currentDesc, currentTitle)) &&
+    (currentDescTruncated || isAnomalousDescription(currentDesc, currentTitle) || isLikelyNonSpanishDescription(currentDesc)) &&
     enrichedDescOk &&
-    rawEnrichedDesc.length > currentDesc.length
+    (isLikelyNonSpanishDescription(currentDesc) || rawEnrichedDesc.length > currentDesc.length)
   ) {
     data.description = rawEnrichedDesc;
   }
@@ -315,7 +325,7 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
     // Espejo multi-fuente: identidad y título visibles en el MediaItem
     // (best-effort). El ID debe propagarse aun cuando el título ya estuviera
     // completo en el Show.
-    if (data.title || data.tmdb_id) {
+    if (Object.keys(data).length > 0) {
       try {
         const base = show.base_normalized_title || show.normalized_title;
         const mediaKinds = kind === "anime" || kind === "series"
@@ -343,6 +353,11 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
           const itemData: Record<string, unknown> = {};
           if (data.title && item.title !== data.title) itemData.title = String(data.title);
           if (data.tmdb_id && !item.tmdb_id) itemData.tmdb_id = data.tmdb_id;
+          // Propagar el arte TMDB al índice multi-fuente cuando la imagen
+          // anterior era un thumbnail, placeholder o portada del proveedor.
+          if (data.poster_url && isLowQualityImage(item.poster_url)) itemData.poster_url = data.poster_url;
+          if (data.poster_path && (!item.poster_path || isLowQualityImage(item.poster_url))) itemData.poster_path = data.poster_path;
+          if (data.backdrop_path && !item.backdrop_path) itemData.backdrop_path = data.backdrop_path;
           if (Object.keys(itemData).length > 0) {
             await prisma.mediaItem.update({ where: { id: item.id }, data: itemData });
           }
@@ -360,8 +375,16 @@ export async function backfillShow(showId: string): Promise<BackfillResult> {
  * (las más antiguas primero). No bloquea: el worker las procesa en background.
  */
 export async function backfillMissingMetadata(limit: number = 100): Promise<{ queued: number }> {
+  const nonSpanishMarkers = [
+    " the ", " and ", " this ", " with ", " from ", " their ", " about ", " when ",
+    " after ", " story ", " returns ", " follows ", " young ", " must ", " will ",
+    " into ", " during ", " through ", " where ", " which ", " first ", " life ",
+    " world ", " series ", " film ", " movie ",
+  ];
+  const attemptedIds = Array.from(state.attempted);
   const shows = await prisma.show.findMany({
     where: {
+      ...(attemptedIds.length > 0 ? { id: { notIn: attemptedIds } } : {}),
       OR: [
         { description: "" },
         // Sinopsis truncadas por el sitio fuente: candidatas a reparación.
@@ -372,13 +395,19 @@ export async function backfillMissingMetadata(limit: number = 100): Promise<{ qu
         { genres: "Multimedia" },
         { year: { lte: 0 } },
         { tmdb_id: null },
+        ...nonSpanishMarkers.map((marker) => ({
+          description: { contains: marker, mode: "insensitive" as const },
+        })),
       ],
     },
     orderBy: { created_at: "asc" },
     take: Math.min(Math.max(1, Math.round(limit) || 100), 2000),
     select: { id: true },
   });
-  for (const s of shows) enqueueShowBackfill(s.id);
+  for (const s of shows) {
+    state.attempted.add(s.id);
+    enqueueShowBackfill(s.id);
+  }
   return { queued: shows.length };
 }
 

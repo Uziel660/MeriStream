@@ -22,7 +22,7 @@ const modeRaw = valueAfter("--mode");
 const mode = modeRaw === "all" ? "all" : "expired";
 
 const job = await sourceRecoveryWorker.createJob({ providers, limit, delay_ms: delayMs, mode });
-console.log(`[SourceRecovery] ${job.id}: ${job.total_discovered} episodios en cola (modo ${mode}); TubePelis excluido, TioPlus incluido.`);
+console.log(`[SourceRecovery] ${job.id}: ${job.total_discovered} episodios en cola (modo ${mode}); proveedores configurados incluidos.`);
 
 let lastProgress = "";
 for (;;) {

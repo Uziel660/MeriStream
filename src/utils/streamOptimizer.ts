@@ -118,16 +118,17 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('lamovie.org/animes/') ||
       lower.includes('animeflv.net/ver/') ||
       lower.includes('animeflv.to/ver/') ||
-      lower.includes('jkanime.net/ver/') ||
+      lower.includes('jkanime.net/') ||
       lower.includes('tioanime.com/ver/') ||
       lower.includes('latanime.org/ver/') ||
       lower.includes('wwv.veranimes.net/ver/') ||
       lower.includes('veranimes.net/ver/') ||
       lower.includes('tioplus.app/') ||
       lower.includes('tubepelis.com/pelicula/') ||
-      lower.includes('cinecalidad.am/') ||
-      lower.includes('hianimes.se/watch/') ||
-      lower.includes('hianimes.se/details/')) &&
+      lower.includes('cinecalidad.') ||
+      lower.includes('hianimes.se/') ||
+      lower.includes('doramasflix.') ||
+      lower.includes('gnulahd.nu/')) &&
     !lower.includes('.m3u8') &&
     !lower.includes('.mp4')
   );
@@ -155,6 +156,8 @@ export function isEmbedUrl(url: string): boolean {
   }
 
   return (
+    u.includes('zokoanime') ||
+    u.includes('megaplay') ||
     u.includes('player.zilla-networks.com') ||
     u.includes('/embed') ||
     u.includes('/e/') ||
@@ -209,15 +212,17 @@ export function getProviderName(url: string, index: number, sourceSite?: string,
     return capitalizedHost;
   }
 
-  const u = url.toLowerCase();
+  const u = (url || '').toLowerCase();
+  if (u.includes('zokoanime')) return 'ZokoAnime (Embed)';
+  if (u.includes('megaplay')) return 'AniPulse / Megaplay (HLS)';
   if (u.includes('/api/v1/stream/mega')) return 'Mega Directo (Nativo)';
   if (u.includes('mux.dev') || u.includes('test-streams')) return 'CDN Ultra HLS (Rápido)';
   if (u.includes('commondatastorage.googleapis.com') || u.includes('storage.googleapis')) return 'Google Fast Direct';
   if (u.includes('zilla-networks')) return 'Zilla HLS Network';
   if (u.includes('voe.sx') || u.includes('voe.') || u.includes('byselapuix')) return 'VOE HighSpeed';
-  if (u.includes('streamwish')) return 'Streamwish CDN';
+  if (u.includes('premilkyway') || u.includes('wishonly') || u.includes('sfastwish') || u.includes('streamwish') || u.includes('flaswish')) return 'StreamWish';
   if (u.includes('filemoon')) return 'Filemoon HD';
-  if (u.includes('yourupload')) return 'YourUpload';
+  if (u.includes('playmudos') || u.includes('yourupload')) return 'YourUpload';
   if (u.includes('streamtape')) return 'Streamtape CDN';
   if (u.includes('mega.nz')) return 'Mega Cloud';
   if (u.includes('mp4upload.com/embed') || /mp4upload\.com\/[a-z0-9]+$/.test(u)) return 'MP4Upload (Embed)';
@@ -227,8 +232,15 @@ export function getProviderName(url: string, index: number, sourceSite?: string,
   if (u.includes('fembed')) return 'Fembed HD';
   if (u.includes('mixdrop')) return 'Mixdrop';
   if (u.includes('uqload')) return 'Uqload Fast';
-  if (u.includes('animeflv')) return 'AnimeFLV Server';
-  if (u.includes('jkanime')) return 'JKanime Server';
+  if (u.includes('dramiyos-cdn') || u.includes('vidhide') || u.includes('vixhide')) return 'Vidhide';
+  if (u.includes('vimeos')) return 'Vimeos';
+  if (u.includes('goodstream')) return 'Goodstream';
+  if (u.includes('animeflv')) return 'AnimeFLV';
+  if (u.includes('jkanime')) return 'JKanime';
+  if (u.includes('tioanime')) return 'TioAnime';
+  if (u.includes('latanime')) return 'LatAnime';
+  if (u.includes('cinecalidad')) return 'Cinecalidad';
+  if (u.includes('lamovie')) return 'LaMovie';
 
   if (sourceSite && typeof sourceSite === 'string' && sourceSite.trim()) {
     const site = sourceSite.trim().toUpperCase();
@@ -342,6 +354,9 @@ export function scoreServer(rawUrl: string, index: number, metadataOverrides?: P
     // Restaurado a la normalidad: El stealth proxy resuelve el 403
     score += 15;
     health = 'excelente';
+  } else if (u.includes('zokoanime')) {
+    health = 'excelente';
+    score += 22;
   } else if (isEmbed) {
     if (u.includes('voe.sx') || u.includes('byselapuix')) {
       health = 'buena';
@@ -418,6 +433,17 @@ export function scoredServerFromRanked(ranked: ExtendedRankedStream | RankedStre
   }
 
   if (isRaw) {
+    const isJitRefreshable = Boolean(ext.canonical_locator || ext.is_refreshable);
+    if (isJitRefreshable) {
+      return {
+        ...base,
+        isEmbed: false,
+        streamType: 'direct',
+        notPlayable: false,
+        label: provider,
+        score: 40,
+      };
+    }
     return {
       ...base,
       isEmbed: false,
@@ -550,9 +576,10 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
     const isGenericProvider = !s.provider || s.provider.startsWith('Servidor') || s.provider.startsWith('HLS Master') || s.provider.startsWith('Direct MP4');
     const finalProvider = backendProvided || isGenericProvider ? provider : s.provider;
 
+    const isJitRefreshable = Boolean(m.canonical_locator || s.canonical_locator || m.is_refreshable || s.is_refreshable);
     const label = isExpired
       ? `[Expirado] ${finalProvider}`
-      : isRaw
+      : isRaw && !isJitRefreshable
       ? `No reproducible • ${finalProvider}`
       : s.label.includes('Servidor') || s.label.includes('HLS Master') || s.label.includes('Direct MP4')
       ? `[${s.quality}] ${finalProvider}`
@@ -582,7 +609,14 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
       subtitle_language: m.subtitle_language ?? s.subtitle_language,
       subtitles: m.subtitles ?? s.subtitles,
       ...(isExpired ? { notPlayable: true, score: -1000 } : {}),
-      ...(isRaw ? { isEmbed: false, streamType: 'direct' as const, notPlayable: true, score: -1000 } : {}),
+      ...(isRaw
+        ? {
+            isEmbed: false,
+            streamType: 'direct' as const,
+            notPlayable: !isJitRefreshable,
+            score: isJitRefreshable ? (s.score > 0 ? s.score : 40) : -1000,
+          }
+        : {}),
     };
   });
   const byUrl = new Map(enriched.map((s) => [s.url, s]));
@@ -602,7 +636,7 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
 /**
  * Comprobación ultrarrápida de salud en segundo plano (no bloqueante)
  */
-export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 1200): Promise<number | null> {
+export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 2500): Promise<number | null> {
   if (server.isEmbed) return null; // Los iframes no se pueden sondear por CORS
   if (server.notPlayable || server.score < 0) return null; // Páginas crudas/placeholders: nada que sondear
   
@@ -620,12 +654,16 @@ export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 1
     const start = performance.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Usar GET con Range: bytes=0-50 para máxima compatibilidad (muchos CDNs de streaming rechazan HEAD con 405)
     const res = await fetch(testUrl, {
-      method: 'HEAD',
+      method: 'GET',
       signal: controller.signal,
-      headers: { Range: 'bytes=0-100' },
+      headers: { Range: 'bytes=0-50' },
     });
     clearTimeout(timer);
+    if (res.body) {
+      try { res.body.cancel(); } catch {}
+    }
     if (res.ok || res.status === 206) {
       return Math.round(performance.now() - start);
     }

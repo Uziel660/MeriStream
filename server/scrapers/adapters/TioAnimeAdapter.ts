@@ -21,7 +21,6 @@ const DEAD_HOST_PATTERNS = [
   /vidcache\.net/i,
   /v\.tioanime\.com\/embed\.php/i,
   /my\.mail\.ru\/video\/embed/i,
-  /yourupload\.com/i,
   /streamtape\.com/i,
   /dsvplay\.com/i,
   /savefiles\.com/i,
@@ -754,7 +753,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
     const html = await this.fetchHtml(cleanUrl, 12000);
 
     if (!html) {
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      return { stream_url: "", all_available_streams: [] };
     }
 
     if (this.isErrorPage(html)) {
@@ -776,7 +775,7 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       const rawStreams = this.extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
 
       if (rawStreams.length === 0) {
-        return { stream_url: cleanUrl, all_available_streams: [cleanUrl], title };
+        return { stream_url: "", all_available_streams: [], title };
       }
 
       const { resolved, originals } = await this.sanitizeAndResolve(rawStreams);
@@ -786,8 +785,9 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       const withEmbedResolution = await Promise.all(
         combined.map(async (url) => {
           try {
-            const r = await EmbedResolvers.resolve(url);
-            return r || url;
+            const timeoutPromise = new Promise<string>((resolve) => setTimeout(() => resolve(url), 4500));
+            const resolvePromise = EmbedResolvers.resolve(url).then((r) => r || url);
+            return await Promise.race([resolvePromise, timeoutPromise]);
           } catch {
             return url;
           }
@@ -806,8 +806,8 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
       const ordered = this.orderDirectFirst(base);
 
       return {
-        stream_url: ordered[0] || cleanUrl,
-        all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
+        stream_url: ordered[0] || "",
+        all_available_streams: ordered.length > 0 ? ordered : [],
         title,
       };
     }
@@ -815,33 +815,38 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
     // Array var videos: filtrar hosts muertos + resolver VOE a HLS directo
     const { resolved, originals } = await this.sanitizeAndResolve(videos);
 
-    const allAvailable: string[] = [];
-    for (const url of resolved) {
-      if (!allAvailable.includes(url)) allAvailable.push(url);
-    }
-    for (const url of originals) {
-      if (!allAvailable.includes(url)) allAvailable.push(url);
+    const candidateUrls: string[] = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const res = resolved[i];
+      const orig = originals[i];
+      if (res && !candidateUrls.includes(res)) candidateUrls.push(res);
+      const isDirect = /\.(m3u8|mp4|webm)(\?|#|$)/i.test(res);
+      if (!isDirect && orig && !candidateUrls.includes(orig)) {
+        candidateUrls.push(orig);
+      }
     }
 
     // Resolver el resto con EmbedResolvers (mega file->embed, ok.ru->hls, etc.)
     const withEmbedResolution = await Promise.all(
-      allAvailable.map(async (url) => {
+      candidateUrls.map(async (url) => {
         try {
-          const r = await EmbedResolvers.resolve(url);
-          return r || url;
+          const timeoutPromise = new Promise<string>((resolve) => setTimeout(() => resolve(url), 4500));
+          const resolvePromise = EmbedResolvers.resolve(url).then((r) => r || url);
+          const res = (await Promise.race([resolvePromise, timeoutPromise])) || url;
+          return { original: url, resolved: res };
         } catch {
-          return url;
+          return { original: url, resolved: url };
         }
       })
     );
 
     const merged: string[] = [];
-    for (const url of withEmbedResolution) {
-      if (!merged.includes(url)) merged.push(url);
-    }
-    // Re-agregar originales como fallback si su resolución difiere
-    for (const url of allAvailable) {
-      if (!merged.includes(url)) merged.push(url);
+    for (const { original, resolved } of withEmbedResolution) {
+      if (!merged.includes(resolved)) merged.push(resolved);
+      const isDirect = /\.(m3u8|mp4|webm)(\?|#|$)/i.test(resolved);
+      if (!isDirect && resolved !== original && !merged.includes(original)) {
+        merged.push(original);
+      }
     }
 
     const validated = await MediaValidator.validateUrls(merged);
@@ -851,9 +856,27 @@ export class TioAnimeAdapter extends BaseScraperAdapter {
     // ok.ru->.m3u8 resuelto), por lo que E2E fallaba con stream_url = mega.nz/embed.
     const ordered = this.orderDirectFirst(base);
 
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    const directMedia = ordered.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const backupEmbeds = ordered.filter((u) => !directMedia.includes(u));
+    
+    const topStreams: string[] = [];
+    if (directMedia.length > 0) {
+      topStreams.push(directMedia[0]);
+      if (directMedia.length > 1) {
+        topStreams.push(directMedia[1]);
+      } else if (backupEmbeds.length > 0) {
+        topStreams.push(backupEmbeds[0]);
+      }
+    } else {
+      topStreams.push(...backupEmbeds.slice(0, 2));
+    }
+
+    const resultStreams = topStreams.length > 0 ? topStreams : ordered.slice(0, 2);
+
     return {
-      stream_url: ordered[0] || cleanUrl,
-      all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
+      stream_url: resultStreams[0] || "",
+      all_available_streams: resultStreams,
       title,
     };
   }

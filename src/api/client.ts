@@ -279,6 +279,10 @@ export const api = {
     return request<{ ok: boolean; status: VerificationStatus }>("/verification/stop", { method: "POST" });
   },
 
+  async repairCatalogLinks(): Promise<{ ok: boolean; message: string; details?: any }> {
+    return request<{ ok: boolean; message: string; details?: any }>("/verification/repair-links", { method: "POST" });
+  },
+
   // Nueva arquitectura Just-In-Time
   async getShows(search?: string, category?: string): Promise<Show[]> {
     const params = new URLSearchParams();

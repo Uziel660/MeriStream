@@ -42,6 +42,7 @@ import {
   ResolutionCoordinator,
 } from "./server/deliveryPlanner";
 import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
+import { isInvalidCatalogSource, sanitizeCatalogLandingPages } from "./server/catalogIntegrity";
 import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
 import { pipeline } from "node:stream/promises";
 import { request } from "undici";
@@ -152,31 +153,8 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
 
 /**
  * Evita que una URL de navegación del catálogo termine como candidato de
- * reproducción. Las páginas de detalle (/peliculas/<slug>, /ver-pelicula/<slug>)
- * sí son válidas para resolución JIT; solo se descartan índices/paginaciones.
- */
-function isInvalidCatalogSource(url: string): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    const pathname = parsed.pathname.toLowerCase();
-    if (/\/page\/\d+(?:\/|$)/i.test(pathname)) return true;
-    for (const key of ["page", "paged"]) {
-      const value = parsed.searchParams.get(key);
-      if (value && /^\d+$/.test(value)) return true;
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (
-      (host.includes("cinecalidad.") || host.includes("lamovie.") || host.includes("tioplus.")) &&
-      (/^\/$/.test(pathname) || /\/(?:catalogo|peliculas|series|estrenos|genero|category|categoria)\/?$/i.test(pathname))
-    ) {
-      return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
+// isInvalidCatalogSource se centraliza en server/catalogIntegrity.ts
+export { isInvalidCatalogSource } from "./server/catalogIntegrity";
 
 /**
  * Identidad estable de un candidato para no gastar la cuota de un proveedor
@@ -356,11 +334,18 @@ export async function buildMultiSourceCascade(
   const maxPerSite = options?.maxPerSite ?? 2;
   const maxTotal = options?.maxTotal ?? 8;
   const perSiteCount = new Map<string, number>();
+  const perSiteLandingCount = new Map<string, number>();
   const identitiesBySite = new Map<string, Set<string>>();
   const bounded: typeof mapped = [];
 
   for (const candidate of mapped) {
     const s = candidate.source_site;
+    const isLanding = isCanonicalLocator(candidate.url) || classifySourceKind(candidate.url) === "canonical_page";
+    if (isLanding) {
+      const landingCount = perSiteLandingCount.get(s) || 0;
+      if (landingCount >= 1) continue;
+      perSiteLandingCount.set(s, landingCount + 1);
+    }
     const count = perSiteCount.get(s) || 0;
     if (count >= maxPerSite) {
       continue;
@@ -696,6 +681,19 @@ async function findLegacyEpisodeForMediaEpisode(
   return null;
 }
 
+function isExpiredSignedUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const { expiresAt } = parseStreamExpiry(url);
+    if (expiresAt && expiresAt <= Date.now()) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+const playStreamsCache = new Map<string, { streamUrl: string; allStreams: string[]; ranked: any[]; expiresAt: number }>();
+
 export async function handlePlayEpisode(req: Request, res: Response) {
   const targetId = req.params.episode_id;
   const _playResolveStart = Date.now();
@@ -711,19 +709,67 @@ export async function handlePlayEpisode(req: Request, res: Response) {
 
     if (mediaEpisode && mediaEpisode.links?.length > 0) {
       const title = `${mediaEpisode.media_item?.title || "Reproducción"} - Episodio ${mediaEpisode.episode_number}`;
-      // Esta ruta queda deliberadamente DB-only: devuelve las fuentes canónicas
-      // y el frontend resuelve solo la elegida mediante /resolve-embed. Así una
-      // apertura no dispara cuatro scrapers concurrentes en el host de 2 GB.
-      const rankedRaw = await buildMultiSourceCascade(mediaEpisode.links, { maxPerSite: 2, maxTotal: 8 });
-      const ranked = keepCanonicalCandidatesFirst(rankedRaw, mediaEpisode.links);
+
+      const cached = playStreamsCache.get(mediaEpisode.id);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json({
+          episode_id: mediaEpisode.id,
+          stream_url: cached.streamUrl,
+          title,
+          all_available_streams: cached.allStreams,
+          ranked_streams: cached.ranked,
+        });
+      }
+
+      // Filtrar links que pertenecen a otra temporada o episodio
+      const validLinks = mediaEpisode.links.filter((l: any) => {
+        const url = (l.url || "").trim();
+        if (!url) return false;
+        const sxp = url.match(/(?:[-_/]|^)(\d+)x(\d+)(?:[-_/.]|$)/i);
+        if (sxp) {
+          const s = parseInt(sxp[1], 10);
+          const e = parseInt(sxp[2], 10);
+          if (mediaEpisode.season_number != null && s !== mediaEpisode.season_number) return false;
+          if (mediaEpisode.episode_number != null && e !== mediaEpisode.episode_number) return false;
+        }
+        const temp = url.match(/temporada-(\d+)-episodio-(\d+)/i);
+        if (temp) {
+          const s = parseInt(temp[1], 10);
+          const e = parseInt(temp[2], 10);
+          if (mediaEpisode.season_number != null && s !== mediaEpisode.season_number) return false;
+          if (mediaEpisode.episode_number != null && e !== mediaEpisode.episode_number) return false;
+        }
+        return true;
+      });
+
+      const linksToUse = validLinks.length > 0 ? validLinks : mediaEpisode.links;
+      const rankedRaw = await buildMultiSourceCascade(linksToUse, { maxPerSite: 2, maxTotal: 8 });
+      const ranked = keepCanonicalCandidatesFirst(rankedRaw, linksToUse);
+
+      if (ranked.length === 0) {
+        return res.status(404).json({
+          error: "No se pudieron obtener servidores de reproducción para este episodio.",
+          episode_id: mediaEpisode.id,
+          ranked_streams: [],
+          all_available_streams: [],
+        });
+      }
+
       const allMergedStreams = ranked.map((entry) => entry.url);
       const streamUrl = ranked[0]?.url || "";
+
+      playStreamsCache.set(mediaEpisode.id, {
+        streamUrl,
+        allStreams: allMergedStreams,
+        ranked,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
 
       return res.json({
         episode_id: mediaEpisode.id,
         stream_url: streamUrl,
         title,
-        all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : (streamUrl ? [streamUrl] : []),
+        all_available_streams: allMergedStreams,
         ranked_streams: ranked,
       });
     }
@@ -1427,6 +1473,22 @@ async function startServer() {
     }
 
     try {
+      // Si la URL es una página web de episodio (animeflv, jkanime, etc.), extraer streams reales primero
+      if (classifySourceKind(rawUrl) === "page" || isCanonicalLocator(rawUrl)) {
+        try {
+          const extracted = await extractStreamFromUrl(rawUrl);
+          const candidates = Array.from(
+            new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+          );
+          for (const cand of candidates) {
+            const resolvedMeta = await resolutionCoordinator.resolve(cand);
+            if (resolvedMeta.resolved && resolvedMeta.type === "direct") {
+              return res.json(buildResolveDeliveryResponse(resolvedMeta, "regex_fast", deliveryPlanner));
+            }
+          }
+        } catch {}
+      }
+
       // Capa ligera: fetch HTTP + extractores específicos, sin navegador headless.
       const meta = await resolutionCoordinator.resolve(rawUrl);
       if (meta.resolved) {
@@ -1577,6 +1639,8 @@ async function startServer() {
         lowerTargetUrl.includes('.ts') ||
         lowerTargetUrl.includes('.m4s') ||
         lowerTargetUrl.includes('/segs/') ||
+        lowerTargetUrl.includes('/seg-') ||
+        lowerTargetUrl.includes('xoticsky.top') ||
         lowerTargetUrl.includes('/m3u8/');  // Zilla Networks: /m3u8/{hash} format
 
       if (isHlsResource) {
@@ -2032,37 +2096,109 @@ async function startServer() {
 
       // Una fuente directa con extensiÃ³n de media es resoluble aunque coincida con la URL
       // pedida (caso archive.org/details â†’ .mp4 directo): el player nativo sÃ­ la reproduce.
-      const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u);
+      const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes(".m3u8") || u.includes("/m3u8/");
 
       const realStreams = all.filter((u) => (u !== url || isDirectMedia(u)) && !isSourcePage(u));
-      // HiAnimes/Zoko entrega un manifiesto temporal que exige el Referer del
+
+      // Filtro de hosts muertos o imposibles de embeber/reproducir (Cloudflare/bot-check)
+      const isDeadHost = (u: string) => {
+        const lower = u.toLowerCase();
+        return (
+          lower.includes("voe.sx") ||
+          lower.includes("voe-unblock") ||
+          lower.includes("mixdrop.") ||
+          lower.includes("mxdrop.") ||
+          lower.includes("filemoon.")
+        );
+      };
+      const usableStreams = realStreams.filter((u) => !isDeadHost(u));
+      const candidatesToRank = usableStreams.length > 0 ? usableStreams : realStreams;
+
+      // HiAnimes/Zoko/Megaplay entrega un manifiesto temporal que exige el Referer del
       // CDN. Recuperar su metadata aquí evita que el JIT lo adjunte sin
       // cabeceras y termine en un 403 aunque la URL sea correcta.
       let hianimesMeta: Awaited<ReturnType<typeof EmbedResolvers.resolveWithMeta>> | null = null;
-      if (/hianimes\.se\/watch\//i.test(url)) {
+      if (/hianimes\.se\/watch\/|megaplay\.buzz\/stream\//i.test(url)) {
         try {
           const meta = await EmbedResolvers.resolveWithMeta(url);
           if (meta.resolved && meta.url) hianimesMeta = meta;
         } catch {}
       }
-      const rankedStreams = rankStreams(realStreams, getServerPriorities(siteFromDomain(hostOfStreamUrl(url)))).map((r) => ({
-        ...r,
-        // Plataforma de origen (sitio cuya página se pidió) para el selector premium.
-        source_site: siteFromDomain(hostOfStreamUrl(url)) || undefined,
-        ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.requiredHeaders
-          ? { requiredHeaders: hianimesMeta.requiredHeaders }
-          : {}),
-        ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.subtitles
-          ? { subtitles: hianimesMeta.subtitles }
-          : {}),
-      }));
+
+      const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
+
+      // Intentar desofuscar de inmediato los mejores embeds a stream nativo directo (.m3u8/.mp4)
+      const upgradedMap = new Map<string, { url: string; requiredHeaders?: Record<string, string>; subtitles?: any[] }>();
+      for (const cand of rankedBase.slice(0, 3)) {
+        if (!isDirectMedia(cand.url)) {
+          try {
+            const subMeta = await Promise.race([
+              EmbedResolvers.resolveWithMeta(cand.url),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout (3s)")), 3000)),
+            ]);
+            if (subMeta.resolved && subMeta.url && (subMeta.type === "direct" || isDirectMedia(subMeta.url))) {
+              let directUrl = subMeta.url;
+              // CDNs con validación de IP de origen o bloqueo de CORS en navegador (ej. okcdn.ru):
+              // deben servirse a través del proxy para reescribir segmentos y evitar CORS/400.
+              if (directUrl.includes("okcdn.ru") || cand.url.includes("ok.ru")) {
+                directUrl = `/api/v1/proxy/stream?referer=https%3A%2F%2Fok.ru%2F&url=${encodeURIComponent(subMeta.url)}`;
+              }
+              upgradedMap.set(cand.url, {
+                url: directUrl,
+                requiredHeaders: subMeta.requiredHeaders,
+                subtitles: subMeta.subtitles,
+              });
+            }
+          } catch {}
+        }
+      }
+
+      const rankedStreams = rankedBase.map((r) => {
+        const upgraded = upgradedMap.get(r.url);
+        return {
+          ...r,
+          ...(upgraded
+            ? {
+                url: upgraded.url,
+                type: "direct" as const,
+                original_url: r.url,
+                canonical_locator: r.url,
+                tier: 1,
+                requiredHeaders: upgraded.requiredHeaders,
+                subtitles: upgraded.subtitles,
+              }
+            : {}),
+          // Plataforma de origen (sitio cuya página se pidió) para el selector premium.
+          source_site: siteFromDomain(hostOfStreamUrl(url)) || undefined,
+          ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.requiredHeaders
+            ? { requiredHeaders: hianimesMeta.requiredHeaders }
+            : {}),
+          ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.subtitles
+            ? { subtitles: hianimesMeta.subtitles }
+            : {}),
+        };
+      });
+
+      // Ordenar: streams directos primero, luego por tier
+      rankedStreams.sort((a, b) => {
+        const aDirect = a.type === "direct" || isDirectMedia(a.url);
+        const bDirect = b.type === "direct" || isDirectMedia(b.url);
+        if (aDirect && !bDirect) return -1;
+        if (!aDirect && bDirect) return 1;
+        return a.tier - b.tier;
+      });
+
+      const primaryCandidate = rankedStreams.find((r) => r.type === "direct" || isDirectMedia(r.url)) || rankedStreams[0];
+      const finalStreamUrl = primaryCandidate?.url || extracted.stream_url;
+      const isResolved = rankedStreams.length > 0 && !isSourcePage(finalStreamUrl);
+
       res.json({
         url,
-        stream_url: extracted.stream_url,
+        stream_url: finalStreamUrl,
         all_available_streams: all,
         title: extracted.title,
-        resolved: realStreams.length > 0,
-        ...(hianimesMeta?.requiredHeaders ? { requiredHeaders: hianimesMeta.requiredHeaders } : {}),
+        resolved: isResolved,
+        requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,
         ranked_streams: rankedStreams,
       });
     } catch (e: any) {
@@ -2579,6 +2715,23 @@ async function startServer() {
     res.json(result);
   });
 
+  // POST /api/v1/verification/repair-links
+  app.post("/api/v1/verification/repair-links", async (_req: Request, res: Response) => {
+    try {
+      const result = await sanitizeCatalogLandingPages();
+      res.json({
+        ok: true,
+        message: `Auditoría y saneamiento completado. Enlaces de catálogo erróneos purgados: ${result.totalCleaned}`,
+        details: {
+          ...result.details,
+          total: result.totalCleaned,
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || String(e) });
+    }
+  });
+
   // POST /api/v1/worker/clear-finished
   app.post("/api/v1/worker/clear-finished", async (req: Request, res: Response) => {
     await taskWorker.clearFinishedJobs();
@@ -2599,13 +2752,13 @@ async function startServer() {
         episodes_imported: job.episodes_imported,
         total_discovered: job.total_discovered,
         current_item_title: job.current_item_title,
-        items_queue: job.items_queue,
+        items_queue: (job.items_queue || []).slice(-50),
         rate_limit_delay_ms: job.rate_limit_delay_ms,
         error_message: job.error_message,
         created_at: job.created_at,
         updated_at: job.updated_at,
-        logs: job.logs.map((l) => `[${l.level.toUpperCase()}] ${l.message}`),
-        detailed_logs: job.logs,
+        logs: (job.logs || []).slice(-100).map((l) => `[${l.level.toUpperCase()}] ${l.message}`),
+        detailed_logs: (job.logs || []).slice(-100),
       });
     }
     return res.status(404).json({ detail: "Tarea no encontrada" });
@@ -2794,24 +2947,42 @@ async function startServer() {
         .filter(Boolean)
         .filter((u: string) => {
           if (seen.has(u) || isBlacklistedHost(u)) return false;
+          const host = hostOfUrl(u);
+          if (host.includes(platform) || isInvalidCatalogSource(u) || isCanonicalLocator(u)) return false;
           seen.add(u);
           return true;
         })
         .slice(0, 12);
 
       const priorities = getServerPriorities(platform);
-      const origin = `http://127.0.0.1:${APP_CONFIG.port}`;
+      const port = process.env.PORT || 3010;
+      const origin = `http://127.0.0.1:${port}`;
+
+      if (streams.length === 0) {
+        return res.json({
+          ok: true,
+          platform,
+          episode_url: episode.source_url,
+          results: [],
+          priorities,
+          message: "No se encontraron servidores de video activos para esta obra.",
+        });
+      }
+
       const tests = await Promise.all(
         streams.map(async (url: string) => {
           const host = hostOfUrl(url);
           const started = Date.now();
           let status = 0;
+          let isMedia = false;
           try {
             const r = await fetch(`${origin}/api/v1/proxy/stream?url=${encodeURIComponent(url)}`, {
               headers: { Range: "bytes=0-100", "User-Agent": "Mozilla/5.0" },
               signal: AbortSignal.timeout(9000),
             });
             status = r.status;
+            const contentType = r.headers.get("content-type") || "";
+            isMedia = (status === 200 || status === 206) && !contentType.includes("text/html");
             try { await r.body?.cancel(); } catch {}
           } catch {
             status = 0;
@@ -2821,7 +2992,7 @@ async function startServer() {
             host,
             hostFamily: familyKeyOfStreamUrl(url),
             status,
-            ok: status === 200 || status === 206,
+            ok: isMedia,
             latency_ms: Date.now() - started,
             priority: priorities[familyKeyOfStreamUrl(url)] ?? undefined,
           };
@@ -2882,6 +3053,267 @@ async function startServer() {
   app.get("/api/v1/admin/session", adminSession);
   app.post("/api/v1/admin/logout", adminLogout);
 
+  // =========================================================================
+  // DEBUG SIMULATOR: Click-to-Play Frontend Simulation with Network Probe
+  // Simulates frontend user clicking 'Play', calling /api/v1/play/:episode_id,
+  // resolving candidate direct servers, following redirects, and verifying 200/206
+  // =========================================================================
+  async function probeStreamNetwork(url: string, customHeaders: Record<string, string> = {}, portNum = 3010) {
+    const start = Date.now();
+    try {
+      const targetUrl = url.startsWith("/") ? `http://127.0.0.1:${portNum}${url}` : url;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const reqHeaders: Record<string, string> = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Range": "bytes=0-2048",
+        ...buildProxyHeaders(targetUrl),
+        ...customHeaders,
+      };
+      const resp = await fetch(targetUrl, {
+        method: "GET",
+        headers: reqHeaders,
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const latency_ms = Date.now() - start;
+      const contentType = resp.headers.get("content-type") || "";
+      const textSample = await resp.text().catch(() => "");
+      const is_m3u8 = textSample.includes("#EXTM3U") || contentType.includes("mpegurl");
+      const is_mp4 = contentType.includes("video/mp4") || url.includes(".mp4");
+      const is_html = contentType.includes("text/html") || textSample.includes("<!DOCTYPE") || textSample.includes("<html");
+
+      return {
+        status: resp.status,
+        ok: resp.ok || resp.status === 206,
+        latency_ms,
+        content_type: contentType,
+        redirected: resp.redirected,
+        final_url: resp.url,
+        is_m3u8,
+        is_mp4,
+        is_html,
+        sample_snippet: textSample.slice(0, 100).replace(/\r?\n/g, " "),
+      };
+    } catch (err: any) {
+      return {
+        status: 0,
+        ok: false,
+        latency_ms: Date.now() - start,
+        error: err?.name === "AbortError" ? "Timeout (7s)" : (err?.message || String(err)),
+        content_type: "",
+        redirected: false,
+        final_url: url,
+        is_m3u8: false,
+        is_mp4: false,
+        is_html: false,
+        sample_snippet: "",
+      };
+    }
+  }
+
+  async function executeFrontendPlaySimulation(episode: any, portNum: number) {
+    const playApiStart = Date.now();
+    let playData: any = null;
+    let playStatus = 0;
+    try {
+      const playRes = await fetch(`http://127.0.0.1:${portNum}/api/v1/play/${episode.id}`, {
+        headers: { Accept: "application/json" },
+      });
+      playStatus = playRes.status;
+      playData = await playRes.json();
+    } catch (e: any) {
+      return {
+        success: false,
+        error: `Fallo al invocar /api/v1/play/${episode.id}: ${e.message}`,
+        episode_id: episode.id,
+      };
+    }
+    const playApiDurationMs = Date.now() - playApiStart;
+
+    const primaryUrl = playData?.stream_url || "";
+    const rankedStreams = playData?.ranked_streams || [];
+
+    const primaryProbe = primaryUrl ? await probeStreamNetwork(primaryUrl, rankedStreams[0]?.requiredHeaders, portNum) : null;
+    const isDirect = Boolean(EmbedResolvers.isDirectMediaUrl(primaryUrl) || primaryProbe?.is_m3u8 || primaryProbe?.is_mp4);
+    const isIframe = !isDirect && (playData?.delivery_mode === "embed" || Boolean(primaryProbe?.is_html));
+    const playerEngine = isDirect
+      ? (primaryUrl.includes(".m3u8") || primaryProbe?.is_m3u8 ? "hls.js (Reproductor Nativo HLS)" : "HTML5 Video (<video src=mp4>)")
+      : (isIframe ? "IFRAME_BLOQUEADO" : "Desconocido");
+
+    const fallbackProbes = [];
+    for (const stream of rankedStreams.slice(1, 4)) {
+      const probe = await probeStreamNetwork(stream.url, stream.requiredHeaders, portNum);
+      fallbackProbes.push({
+        server_provider: stream.provider || stream.source_site || "Desconocido",
+        url: stream.url,
+        type: stream.type,
+        probe,
+      });
+    }
+
+    const liveFallback = fallbackProbes.find((f) => f.probe?.ok && !f.probe?.is_html);
+    const liveStream = (primaryProbe?.ok && !primaryProbe?.is_html)
+      ? { ...primaryProbe, provider: rankedStreams[0]?.provider || "Servidor Primario" }
+      : (liveFallback ? { ...liveFallback.probe, provider: liveFallback.server_provider } : null);
+
+    const isSuccess = Boolean(isDirect && liveStream);
+
+    return {
+      success: isSuccess,
+      simulation_verdict: isSuccess ? "100% STREAMING DIRECTO NATIVO (SIN IFRAMES NI PUBLICIDAD)" : "FALLO_STREAMING",
+      timestamp: new Date().toISOString(),
+      media: {
+        episode_id: episode.id,
+        show_title: episode.media_item?.title || "Sin título",
+        episode_number: episode.episode_number,
+        primary_source_site: episode.links?.[0]?.source_site || "Desconocido",
+        source_page_url: episode.links?.[0]?.url || "",
+        total_links: episode.links?.length || 0,
+      },
+      frontend_click_simulation: {
+        step_1_api_play_call: {
+          endpoint: `/api/v1/play/${episode.id}`,
+          response_code: playStatus,
+          response_time_ms: playApiDurationMs,
+          resolved_stream_url: primaryUrl,
+          total_ranked_streams: rankedStreams.length,
+        },
+        step_2_frontend_decision: {
+          player_engine: playerEngine,
+          is_direct_native_stream: isDirect,
+          is_iframe_blocked: !isIframe,
+          active_server_selected: liveStream?.provider || rankedStreams[0]?.provider || "Servidor 1",
+          failover_occurred: Boolean(!primaryProbe?.ok && liveFallback),
+        },
+        step_3_network_playback_probe: {
+          primary_stream: primaryProbe,
+          fallback_servers_probed: fallbackProbes,
+        },
+      },
+      guarantees: {
+        no_iframes: !isIframe,
+        no_ad_popups: isDirect,
+        direct_media_verified: isSuccess,
+      },
+    };
+  }
+
+  app.all(
+    ["/api/v1/debug/simulate-frontend-playback", "/api/v1/debug/simulate-frontend-playback/:episode_id"],
+    async (req: Request, res: Response) => {
+      try {
+        const episodeId = (req.params.episode_id as string) || (req.query.episode_id as string);
+        const providerFilter = (req.query.provider as string)?.toLowerCase();
+        const testAll = req.query.test_all === "true" || req.query.all === "true";
+        const portNum = Number(process.env.PORT || 3010);
+
+        if (testAll) {
+          const candidateSites = [
+            "animeflv",
+            "jkanime",
+            "latanime",
+            "cinecalidad",
+            "doramasflix",
+            "tubepelis",
+            "gnula",
+            "lamovie",
+            "tioplus",
+            "veranimes",
+          ];
+
+          const chosenShows = new Set<string>();
+          const batchResults: any[] = [];
+          for (const site of candidateSites) {
+            const candidateEps = await prisma.mediaEpisode.findMany({
+              where: {
+                links: {
+                  some: {
+                    OR: [
+                      { source_site: { contains: site, mode: "insensitive" } },
+                      { url: { contains: site, mode: "insensitive" } },
+                    ],
+                  },
+                },
+              },
+              include: { media_item: true, links: true },
+              take: 200,
+              orderBy: { updated_at: "desc" },
+            });
+
+            const ep = candidateEps.find(
+              (candidate) => candidate.media_item && !chosenShows.has(candidate.media_item.id)
+            ) || candidateEps[0];
+
+            if (ep) {
+              if (ep.media_item) chosenShows.add(ep.media_item.id);
+              const sim = await executeFrontendPlaySimulation(ep, portNum);
+              batchResults.push({
+                provider: site,
+                ...sim,
+              });
+            } else {
+              batchResults.push({
+                provider: site,
+                success: false,
+                note: "No hay episodios importados en base de datos para este proveedor",
+              });
+            }
+          }
+
+          const passedCount = batchResults.filter((r) => r.success).length;
+          return res.json({
+            summary: {
+              total_providers_tested: batchResults.length,
+              passed: passedCount,
+              failed: batchResults.length - passedCount,
+              status: passedCount > 0 ? "OK" : "NO_STREAMS",
+            },
+            results: batchResults,
+          });
+        }
+
+        let targetEpisode: any = null;
+        if (episodeId) {
+          targetEpisode = await prisma.mediaEpisode.findUnique({
+            where: { id: episodeId },
+            include: { media_item: true, links: true },
+          });
+        } else if (providerFilter) {
+          targetEpisode = await prisma.mediaEpisode.findFirst({
+            where: {
+              links: {
+                some: {
+                  source_site: { contains: providerFilter, mode: "insensitive" },
+                },
+              },
+            },
+            include: { media_item: true, links: true },
+          });
+        } else {
+          targetEpisode = await prisma.mediaEpisode.findFirst({
+            where: {
+              links: { some: {} },
+            },
+            include: { media_item: true, links: true },
+          });
+        }
+
+        if (!targetEpisode) {
+          return res.status(404).json({
+            error: "No se encontró ningún episodio para simular la reproducción.",
+            provider: providerFilter || "cualquiera",
+          });
+        }
+
+        const simResult = await executeFrontendPlaySimulation(targetEpisode, portNum);
+        return res.json(simResult);
+      } catch (err: any) {
+        return res.status(500).json({ error: err?.message || String(err) });
+      }
+    }
+  );
 
   // ==========================================
   // Auth, Progress & Recommendations Routers

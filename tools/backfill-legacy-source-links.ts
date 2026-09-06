@@ -29,6 +29,7 @@ interface CursorState {
 
 export interface LegacyBridgeReport {
   dry_run: boolean;
+  site_filter?: string;
   scanned: number;
   matched: number;
   links_created: number;
@@ -41,6 +42,7 @@ export interface LegacyBridgeReport {
   skipped_no_media_item: number;
   skipped_ambiguous: number;
   errors: number;
+  error_samples?: string[];
   last_episode_id: string | null;
   started_at: string;
   finished_at: string;
@@ -68,25 +70,39 @@ interface MediaItemRow {
   created_at: Date;
 }
 
+interface MediaItemIndex {
+  byNamespaceKey: Map<string, MediaItemRow[]>;
+  byNamespaceTmdb: Map<string, MediaItemRow[]>;
+}
+
 interface ParsedArgs {
   apply: boolean;
   batchSize: number;
+  concurrency: number;
   limit?: number;
+  site?: string;
   cursorFile?: string;
   reportFile?: string;
 }
 
-const EXCLUDED_SITES = new Set(["tubepelis", "tubepelis.com", "www.tubepelis.com"]);
+// Todos los proveedores configurados participan en el puente. TubePelis tiene
+// un adaptador estable y sus episodios legacy deben llegar al grafo canónico
+// igual que los demás; excluirlo dejaba sus streams fuera del multiplexado.
+const EXCLUDED_SITES = new Set<string>();
 const DEFAULT_BATCH_SIZE = 250;
 const MAX_BATCH_SIZE = 1_000;
+const DEFAULT_CONCURRENCY = 32;
+const MAX_CONCURRENCY = 32;
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const result: ParsedArgs = { apply: false, batchSize: DEFAULT_BATCH_SIZE };
+  const result: ParsedArgs = { apply: false, batchSize: DEFAULT_BATCH_SIZE, concurrency: DEFAULT_CONCURRENCY };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--apply") result.apply = true;
     else if (arg === "--batch-size") result.batchSize = clampPositive(argv[++i], DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE);
+    else if (arg === "--concurrency") result.concurrency = clampPositive(argv[++i], DEFAULT_CONCURRENCY, MAX_CONCURRENCY);
     else if (arg === "--limit") result.limit = clampPositive(argv[++i], 0, Number.MAX_SAFE_INTEGER);
+    else if (arg === "--site") result.site = String(argv[++i] || "").trim().toLowerCase() || undefined;
     else if (arg === "--cursor-file") result.cursorFile = argv[++i];
     else if (arg === "--report") result.reportFile = argv[++i];
     else if (arg === "--help" || arg === "-h") {
@@ -95,7 +111,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   --dry-run             Simulación (por defecto)
   --apply               Escribe MediaEpisode/SourceLink
   --batch-size <n>      Episodios por lote (default ${DEFAULT_BATCH_SIZE}, máx ${MAX_BATCH_SIZE})
+  --concurrency <n>     Filas procesadas en paralelo (default ${DEFAULT_CONCURRENCY}, máx ${MAX_CONCURRENCY})
   --limit <n>           Límite de episodios legacy a inspeccionar
+  --site <host>         Filtra por el host del source_url (útil para reanudar un proveedor)
   --cursor-file <ruta>  Cursor JSON para reanudar
   --report <ruta>       Reporte JSON de la pasada`);
       process.exit(0);
@@ -159,6 +177,29 @@ function titleKeys(title: string, normalized?: string | null, base?: string | nu
   return keys;
 }
 
+/**
+ * Indexa una vez los MediaItem para que el puente no tenga que recorrer todo
+ * el catálogo por cada Show legacy. La pasada anterior era O(shows × items)
+ * y volvía el dry-run innecesariamente lento en catálogos grandes.
+ */
+function buildMediaItemIndex(items: MediaItemRow[]): MediaItemIndex {
+  const byNamespaceKey = new Map<string, MediaItemRow[]>();
+  const byNamespaceTmdb = new Map<string, MediaItemRow[]>();
+  const add = (map: Map<string, MediaItemRow[]>, key: string, item: MediaItemRow) => {
+    const bucket = map.get(key);
+    if (bucket) bucket.push(item);
+    else map.set(key, [item]);
+  };
+  for (const item of items) {
+    const itemNamespaceKey = itemNamespace(item.kind);
+    for (const key of titleKeys(item.title, item.normalized_title, item.base_normalized_title)) {
+      add(byNamespaceKey, `${itemNamespaceKey}:${key}`, item);
+    }
+    if (item.tmdb_id != null) add(byNamespaceTmdb, `${itemNamespaceKey}:${item.tmdb_id}`, item);
+  }
+  return { byNamespaceKey, byNamespaceTmdb };
+}
+
 function seasonFor(show: LegacyShowRow): number {
   const parsed = parseRawTitle(show.title || "");
   return parsed.season && parsed.season > 1 ? parsed.season : 1;
@@ -169,16 +210,29 @@ function yearCompatible(left: number | null | undefined, right: number | null | 
   return Math.abs(left - right) <= 1;
 }
 
-function chooseMediaItem(show: LegacyShowRow, items: MediaItemRow[]): { item: MediaItemRow | null; ambiguous: boolean } {
+function chooseMediaItem(show: LegacyShowRow, index: MediaItemIndex): { item: MediaItemRow | null; ambiguous: boolean } {
   const showNamespace = namespace(show.category);
   const keys = titleKeys(show.title, show.normalized_title, show.base_normalized_title);
-  const candidates = items.filter((item) => {
-    if (itemNamespace(item.kind) !== showNamespace) return false;
-    if (show.tmdb_id != null && item.tmdb_id === show.tmdb_id) return true;
-    if (show.tmdb_id != null && item.tmdb_id != null && item.tmdb_id !== show.tmdb_id) return false;
-    const itemKeys = titleKeys(item.title, item.normalized_title, item.base_normalized_title);
-    return [...keys].some((key) => itemKeys.has(key)) && yearCompatible(show.year, item.year);
-  });
+  const seen = new Set<string>();
+  const candidates: MediaItemRow[] = [];
+  const addCandidate = (item: MediaItemRow) => {
+    if (seen.has(item.id)) return;
+    if (show.tmdb_id != null && item.tmdb_id != null && item.tmdb_id !== show.tmdb_id) return;
+    if (!yearCompatible(show.year, item.year)) return;
+    seen.add(item.id);
+    candidates.push(item);
+  };
+
+  // Un TMDB exacto tiene prioridad y, igual que antes, no exige coincidencia
+  // de título. Los candidatos sin TMDB todavía pueden entrar por título/año.
+  if (show.tmdb_id != null) {
+    for (const item of index.byNamespaceTmdb.get(`${showNamespace}:${show.tmdb_id}`) || []) addCandidate(item);
+  }
+  for (const key of keys) {
+    for (const item of index.byNamespaceKey.get(`${showNamespace}:${key}`) || []) {
+      if (show.tmdb_id == null || item.tmdb_id == null) addCandidate(item);
+    }
+  }
 
   const exactTmdb = candidates.filter((item) => show.tmdb_id != null && item.tmdb_id === show.tmdb_id);
   const pool = exactTmdb.length > 0 ? exactTmdb : candidates;
@@ -240,6 +294,7 @@ async function main(): Promise<void> {
   const startedAt = new Date(started).toISOString();
   const report: LegacyBridgeReport = {
     dry_run: !args.apply,
+    ...(args.site ? { site_filter: args.site } : {}),
     scanned: 0,
     matched: 0,
     links_created: 0,
@@ -252,6 +307,7 @@ async function main(): Promise<void> {
     skipped_no_media_item: 0,
     skipped_ambiguous: 0,
     errors: 0,
+    error_samples: [],
     last_episode_id: null,
     started_at: startedAt,
     finished_at: startedAt,
@@ -260,6 +316,7 @@ async function main(): Promise<void> {
 
   const cursor = await loadCursor(args.cursorFile);
   const mediaItems = await loadMediaItems();
+  const mediaItemIndex = buildMediaItemIndex(mediaItems);
   const itemCache = new Map<string, { item: MediaItemRow | null; ambiguous: boolean }>();
   let afterId = cursor?.lastEpisodeId || "";
   let remaining = args.limit;
@@ -268,7 +325,13 @@ async function main(): Promise<void> {
     while (remaining === undefined || remaining > 0) {
       const take = Math.min(args.batchSize, remaining ?? args.batchSize);
       const rows = await prisma.episode.findMany({
-        where: { ...(afterId ? { id: { gt: afterId } } : {}), source_url: { not: "" } },
+        where: {
+          ...(afterId ? { id: { gt: afterId } } : {}),
+          source_url: {
+            not: "",
+            ...(args.site ? { contains: args.site, mode: "insensitive" as const } : {}),
+          },
+        },
         orderBy: { id: "asc" },
         take,
         select: {
@@ -290,43 +353,44 @@ async function main(): Promise<void> {
       });
       if (rows.length === 0) break;
 
-      for (const row of rows) {
-        afterId = row.id;
-        report.last_episode_id = row.id;
-        report.scanned++;
-        remaining = remaining === undefined ? undefined : remaining - 1;
+      afterId = rows[rows.length - 1].id;
+      report.last_episode_id = afterId;
+      report.scanned += rows.length;
+      remaining = remaining === undefined ? undefined : remaining - rows.length;
+
+      const processRow = async (row: (typeof rows)[number]) => {
         const rawUrl = String(row.source_url || "").trim();
         if (!rawUrl) {
           report.skipped_empty++;
-          continue;
+          return;
         }
         if (isExcluded(rawUrl)) {
           report.skipped_excluded++;
-          continue;
+          return;
         }
         const sourceKind = classifySourceKind(rawUrl);
         if (sourceKind === "ephemeral_direct") {
           report.skipped_ephemeral++;
-          continue;
+          return;
         }
         if (sourceKind !== "stable_direct" && isNavigationUrl(rawUrl)) {
           report.skipped_navigation++;
-          continue;
+          return;
         }
 
         const show = row.show as LegacyShowRow;
         let match = itemCache.get(show.id);
         if (!match) {
-          match = chooseMediaItem(show, mediaItems);
+          match = chooseMediaItem(show, mediaItemIndex);
           itemCache.set(show.id, match);
         }
         if (!match.item) {
           report.skipped_no_media_item++;
-          continue;
+          return;
         }
         if (match.ambiguous) {
           report.skipped_ambiguous++;
-          continue;
+          return;
         }
         report.matched++;
 
@@ -334,16 +398,16 @@ async function main(): Promise<void> {
         const episodeNumber = itemNamespace(match.item.kind) === "movie" ? 1 : Number(row.episode_number);
         if (!Number.isFinite(episodeNumber) || episodeNumber < 0) {
           report.errors++;
-          continue;
+          return;
         }
         const linkType = sourceKind === "embed" ? "embed" : sourceKind === "page" ? "page" : "direct";
         const sourceSite = siteFromUrl(rawUrl);
         if (sourceSite === "unknown") {
           report.errors++;
-          continue;
+          return;
         }
 
-        if (!args.apply) continue;
+        if (!args.apply) return;
         try {
           const existingEpisode = await prisma.mediaEpisode.findUnique({
             where: {
@@ -380,7 +444,7 @@ async function main(): Promise<void> {
           });
           if (existing) {
             report.links_existing++;
-            continue;
+            return;
           }
           await prisma.sourceLink.create({
             data: {
@@ -400,8 +464,21 @@ async function main(): Promise<void> {
           report.links_created++;
         } catch (error: any) {
           if (error?.code === "P2002") report.links_existing++;
-          else report.errors++;
+          else {
+            report.errors++;
+            if ((report.error_samples?.length || 0) < 20) {
+              const code = error?.code ? `${error.code}: ` : "";
+              report.error_samples?.push(`${code}${error?.message || String(error)}`);
+            }
+          }
         }
+      };
+
+      // El trabajo de cada episodio es independiente. Limitamos la cantidad de
+      // promesas simultáneas para aprovechar la máquina sin desbordar el pool
+      // de Prisma ni disparar demasiadas peticiones por proveedor.
+      for (let index = 0; index < rows.length; index += args.concurrency) {
+        await Promise.all(rows.slice(index, index + args.concurrency).map(processRow));
       }
 
       await saveCursor(args.cursorFile, {

@@ -2,6 +2,7 @@ import React, { useRef, useMemo } from 'react';
 import { Play, ChevronLeft, ChevronRight, X, Sparkles, Film } from 'lucide-react';
 import { rgbToRgbaString } from '../utils/colorExtractor';
 import { SmartImage } from './SmartImage';
+import { sizedImageUrl } from '../utils/imageSizes';
 import type { Episode, Show } from '../types';
 
 export interface WatchProgress {
@@ -186,7 +187,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
   if (displayItems.length === 0) return null;
 
   return (
-    <section className="space-y-3">
+    <section className="continue-section space-y-3" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 220px' }}>
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight">
           Seguir Viendo
@@ -202,7 +203,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
           type="button"
           onClick={() => handleScroll('left')}
           aria-label="Desplazar a la izquierda"
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-r-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-r border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+          className="continue-arrow absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-r-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-r border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
         >
           <ChevronLeft size={22} />
         </button>
@@ -210,7 +211,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
         {/* CONTENEDOR CARRUSEL */}
         <div
           ref={rowRef}
-          className="flex gap-4 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none scroll-smooth items-stretch"
+          className="continue-rail flex gap-4 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none scroll-smooth items-stretch"
         >
           {displayItems.map((item) => (
             <div key={`${item.showId}-${item.episodeId}`} className="w-64 sm:w-72 shrink-0">
@@ -246,7 +247,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
           type="button"
           onClick={() => handleScroll('right')}
           aria-label="Desplazar a la derecha"
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-l-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-l border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
+          className="continue-arrow absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover/row:flex h-12 w-10 items-center justify-center rounded-l-xl bg-zinc-950/90 text-zinc-200 backdrop-blur-md border-l border-y border-zinc-800 transition-all hover:bg-amber-500 hover:text-black hover:w-11 shadow-2xl"
         >
           <ChevronRight size={22} />
         </button>
@@ -273,14 +274,13 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
 
   return (
     <div
-      onClick={onPlay}
-      className="group/cw relative flex flex-col overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 cursor-pointer select-none"
+      className="continue-card group/cw relative flex flex-col overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 cursor-pointer select-none"
     >
       {/* 16:9 HORIZONTAL THUMBNAIL */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-950">
         {item.showPoster ? (
           <SmartImage
-            src={item.showPoster}
+            src={sizedImageUrl(item.showPoster, 'w780') || item.showPoster}
             alt={item.showTitle || 'Vista previa'}
             className="h-full w-full object-cover object-center transition-transform duration-300 ease-out group-hover/cw:scale-105"
             fallback={
@@ -307,21 +307,21 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
             }}
             title="Quitar de seguir viendo"
             aria-label="Quitar de seguir viendo"
-            className="absolute top-2 right-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-zinc-400 hover:text-white hover:bg-rose-600/90 border border-zinc-700/50 backdrop-blur-md opacity-0 group-hover/cw:opacity-100 transition-all shadow-md"
+            className="continue-remove absolute top-2 right-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-zinc-400 hover:text-white hover:bg-rose-600/90 border border-zinc-700/50 backdrop-blur-md opacity-0 group-hover/cw:opacity-100 transition-all shadow-md"
           >
             <X size={12} />
           </button>
         )}
 
         {/* HOVER PLAY BUTTON */}
-        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/cw:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+        <button type="button" onClick={onPlay} aria-label={`Continuar ${item.showTitle}`} className="continue-play absolute inset-0 bg-black/30 opacity-0 group-hover/cw:opacity-100 transition-opacity duration-200 flex items-center justify-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black shadow-xl group-hover/cw:scale-110 transition-transform">
             <Play size={18} className="ml-0.5 fill-black text-black" />
           </span>
-        </div>
+        </button>
 
         {/* BADGE SUPERIOR IZQUIERDO: PELÍCULA / SIGUIENTE / EPISODIO */}
-        <div className="absolute top-2 left-2 z-10">
+        <div className="absolute top-2 left-2 z-10 pointer-events-none">
           {item.isMovie ? (
             <span className="inline-flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-amber-300 border border-amber-500/30 backdrop-blur-sm shadow-sm">
               <Film size={10} /> Película
@@ -340,7 +340,7 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
         {/* BARRA DE PROGRESO INFERIOR */}
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800 overflow-hidden">
           <div
-            className="h-full transition-all duration-300"
+            className="continue-progress h-full transition-all duration-300"
             style={{
               width: item.isNextEpisode ? '0%' : `${Math.max(5, Math.min(100, item.progressPercent))}%`,
               backgroundColor: accentColor,
@@ -358,7 +358,7 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
               e.stopPropagation();
               onOpenDetails();
             }}
-            className="font-medium text-zinc-400 hover:text-zinc-200 truncate max-w-[70%] text-[11px] text-left"
+            className="continue-details font-medium text-zinc-400 hover:text-zinc-200 truncate max-w-[70%] text-[11px] text-left"
           >
             {item.showTitle || 'Contenido'}
           </button>
@@ -366,7 +366,7 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
             {item.isNextEpisode ? 'Siguiente' : `${item.progressPercent}%`}
           </span>
         </div>
-        <h4 className="font-display text-xs sm:text-sm font-semibold text-zinc-100 group-hover/cw:text-amber-400 truncate transition-colors">
+        <h4 onClick={onPlay} className="font-display text-xs sm:text-sm font-semibold text-zinc-100 group-hover/cw:text-amber-400 truncate transition-colors">
           {item.isMovie
             ? item.showTitle
             : item.isNextEpisode

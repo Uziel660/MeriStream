@@ -25,6 +25,12 @@
         "-y",
         "@playwright/mcp@latest"
       ]
+    },
+    "stagehand": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\Uziel\\stagehand\\packages\\integrations\\core\\dist\\facade\\stdio-server.mjs"
+      ]
     }
   }
 }

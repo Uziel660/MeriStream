@@ -290,6 +290,24 @@ class BackgroundCrawlerWorker {
     try {
       const tasks = await prisma.crawlTask.findMany({
         orderBy: { created_at: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          name: true,
+          target_url: true,
+          status: true,
+          scope: true,
+          max_pages: true,
+          current_page: true,
+          total_discovered: true,
+          shows_imported: true,
+          episodes_imported: true,
+          rate_limit_delay_ms: true,
+          current_item_title: true,
+          error_message: true,
+          created_at: true,
+          updated_at: true,
+        },
       });
 
       return tasks.map((t) => ({
@@ -304,12 +322,12 @@ class BackgroundCrawlerWorker {
         shows_imported: t.shows_imported,
         episodes_imported: t.episodes_imported,
         rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: stripDiscoveryMarkers(parseJsonArray<QueueItem>(t.items_queue)),
+        items_queue: [],
         current_item_title: t.current_item_title || undefined,
         error_message: t.error_message,
         created_at: t.created_at.toISOString(),
         updated_at: t.updated_at.toISOString(),
-        logs: parseJsonArray(t.logs),
+        logs: [],
       }));
     } catch (e) {
       console.error("Error buscando jobs en DB:", e);
@@ -322,24 +340,30 @@ class BackgroundCrawlerWorker {
       try {
         const t = await prisma.crawlTask.findUnique({ where: { id } });
         if (!t) return null;
+        const allLogs = parseJsonArray(t.logs);
+        const slicedLogs = allLogs.slice(-100);
+        const isFinished = t.status === "completed" || t.status === "cancelled" || t.status === "failed";
+        const allQueue = isFinished ? [] : parseJsonArray<QueueItem>(t.items_queue);
+        const slicedQueue = isFinished ? [] : stripDiscoveryMarkers(allQueue.slice(-100));
+
         return {
-        id: t.id,
-        name: t.name,
-        target_url: t.target_url,
-        status: t.status as CrawlJob["status"],
-        scope: t.scope as CrawlJob["scope"],
-        max_pages: t.max_pages,
-        current_page: t.current_page,
-        total_discovered: t.total_discovered,
-        shows_imported: t.shows_imported,
-        episodes_imported: t.episodes_imported,
-        rate_limit_delay_ms: t.rate_limit_delay_ms,
-        items_queue: stripDiscoveryMarkers(parseJsonArray<QueueItem>(t.items_queue)),
-        current_item_title: t.current_item_title || undefined,
-        error_message: t.error_message,
-        created_at: t.created_at.toISOString(),
-        updated_at: t.updated_at.toISOString(),
-        logs: parseJsonArray(t.logs),
+          id: t.id,
+          name: t.name,
+          target_url: t.target_url,
+          status: t.status as CrawlJob["status"],
+          scope: t.scope as CrawlJob["scope"],
+          max_pages: t.max_pages,
+          current_page: t.current_page,
+          total_discovered: t.total_discovered,
+          shows_imported: t.shows_imported,
+          episodes_imported: t.episodes_imported,
+          rate_limit_delay_ms: t.rate_limit_delay_ms,
+          items_queue: slicedQueue,
+          current_item_title: t.current_item_title || undefined,
+          error_message: t.error_message,
+          created_at: t.created_at.toISOString(),
+          updated_at: t.updated_at.toISOString(),
+          logs: slicedLogs,
         };
       } catch {
         // Una lectura transitoria (pool ocupado/P1008) no debe interpretarse

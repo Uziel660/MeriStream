@@ -26,6 +26,14 @@ export interface EnrichedMetadata {
   backdrop_path?: string | null;
 }
 
+type TmdbIdentityMetadata = EnrichedMetadata & {
+  /** Campos internos usados únicamente para escoger entre idiomas de búsqueda. */
+  __tmdb_match_score?: number;
+  __tmdb_year_exact?: boolean;
+  __tmdb_language?: string;
+  __tmdb_media_type?: string;
+};
+
 export interface ParsedTitleQuery {
   baseTitle: string;
   season: number | null;
@@ -94,8 +102,11 @@ export function parseTitleQuery(raw: string): ParsedTitleQuery {
 
   // a) Frases completas de idioma
   title = title.replace(/\s*(?:en\s+español\s+latino|español\s+latino|spanish\s+latino)/gi, " ");
+  // b) Etiquetas de audio al final del nombre (Japonés, redoblaje, etc.).
+  // Quitarlas antes de detectar temporada/año evita búsquedas TMDB con ruido.
+  title = title.replace(/\s+(?:japon[eé]s|japanese|redoblaje|doblaje|doblado|doblada)\s*$/i, " ");
 
-  // b) Temporada (antes de cualquier otra limpieza): el primer patrón que
+  // c) Temporada (antes de cualquier otra limpieza): el primer patrón que
   // calza gana y se elimina del título base.
   let season: number | null = null;
   for (const pattern of SEASON_PATTERNS) {
@@ -107,7 +118,7 @@ export function parseTitleQuery(raw: string): ParsedTitleQuery {
     }
   }
 
-  // c) Año suelto (19xx/20xx únicamente; "Furiosos 9" o "1080p" nunca calzan)
+  // d) Año suelto (19xx/20xx únicamente; "Furiosos 9" o "1080p" nunca calzan)
   let year: number | null = null;
   const yearMatch = title.match(YEAR_PATTERN);
   if (yearMatch) {
@@ -118,7 +129,7 @@ export function parseTitleQuery(raw: string): ParsedTitleQuery {
   // Limpieza de paréntesis/corchetes vaciados por las extracciones previas
   title = title.replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, " ");
 
-  // d) Limpieza clásica de query (prefijos, etiquetas, cortes de calidad/audio)
+  // e) Limpieza clásica de query (prefijos, etiquetas, cortes de calidad/audio)
   title = title.trim();
   let previous: string;
   do {
@@ -136,7 +147,7 @@ export function parseTitleQuery(raw: string): ParsedTitleQuery {
   title = title.replace(/\s+\([^)]*\)$/g, ""); // Remove trailing parentheses again just in case
   title = title.replace(/^Ver\s+/i, "");
 
-  // e) Normalización final + fallback si todo era ruido
+  // f) Normalización final + fallback si todo era ruido
   title = title.replace(/\s+/g, " ").trim();
 
   return {
@@ -267,6 +278,63 @@ export function isSubstantiveDescription(description: string | null | undefined)
   return t.length >= 60;
 }
 
+const ENGLISH_DESCRIPTION_WORDS = [
+  "the", "and", "this", "with", "from", "their", "about", "when", "after",
+  "story", "returns", "follows", "young", "must", "will", "into", "during",
+  "through", "where", "which", "first", "life", "world", "series", "film", "movie",
+];
+const SPANISH_DESCRIPTION_WORDS = [
+  "el", "la", "los", "las", "un", "una", "que", "de", "del", "en", "para", "con",
+  "su", "sus", "historia", "cuando", "después", "despues", "sigue", "joven", "debe",
+  "mundo", "vida", "película", "pelicula", "serie", "es", "por", "como", "una",
+];
+
+function wordHits(text: string, words: string[]): number {
+  let hits = 0;
+  for (const word of words) {
+    if (new RegExp(`(?:^|[^\\p{L}])${word}(?:$|[^\\p{L}])`, "iu").test(text)) hits++;
+  }
+  return hits;
+}
+
+/** Detecta sinopsis que siguen principalmente en inglés u otro fallback no localizado. */
+export function isLikelyNonSpanishDescription(description: string | null | undefined): boolean {
+  const text = String(description ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  // CJK, cirílico, árabe y otros alfabetos no latinos no son una sinopsis
+  // española, aunque sean cortos y no contengan marcadores ingleses.
+  if (/[^ -ɏḀ-ỿ -⁯\s\p{N}\p{P}]/u.test(text)) return true;
+  if (text.length < 20) return false;
+  const englishHits = wordHits(text, ENGLISH_DESCRIPTION_WORDS);
+  const spanishHits = wordHits(text, SPANISH_DESCRIPTION_WORDS);
+  // Exigir dos marcadores ingleses y ventaja clara en sinopsis largas evita
+  // marcar nombres propios o títulos que contengan una sola palabra inglesa;
+  // en sinopsis cortas basta una ventaja simple para no dejarlas sin reparar.
+  return englishHits >= 2 && englishHits > spanishHits + (text.length >= 60 ? 1 : 0);
+}
+
+/**
+ * Detecta texto que no puede considerarse una sinopsis española.  Es
+ * deliberadamente conservador: nombres propios y títulos en inglés pueden
+ * convivir con una descripción española, pero un bloque en japonés/chino,
+ * cirílico o coreano nunca debe llegar a la ficha como si fuera castellano.
+ */
+function isForeignDescription(text: string): boolean {
+  if (/[^\u0000-\u024f\u1e00-\u1eff\u2000-\u206f\s\p{N}\p{P}]/u.test(text)) return true;
+  const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalized) return false;
+  const englishHits = wordHits(normalized, ENGLISH_DESCRIPTION_WORDS);
+  const spanishHits = wordHits(normalized, SPANISH_DESCRIPTION_WORDS);
+  // La variante corta cubre sinopsis de 20–59 caracteres, que no alcanza el
+  // umbral de isLikelyNonSpanishDescription pero sigue siendo claramente
+  // inglesa (p.ej. "A young detective returns home").
+  return isLikelyNonSpanishDescription(normalized)
+    || (normalized.length >= 20 && englishHits >= 2 && englishHits > spanishHits);
+}
+
 /**
  * Candidatos de búsqueda ordenados a partir del título crudo: usa el contrato
  * parseRawTitle (titleNormalizer) primero y el parser legacy como respaldo.
@@ -283,8 +351,16 @@ export function buildSearchCandidates(rawQuery: string): string[] {
       .replace(/\s*[,\-–—:|]+\s*$/, "")
       .trim();
   const out: string[] = [];
-  for (const c of [tidy(rawParsed.canonical), tidy(legacy.baseTitle)]) {
+  const add = (value: string) => {
+    const c = tidy(value);
     if (c && c.length >= 2 && !out.some((o) => o.toLowerCase() === c.toLowerCase())) out.push(c);
+  };
+  for (const c of [rawParsed.canonical, legacy.baseTitle]) {
+    add(c);
+    // Los especiales/OVAs suelen compartir identidad con la serie base en
+    // TMDB y con frecuencia no tienen ficha propia. Mantener también la
+    // variante completa permite elegir la ficha específica cuando existe.
+    add(c.replace(/\s+(?:especial(?:es)?|specials?|ovas?)\s*$/i, ""));
   }
   const rawFallback = String(rawQuery ?? "").replace(/\s+/g, " ").trim();
   if (out.length === 0 && rawFallback) out.push(rawFallback);
@@ -329,10 +405,55 @@ function buildDefaultMetadata(cleaned: string, rawQuery: string, hintKind?: Cont
 
 const TMDB_GENRE_TTL_MS = 24 * 60 * 60 * 1000;
 const tmdbGenreCache = new Map<"movie" | "tv", { names: Map<number, string>; fetchedAt: number }>();
+// La reparación y la fusión suelen consultar la misma identidad desde varias
+// fuentes (especialmente cuando una obra aparece en más de un proveedor).
+// Guardar solo las resoluciones positivas reduce llamadas repetidas a TMDB sin
+// fijar fallos transitorios: un no-match o un 429 siempre puede reintentarse.
+const tmdbIdentityCache = new Map<string, TmdbIdentityMetadata>();
+
+// TMDB no publica un límite fijo garantizado: su documentación sitúa el tope
+// habitual alrededor de 40 req/s y puede responder 429 antes o después según
+// la carga. Mantener una ventana deslizante por proceso evita ráfagas, incluso
+// cuando backfill/verification ejecutan muchos workers al mismo tiempo.
+const TMDB_DEFAULT_MAX_RPS = 35;
+const TMDB_HARD_MAX_RPS = 40;
+const tmdbRequestTimes: number[] = [];
+
+function titleWordSet(value: unknown): Set<string> {
+  const text = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return new Set(text.match(/[a-z0-9\u3040-\u30ff\u3400-\u9fff]+/gu) || []);
+}
+
+function getTmdbMaxRps(): number {
+  const configured = Number(process.env.TMDB_MAX_RPS);
+  if (!Number.isFinite(configured)) return TMDB_DEFAULT_MAX_RPS;
+  return Math.min(TMDB_HARD_MAX_RPS, Math.max(1, Math.floor(configured)));
+}
+
+async function acquireTmdbRequestSlot(): Promise<void> {
+  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const maxRps = getTmdbMaxRps();
+  while (true) {
+    const now = Date.now();
+    while (tmdbRequestTimes.length > 0 && now - tmdbRequestTimes[0] >= 1000) {
+      tmdbRequestTimes.shift();
+    }
+    if (tmdbRequestTimes.length < maxRps) {
+      tmdbRequestTimes.push(now);
+      return;
+    }
+    await wait(Math.max(5, tmdbRequestTimes[0] + 1000 - now));
+  }
+}
 
 /** Limpia caches internas del engine (uso exclusivo de tests). */
 export function __resetEngineCaches(): void {
   tmdbGenreCache.clear();
+  tmdbIdentityCache.clear();
+  tmdbRequestTimes.length = 0;
 }
 
 /** Géneros TMDB en es-MX, cacheados 24h. Devuelve mapa vacío si la llamada falla. */
@@ -345,6 +466,7 @@ async function fetchTMDBGenreMap(mediaType: "movie" | "tv"): Promise<Map<number,
     const apiKey = process.env.TMDB_API_KEY;
     if (!apiKey) return new Map();
 
+    await acquireTmdbRequestSlot();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
     const res = await fetch(`https://api.themoviedb.org/3/genre/${mediaType}/list?language=es-MX&api_key=${apiKey}`, { // NOSONAR
@@ -377,6 +499,7 @@ async function fetchTMDBEnUSResult(query: string, tmdbId: number): Promise<{ tit
     const apiKey = process.env.TMDB_API_KEY;
     if (!apiKey) return null;
 
+    await acquireTmdbRequestSlot();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
     const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=en-US&api_key=${apiKey}`, { // NOSONAR
@@ -403,16 +526,26 @@ async function fetchTMDBMetadata(
   query: string,
   kind?: ContentKind,
   seasonHint?: number | null,
-  yearHint?: number | null
+  yearHint?: number | null,
+  identityOnly = false,
+  language = "es-MX",
 ): Promise<EnrichedMetadata | null> {
+  const identityCacheKey = identityOnly
+    ? [String(query).trim().toLowerCase(), kind || "", seasonHint ?? "", yearHint ?? "", language].join("\u0000")
+    : null;
+  if (identityCacheKey) {
+    const cachedIdentity = tmdbIdentityCache.get(identityCacheKey);
+    if (cachedIdentity) return cachedIdentity;
+  }
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey) return null;
 
   try {
+    await acquireTmdbRequestSlot();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
     // Use multi search to get movies or tv shows
-    const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=es-MX&api_key=${apiKey}`, { // NOSONAR
+    const res = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=${language}&api_key=${apiKey}`, { // NOSONAR
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -424,26 +557,42 @@ async function fetchTMDBMetadata(
         let candidates = data.results.filter((r: any) => r.media_type !== "person");
         if (kind === "movie") {
           candidates = candidates.filter((r: any) => r.media_type === "movie");
-        } else if (kind === "series" || kind === "anime") {
+        } else if (kind === "series") {
           candidates = candidates.filter((r: any) => r.media_type === "tv");
+        } else if (kind === "anime") {
+          // Anime también incluye películas, OVAs y especiales. Filtrar a TV
+          // dejaba sin ID obras válidas como Your Name o Maison Ikkoku.
+          candidates = candidates.filter((r: any) => r.media_type === "tv" || r.media_type === "movie");
         }
         // TMDB devuelve resultados globales ordenados por popularidad. Tomar
         // siempre el primero asigna IDs equivocados cuando el catálogo trae
         // títulos de temporada, traducciones o nombres muy parecidos. Se
         // puntúa el título (incluyendo original/name) y el año antes de elegir.
         const queryKey = normalizeTitleKey(query);
-        const queryTokens = new Set(queryKey.match(/[a-z0-9]+/g) || []);
+        // normalizeTitleKey es una clave compacta (sin espacios), por lo que
+        // usarla para tokenizar convertía cada título en una sola palabra y
+        // anulaba coincidencias parciales como "Bucky Larson". Las claves
+        // siguen sirviendo para exact/substr; el solapamiento usa palabras.
+        const queryTokens = titleWordSet(query);
+        const isAnimeCandidate = (candidate: any): boolean => {
+          if (kind !== "anime") return false;
+          return Boolean(
+            (Array.isArray(candidate?.genre_ids) && candidate.genre_ids.includes(16)) ||
+            candidate?.original_language === "ja" ||
+            (Array.isArray(candidate?.origin_country) && candidate.origin_country.includes("JP")),
+          );
+        };
         const candidateScore = (candidate: any): number => {
           const names = [candidate?.title, candidate?.name, candidate?.original_title, candidate?.original_name]
-            .filter((value): value is string => typeof value === "string" && value.trim())
-            .map((value) => normalizeTitleKey(value));
+            .filter((value): value is string => typeof value === "string" && value.trim());
           let score = 0;
-          for (const name of names) {
+          for (const rawName of names) {
+            const name = normalizeTitleKey(rawName);
             if (!name || !queryKey) continue;
             if (name === queryKey) score = Math.max(score, 1);
             else if (name.includes(queryKey) || queryKey.includes(name)) score = Math.max(score, 0.82);
             else {
-              const nameTokens = new Set(name.match(/[a-z0-9]+/g) || []);
+              const nameTokens = titleWordSet(rawName);
               let overlap = 0;
               for (const token of queryTokens) if (nameTokens.has(token)) overlap++;
               const union = new Set([...queryTokens, ...nameTokens]).size;
@@ -455,7 +604,27 @@ async function fetchTMDBMetadata(
           // El año solo desambigua candidatos con una coincidencia textual
           // mínima; nunca convierte una obra ajena del mismo año en un match.
           if (textualScore >= 0.15 && yearHint && resultYear === yearHint) score += 0.25;
-          else if (textualScore >= 0.15 && yearHint && Number.isFinite(resultYear) && Math.abs(resultYear - yearHint) > 1) score -= 0.2;
+          else if (textualScore >= 0.15 && yearHint && Number.isFinite(resultYear) && Math.abs(resultYear - yearHint) > 1) {
+            // Un resultado parecido pero de otro año suele ser una secuela,
+            // especial o película distinta. Penalizarlo con la distancia
+            // real evita que gane sólo por popularidad.
+            score -= Math.min(0.65, 0.2 + (Math.abs(resultYear - yearHint) - 1) * 0.08);
+          }
+          // Un título traducido puede no compartir ninguna palabra con TMDB
+          // (p.ej. "Kimi no Na wa" → "Your Name."). En anime exigimos año
+          // exacto y una pista estructural de anime para aceptar ese caso.
+          if (textualScore < 0.15 && kind === "anime" && yearHint && resultYear === yearHint && isAnimeCandidate(candidate)) {
+            score = Math.max(score, 0.18);
+          }
+          if (
+            kind === "anime" && seasonHint != null && candidate?.media_type === "movie" &&
+            !/\b(?:movie|pel[ií]cula|film)\b/i.test(query)
+          ) {
+            // Una etiqueta de temporada/especial normalmente apunta a la serie
+            // base; no dejar que una película popular de la franquicia gane
+            // sólo por compartir el nombre.
+            score -= 0.3;
+          }
           // Popularity desempata únicamente candidatos igualmente relevantes.
           score += Math.min(0.03, Number(candidate?.popularity || 0) / 10000);
           return score;
@@ -494,6 +663,33 @@ async function fetchTMDBMetadata(
         }
 
         if (bestResult) {
+            // La reparación masiva de identidad solo necesita el ID. Evitar aquí
+            // la segunda búsqueda en inglés, traducciones y consulta de géneros
+            // reduce cada resolución a una sola búsqueda TMDB sin cambiar el
+            // algoritmo de selección textual/año.
+            if (identityOnly) {
+              const identityYearRaw = bestResult.release_date || bestResult.first_air_date || "";
+              const identityYear = identityYearRaw ? Number.parseInt(identityYearRaw.substring(0, 4), 10) : 0;
+              const identityResult = {
+                title: bestResult.title || bestResult.name || query,
+                original_title: bestResult.original_title || bestResult.original_name || null,
+                description: "",
+                poster_url: null,
+                banner_url: null,
+                rating: 0,
+                year: Number.isFinite(identityYear) ? identityYear : 0,
+                status: "",
+                genres: [],
+                content_type: kind || (bestResult.media_type === "tv" ? "series" : "movie"),
+                tmdb_id: Number(bestResult.id),
+                __tmdb_match_score: rankedCandidates.find(({ candidate }) => candidate === bestResult)?.score || 0,
+                __tmdb_year_exact: Boolean(yearHint && Number.parseInt(String(bestResult.release_date || bestResult.first_air_date || "").slice(0, 4), 10) === yearHint),
+                __tmdb_language: language,
+                __tmdb_media_type: bestResult.media_type,
+              } as TmdbIdentityMetadata;
+              if (identityCacheKey) tmdbIdentityCache.set(identityCacheKey, identityResult);
+              return identityResult;
+            }
             const isTV = bestResult.media_type === 'tv';
             const title = bestResult.title || bestResult.name || query;
             const originalTitle = bestResult.original_title || bestResult.original_name || title;
@@ -570,6 +766,115 @@ async function fetchTMDBMetadata(
 }
 
 /**
+ * Resolución ligera de identidad para migraciones masivas.
+ *
+ * Devuelve únicamente el ID TMDB y evita traducciones, géneros y búsquedas
+ * secundarias. El matching textual/año es exactamente el mismo que usa el
+ * enriquecimiento completo; la metadata visible se completa después en el
+ * backfill dedicado.
+ */
+export async function resolveTmdbIdentity(
+  rawQuery: string,
+  hintKind?: ContentKind,
+): Promise<number | null> {
+  const parsed = parseTitleQuery(rawQuery);
+  const candidates = buildSearchCandidates(rawQuery);
+  let best: { id: number; score: number; yearExact: boolean; language: string; mediaType: string } | null = null;
+  for (const candidate of candidates) {
+    // Buscar en español para conservar el comportamiento visible y en inglés
+    // para descubrir títulos alternos que TMDB no localiza en es-MX. Elegimos
+    // el mejor score entre ambos, no el primer resultado popular.
+    for (const language of ["es-MX", "en-US"]) {
+      const result = await fetchTMDBMetadata(candidate, hintKind, parsed.season, parsed.year, true, language) as TmdbIdentityMetadata | null;
+      const id = Number(result?.tmdb_id);
+      if (!Number.isInteger(id) || id <= 0) continue;
+      const score = Number(result?.__tmdb_match_score || 0);
+      const yearExact = Boolean(result?.__tmdb_year_exact);
+      const mediaType = String(result?.__tmdb_media_type || "");
+      if (
+        !best ||
+        (parsed.year && yearExact !== best.yearExact ? yearExact : false) ||
+        (!parsed.year || yearExact === best.yearExact) && (
+          score > best.score ||
+          (score === best.score && language === "en-US" && best.language !== "en-US")
+        )
+      ) {
+        best = { id, score, yearExact, language, mediaType };
+      }
+      // Un match textual exacto y con año correcto no necesita una segunda
+      // consulta de idioma para esa misma variante.
+      if (score >= 1 && (!parsed.year || yearExact)) break;
+    }
+    // El año de un catálogo puede ser el de una temporada, redoblaje o
+    // re-publicación y no el de TMDB. Si la búsqueda fechada no dio una
+    // coincidencia sólida, repetir sin año permite rescatar el título base;
+    // el desempate por idioma/alias sigue evitando aceptar un resultado ajeno.
+    if (parsed.year && (!best || best.score < 0.25)) {
+      for (const language of ["es-MX", "en-US"]) {
+        const result = await fetchTMDBMetadata(candidate, hintKind, parsed.season, null, true, language) as TmdbIdentityMetadata | null;
+        const id = Number(result?.tmdb_id);
+        if (!Number.isInteger(id) || id <= 0) continue;
+        const score = Number(result?.__tmdb_match_score || 0);
+        const yearExact = Boolean(result?.__tmdb_year_exact);
+        const mediaType = String(result?.__tmdb_media_type || "");
+        if (
+          !best ||
+          (parsed.year && yearExact !== best.yearExact ? yearExact : false) ||
+          (!parsed.year || yearExact === best.yearExact) && score > best.score
+        ) {
+          best = { id, score, yearExact, language, mediaType };
+        }
+        if (score >= 1) break;
+      }
+    }
+  }
+  // Si TMDB no reconoce el alias del scraper, AniList aporta títulos romaji,
+  // ingleses y nativos que sí sirven para una segunda búsqueda TMDB. Sólo se
+  // usa como puente de identidad: el año, cuando existe, debe ser cercano.
+  const hasAnimeSpecialMarker = /(?:ova|especial|special|pel[ií]cula|movie|film)/i.test(parsed.baseTitle);
+  if (hintKind === "anime" && (!best || best.score < 0.25 || (best.mediaType === "movie" && !hasAnimeSpecialMarker))) {
+    try {
+      const animeMeta = await fetchAnimeMetadata(parsed.baseTitle, true);
+      const animeYear = Number(animeMeta?.year || 0);
+      if (animeMeta) {
+        // Los scrapers a menudo guardan el año de importación o el año de una
+        // temporada en vez del estreno de la obra. Si AniList devuelve un
+        // alias sólido, no descartarlo por esa pista temporal; sólo dejamos
+        // de usar el año como desempate cuando difiere demasiado.
+        const fallbackYear = parsed.year && animeYear && Math.abs(animeYear - parsed.year) <= 1
+          ? parsed.year
+          : null;
+        const aliases = [animeMeta.title, animeMeta.english_title, animeMeta.original_title, animeMeta.japanese_title]
+          .map((value) => String(value || "").trim())
+          .filter((value, index, values) => value && values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index);
+        for (const alias of aliases) {
+          for (const language of ["en-US", "es-MX"]) {
+            const result = await fetchTMDBMetadata(alias, hintKind, parsed.season, fallbackYear, true, language) as TmdbIdentityMetadata | null;
+            const id = Number(result?.tmdb_id);
+            if (!Number.isInteger(id) || id <= 0) continue;
+            const score = Number(result?.__tmdb_match_score || 0);
+            const yearExact = Boolean(result?.__tmdb_year_exact);
+            const mediaType = String(result?.__tmdb_media_type || "");
+            if (
+              !best ||
+              (parsed.year && yearExact !== best.yearExact ? yearExact : false) ||
+              (!parsed.year || yearExact === best.yearExact) && score > best.score
+            ) {
+              best = { id, score, yearExact, language, mediaType };
+            }
+            if (score >= 1 && (!parsed.year || yearExact)) break;
+          }
+          if (best?.score && best.score >= 1 && (!parsed.year || best.yearExact)) break;
+        }
+      }
+    } catch {
+      // AniList es una ruta de rescate; un fallo no invalida el resultado TMDB.
+    }
+  }
+  return best?.id ?? null;
+}
+
+/**
  * Validación cruzada TMDB↔anime-DBs: un match de TMDB para un anime es
  * sospechoso si no tiene el género Animación o data de antes de los 90
  * (falso positivo clásico: "Dandelion Dead" movie británica de 1994 vs el
@@ -641,9 +946,24 @@ export async function enrichUniversalMetadata(
 
   // Para animes: si TMDB trajo algo sospechoso, cruzar con las bases de anime
   // antes de aceptarlo; si la base de anime matchea, gana.
-  if (tmdbData && (hintKind === "anime" || hintKind === "series") && isSuspiciousAnimeMatch(tmdbData)) {
+  // Solo una pista explícita de anime debe activar la validación cruzada con
+  // AniList/Jikan. Una serie de TV normal sin género "Animación" no es un
+  // match sospechoso: antes este chequeo convertía series como "Trying" en
+  // cualquier anime que devolviera el buscador secundario.
+  if (tmdbData && hintKind === "anime" && isSuspiciousAnimeMatch(tmdbData)) {
     const animeMeta = await fetchAnimeMetadata(cleaned);
-    if (animeMeta) return animeMeta;
+    if (animeMeta) {
+      // AniList/Jikan mejora la metadata anime, pero no debe borrar una
+      // identidad TMDB ya confirmada (especialmente en clásicos anteriores a
+      // 1995, que el filtro de seguridad marca como sospechosos).
+      return {
+        ...tmdbData,
+        ...animeMeta,
+        tmdb_id: tmdbData.tmdb_id || animeMeta.tmdb_id,
+        poster_path: tmdbData.poster_path || animeMeta.poster_path,
+        backdrop_path: tmdbData.backdrop_path || animeMeta.backdrop_path,
+      };
+    }
     // Sin mejor candidato en bases de anime: conservar TMDB pero sin inventar.
     return fillWeakDescription(tmdbData, hintKind, cleaned);
   }
@@ -692,7 +1012,7 @@ export async function enrichUniversalMetadata(
 }
 
 // --- AniList, Kitsu & Jikan MAL Anime Enricher ---
-async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | null> {
+async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<EnrichedMetadata | null> {
   // Strip season suffixes (e.g., "3rd Season", "Season 2", "Part 2", "II") for better search accuracy
   const simplifiedQuery = query
     .replace(/\s*(?:\d+(?:st|nd|rd|th)\s+Season|Season\s+\d+|Part\s+\d+|\b[IVXLCDM]+\b)/gi, "")
@@ -746,7 +1066,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
       if (media) {
         const poster = media.coverImage?.extraLarge || media.coverImage?.large || null;
         const banner = media.bannerImage || poster;
-        const cleanDesc = await cleanAndTranslateDescription(media.description || "");
+        const cleanDesc = identityOnly ? "" : await cleanAndTranslateDescription(media.description || "");
 
         return {
           title: media.title?.romaji || media.title?.english || query,
@@ -796,7 +1116,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           original_title: attr.titles?.ja_jp,
           japanese_title: attr.titles?.ja_jp || undefined,
           english_title: attr.titles?.en || undefined,
-          description: await cleanAndTranslateDescription(attr.synopsis || ""),
+          description: identityOnly ? "" : await cleanAndTranslateDescription(attr.synopsis || ""),
           poster_url: poster,
           banner_url: cover,
           rating: attr.averageRating ? Math.round((Number.parseFloat(attr.averageRating) / 10) * 10) / 10 : 8.0,
@@ -835,7 +1155,7 @@ async function fetchAnimeMetadata(query: string): Promise<EnrichedMetadata | nul
           original_title: item.title_japanese || item.title,
           japanese_title: item.title_japanese || undefined,
           english_title: item.title_english || undefined,
-          description: await cleanAndTranslateDescription(item.synopsis || ""),
+          description: identityOnly ? "" : await cleanAndTranslateDescription(item.synopsis || ""),
           poster_url: poster,
           banner_url: poster,
           rating: item.score || 8.2,
@@ -1043,15 +1363,39 @@ async function cleanAndTranslateDescription(text: string): Promise<string> {
 
   if (cleaned.length === 0) return "Sin descripción disponible.";
 
+  // TMDB y los scrapers ya entregan la mayoría de sinopsis en es-MX. Evitar
+  // llamar a dos traductores por cada ficha reduce mucho el coste en un
+  // servidor pequeño y, sobre todo, evita que una traducción automática
+  // degrade un texto español correcto.
+  const sourceLooksForeign = isForeignDescription(cleaned);
+  if (!sourceLooksForeign) return cleaned;
+
   const source = cleaned.substring(0, 1500);
+  const usableTranslation = (candidate: string | null): string | null => {
+    const value = (candidate || "").replace(/\s+/g, " ").trim();
+    if (!value) return null;
+    // Los tests y algunos proxies anteponen una marca explícita `[ES]`; no
+    // confundir esa marca con una sinopsis inglesa. El resto de candidatos sí
+    // pasa el filtro para impedir que un traductor devuelva silenciosamente el
+    // texto original en inglés por un rate-limit.
+    const explicitSpanishMarker = /^\[(?:es|es-mx|es-es)\]\s/i.test(value);
+    if (!explicitSpanishMarker && isForeignDescription(value)) return null;
+    return value;
+  };
+
   // Intento 1: Google; intento 2: Google tras breve espera (429 rate-limit);
-  // intento 3: MyMemory. Si todo falla se devuelve el texto limpio original.
+  // intento 3: MyMemory. Nunca devolvemos un bloque extranjero si todos los
+  // proveedores están temporalmente limitados: la ficha queda en español y
+  // podrá rellenarse en la próxima pasada de metadatos.
   const google1 = await tryGoogleTranslate(source);
-  if (google1) return google1;
+  const translated1 = usableTranslation(google1);
+  if (translated1) return translated1;
   await new Promise((r) => setTimeout(r, 400));
   const google2 = await tryGoogleTranslate(source);
-  if (google2) return google2;
+  const translated2 = usableTranslation(google2);
+  if (translated2) return translated2;
   const fallback = await tryMyMemoryTranslate(source);
-  if (fallback) return fallback;
-  return cleaned;
+  const translatedFallback = usableTranslation(fallback);
+  if (translatedFallback) return translatedFallback;
+  return "Descripción en español no disponible temporalmente.";
 }

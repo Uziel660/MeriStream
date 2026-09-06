@@ -184,7 +184,8 @@ vi.mock("./db", () => ({
     sourceLink: {
       findFirst: vi.fn().mockImplementation(({ where }) => {
         let list = [...dbSourceLinks];
-        if (where?.url) list = list.filter((l) => l.url === where.url);
+        if (where?.url?.in) list = list.filter((l) => where.url.in.includes(l.url));
+        else if (where?.url) list = list.filter((l) => l.url === where.url);
         if (where?.source_site) list = list.filter((l) => l.source_site === where.source_site);
         if (where?.media_episode) {
           const meCond = where.media_episode;
@@ -198,6 +199,25 @@ vi.mock("./db", () => ({
           list = list.filter((l) => meIds.has(l.media_episode_id));
         }
         return Promise.resolve(list[0] || null);
+      }),
+      findMany: vi.fn().mockImplementation(({ where }) => {
+        let list = [...dbSourceLinks];
+        if (where?.url?.in) list = list.filter((l) => where.url.in.includes(l.url));
+        else if (where?.url) list = list.filter((l) => l.url === where.url);
+        if (where?.source_site?.in) list = list.filter((l) => where.source_site.in.includes(l.source_site));
+        else if (where?.source_site) list = list.filter((l) => l.source_site === where.source_site);
+        if (where?.media_episode) {
+          const meCond = where.media_episode;
+          const matchingEpisodes = dbMediaEpisodes.filter(
+            (me) =>
+              (!meCond.media_item_id || me.media_item_id === meCond.media_item_id) &&
+              (meCond.season_number === undefined || me.season_number === meCond.season_number) &&
+              (meCond.episode_number === undefined || me.episode_number === meCond.episode_number)
+          );
+          const meIds = new Set(matchingEpisodes.map((me) => me.id));
+          list = list.filter((l) => meIds.has(l.media_episode_id));
+        }
+        return Promise.resolve(list);
       }),
       create: vi.fn().mockImplementation(({ data }) => {
         const id = data.id || `sl_${Date.now()}_${Math.random()}`;

@@ -189,8 +189,12 @@ describe("VerAnimesAdapter (wwv.veranimes.net)", () => {
       expect(isSupportedServer("https://streamtape.com/e/xyz")).toBe(true);
     });
 
-    it("isSupportedServer: bysesukior (ofuscado) NO es servidor soportado por defecto", () => {
-      expect(isSupportedServer("https://bysesukior.com/e/abcd1234")).toBe(false);
+    it("isSupportedServer: bysesukior (Byse) es servidor soportado via Byse decryptor", () => {
+      expect(isSupportedServer("https://bysesukior.com/e/abcd1234")).toBe(true);
+    });
+
+    it("isSupportedServer: servidor desconocido NO es servidor soportado", () => {
+      expect(isSupportedServer("https://unknown-unsupported-server.xyz/e/abcd1234")).toBe(false);
     });
 
     it("decodeDataVideoButtons: decodifica hex/data-video a URLs de servidor", () => {

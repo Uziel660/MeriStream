@@ -10,6 +10,12 @@ describe("parseRawTitle", () => {
     expect(parsed.year).toBeNull();
   });
 
+  it("elimina etiquetas de audio que no pertenecen a la identidad", () => {
+    expect(parseRawTitle("The Daily Life of the Immortal King S3 Japonés").canonical)
+      .toBe("The Daily Life of the Immortal King S3");
+    expect(parseRawTitle("Code Geass Redoblaje").canonical).toBe("Code Geass");
+  });
+
   it("extrae año aunque NO esté al final y descarta 'Ver' en cola", () => {
     const parsed = parseRawTitle("La Bestia 2026 Ver");
     expect(parsed.canonical).toBe("La Bestia");
@@ -202,6 +208,15 @@ describe("isPlausibleTitle / guard anti-basura (FIX título 'pe')", () => {
     expect(isPlausibleTitle("21")).toBe(true);      // numérico corto legítimo
     expect(isPlausibleTitle("Toy Story 5")).toBe(true);
     expect(isPlausibleTitle("Jujutsu Kaisen 2nd Season")).toBe(true);
+    expect(isPlausibleTitle("SK∞")).toBe(true);
+    expect(isPlausibleTitle("C3")).toBe(true);
+    expect(isPlausibleTitle("H2")).toBe(true);
+    expect(isPlausibleTitle("MM!")).toBe(true);
+    expect(isPlausibleTitle("S&X")).toBe(true);
+    expect(isPlausibleTitle("Z")).toBe(true);
+    expect(isPlausibleTitle("时间之子")).toBe(true);
+    expect(isPlausibleTitle("速戰")).toBe(true); // título chino breve válido
+    expect(isPlausibleTitle("XX")).toBe(true); // sigla/título íntegramente en mayúsculas
   });
 
   it("parseRawTitle marca 'plausible: false' en basura", () => {

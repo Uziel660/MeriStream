@@ -5,11 +5,12 @@ import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { thumbBackdropUrl } from '../utils/imageSizes';
-import { cleanDescription } from '../utils/textCleaner';
+import { cleanDescription, cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import { displayEpisodeTitle } from '../utils/episodeLabels';
 import type { ShowDetail, Episode } from '../types';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { WatchProgress } from './ContinueWatching';
 
 interface MediaDetailsModalProps {
@@ -27,6 +28,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   onSelectEpisode,
   watchProgress = [],
 }) => {
+  const dialogRef = useDialogFocus(isOpen);
   const [show, setShow] = useState<ShowDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,7 +158,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     if (Array.isArray(show.genres)) genres = show.genres;
     else if (typeof show.genres === 'string') genres = show.genres.split(',').map((g) => g.trim()).filter(Boolean);
     else return [show.category || 'Anime'];
-    return genres.filter((g) => !isGenreHidden(g));
+    return cleanDisplayGenres(genres).filter((g) => !isGenreHidden(g));
   }, [show?.genres, show?.category, isGenreHidden]);
 
   const accentColor = rgbToRgbaString(accentRgb, 1);
@@ -214,17 +216,20 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
+          aria-label={show ? `Detalles de ${show.title}` : 'Detalles del título'}
+          className="details-overlay fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
           onClick={onClose}
         >
           {/* FLOATING SIDE PANEL SLIDING FROM RIGHT */}
           <motion.div
+            ref={dialogRef}
+            tabIndex={-1}
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 260 }}
             onClick={(e) => e.stopPropagation()}
-            className="relative flex h-full w-full max-w-2xl flex-col bg-zinc-950/95 border-l border-zinc-800/90 shadow-2xl overflow-hidden select-none"
+            className="details-panel relative flex w-full flex-col bg-zinc-950/95 border-l border-zinc-800/90 shadow-2xl overflow-hidden select-none"
           >
             {/* CLOSE BUTTON */}
             <button
@@ -251,10 +256,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             )}
 
             {!isLoading && !error && show && (
-              <div className="flex flex-1 flex-col overflow-y-auto">
+              <div className="details-scroll flex flex-1 flex-col overflow-y-auto">
 
                 {/* HERO HEADER OF THE SIDE PANEL */}
-                <div className="relative h-72 sm:h-80 w-full shrink-0 overflow-hidden bg-zinc-900">
+                <div className="details-hero relative h-72 sm:h-80 w-full shrink-0 overflow-hidden bg-zinc-900">
                   {headerImage && !hasWideHeader && (
                     <SmartImage
                       src={headerImage}
@@ -276,7 +281,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent" />
                   <div
-                    className="absolute inset-0 pointer-events-none opacity-40"
+                    className="details-glow absolute inset-0 pointer-events-none opacity-40"
                     style={{
                       background: `radial-gradient(circle at 75% 30%, ${glowStyle} 0%, transparent 60%)`,
                     }}
@@ -286,7 +291,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   <div className="absolute bottom-5 left-6 right-6 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
-                        className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider backdrop-blur-md"
+                        className="details-category rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider backdrop-blur-md"
                         style={{
                           backgroundColor: rgbToRgbaString(accentRgb, 0.15),
                           borderColor: rgbToRgbaString(accentRgb, 0.3),
@@ -312,13 +317,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     </div>
 
                     <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">
-                      {show.title}
+                      {cleanDisplayTitle(show.title)}
                     </h2>
                   </div>
                 </div>
 
                 {/* CONTENT: SINOPSIS, GÉNEROS Y EPISODIOS */}
-                <div className="p-6 space-y-6 flex-1">
+                <div className="details-body p-6 space-y-6 flex-1">
 
                   {/* GÉNEROS EN CHIPS CON FONDO SEMI-TRANSPARENTE */}
                   {genresList.length > 0 && (
@@ -361,23 +366,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     <div className="pt-4 flex flex-col items-center gap-3 pb-8">
                       <button
                         type="button"
-                        onClick={() => onSelectEpisode(movieEpisode, show.title)}
-                        className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] cursor-pointer"
+                        onClick={() => onSelectEpisode(movieEpisode, cleanDisplayTitle(show.title))}
+                        className="details-play group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] cursor-pointer"
                       >
                         {isMovieCompleted ? (
                           <>
                             <RotateCcw size={20} className="stroke-[2.5]" />
-                            VOLVER A VER PELÍCULA
+                            Volver a ver película
                           </>
                         ) : moviePercent > 0 ? (
                           <>
                             <Play size={20} className="fill-black" />
-                            CONTINUAR PELÍCULA ({moviePercent}%)
+                            Continuar película ({moviePercent}%)
                           </>
                         ) : (
                           <>
                             <Play size={20} className="fill-black" />
-                            REPRODUCIR PELÍCULA
+                            Reproducir película
                           </>
                         )}
                       </button>
@@ -440,6 +445,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               value={episodeSearch}
                               onChange={(e) => setEpisodeSearch(e.target.value)}
                               placeholder="Buscar nº o título..."
+                              aria-label="Buscar episodio"
                               className="rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 pl-8 pr-3 py-1.5 focus:border-amber-500/60 focus:outline-none w-full sm:w-48 font-normal"
                             />
                           </div>
@@ -451,7 +457,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                           No se encontraron episodios {episodeSearch ? `que coincidan con "${episodeSearch}"` : 'registrados'}.
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[440px] overflow-y-auto pr-1">
+                        <div className="episode-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[440px] overflow-y-auto pr-1">
                           {filteredEpisodes.map((ep) => {
                             const prog = episodeProgressMap.get(ep.id) || episodeProgressMap.get(`num_${ep.episode_number}`);
                             const percent = prog?.percent || 0;
@@ -462,8 +468,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               <button
                                 key={ep.id}
                                 type="button"
-                                onClick={() => onSelectEpisode(ep, show.title)}
-                                className={`group/ep relative w-full flex flex-col justify-between overflow-hidden rounded-xl p-3 text-left border transition-all shadow-sm ${
+                                onClick={() => onSelectEpisode(ep, cleanDisplayTitle(show.title))}
+                                className={`episode-card group/ep relative w-full flex flex-col justify-between overflow-hidden rounded-xl p-3 text-left border transition-all shadow-sm ${
                                   isCompleted
                                     ? 'bg-zinc-900/50 border-emerald-500/30 hover:border-emerald-500/50 hover:bg-zinc-800/60'
                                     : isInProgress
@@ -496,7 +502,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                                   </div>
 
                                   <span
-                                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors shrink-0 ${
+                                    className={`episode-play flex h-8 w-8 items-center justify-center rounded-full transition-colors shrink-0 ${
                                       isCompleted
                                         ? 'bg-emerald-500/20 text-emerald-400 group-hover/ep:bg-emerald-500 group-hover/ep:text-black'
                                         : isInProgress

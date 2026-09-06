@@ -10,7 +10,6 @@ const BASE_URL = "https://wwv.veranimes.net";
 
 const DEAD_OR_BLOCKED_HOST_PATTERNS = [
   /cfglobalcdn\.com/i,
-  /yourupload\.com/i,
   /streamtape\./i,
   /dsvplay\.com/i,
   /savefiles\.com/i,
@@ -568,11 +567,15 @@ export class VerAnimesAdapter extends BaseScraperAdapter {
       return { stream_url: "", all_available_streams: [], title };
     }
 
-    // Resolver todos los iframes en paralelo
+    // Resolver todos los iframes en paralelo con timeout de seguridad (4.5s)
     const resolutions = await Promise.all(
       finalCandidates.map(async (iframeUrl) => {
         try {
-          return { iframeUrl, resolved: await EmbedResolvers.resolve(iframeUrl) };
+          const timeoutPromise = new Promise<{ iframeUrl: string; resolved: string }>((resolve) =>
+            setTimeout(() => resolve({ iframeUrl, resolved: "" }), 4500)
+          );
+          const resolvePromise = EmbedResolvers.resolve(iframeUrl).then((resolved) => ({ iframeUrl, resolved }));
+          return await Promise.race([resolvePromise, timeoutPromise]);
         } catch {
           return { iframeUrl, resolved: "" };
         }

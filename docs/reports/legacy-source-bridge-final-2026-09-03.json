@@ -1,0 +1,20 @@
+{
+  "dry_run": false,
+  "scanned": 66149,
+  "matched": 60813,
+  "links_created": 38045,
+  "links_existing": 22768,
+  "media_episodes_created": 60744,
+  "skipped_empty": 0,
+  "skipped_excluded": 1,
+  "skipped_ephemeral": 61,
+  "skipped_navigation": 141,
+  "skipped_no_media_item": 4323,
+  "skipped_ambiguous": 810,
+  "errors": 0,
+  "error_samples": [],
+  "last_episode_id": "cmtnd737o205zur14fn2y5pit",
+  "started_at": "2026-09-04T22:26:25.456Z",
+  "finished_at": "2026-09-04T22:32:59.203Z",
+  "duration_ms": 393747
+}

@@ -34,11 +34,11 @@ export class VimeosResolver {
 
   private static readonly DEFAULT_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-  private static readonly EMBED_TIMEOUT_MS = 7500;
+  private static readonly EMBED_TIMEOUT_MS = 8000;
   /** Intentos de embed→validación antes de caer al POST download_orig. */
-  private static readonly MAX_EMBED_ATTEMPTS = 8;
+  private static readonly MAX_EMBED_ATTEMPTS = 3;
   /** Pausa entre intentos (ms): no martillar el edge mientras rota backends. */
-  private static readonly RETRY_PAUSE_MS = 350;
+  private static readonly RETRY_PAUSE_MS = 200;
 
   /** Detecta cualquier forma de URL de vimeos: embed-{id}.html, /e/{id}, /d/{id}_h */
   public static isVimeosUrl(url: string): boolean {
@@ -65,10 +65,17 @@ export class VimeosResolver {
 
     for (let attempt = 1; attempt <= this.MAX_EMBED_ATTEMPTS; attempt++) {
       const html = await this.fetchText(url, this.EMBED_TIMEOUT_MS);
-      if (!html || html.includes("File is no longer available")) break;
+      if (!html || html.includes("File is no longer available")) {
+        if (html && html.includes("File is no longer available")) break;
+        continue;
+      }
 
       const unpacked = unpackPackedScript(html);
       const found = extractMediaUrlsFromCode(unpacked);
+      // Regex check for sources:[{file:"..."}]
+      const sourceMatch = unpacked.match(/sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i);
+      if (sourceMatch && !found.includes(sourceMatch[1])) found.unshift(sourceMatch[1]);
+
       // candidatos en claro por si esta respuesta no trae el pack
       for (const m of html.matchAll(/["'](https?:\/\/[^"'\s]+?\.m3u8[^"'\s]*)["']/gi)) found.push(m[1]);
 
@@ -80,7 +87,7 @@ export class VimeosResolver {
         )
         // m3u8 primero: es la forma que el proxy sirve sin HEAD
         .sort((a, b) => Number(b.includes(".m3u8")) - Number(a.includes(".m3u8")))
-        .slice(0, 2);
+        .slice(0, 4);
 
       for (const candidate of candidates) {
         if (await this.validateStreamUrl(candidate)) return [candidate];
@@ -200,7 +207,10 @@ export class VimeosResolver {
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": this.DEFAULT_UA },
+        headers: {
+          "User-Agent": this.DEFAULT_UA,
+          Referer: "https://vimeos.net/",
+        },
       });
       if (!res.ok) return null;
       return await res.text();

@@ -44,9 +44,9 @@ describe("source recovery canonical locators", () => {
     expect(isCanonicalLocator("https://mega.nz/embed/!abc!xyz")).toBe(true);
   });
 
-  it("excludes only TubePelis while retaining TioPlus", () => {
-    expect(isExcludedRecoverySite("TubePelis")).toBe(true);
-    expect(isExcludedRecoverySite("https://www.tubepelis.com/peliculas/foo")).toBe(true);
+  it("incluye TubePelis y TioPlus en recuperación", () => {
+    expect(isExcludedRecoverySite("TubePelis")).toBe(false);
+    expect(isExcludedRecoverySite("https://www.tubepelis.com/peliculas/foo")).toBe(false);
     expect(isExcludedRecoverySite("tioplus.app")).toBe(false);
     expect(isExcludedRecoverySite("https://tioplus.app/peliculas/foo")).toBe(false);
   });

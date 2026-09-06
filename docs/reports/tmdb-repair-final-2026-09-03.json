@@ -1,0 +1,16 @@
+{
+  "dry_run": false,
+  "shows_considered": 22530,
+  "shows_updated": 1045,
+  "media_items_considered": 38369,
+  "media_items_updated": 4388,
+  "unresolved": 15798,
+  "errors": [],
+  "cursor": {
+    "phase": "done",
+    "showIndex": 37963,
+    "conflictIndex": 5107,
+    "mediaIndex": 38369,
+    "updatedAt": "2026-09-04T18:47:14.819Z"
+  }
+}

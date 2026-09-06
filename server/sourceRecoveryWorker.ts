@@ -63,7 +63,10 @@ export interface SourceRecoverySummary {
 }
 
 const RECOVERY_SCOPE = "source_recovery";
-const EXCLUDED_SITES = new Set(["tubepelis.com", "www.tubepelis.com", "tubepelis"]);
+// Todos los proveedores configurados participan en la recuperación. TubePelis
+// estuvo excluido mientras su extractor no podía reconstruir las fichas; el
+// adaptador actual ya devuelve localizadores canónicos y streams reproducibles.
+const EXCLUDED_SITES = new Set<string>();
 const SEARCH_ADAPTERS: Record<string, string> = {
   animeflv: "animeflv",
   "animeflv.net": "animeflv",
@@ -76,6 +79,8 @@ const SEARCH_ADAPTERS: Record<string, string> = {
   "cinecalidad.am": "cinecalidad",
   "cinecalidad.mx": "cinecalidad",
   "cinecalidad.im": "cinecalidad",
+  tubepelis: "tubepelis",
+  "tubepelis.com": "tubepelis",
 };
 const DEFAULT_DELAY_MS = 800;
 const MIN_DELAY_MS = 300;
@@ -85,12 +90,16 @@ const FETCH_TIMEOUT_MS = 15_000;
 // es por episodio (no por candidato); los candidatos que queden pendientes se
 // reintentan en la siguiente pasada gracias a la clave idempotente.
 const RECOVERY_ITEM_TIMEOUT_MS = 60_000;
+// La recuperación es principalmente I/O (localizadores canónicos + upserts
+// idempotentes). Doce tareas solapadas aprovechan la máquina de 10C/16T sin
+// agotar el pool de Prisma ni lanzar una ráfaga descontrolada a proveedores.
+const RECOVERY_CONCURRENCY = 12;
 // La cola puede contener decenas de miles de episodios. Serializar todo el
 // JSON cada cinco elementos convierte el checkpoint en el cuello de botella y
 // aumenta la presión de memoria/IO. Veinticinco conserva una pérdida máxima
 // pequeña ante un cierre (los elementos se vuelven a intentar de forma
 // idempotente) y reduce unas cinco veces las escrituras grandes.
-const PERSIST_EVERY = 25;
+const PERSIST_EVERY = 100;
 
 function cleanSite(site: string): string {
   const value = (site || "").trim().toLowerCase();
@@ -98,7 +107,7 @@ function cleanSite(site: string): string {
   return value;
 }
 
-/** TubePelis is intentionally excluded from every recovery pass. */
+/** Devuelve si un proveedor debe omitirse de una pasada de recuperación. */
 export function isExcludedRecoverySite(siteOrUrl: string): boolean {
   const value = (siteOrUrl || "").trim();
   const site = value.includes("://") ? siteFromUrl(value) : cleanSite(value);
@@ -567,42 +576,63 @@ export class SourceRecoveryWorker {
     const queue = parseQueue(record.items_queue) as RecoveryQueueItem[];
     let recovered = Number(record.episodes_imported || 0);
     let errors = 0;
-    for (let index = 0; index < queue.length; index++) {
+    for (let batchStart = 0; batchStart < queue.length; batchStart += RECOVERY_CONCURRENCY) {
       // No volver a traer la cola JSON completa (puede pesar decenas de MB) en
       // cada episodio: solo se necesitan el estado y el ritmo para controlar
       // la pausa/reanudación. La cola en memoria ya contiene el checkpoint.
-      const live = await prisma.crawlTask.findUnique({ where: { id }, select: { status: true, rate_limit_delay_ms: true } });
+      const live = await prisma.crawlTask.findUnique({
+        where: { id },
+        select: { status: true, rate_limit_delay_ms: true },
+      });
       if (!live || live.status === "recovery_paused") return;
       if (live.status !== "recovery_running") return;
-      const item = queue[index];
-      if (item.status === "already_canonical" || item.status === "done") continue;
-      item.status = "processing";
-      await this.persist(id, queue, index);
-      try {
-        const canonical = await withTimeout(this.recoverItem(item), RECOVERY_ITEM_TIMEOUT_MS);
-        if (canonical) {
-          item.status = "done";
-          item.canonical_url = canonical;
-          recovered++;
-        } else {
-          item.status = "skipped";
+
+      const indexes: number[] = [];
+      for (let index = batchStart; index < Math.min(queue.length, batchStart + RECOVERY_CONCURRENCY); index++) {
+        const item = queue[index];
+        if (item.status === "already_canonical" || item.status === "done") continue;
+        item.status = "processing";
+        indexes.push(index);
+      }
+      if (indexes.length === 0) continue;
+
+      // El checkpoint previo deja los elementos como `processing`; si el
+      // proceso muere, el reconciliador de arranque los vuelve a intentar.
+      await this.persist(id, queue, batchStart);
+
+      await Promise.all(indexes.map(async (index) => {
+        const item = queue[index];
+        try {
+          const canonical = await withTimeout(this.recoverItem(item), RECOVERY_ITEM_TIMEOUT_MS);
+          if (canonical) {
+            item.status = "done";
+            item.canonical_url = canonical;
+            recovered++;
+          } else {
+            item.status = "skipped";
+          }
+        } catch (error: any) {
+          item.status = "error";
+          item.error = String(error?.message || error).slice(0, 500);
+          errors++;
         }
-      } catch (error: any) {
-        item.status = "error";
-        item.error = String(error?.message || error).slice(0, 500);
-        errors++;
-      }
-      await this.persist(id, queue, index, recovered, errors);
-      // Las fichas/embeds ya clasificados se guardan localmente y no generan
-      // tráfico al proveedor. No introducir una espera artificial por cada
-      // fila canónica: el rate-limit solo es necesario cuando el elemento no
-      // trae candidatos y `recoverItem` tendrá que buscarlo externamente.
-      const needsExternalSearch = item.candidate_urls.length === 0 || item.candidate_urls.some((url) =>
-        !isCanonicalLocator(url) && classifySourceKind(url) !== "stable_direct",
-      );
-      if (needsExternalSearch) {
-        await new Promise((resolve) => setTimeout(resolve, clampDelay(live.rate_limit_delay_ms)));
-      }
+
+        // Las fichas/embeds ya clasificados se guardan localmente y no generan
+        // tráfico al proveedor. El delay solo se aplica cuando el elemento
+        // necesita una búsqueda externa y todas las tareas del lote lo
+        // comparten sin bloquear las demás recuperaciones.
+        const needsExternalSearch = item.candidate_urls.length === 0 || item.candidate_urls.some((url) =>
+          !isCanonicalLocator(url) && classifySourceKind(url) !== "stable_direct",
+        );
+        if (needsExternalSearch) {
+          await new Promise((resolve) => setTimeout(resolve, clampDelay(live.rate_limit_delay_ms)));
+        }
+      }));
+
+      // Escribir una sola cola grande por lote evita carreras entre savers y
+      // conserva como máximo un lote pendiente ante un cierre inesperado.
+      const batchEnd = Math.min(queue.length - 1, batchStart + RECOVERY_CONCURRENCY - 1);
+      await this.persist(id, queue, batchEnd, recovered, errors);
     }
     await prisma.crawlTask.update({ where: { id }, data: { status: "completed", items_queue: JSON.stringify(queue), episodes_imported: recovered, error_message: errors ? `${errors} elementos no pudieron verificarse` : null } });
   }

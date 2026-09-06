@@ -64,21 +64,33 @@ export function isExpiredWithoutLocator(
 export function isUnresolvedCanonical(url: string | null | undefined): boolean {
   if (!url) return false;
   const lower = String(url).toLowerCase();
-  if (lower.includes('.m3u8') || lower.includes('.mp4')) return false;
+  if (lower.includes('.m3u8') || lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mkv')) return false;
   return (
-    lower.includes('lamovie.org/') ||
-    lower.includes('cinecalidad.am/') ||
-    lower.includes('animeflv.net/ver/') ||
-    lower.includes('animeflv.to/ver/') ||
-    lower.includes('jkanime.net/ver/') ||
-    lower.includes('tioanime.com/ver/') ||
-    lower.includes('latanime.org/ver/') ||
-    lower.includes('veranimes.net/ver/') ||
-    lower.includes('tioplus.app/') ||
-    lower.includes('tubepelis.com/') ||
-    lower.includes('tvmaze.com/') ||
-    lower.includes('hianimes.se/watch/') ||
-    lower.includes('hianimes.se/details/')
+    lower.includes('/anime/') ||
+    lower.includes('/series/') ||
+    lower.includes('/serie/') ||
+    lower.includes('/pelicula/') ||
+    lower.includes('/ver-pelicula/') ||
+    lower.includes('/ver-serie/') ||
+    lower.includes('/ver-anime/') ||
+    lower.includes('/episodio/') ||
+    lower.includes('/capitulos/') ||
+    lower.includes('/dorama/') ||
+    lower.includes('/watch/') ||
+    lower.includes('/ver/') ||
+    lower.includes('lamovie.org') ||
+    lower.includes('cinecalidad.') ||
+    lower.includes('animeflv.') ||
+    lower.includes('jkanime.') ||
+    lower.includes('tioanime.com') ||
+    lower.includes('latanime.org') ||
+    lower.includes('veranimes.net') ||
+    lower.includes('tioplus.app') ||
+    lower.includes('tubepelis.com') ||
+    lower.includes('tvmaze.com') ||
+    lower.includes('hianimes.se') ||
+    lower.includes('gnulahd.nu') ||
+    lower.includes('doramasflix.')
   );
 }
 
@@ -91,6 +103,7 @@ export function isRealPlayableEmbed(server: ScoredServer | null | undefined): bo
   if (!server.isEmbed) return false;
   if (isExpiredWithoutLocator(server)) return false;
   if (server.notPlayable) return false;
+  if (server.failure_reason === 'unresolved') return false;
   if (isUnresolvedCanonical(server.url)) return false;
   return true;
 }

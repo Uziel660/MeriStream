@@ -4,12 +4,14 @@
  *
  * Por defecto es simulación. Con --apply rellena IDs nulos y, en la fase de
  * conflictos, reemplaza solo los IDs que una revalidación textual confirme.
+ * Con --missing-only se omite la fase de conflictos y sólo se procesan
+ * registros sin ID (útil para una pasada de recuperación sin tocar IDs sanos).
  * El cursor permite detener/reanudar el proceso sin repetir los registros ya
  * confirmados. La concurrencia está limitada para no saturar TMDB ni Postgres.
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { enrichUniversalMetadata } from "../server/metadataEngine";
+import { resolveTmdbIdentity } from "../server/metadataEngine";
 import { normalizeTitleKey } from "../server/utils/titleNormalizer";
 
 type Cursor = {
@@ -80,8 +82,12 @@ function parseArgs() {
   const parsedConcurrency = Number(value("--concurrency"));
   return {
     apply: args.includes("--apply"),
+    missingOnly: args.includes("--missing-only"),
     limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : undefined,
-    concurrency: Math.min(4, Math.max(1, Number.isFinite(parsedConcurrency) ? Math.floor(parsedConcurrency) : 2)),
+    // TMDB permite ráfagas moderadas; ocho workers mantienen la máquina
+    // ocupada sin acercarse al límite público de la API. El proceso es
+    // reanudable mediante cursor y cualquier error queda registrado.
+    concurrency: Math.min(12, Math.max(1, Number.isFinite(parsedConcurrency) ? Math.floor(parsedConcurrency) : 2)),
     cursorFile: value("--cursor-file"),
     reportFile: value("--report"),
   };
@@ -210,17 +216,15 @@ async function main(): Promise<void> {
         .filter((value, index, values) => value && values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index)
         .slice(0, 4);
       if (aliases.length === 0 || normalizeTitleKey(aliases[0]).length < 2) return null;
-      let metadata: Awaited<ReturnType<typeof enrichUniversalMetadata>> | null = null;
+      let tmdbId: number | null = null;
       for (const alias of aliases) {
         const query = row.year && row.year > 0 ? `${alias} ${row.year}` : alias;
-        const candidate = await enrichUniversalMetadata(query, hint as any);
-        if (candidate?.tmdb_id) {
-          metadata = candidate;
+        const candidateId = await resolveTmdbIdentity(query, hint as any);
+        if (candidateId) {
+          tmdbId = candidateId;
           break;
         }
-        if (!metadata) metadata = candidate;
       }
-      const tmdbId = Number(metadata?.tmdb_id);
       if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null;
       if (opts.apply) {
         if (kind === "show") {
@@ -308,10 +312,10 @@ async function main(): Promise<void> {
     if (cursor.phase === "shows") {
       const nextShow = await runPhase("show", shows, cursor.showIndex);
       cursor.showIndex = nextShow;
-      if (nextShow >= shows.length) cursor.phase = "conflicts";
+      if (nextShow >= shows.length) cursor.phase = opts.missingOnly ? "media_items" : "conflicts";
       await writeCursor(opts.cursorFile, cursor);
     }
-    if (cursor.phase === "conflicts" && summary.shows_considered + summary.media_items_considered < maxRecords) {
+    if (!opts.missingOnly && cursor.phase === "conflicts" && summary.shows_considered + summary.media_items_considered < maxRecords) {
       const nextConflict = await runPhase("show", conflictShows, cursor.conflictIndex, true);
       cursor.conflictIndex = nextConflict;
       if (nextConflict >= conflictShows.length) cursor.phase = "media_items";

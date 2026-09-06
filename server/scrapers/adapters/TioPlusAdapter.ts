@@ -248,8 +248,8 @@ export class TioPlusAdapter extends BaseScraperAdapter {
    * 2. Fallback DOM: `#episodeList article.item a[href*="/season/"]`
    */
   public extractEpisodes(html: string, baseUrl: string): ExtractedEpisode[] {
-    // 1. Variable global seasonsJson
-    const jsonMatch = html.match(/var\s+seasonsJson\s*=\s*(\{[\s\S]*?\})\s*;/);
+    // 1. Variable global seasonsJson (var/const/let seasonsJson = {...};)
+    const jsonMatch = html.match(/(?:var|const|let)\s+seasonsJson\s*=\s*(\{[\s\S]*?\})\s*;/);
     if (jsonMatch) {
       try {
         const parsed: unknown = JSON.parse(jsonMatch[1]);
@@ -267,6 +267,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
               seenNums.add(key);
               episodes.push({
                 number,
+                season,
                 title: `${ep?.title || `Episodio ${number}`} (T${season})`,
                 url: this.buildEpisodeUrl(baseUrl, season, number),
                 source_type: "series",
@@ -275,7 +276,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
             }
           }
           if (episodes.length > 0) {
-            return episodes.sort((a, b) => a.number - b.number);
+            return episodes.sort((a, b) => (a.season || 1) - (b.season || 1) || a.number - b.number);
           }
         }
       } catch {}
@@ -300,13 +301,14 @@ export class TioPlusAdapter extends BaseScraperAdapter {
 
       episodes.push({
         number,
+        season,
         title: linkText || `Episodio ${number} (T${season})`,
         url: fullUrl,
         server_name: "TioPlus",
       });
     });
 
-    return episodes.sort((a, b) => a.number - b.number);
+    return episodes.sort((a, b) => (a.season || 1) - (b.season || 1) || a.number - b.number);
   }
 
   /**
@@ -513,7 +515,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     const html = await this.fetchHtml(cleanUrl, 12000);
 
     if (!html) {
-      return { stream_url: cleanUrl, all_available_streams: [cleanUrl] };
+      return { stream_url: "", all_available_streams: [] };
     }
 
     const $ = cheerio.load(html);
@@ -567,7 +569,8 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     const all_available_streams: string[] = [];
     for (const { embedUrl, resolved } of usableResolutions) {
       if (!all_available_streams.includes(resolved)) all_available_streams.push(resolved);
-      if (resolved !== embedUrl && !all_available_streams.includes(embedUrl)) {
+      const isDirect = /\.(m3u8|mp4|webm)(\?|#|$)/i.test(resolved);
+      if (!isDirect && resolved !== embedUrl && !all_available_streams.includes(embedUrl)) {
         all_available_streams.push(embedUrl);
       }
     }
@@ -596,9 +599,27 @@ export class TioPlusAdapter extends BaseScraperAdapter {
         ? [...rankedDirect, ...finalBase.filter((s) => !rankedDirect.includes(s))]
         : finalBase;
 
+    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    const directMedia = ordered.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const backupEmbeds = ordered.filter((u) => !directMedia.includes(u));
+    
+    const topStreams: string[] = [];
+    if (directMedia.length > 0) {
+      topStreams.push(directMedia[0]);
+      if (directMedia.length > 1) {
+        topStreams.push(directMedia[1]);
+      } else if (backupEmbeds.length > 0) {
+        topStreams.push(backupEmbeds[0]);
+      }
+    } else {
+      topStreams.push(...backupEmbeds.slice(0, 2));
+    }
+
+    const resultStreams = topStreams.length > 0 ? topStreams : ordered.slice(0, 2);
+
     return {
-      stream_url: ordered[0] || cleanUrl,
-      all_available_streams: ordered.length > 0 ? ordered : [cleanUrl],
+      stream_url: resultStreams[0] || "",
+      all_available_streams: resultStreams,
       title,
     };
   }

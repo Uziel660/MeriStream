@@ -73,8 +73,8 @@ describe("isBlacklistedHost", () => {
     expect(isBlacklistedHost(undefined as any)).toBe(false);
   });
 
-  it("exporta exactamente los cuatro tokens acordados (mxdrop = variante mixdrop)", () => {
-    expect([...BLACKLISTED_HOST_TOKENS]).toEqual(["voe", "mixdrop", "mxdrop", "filemoon"]);
+  it("exporta exactamente los tokens acordados (mxdrop = variante mixdrop, vudeo)", () => {
+    expect([...BLACKLISTED_HOST_TOKENS]).toEqual(["voe", "mixdrop", "mxdrop", "filemoon", "vudeo"]);
   });
 });
 

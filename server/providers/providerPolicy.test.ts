@@ -12,14 +12,22 @@ describe("providerPolicy", () => {
     expect(getProviderPriority("animeflv")).toBeLessThan(getProviderPriority("tioanime"));
   });
 
-  it("normalizes provider aliases", () => {
+  it("normalizes provider aliases and rotating subdomains", () => {
     expect(normalizeProviderId("https://www.animeav1.com/media/test")).toBe("animeav1");
-    expect(normalizeProviderId("jkanime.net")).toBe("animeflv");
+    expect(normalizeProviderId("jkanime.net")).toBe("jkanime");
     expect(normalizeProviderId("www.cinecalidad.am")).toBe("cinecalidad");
+    expect(normalizeProviderId("https://ww3.gnulahd.nu/ver/peliculas/")).toBe("gnula");
+    expect(normalizeProviderId("https://cdn.animeav1.com/covers/1.jpg")).toBe("animeav1");
+  });
+
+  it("uses a stable host key for unknown providers instead of the full URL", () => {
+    expect(normalizeProviderId("https://video.example.com/watch/123?token=abc")).toBe("video.example.com");
   });
 
   it("normalizes language tags used by scraped sources", () => {
     expect(normalizeLanguageTag("latino")).toBe("es-419");
+    expect(normalizeLanguageTag("Español Latino")).toBe("es-419");
+    expect(normalizeLanguageTag("es_419")).toBe("es-419");
     expect(normalizeLanguageTag("Japonés")).toBe("ja");
     expect(normalizeLanguageTag("eng")).toBe("en");
   });

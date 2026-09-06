@@ -1,0 +1,82 @@
+name: Debug autofix
+
+on:
+  push:
+    branches: [feat/provider-v2-es-multilang]
+    paths: [.github/workflows/debug-autofix.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-v2-es-multilang
+      - name: Patch stale resolver fallbacks
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'server/resolvers.ts';
+          let source = fs.readFileSync(file, 'utf8');
+
+          if (!source.includes('const VIMEOS_EMBED_TIMEOUT_MS')) {
+            const marker = 'const FETCH_UA =';
+            const start = source.indexOf(marker);
+            if (start < 0) throw new Error('FETCH_UA marker not found');
+            const semicolon = source.indexOf(';', start);
+            if (semicolon < 0) throw new Error('FETCH_UA terminator not found');
+            source = source.slice(0, semicolon + 1) + '\nconst VIMEOS_EMBED_TIMEOUT_MS = 8_000;' + source.slice(semicolon + 1);
+          }
+
+          const generalYtDlp = `    // Si la resolución interna no produjo stream directo (quedó como embed), intentar con yt-dlp
+    if (!isDirect && !isPlatformPageUrl(rawUrl)) {
+      try {
+        const ytdlpMeta = await resolveWithYtDlp(rawUrl);
+        if (ytdlpMeta && ytdlpMeta.resolved && ytdlpMeta.url && !this.isPlaceholderUrl(ytdlpMeta.url)) {
+          finalUrl = ytdlpMeta.url;
+          isDirect = true;
+          if (ytdlpMeta.requiredHeaders) finalHeaders = ytdlpMeta.requiredHeaders;
+        }
+      } catch {}
+    }
+
+`;
+          if (!source.includes(generalYtDlp)) throw new Error('general yt-dlp block not found');
+          source = source.replace(generalYtDlp, '');
+
+          const vimeosYtDlp = `      try {
+        const ytdlp = await resolveWithYtDlp(rawUrl);
+        if (ytdlp && ytdlp.resolved && ytdlp.url && !this.isPlaceholderUrl(ytdlp.url)) {
+          return ytdlp.url;
+        }
+      } catch {}
+`;
+          if (!source.includes(vimeosYtDlp)) throw new Error('Vimeos yt-dlp block not found');
+          source = source.replace(vimeosYtDlp, '');
+          source = source.replace(
+            '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado; fallback a yt-dlp\n    // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)',
+            '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado.\n    // Nunca devolver /d/{id}_h: es una página HTML de descarga no jugable.'
+          );
+
+          if (source.includes('resolveWithYtDlp')) throw new Error('stale resolveWithYtDlp reference remains');
+          fs.writeFileSync(file, source);
+          NODE
+          git diff --check
+          grep -q 'const VIMEOS_EMBED_TIMEOUT_MS = 8_000' server/resolvers.ts
+          ! grep -q 'resolveWithYtDlp' server/resolvers.ts
+      - name: Commit fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server/resolvers.ts
+          git commit -m 'fix: remove stale yt-dlp resolver fallbacks'
+          git push origin HEAD:feat/provider-v2-es-multilang

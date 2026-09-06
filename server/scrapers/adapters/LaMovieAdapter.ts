@@ -96,7 +96,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const sitemapUrl = `https://lamovie.org/wp-sitemap-posts-${sitemapType}-${page}.xml`;
 
     const xml = await this.fetchHtml(sitemapUrl, 10000);
-    if (!xml) return null;
+    if (!xml) return [];
 
     const $ = cheerio.load(xml, { xmlMode: true });
     const items: ExtractedCatalogItem[] = [];
@@ -143,7 +143,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const fichaPrefix = postType === "movies" ? "peliculas" : postType === "tvshows" ? "series" : "animes";
     const apiUrl = `https://lamovie.org/wp-api/v1/listing/movies?page=${page}&postType=${postType}&postsPerPage=24`;
     const raw = await this.fetchHtml(apiUrl, 10000);
-    if (!raw) return null;
+    if (!raw) return [];
     try {
       const json = JSON.parse(raw);
       const posts: any[] = json?.data?.posts || [];
@@ -312,7 +312,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
       const apiUrl = `https://lamovie.org/wp-api/v1/single/${info.postType}?slug=${encodeURIComponent(info.slug)}&postType=${info.postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
-      if (!raw) return null;
+      if (!raw) return [];
 
       const json = JSON.parse(raw);
       const id = json?.data?._id;
@@ -343,7 +343,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       const { slug, postType } = info;
       const apiUrl = `https://lamovie.org/wp-api/v1/single/${postType}?slug=${encodeURIComponent(slug)}&postType=${postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
-      if (!raw) return null;
+      if (!raw) return [];
 
       const json = JSON.parse(raw);
       const data = json?.data;

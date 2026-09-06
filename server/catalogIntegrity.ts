@@ -9,7 +9,6 @@
 export interface CatalogItemLike {
   title: string;
   url: string;
-  [key: string]: unknown;
 }
 
 const TRACKING_PARAMETERS = /^(utm_|fbclid$|gclid$|ref$|referrer$)/i;

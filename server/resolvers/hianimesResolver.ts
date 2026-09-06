@@ -181,7 +181,7 @@ export async function fetchHianimesAnime(slug: string): Promise<HianimesAnimeRec
   const payload = await requestApi(`/anime/${encodeURIComponent(slug)}`);
   if (!payload || typeof payload !== "object") return null;
   const raw = payload as Record<string, unknown>;
-  return normalizeAnimeRecord(raw.anime ?? payload);
+  return normalizeAnimeRecord(raw.anime ?? payload) ?? null;
 }
 
 export async function fetchHianimesEpisode(slug: string): Promise<{ anime: HianimesAnimeRecord | null; episode: HianimesEpisodeRecord | null }> {

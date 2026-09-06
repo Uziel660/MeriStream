@@ -103,7 +103,7 @@ export abstract class BaseScraperAdapter {
    * Instrumentada con detección anti-bot (Cloudflare/WAF): cada respuesta se analiza
    * y un challenge detectado se registra globalmente y NO se devuelve como contenido.
    */
-  protected async fetchHtml(url: string, timeoutMs: number = 7500): Promise<string | null> {
+  protected async fetchHtml(url: string, timeoutMs: number = 7500, extraHeaders: Record<string, string> = {}): Promise<string | null> {
     let host = "unknown";
     try {
       host = new URL(url).hostname.replace(/^www\./, "") || host;
@@ -114,7 +114,7 @@ export abstract class BaseScraperAdapter {
 
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: COMMON_HEADERS,
+        headers: { ...COMMON_HEADERS, ...extraHeaders },
       });
       clearTimeout(timer);
 

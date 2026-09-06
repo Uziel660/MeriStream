@@ -230,7 +230,7 @@ export class GnulaAdapter extends GenericAdapter {
     // título coincide; nunca puede sustituir el título ni la categoría de la
     // ficha. Esto evita falsos matches (p.ej. "Trying" → otro programa).
     let detailHtml = "";
-    try { detailHtml = await this.fetchHtml(input, 12000); } catch {}
+    try { detailHtml = (await this.fetchHtml(input, 12000)) || ""; } catch {}
     const detail$ = detailHtml ? cheerio.load(detailHtml) : null;
     const listedEpisodes = detail$ ? this.detailEpisodes(detail$, input) : [];
     const twitterDescription = detail$?.("meta[name='twitter:description']").attr("content") || "";

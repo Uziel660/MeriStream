@@ -312,7 +312,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
       const apiUrl = `https://lamovie.org/wp-api/v1/single/${info.postType}?slug=${encodeURIComponent(info.slug)}&postType=${info.postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
-      if (!raw) return [];
+      if (!raw) return null;
 
       const json = JSON.parse(raw);
       const id = json?.data?._id;
@@ -343,7 +343,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       const { slug, postType } = info;
       const apiUrl = `https://lamovie.org/wp-api/v1/single/${postType}?slug=${encodeURIComponent(slug)}&postType=${postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
-      if (!raw) return [];
+      if (!raw) return null;
 
       const json = JSON.parse(raw);
       const data = json?.data;

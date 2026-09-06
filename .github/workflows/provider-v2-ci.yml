@@ -20,7 +20,7 @@ jobs:
         run: npm ci
       - name: Provider V2 typecheck
         run: npx tsc -p tsconfig.provider-v2.json --noEmit
-      - name: Provider V2 unit tests
-        run: npx vitest run server/providers/providerPolicy.test.ts
+      - name: Full unit test suite
+        run: npm test
       - name: Production build
         run: npm run build

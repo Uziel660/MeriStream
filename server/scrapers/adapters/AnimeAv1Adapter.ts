@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { BaseScraperAdapter } from "../BaseAdapter";
 import type { ExtractedCatalogItem, ExtractedEpisode, SourceLinkInput, UniversalAnalysisResult } from "../../types";
 import { enrichUniversalMetadata } from "../../metadataEngine";
+import { EmbedResolvers } from "../../resolvers";
 
 const BASE_URL = "https://animeav1.com";
 const CDN_BASE = "https://cdn.animeav1.com";
@@ -28,10 +29,11 @@ interface AnimeAv1EpisodePayload {
 export class AnimeAv1Adapter extends BaseScraperAdapter {
   readonly id = "animeav1";
   readonly name = "AnimeAV1 (Anime Español)";
-  readonly supportedDomains = ["animeav1.com", "cdn.animeav1.com"];
+  readonly supportedDomains = ["animeav1.com"];
 
   canHandle(url: string): boolean {
-    return /(^|\.)animeav1\.com/i.test(this.hostOf(url));
+    const host = this.hostOf(url).toLowerCase().replace(/^www\./, "");
+    return host === "animeav1.com";
   }
 
   async analyze(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
@@ -98,11 +100,14 @@ export class AnimeAv1Adapter extends BaseScraperAdapter {
     }
     const episodeNumber = Number(parts[2]);
     if (!Number.isFinite(episodeNumber)) return { stream_url: "", all_available_streams: [] };
+
     const payload = await this.getEpisode(parts[1], episodeNumber);
     const sources = this.sourcesFromEpisode(payload);
+    const playable = await this.resolvePlayableSources(sources);
+
     return {
-      stream_url: sources[0]?.url || "",
-      all_available_streams: sources.map((s) => s.url),
+      stream_url: playable[0] || "",
+      all_available_streams: playable,
       title: payload?.episode?.title || undefined,
     };
   }
@@ -157,12 +162,12 @@ export class AnimeAv1Adapter extends BaseScraperAdapter {
       japanese_title: enriched.japanese_title || media?.aka?.["ja-jp"] || null,
       english_title: enriched.english_title || media?.aka?.["en-us"] || null,
       tmdb_id: enriched.tmdb_id ?? null,
-      description: String(media?.synopsis || enriched.description || "").trim(),
+      description: this.cleanSynopsis(media?.synopsis) || enriched.description || "",
       poster_url: media?.id ? `${CDN_BASE}/covers/${media.id}.jpg` : enriched.poster_url,
       banner_url: media?.id ? `${CDN_BASE}/backdrops/${media.id}.jpg` : enriched.banner_url,
       rating: Number(media?.score || enriched.rating || 0),
       year: this.yearOf(media?.startDate) || enriched.year || 0,
-      status: this.statusOf(media?.statusText) || enriched.status || "Publicado",
+      status: this.statusOf(media?.statusText ?? media?.status) || enriched.status || "Publicado",
       genres: Array.isArray(media?.genres) && media.genres.length
         ? media.genres.map((g: any) => String(g?.name || "")).filter(Boolean)
         : enriched.genres,
@@ -226,21 +231,49 @@ export class AnimeAv1Adapter extends BaseScraperAdapter {
   private sourcesFromEpisode(payload: AnimeAv1EpisodePayload | null): SourceLinkInput[] {
     if (!payload?.embeds) return [];
     const out: SourceLinkInput[] = [];
+    const seen = new Set<string>();
+
     const push = (raw: AnimeAv1Mirror, variant: "SUB" | "DUB") => {
       const url = this.resolveKnownDirect(String(raw?.url || "").trim());
-      if (!url || out.some((s) => s.url === url)) return;
+      if (!url) return;
+
+      const audioLanguage = variant === "SUB" ? "ja" : "es";
+      const subtitleLanguage = variant === "SUB" ? "es" : undefined;
+      const identity = `${url}|${audioLanguage}|${subtitleLanguage || ""}`;
+      if (seen.has(identity)) return;
+      seen.add(identity);
+
       out.push({
         url,
         source_site: "animeav1",
-        link_type: /\.m3u8(?:\?|$)|\/m3u8\//i.test(url) ? "direct" : "embed",
+        link_type: EmbedResolvers.isDirectMediaUrl(url) ? "direct" : "embed",
         language: variant === "SUB" ? "sub" : "dub",
-        audio_language: variant === "SUB" ? "ja" : "es",
-        subtitle_language: variant === "SUB" ? "es" : undefined,
+        audio_language: audioLanguage,
+        subtitle_language: subtitleLanguage,
       });
     };
+
     for (const source of payload.embeds.SUB || []) push(source, "SUB");
     for (const source of payload.embeds.DUB || []) push(source, "DUB");
     return out;
+  }
+
+  private async resolvePlayableSources(sources: SourceLinkInput[]): Promise<string[]> {
+    const resolved = await Promise.all(
+      sources.map(async (source) => {
+        const raw = String(source?.url || "").trim();
+        if (!raw) return "";
+        if (EmbedResolvers.isDirectMediaUrl(raw)) return raw;
+        try {
+          const candidate = await EmbedResolvers.resolve(raw);
+          return EmbedResolvers.isDirectMediaUrl(candidate) ? candidate : "";
+        } catch {
+          return "";
+        }
+      })
+    );
+
+    return Array.from(new Set(resolved.filter(Boolean)));
   }
 
   /** Known AnimeAV1 player locator that maps 1:1 to its public HLS route. */
@@ -308,16 +341,30 @@ export class AnimeAv1Adapter extends BaseScraperAdapter {
     try { return new URL(value).hostname; } catch { return value; }
   }
 
+  private cleanSynopsis(value: unknown): string {
+    return String(value || "")
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'")
+      .replace(/\n+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
   private yearOf(value: unknown): number {
     const year = Number.parseInt(String(value || "").slice(0, 4), 10);
     return Number.isFinite(year) ? year : 0;
   }
 
   private statusOf(value: unknown): string {
+    if (typeof value === "number") {
+      if (value === 0) return "Finalizado";
+      if (value === 1) return "Próximamente";
+      if (value === 2) return "En emisión";
+    }
     const raw = String(value || "").toLowerCase();
-    if (raw === "airing") return "En emisión";
-    if (raw === "upcoming") return "Próximamente";
-    if (raw === "finished") return "Finalizado";
+    if (raw === "0" || raw === "finished") return "Finalizado";
+    if (raw === "1" || raw === "upcoming") return "Próximamente";
+    if (raw === "2" || raw === "airing") return "En emisión";
     return "";
   }
 }

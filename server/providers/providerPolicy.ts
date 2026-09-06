@@ -16,11 +16,21 @@ export interface ProviderPolicy {
 }
 
 /**
- * Registry used by the runtime to keep source policy out of individual adapters.
- * Lower priority numbers are preferred. `lifecycle` describes maintenance
- * confidence, not a guarantee that a third-party site is reachable at this instant.
+ * Runtime source policy. Lower priority numbers are preferred.
+ * `lifecycle` is a maintenance-confidence hint, never a guarantee that a
+ * third-party provider is reachable at a particular instant.
  */
 export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
+  direct: {
+    id: "direct",
+    role: "primary",
+    lifecycle: "active",
+    priority: 1,
+    defaultRating: 10,
+    contentKinds: ["movie", "series", "anime", "documentary", "open_archive"],
+    audioLanguages: [],
+    subtitleLanguages: [],
+  },
   animeav1: {
     id: "animeav1",
     role: "primary",
@@ -41,6 +51,17 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
+  },
+  jkanime: {
+    id: "jkanime",
+    role: "primary",
+    lifecycle: "active",
+    priority: 22,
+    defaultRating: 8.0,
+    contentKinds: ["anime"],
+    audioLanguages: ["ja", "es"],
+    subtitleLanguages: ["es", "es-419"],
+    notes: "Handled by AnimeFlvAdapter today, but kept as a distinct health/rating source.",
   },
   cinecalidad: {
     id: "cinecalidad",
@@ -71,6 +92,16 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["movie", "series", "anime"],
     audioLanguages: ["es", "en", "ja"],
     subtitleLanguages: ["es", "en"],
+  },
+  "archive-org": {
+    id: "archive-org",
+    role: "secondary",
+    lifecycle: "active",
+    priority: 40,
+    defaultRating: 8,
+    contentKinds: ["movie", "documentary", "open_archive"],
+    audioLanguages: ["en"],
+    subtitleLanguages: ["en", "es"],
   },
   hianimes: {
     id: "hianimes",
@@ -152,34 +183,15 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     audioLanguages: [],
     subtitleLanguages: [],
   },
-  "archive-org": {
-    id: "archive-org",
-    role: "secondary",
-    lifecycle: "active",
-    priority: 40,
-    defaultRating: 8,
-    contentKinds: ["movie", "documentary", "open_archive"],
-    audioLanguages: ["en"],
-    subtitleLanguages: ["en", "es"],
-  },
-  direct: {
-    id: "direct",
-    role: "primary",
-    lifecycle: "active",
-    priority: 1,
-    defaultRating: 10,
-    contentKinds: ["movie", "series", "anime", "documentary", "open_archive"],
-    audioLanguages: [],
-    subtitleLanguages: [],
-  },
 };
 
 const SITE_ALIASES: Record<string, string> = {
   "animeav1.com": "animeav1",
-  "cdn.animeav1.com": "animeav1",
   "animeflv.net": "animeflv",
   "animeflv.to": "animeflv",
-  "jkanime.net": "animeflv",
+  "animeflv.or.at": "animeflv",
+  "animeflv.or.am": "animeflv",
+  "jkanime.net": "jkanime",
   "cinecalidad.am": "cinecalidad",
   "lamovie.org": "lamovie",
   "gnulahd.nu": "gnula",
@@ -193,15 +205,31 @@ const SITE_ALIASES: Record<string, string> = {
   "tvmaze.com": "tvmaze",
 };
 
+function hostFromProviderValue(raw: string): string {
+  try {
+    const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return new URL(candidate).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return raw.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].split(":")[0];
+  }
+}
+
 export function normalizeProviderId(value: string | null | undefined): string {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return "unknown";
-  const withoutProtocol = raw.replace(/^https?:\/\//, "").replace(/^www\./, "");
-  const host = withoutProtocol.split("/")[0];
-  if (SITE_ALIASES[host]) return SITE_ALIASES[host];
+  if (PROVIDER_POLICIES[raw]) return raw;
+
+  const host = hostFromProviderValue(raw);
+  for (const [domain, id] of Object.entries(SITE_ALIASES)) {
+    if (host === domain || host.endsWith(`.${domain}`)) return id;
+  }
+
   const first = host.split(".")[0];
   if (PROVIDER_POLICIES[first]) return first;
-  return raw;
+
+  // Unknown providers must still collapse to a stable host identity. Returning
+  // the original URL here used to create different SiteRating keys per path.
+  return host || raw;
 }
 
 export function getProviderPolicy(value: string | null | undefined): ProviderPolicy | undefined {
@@ -223,10 +251,17 @@ export function compareProviderIds(a: string, b: string): number {
 export function normalizeLanguageTag(value: string | null | undefined): string | null {
   const raw = String(value || "").trim().toLowerCase().replace(/_/g, "-");
   if (!raw) return null;
-  if (["lat", "latino", "es-la", "es-latam", "spanish-latam"].includes(raw)) return "es-419";
-  if (["castellano", "spanish", "spa"].includes(raw)) return "es";
-  if (["japonés", "japones", "japanese", "jp", "jpn"].includes(raw)) return "ja";
-  if (["english", "eng"].includes(raw)) return "en";
+
+  if ([
+    "lat", "latam", "latino", "latinoamérica", "latinoamerica",
+    "es-la", "es-latam", "es-419", "spanish-latam", "español latino", "espanol latino",
+  ].includes(raw)) return "es-419";
+
+  if (["es", "español", "espanol", "castellano", "spanish", "spa"].includes(raw)) return "es";
+  if (["ja", "japonés", "japones", "japanese", "jp", "jpn"].includes(raw)) return "ja";
+  if (["en", "english", "eng"].includes(raw)) return "en";
+  if (["ko", "korean", "kor", "coreano"].includes(raw)) return "ko";
+
   return raw;
 }
 
@@ -238,8 +273,16 @@ export interface RenditionDescriptor {
   subtitles?: Array<{ language?: string | null }> | null;
 }
 
+function isSpanish(lang: string): boolean {
+  return lang === "es" || lang === "es-419" || lang.startsWith("es-");
+}
+
+function isEnglish(lang: string): boolean {
+  return lang === "en" || lang.startsWith("en-");
+}
+
 /**
- * Language preference requested for MeriStream:
+ * Rendition preference requested for MeriStream:
  * - anime: JA + ES subtitles first, then Spanish audio, then JA + EN subtitles.
  * - movie/series: English and Spanish are near peers; ES/EN subtitles are a bonus.
  */
@@ -253,13 +296,14 @@ export function renditionPreferenceScore(input: RenditionDescriptor): number {
     const lang = normalizeLanguageTag(track?.language);
     if (lang) subtitleSet.add(lang);
   }
-  const hasEsSub = [...subtitleSet].some((lang) => lang === "es" || lang === "es-419" || lang.startsWith("es-"));
-  const hasEnSub = [...subtitleSet].some((lang) => lang === "en" || lang.startsWith("en-"));
+
+  const hasEsSub = [...subtitleSet].some(isSpanish);
+  const hasEnSub = [...subtitleSet].some(isEnglish);
 
   if (kind === "anime") {
     if (audio === "ja" && hasEsSub) return 100;
-    if ((audio === "es" || audio === "es-419") && hasEsSub) return 92;
-    if (audio === "es" || audio === "es-419") return 88;
+    if (audio && isSpanish(audio) && hasEsSub) return 92;
+    if (audio && isSpanish(audio)) return 88;
     if (audio === "ja" && hasEnSub) return 72;
     if (audio === "ja") return 65;
     return 40;
@@ -267,7 +311,7 @@ export function renditionPreferenceScore(input: RenditionDescriptor): number {
 
   if (kind === "movie" || kind === "series") {
     let score = 40;
-    if (audio === "en" || audio === "es" || audio === "es-419") score += 30;
+    if (audio === "en" || (audio && isSpanish(audio))) score += 30;
     if (hasEsSub) score += 18;
     if (hasEnSub) score += 16;
     return score;

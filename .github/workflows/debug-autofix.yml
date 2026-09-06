@@ -3,7 +3,8 @@ name: Debug autofix
 on:
   push:
     branches: [feat/provider-v2-es-multilang]
-    paths: [.github/workflows/debug-autofix.yml]
+    paths:
+      - .github/workflows/debug-autofix.yml
 
 permissions:
   contents: write
@@ -15,68 +16,180 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feat/provider-v2-es-multilang
-      - name: Patch stale resolver fallbacks
+      - name: Apply CI-guided fixes
         shell: bash
         run: |
           node <<'NODE'
           const fs = require('fs');
-          const file = 'server/resolvers.ts';
-          let source = fs.readFileSync(file, 'utf8');
 
-          if (!source.includes('const VIMEOS_EMBED_TIMEOUT_MS')) {
-            const marker = 'const FETCH_UA =';
-            const start = source.indexOf(marker);
-            if (start < 0) throw new Error('FETCH_UA marker not found');
-            const semicolon = source.indexOf(';', start);
-            if (semicolon < 0) throw new Error('FETCH_UA terminator not found');
-            source = source.slice(0, semicolon + 1) + '\nconst VIMEOS_EMBED_TIMEOUT_MS = 8_000;' + source.slice(semicolon + 1);
+          function edit(path, mutate) {
+            const before = fs.readFileSync(path, 'utf8');
+            const after = mutate(before);
+            if (after === before) console.log(`no-op: ${path}`);
+            else fs.writeFileSync(path, after);
+          }
+          function replaceRequired(source, from, to, label) {
+            if (!source.includes(from)) throw new Error(`missing replacement target: ${label}`);
+            return source.replace(from, to);
+          }
+          function replaceRegexRequired(source, re, to, label) {
+            if (!re.test(source)) throw new Error(`missing regex target: ${label}`);
+            return source.replace(re, to);
           }
 
-          const generalYtDlp = `    // Si la resolución interna no produjo stream directo (quedó como embed), intentar con yt-dlp
-    if (!isDirect && !isPlatformPageUrl(rawUrl)) {
-      try {
-        const ytdlpMeta = await resolveWithYtDlp(rawUrl);
-        if (ytdlpMeta && ytdlpMeta.resolved && ytdlpMeta.url && !this.isPlaceholderUrl(ytdlpMeta.url)) {
-          finalUrl = ytdlpMeta.url;
-          isDirect = true;
-          if (ytdlpMeta.requiredHeaders) finalHeaders = ytdlpMeta.requiredHeaders;
-        }
-      } catch {}
-    }
+          edit('server/resolvers.ts', (source) => {
+            if (!source.includes('const VIMEOS_EMBED_TIMEOUT_MS')) {
+              source = replaceRegexRequired(
+                source,
+                /(const FETCH_UA\s*=\s*\n\s*"[^"]+";)/,
+                '$1\nconst VIMEOS_EMBED_TIMEOUT_MS = 8_000;',
+                'Vimeos timeout constant'
+              );
+            }
+            source = source.replace(
+              /\n\s*\/\/ Si la resolución interna no produjo stream directo \(quedó como embed\), intentar con yt-dlp[\s\S]*?\n\s*const resolvedExpiry/,
+              '\n\n    const resolvedExpiry'
+            );
+            source = source.replace(
+              /\n\s*try \{\n\s*const ytdlp = await resolveWithYtDlp\(rawUrl\);[\s\S]*?\n\s*\} catch \{\}\n\s*return rawUrl;/,
+              '\n      return rawUrl;'
+            );
+            source = source.replace(
+              '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado; fallback a yt-dlp\n    // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)',
+              '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado.\n    // Nunca devolver /d/{id}_h: es una página HTML de descarga no jugable.'
+            );
+            if (source.includes('resolveWithYtDlp')) throw new Error('stale resolveWithYtDlp remains');
+            return source;
+          });
 
-`;
-          if (!source.includes(generalYtDlp)) throw new Error('general yt-dlp block not found');
-          source = source.replace(generalYtDlp, '');
-
-          const vimeosYtDlp = `      try {
-        const ytdlp = await resolveWithYtDlp(rawUrl);
-        if (ytdlp && ytdlp.resolved && ytdlp.url && !this.isPlaceholderUrl(ytdlp.url)) {
-          return ytdlp.url;
-        }
-      } catch {}
-`;
-          if (!source.includes(vimeosYtDlp)) throw new Error('Vimeos yt-dlp block not found');
-          source = source.replace(vimeosYtDlp, '');
-          source = source.replace(
-            '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado; fallback a yt-dlp\n    // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)',
-            '// 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado.\n    // Nunca devolver /d/{id}_h: es una página HTML de descarga no jugable.'
+          edit('server/resolvers/hianimesResolver.ts', (source) =>
+            replaceRequired(
+              source,
+              '  return normalizeAnimeRecord(raw.anime ?? payload);',
+              '  return normalizeAnimeRecord(raw.anime ?? payload) ?? null;',
+              'HiAnimes nullable return'
+            )
           );
 
-          if (source.includes('resolveWithYtDlp')) throw new Error('stale resolveWithYtDlp reference remains');
-          fs.writeFileSync(file, source);
+          edit('server/scrapers/BaseAdapter.ts', (source) => {
+            source = replaceRequired(
+              source,
+              '  protected async fetchHtml(url: string, timeoutMs: number = 7500): Promise<string | null> {',
+              '  protected async fetchHtml(url: string, timeoutMs: number = 7500, extraHeaders: Record<string, string> = {}): Promise<string | null> {',
+              'BaseAdapter fetchHtml signature'
+            );
+            source = replaceRequired(
+              source,
+              '        headers: COMMON_HEADERS,',
+              '        headers: { ...COMMON_HEADERS, ...extraHeaders },',
+              'BaseAdapter fetchHtml headers'
+            );
+            return source;
+          });
+
+          edit('server/scrapers/adapters/GenericAdapter.ts', (source) => {
+            source = replaceRequired(source, '  readonly id = "generic";', '  readonly id: string = "generic";', 'Generic id type');
+            source = replaceRequired(source, '  readonly name = "Universal Semantic Scraper (Fallback)";', '  readonly name: string = "Universal Semantic Scraper (Fallback)";', 'Generic name type');
+            source = source.replace('      let cards = $([]);', '      let cards = $("__meristream_no_match__");');
+            source = source.replace('        if (detectedKind === "movie" || detectedKind === "open_archive") {', '        if (detectedKind === "movie") {');
+            source = source.replace(/cheerio\.Element/g, 'any');
+            source = replaceRegexRequired(
+              source,
+              /  private resolveRelativeUrl\(url: string \| null \| undefined, baseUrl: string\): string \| null \{[\s\S]*?\n  \}\n\n  private async handleSearchTerm/,
+              `  protected override resolveRelativeUrl(url: string, baseUrl: string): string {\n    if (!url) return "";\n    if (url.startsWith("http")) return url;\n    if (url.startsWith("//")) return \`https:\${url}\`;\n    try {\n      return new URL(url, baseUrl).toString();\n    } catch {\n      return url;\n    }\n  }\n\n  private async handleSearchTerm`,
+              'Generic resolveRelativeUrl override'
+            );
+            return source;
+          });
+
+          edit('server/scrapers/adapters/AnimeFlvAdapter.ts', (source) => {
+            source = source.replace('    let cards = $([]);', '    let cards = $("__meristream_no_match__");');
+            source = source.replace(/cheerio\.Element/g, 'any');
+            source = replaceRegexRequired(
+              source,
+              /  private resolveRelativeUrl\(url: string \| null \| undefined, baseUrl: string\): string \| null \{[\s\S]*?\n  \}\n\n  private async fallbackSearch/,
+              `  protected override resolveRelativeUrl(url: string, baseUrl: string): string {\n    if (!url) return "";\n    if (url.startsWith("http")) return url;\n    if (url.startsWith("//")) return \`https:\${url}\`;\n    try {\n      return new URL(url, baseUrl).toString();\n    } catch {\n      return url;\n    }\n  }\n\n  private async fallbackSearch`,
+              'AnimeFLV resolveRelativeUrl override'
+            );
+            return source;
+          });
+
+          edit('server/scrapers/adapters/DoramasflixAdapter.ts', (source) => {
+            source = source.replace('  private resolveRelativeUrl(relative: string, base: string): string {', '  protected override resolveRelativeUrl(relative: string, base: string): string {');
+            source = replaceRequired(
+              source,
+              '    let controller: AbortController | null = null;\n    let timer: NodeJS.Timeout | null = null;\n    try {\n      controller = new AbortController();\n      timer = setTimeout(() => controller.abort(), 3500);',
+              '    const controller = new AbortController();\n    let timer: NodeJS.Timeout | null = null;\n    try {\n      timer = setTimeout(() => controller.abort(), 3500);',
+              'Doramasflix controller nullability'
+            );
+            return source;
+          });
+
+          edit('server/scrapers/adapters/LaMovieAdapter.ts', (source) => {
+            source = source.replace('    if (!xml) return null;', '    if (!xml) return [];');
+            source = source.replace('    if (!raw) return null;', '    if (!raw) return [];');
+            return source;
+          });
+
+          edit('server/scrapers/adapters/TioPlusAdapter.ts', (source) =>
+            source.replace(
+              '      const kind = this.kindFromTypeItem(typeClass) || this.kindFromUrl(fullUrl);',
+              '      const kind = this.kindFromTypeItem(typeClass) || this.kindFromUrl(fullUrl) || undefined;'
+            )
+          );
+
+          edit('server/metadataEngine.ts', (source) => {
+            source = source.replace(
+              '.filter((value): value is string => typeof value === "string" && value.trim());',
+              '.filter((value): value is string => typeof value === "string" && Boolean(value.trim()));'
+            );
+            source = source.replace(
+              'rankedCandidates.find(({ candidate }) => candidate === bestResult)?.score || 0,',
+              'rankedCandidates.find((entry: { candidate: any; score: number }) => entry.candidate === bestResult)?.score || 0,'
+            );
+            source = source.replace(
+              '.filter((g): g is string => Boolean(g));',
+              '.filter((g: string | undefined): g is string => Boolean(g));'
+            );
+            source = source.replace(
+              'async function fillWeakDescription(meta: EnrichedMetadata, kindHint: string, query: string): Promise<EnrichedMetadata> {',
+              'async function fillWeakDescription(meta: EnrichedMetadata, kindHint: string | undefined, query: string): Promise<EnrichedMetadata> {'
+            );
+            source = replaceRequired(
+              source,
+              '      const json: unknown = await res.json();\n      if (json?.data && json.data.length > 0) {\n        const attr = json.data[0].attributes || {};',
+              '      const json = await res.json() as { data?: Array<{ attributes?: Record<string, any> }> };\n      if (Array.isArray(json.data) && json.data.length > 0) {\n        const attr = json.data[0]?.attributes || {};',
+              'Kitsu response typing'
+            );
+            return source;
+          });
+
+          edit('server/scrapers/adapters/GnulaAdapter.ts', (source) => {
+            source = source.replace(
+              /\n    if \(explicitType === "catalog"\) \{\n      \/\/ La rama de catálogo anterior ya retornó arriba\.[\s\S]*?\n    \}\n\n    \/\/ Para fichas GNULA/,
+              '\n\n    // Para fichas GNULA'
+            );
+            return source;
+          });
+
+          edit('server/universalScraper.ts', (source) =>
+            source.replace(
+              'results[idx] = { page_url: url, items: dedupeCatalogItems(items || []) as ExtractedCatalogItem[], error: null };',
+              'results[idx] = { page_url: url, items: dedupeCatalogItems((items || []) as Array<ExtractedCatalogItem & Record<string, unknown>>) as ExtractedCatalogItem[], error: null };'
+            )
+          );
           NODE
           git diff --check
-          grep -q 'const VIMEOS_EMBED_TIMEOUT_MS = 8_000' server/resolvers.ts
-          ! grep -q 'resolveWithYtDlp' server/resolvers.ts
       - name: Commit fixes
         shell: bash
         run: |
-          if git diff --quiet; then
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server
+          git rm .github/workflows/debug-autofix.yml
+          if git diff --cached --quiet; then
             echo 'No changes to commit'
             exit 0
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add server/resolvers.ts
-          git commit -m 'fix: remove stale yt-dlp resolver fallbacks'
+          git commit -m 'fix: resolve CI-discovered backend defects'
           git push origin HEAD:feat/provider-v2-es-multilang

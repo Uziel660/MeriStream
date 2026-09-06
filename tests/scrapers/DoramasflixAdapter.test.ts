@@ -152,7 +152,8 @@ describe("DoramasflixAdapter", () => {
       vi.spyOn(adapter as any, "isDirectReachable").mockResolvedValue(false);
 
       const result = await adapter.extractStream("https://doramasflix.io/capitulos/mousetrap-1x1");
-      expect(result.stream_url).toBe("https://doramasflix.io/capitulos/mousetrap-1x1");
+      expect(result.stream_url).toBe("");
+      expect(result.all_available_streams).toEqual([]);
     });
 
     it("limpia timers en finally incluso cuando fetch aborta", async () => {
@@ -163,7 +164,8 @@ describe("DoramasflixAdapter", () => {
       fetchSpy.mockImplementation(() => new Promise((_, reject) => setTimeout(() => reject(new Error("abort")), 10)));
 
       const result = await adapter.extractStream("https://doramasflix.io/capitulos/mousetrap-1x1");
-      expect(result.stream_url).toBe("https://doramasflix.io/capitulos/mousetrap-1x1");
+      expect(result.stream_url).toBe("");
+      expect(result.all_available_streams).toEqual([]);
     });
 
     it("fallback a constante anterior si descubrimiento falla", async () => {

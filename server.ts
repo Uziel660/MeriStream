@@ -340,7 +340,7 @@ export async function buildMultiSourceCascade(
 
   for (const candidate of mapped) {
     const s = candidate.source_site;
-    const isLanding = isCanonicalLocator(candidate.url) || classifySourceKind(candidate.url) === "canonical_page";
+    const isLanding = classifySourceKind(candidate.url) === "page" && isCanonicalLocator(candidate.url);
     if (isLanding) {
       const landingCount = perSiteLandingCount.get(s) || 0;
       if (landingCount >= 1) continue;

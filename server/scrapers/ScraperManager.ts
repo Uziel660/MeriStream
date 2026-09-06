@@ -2,6 +2,7 @@ import { BaseScraperAdapter } from "./BaseAdapter";
 import { DirectStreamAdapter } from "./adapters/DirectStreamAdapter";
 import { ArchiveOrgAdapter } from "./adapters/ArchiveOrgAdapter";
 import { TvMazeAdapter } from "./adapters/TvMazeAdapter";
+import { AnimeAv1Adapter } from "./adapters/AnimeAv1Adapter";
 import { AnimeFlvAdapter } from "./adapters/AnimeFlvAdapter";
 import { GenericAdapter } from "./adapters/GenericAdapter";
 import { LaMovieAdapter } from "./adapters/LaMovieAdapter";
@@ -14,9 +15,14 @@ import { DoramasflixAdapter } from "./adapters/DoramasflixAdapter";
 import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
 import { HiAnimesAdapter } from "./adapters/HiAnimesAdapter";
 import { GnulaAdapter } from "./adapters/GnulaAdapter";
+import { compareProviderIds } from "../providers/providerPolicy";
 
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
 
+/**
+ * Adapter registry. Runtime priority is centralized in providerPolicy so the
+ * same source ordering can later be reused by crawlers, health checks and the UI.
+ */
 export class ScraperManager {
   private static instance: ScraperManager;
   private adapters: BaseScraperAdapter[] = [];
@@ -25,21 +31,22 @@ export class ScraperManager {
   private constructor() {
     this.fallbackAdapter = new GenericAdapter();
 
-    // Register specialized domain adapters in priority order
+    // Native/direct first, then maintained Spanish-first sources, then legacy fallbacks.
     this.registerAdapter(new DirectStreamAdapter());
-    this.registerAdapter(new ArchiveOrgAdapter());
-    this.registerAdapter(new TvMazeAdapter());
+    this.registerAdapter(new AnimeAv1Adapter());
     this.registerAdapter(new AnimeFlvAdapter());
+    this.registerAdapter(new CinecalidadAdapter());
     this.registerAdapter(new LaMovieAdapter());
+    this.registerAdapter(new GnulaAdapter());
+    this.registerAdapter(new ArchiveOrgAdapter());
+    this.registerAdapter(new HiAnimesAdapter());
     this.registerAdapter(new LatAnimeAdapter());
     this.registerAdapter(new TioAnimeAdapter());
-    this.registerAdapter(new TioPlusAdapter());
-    this.registerAdapter(new TubePelisAdapter());
-    this.registerAdapter(new CinecalidadAdapter());
     this.registerAdapter(new VerAnimesAdapter());
     this.registerAdapter(new DoramasflixAdapter());
-    this.registerAdapter(new HiAnimesAdapter());
-    this.registerAdapter(new GnulaAdapter());
+    this.registerAdapter(new TioPlusAdapter());
+    this.registerAdapter(new TubePelisAdapter());
+    this.registerAdapter(new TvMazeAdapter());
   }
 
   public static getInstance(): ScraperManager {
@@ -49,9 +56,6 @@ export class ScraperManager {
     return ScraperManager.instance;
   }
 
-  /**
-   * Registra un nuevo adaptador en el pool de scrapers
-   */
   public registerAdapter(adapter: BaseScraperAdapter): void {
     const existingIndex = this.adapters.findIndex((a) => a.id === adapter.id);
     if (existingIndex >= 0) {
@@ -59,11 +63,9 @@ export class ScraperManager {
     } else {
       this.adapters.push(adapter);
     }
+    this.adapters.sort((a, b) => compareProviderIds(a.id, b.id));
   }
 
-  /**
-   * Obtiene el adaptador más adecuado para una URL específica.
-   */
   public getAdapter(url: string, explicitAdapterId?: string): BaseScraperAdapter {
     if (explicitAdapterId) {
       const explicit = this.adapters.find((a) => a.id === explicitAdapterId);
@@ -74,16 +76,10 @@ export class ScraperManager {
     return matched || this.fallbackAdapter;
   }
 
-  /**
-   * Obtiene un adaptador por su identificador único
-   */
   public getAdapterById(id: string): BaseScraperAdapter | undefined {
     return this.adapters.find((a) => a.id === id) || (this.fallbackAdapter.id === id ? this.fallbackAdapter : undefined);
   }
 
-  /**
-   * Lista todos los adaptadores disponibles y sus dominios soportados
-   */
   public getAvailableAdapters(): Array<{ id: string; name: string; supportedDomains: string[] }> {
     const list = this.adapters.map((a) => ({
       id: a.id,
@@ -98,25 +94,16 @@ export class ScraperManager {
     return list;
   }
 
-  /**
-   * Ejecuta el análisis universal delegando al adaptador correspondiente
-   */
   public async analyze(url: string, explicitType?: "auto" | "catalog" | "detail" | "stream", explicitAdapterId?: string): Promise<UniversalAnalysisResult> {
     const adapter = this.getAdapter(url, explicitAdapterId);
     return adapter.analyze(url, explicitType);
   }
 
-  /**
-   * Extrae streams Just-In-Time delegando al adaptador
-   */
   public async extractStream(url: string, explicitAdapterId?: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const adapter = this.getAdapter(url, explicitAdapterId);
     return adapter.extractStream(url);
   }
 
-  /**
-   * Extrae listado de catálogo delegando al adaptador
-   */
   public async extractCatalog(catalogUrl: string, explicitAdapterId?: string): Promise<ExtractedCatalogItem[]> {
     const result = await this.analyze(catalogUrl, "catalog", explicitAdapterId);
     return result.catalog_items || [];

@@ -329,9 +329,10 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
   const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
     .some((source) => normalizeProviderId(source.provider) === "zokoanime");
   const fallbackCandidates = rankFallbacks(
-    hasZokoCandidate
-      ? database.fallbackCandidates.filter((source) => normalizeProviderId(source.provider) !== "tioanime")
-      : database.fallbackCandidates,
+    database.fallbackCandidates.filter((source) => {
+      const provider = normalizeProviderId(source.provider);
+      return provider !== "tioanime" || hasZokoCandidate;
+    }),
   );
   cache.set(key, {
     expires: Date.now() + CACHE_TTL_MS,

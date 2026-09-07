@@ -112,6 +112,13 @@ describe("EmbedResolvers with Status & Meta", () => {
 });
 
 describe("MegaResolver - formato TioAnime /embed/!ID!KEY", () => {
+  it("parsea el embed que transporta el identificador después de #!", () => {
+    const url = "https://mega.nz/embed/#!wKMyST7C!rq6hIkheG1LXvqHYScjPvnRagvIamZukhVvcRLbl_P4";
+    const parsed = parseMegaUrl(url);
+    expect(parsed?.fileId).toBe("wKMyST7C");
+    expect(parsed?.fileKey).toBe("rq6hIkheG1LXvqHYScjPvnRagvIamZukhVvcRLbl_P4");
+  });
+
   it("parsea https://mega.nz/embed/!ID!KEY (formato TioAnime legacy con ! en path)", () => {
     const url = "https://mega.nz/embed/!BTU1DKKR!RLPNcC8ohIh769HwlEZUPfJLH5n3Xsd2CiIZeEU0cBk";
     const parsed = parseMegaUrl(url);

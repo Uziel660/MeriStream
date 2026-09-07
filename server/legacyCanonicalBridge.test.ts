@@ -57,4 +57,25 @@ describe("legacy canonical playback bridge", () => {
     );
     expect(result?.id).toBe("media-1");
   });
+
+  it("trusts an exact TMDB match even when the legacy year is stale", () => {
+    const result = selectCanonicalPlaybackCandidate(
+      { title: "One Piece", tmdb_id: 37854, year: 2024, category: "anime" },
+      { episode_number: 1 },
+      [candidate({
+        media_item: {
+          title: "One Piece",
+          normalized_title: "onepiece",
+          base_normalized_title: "onepiece",
+          tmdb_id: 37854,
+          year: 1999,
+          kind: "anime",
+        },
+      })],
+      normalize,
+      normalize,
+      canonical,
+    );
+    expect(result?.id).toBe("media-1");
+  });
 });

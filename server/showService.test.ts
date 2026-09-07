@@ -467,6 +467,33 @@ describe("showService - Behavioral and Deduplication Tests", () => {
     expect(dbSourceLinks).toHaveLength(1);
   });
 
+  it("crea el episodio 1x1 para una película conocida sin episodios", async () => {
+    const first = await saveShowWithDeduplication({
+      title: "Película conocida sin episodios",
+      content_type: "movie",
+      tmdb_id: 444001,
+      source_site: "cinecalidad",
+      episodes: [],
+    });
+    await drainWriteBuffer();
+
+    const result = await quickSyncKnownShow(first.show.id, {
+      title: first.show.title,
+      source_site: "cinecalidad",
+      episodes: [],
+      fallback_url: "https://www.cinecalidad.am/ver-pelicula/pelicula-conocida/",
+    });
+
+    expect(result.sourcesAdded).toBe(1);
+    await drainWriteBuffer();
+    expect(dbMediaEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ media_item_id: expect.any(String), season_number: 1, episode_number: 1 }),
+    ]));
+    expect(dbSourceLinks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_site: "cinecalidad", link_type: "page" }),
+    ]));
+  });
+
   it("mantiene la misma obra y separa una temporada TMDB explícita", async () => {
     const first = await saveShowWithDeduplication({
       title: "Serie de prueba",

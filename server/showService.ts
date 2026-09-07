@@ -10,6 +10,12 @@ import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cl
 import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 import { canonicalCatalogUrl, isInvalidCatalogSource } from "./catalogIntegrity";
 import {
+  buildDisplayEpisodes,
+  filterMainPathLinks,
+  playbackKindForCategory,
+} from "./showEpisodePolicy";
+import { PROVIDER_POLICIES, isProviderAllowedInMainPath } from "./providers/providerPolicy";
+import {
   enqueueWrite,
   enqueueShowCreate,
   enqueueShowUpdate,
@@ -1009,12 +1015,138 @@ export async function getShowsFromDb(search?: string, category?: string) {
   return shows;
 }
 
+type LiteShowsOptions = {
+  /** Public catalog mode: hide legacy-only rows without an active source. */
+  onlyMainPath?: boolean;
+};
+
+export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
+  if (shows.length === 0) return shows;
+
+  const ids = shows.map((show) => String(show.id)).filter(Boolean);
+  const tmdbIds = shows
+    .map((show) => Number(show.tmdb_id))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  const baseTitles = shows
+    .map((show) => String(show.base_normalized_title || show.normalized_title || "").trim())
+    .filter(Boolean);
+  const mainPathSourceSites = [...new Set(
+    Object.values(PROVIDER_POLICIES)
+      .filter((policy) => ["movie", "series", "anime"].some((kind) =>
+        isProviderAllowedInMainPath(policy.id, kind as any)
+      ))
+      .flatMap((policy) => [policy.id, ...(policy.hosts || [])])
+      .map((value) => String(value).toLowerCase())
+  )];
+
+  const mediaItemSelect = {
+    id: true,
+    tmdb_id: true,
+    base_normalized_title: true,
+    normalized_title: true,
+    kind: true,
+    episodes: {
+      where: { links: { some: { source_site: { in: mainPathSourceSites } } } },
+      select: {
+        links: {
+          where: { source_site: { in: mainPathSourceSites } },
+          select: {
+            url: true,
+            source_site: true,
+            host: true,
+            link_type: true,
+            language: true,
+            audio_language: true,
+            subtitle_language: true,
+            subtitles: true,
+          },
+        },
+      },
+    },
+  } as const;
+
+  // Keep each IN list below PostgreSQL's prepared-statement bind-variable
+  // ceiling. Most canonical rows share the legacy Show id; TMDB/title matches
+  // cover rows imported before the id mirror was added.
+  const [mediaById, mediaByTmdb, mediaByBase, legacyEpisodes] = await Promise.all([
+    ids.length > 0
+      ? prisma.mediaItem.findMany({
+          where: { id: { in: ids }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+          select: mediaItemSelect,
+        })
+      : Promise.resolve([]),
+    tmdbIds.length > 0
+      ? prisma.mediaItem.findMany({
+          where: { tmdb_id: { in: tmdbIds }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+          select: mediaItemSelect,
+        })
+      : Promise.resolve([]),
+    baseTitles.length > 0
+      ? prisma.mediaItem.findMany({
+          where: { base_normalized_title: { in: baseTitles }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+          select: mediaItemSelect,
+        })
+      : Promise.resolve([]),
+    prisma.episode.findMany({
+      where: { show_id: { in: ids }, source_url: { not: "" } },
+      select: { show_id: true, source_url: true },
+      orderBy: { episode_number: "asc" },
+    }),
+  ]);
+  const mediaItems = [...mediaById, ...mediaByTmdb, ...mediaByBase];
+
+  const legacyByShow = new Map<string, Array<{ url: string }>>();
+  for (const episode of legacyEpisodes) {
+    const url = String(episode.source_url || "").trim();
+    if (!url) continue;
+    const list = legacyByShow.get(episode.show_id) || [];
+    list.push({ url });
+    legacyByShow.set(episode.show_id, list);
+  }
+
+  const itemsByKey = new Map<string, any[]>();
+  const addItemKey = (key: string | null | undefined, item: any) => {
+    const normalized = String(key || "").trim();
+    if (!normalized) return;
+    const list = itemsByKey.get(normalized) || [];
+    list.push(item);
+    itemsByKey.set(normalized, list);
+  };
+  for (const item of mediaItems) {
+    addItemKey(`id:${item.id}`, item);
+    if (item.tmdb_id != null) addItemKey(`tmdb:${item.tmdb_id}`, item);
+    addItemKey(`base:${item.base_normalized_title || item.normalized_title}`, item);
+  }
+
+  return shows.filter((show) => {
+    const kind = playbackKindForCategory(show.category);
+    const candidateItems = [
+      ...(itemsByKey.get(`id:${show.id}`) || []),
+      ...(show.tmdb_id != null ? itemsByKey.get(`tmdb:${show.tmdb_id}`) || [] : []),
+      ...(itemsByKey.get(`base:${show.base_normalized_title || show.normalized_title}`) || []),
+    ];
+    const uniqueItems = [...new Map(candidateItems.map((item) => [item.id, item])).values()];
+    const canonicalPlayable = uniqueItems.some((item) =>
+      (item.episodes || []).some((episode: any) =>
+        filterMainPathLinks(episode.links || [], kind).length > 0
+      )
+    );
+    if (canonicalPlayable) return true;
+
+    return (legacyByShow.get(String(show.id)) || []).some((episode) =>
+      filterMainPathLinks([{ url: episode.url }], kind).length > 0
+    );
+  });
+}
+
 export async function getShowsFromDbLite(
   search?: string,
   category?: string,
   page?: number,
-  limit?: number
+  limit?: number,
+  options: LiteShowsOptions = {},
 ) {
+  const onlyMainPath = options.onlyMainPath !== false;
   const pageNum = Math.max(1, page || 1);
   const pageSize = Math.min(50000, Math.max(1, limit || 500));
   const skip = (pageNum - 1) * pageSize;
@@ -1048,15 +1180,14 @@ export async function getShowsFromDbLite(
       categoryFilterCount = `AND LOWER(category) LIKE $${catParamIdx}`;
     }
 
-    showsParams.push(pageSize, skip);
-    const limitIdx = showsParams.length - 1;
-    const offsetIdx = showsParams.length;
-    const limitOffsetPlaceholder = `LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+    const limitIdx = showsParams.length + 1;
+    const offsetIdx = showsParams.length + 2;
+    const limitOffsetPlaceholder = onlyMainPath ? "" : `LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
 
     const showsQuery = `
       SELECT
         "id", "title", "original_title", "japanese_title", "english_title",
-        "normalized_title", "description", "poster_url", "banner_url",
+        "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
         "poster_path", "backdrop_path", "category", "rating", "year",
         "status", "genres", "created_at",
         ts_rank(search_vector, plainto_tsquery('simple', $1)) AS rank
@@ -1090,12 +1221,20 @@ export async function getShowsFromDbLite(
       ${categoryFilterCount}
     `;
 
-    const [shows, countResult] = await Promise.all([
-      prisma.$queryRawUnsafe(showsQuery, ...showsParams),
-      prisma.$queryRawUnsafe(countQuery, ...countParams),
-    ]);
+    if (!onlyMainPath) {
+      showsParams.push(pageSize, skip);
+      const [shows, countResult] = await Promise.all([
+        prisma.$queryRawUnsafe(showsQuery, ...showsParams),
+        prisma.$queryRawUnsafe(countQuery, ...countParams),
+      ]);
+      const total = (countResult as any[])[0]?.total || 0;
+      return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
+    }
 
-    const total = (countResult as any[])[0]?.total || 0;
+    const allShows = await prisma.$queryRawUnsafe(showsQuery, ...showsParams);
+    const playableShows = await filterShowsToMainPath(allShows as any[]);
+    const shows = playableShows.slice(skip, skip + pageSize);
+    const total = playableShows.length;
     return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
@@ -1104,36 +1243,70 @@ export async function getShowsFromDbLite(
     where.category = { contains: category, mode: "insensitive" };
   }
 
-  const [shows, total] = await Promise.all([
-    prisma.show.findMany({
-      where,
-      select: {
-        id: true,
-        title: true,
-        original_title: true,
-        japanese_title: true,
-        english_title: true,
-        normalized_title: true,
-        description: true,
-        poster_url: true,
-        banner_url: true,
-        poster_path: true,
-        backdrop_path: true,
-        category: true,
-        rating: true,
-        year: true,
-        status: true,
-        genres: true,
-        created_at: true,
-        _count: { select: { episodes: true } },
-      },
-      orderBy: { created_at: "desc" },
-      skip,
-      take: pageSize,
-    }),
-    prisma.show.count({ where }),
-  ]);
+  if (!onlyMainPath) {
+    const [shows, total] = await Promise.all([
+      prisma.show.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          original_title: true,
+          japanese_title: true,
+          english_title: true,
+          normalized_title: true,
+          base_normalized_title: true,
+          tmdb_id: true,
+          description: true,
+          poster_url: true,
+          banner_url: true,
+          poster_path: true,
+          backdrop_path: true,
+          category: true,
+          rating: true,
+          year: true,
+          status: true,
+          genres: true,
+          created_at: true,
+          _count: { select: { episodes: true } },
+        },
+        orderBy: { created_at: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      prisma.show.count({ where }),
+    ]);
+    return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
 
+  const allShows = await prisma.show.findMany({
+    where,
+    select: {
+      id: true,
+      title: true,
+      original_title: true,
+      japanese_title: true,
+      english_title: true,
+      normalized_title: true,
+      base_normalized_title: true,
+      tmdb_id: true,
+      description: true,
+      poster_url: true,
+      banner_url: true,
+      poster_path: true,
+      backdrop_path: true,
+      category: true,
+      rating: true,
+      year: true,
+      status: true,
+      genres: true,
+      created_at: true,
+      _count: { select: { episodes: true } },
+    },
+    orderBy: { created_at: "desc" },
+  });
+  const playableShows = await filterShowsToMainPath(allShows as any[]);
+  const shows = playableShows.slice(skip, skip + pageSize);
+  const total = playableShows.length;
   return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
 }
 
@@ -1312,6 +1485,8 @@ export interface QuickSyncInput {
   season?: number | null;
   episodes: Array<{ number: number; title: string; url: string; sources?: SourceLinkInput[] }>;
   source_site?: string;
+  /** Locator de una película conocida cuya ficha no expone episodios. */
+  fallback_url?: string;
 }
 
 export async function quickSyncKnownShow(
@@ -1322,12 +1497,24 @@ export async function quickSyncKnownShow(
   if (!show) return { added: 0, sourcesAdded: 0 };
 
   const kind = (show.category || "anime") as ContentKind;
-  const normalizedEpisodes = buildNormalizedEpisodes({
+  let normalizedEpisodes = buildNormalizedEpisodes({
     title: data.title || show.title,
     category: kind,
     source_site: data.source_site,
     episodes: data.episodes,
   }, kind);
+
+  // Cinecalidad y otros catálogos de películas representan la obra como una
+  // ficha sin lista de episodios. Aun así necesitamos una MediaEpisode 1x1
+  // para guardar el locator de página y resolverlo JIT desde el player.
+  if (normalizedEpisodes.length === 0 && data.fallback_url && kind === "movie") {
+    normalizedEpisodes = [{
+      number: 1,
+      title: data.title || show.title,
+      url: data.fallback_url,
+      sources: [],
+    }];
+  }
 
   const showData: any = {
     malId: null,

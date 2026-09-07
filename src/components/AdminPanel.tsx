@@ -335,7 +335,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setIsLoadingLibrary(true);
       const q = searchQuery.trim();
       const searchParam = q ? `&search=${encodeURIComponent(q)}` : '';
-      const res = await fetch(`/api/v1/shows?lite=true${searchParam}&page=${page}&limit=${LIBRARY_PAGE_SIZE}`);
+      const res = await fetch(`/api/v1/shows?lite=true&include_legacy=true${searchParam}&page=${page}&limit=${LIBRARY_PAGE_SIZE}`);
       if (res.ok) {
         const data = await res.json();
         const list: Show[] = Array.isArray(data) ? data : data.shows || [];

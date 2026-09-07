@@ -998,6 +998,7 @@ class BackgroundCrawlerWorker {
                 itemAnalysis.episodes,
                 siteOf(item.url || job.target_url),
               );
+              const itemKind = (itemAnalysis.content_type || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
               const { added } = await quickSyncKnownShow(knownShow.id, {
                 title: itemAnalysis.title || item.title,
                 // Algunos adaptadores quitan el sufijo de temporada del
@@ -1006,6 +1007,7 @@ class BackgroundCrawlerWorker {
                 season: parseTitleQuery(`${item.title} ${item.url || ""}`).season,
                 episodes: eps,
                 source_site: siteOf(item.url || job.target_url),
+                fallback_url: itemKind === "movie" && eps.length === 0 ? item.url : undefined,
               });
               item.status = "done";
               job.shows_imported++;

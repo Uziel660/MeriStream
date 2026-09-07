@@ -59,6 +59,7 @@ describe("provider policy v2", () => {
     expect(isProviderAllowedInMainPath("tioanime", "anime")).toBe(true);
     expect(isProviderAllowedInMainPath("tioanime", "movie")).toBe(false);
     expect(isProviderAllowedInMainPath("animeflv", "anime")).toBe(false);
+    expect(isProviderAllowedInMainPath("nuvio", "movie")).toBe(false);
     expect(isLegacyProvider("animeflv")).toBe(true);
   });
 

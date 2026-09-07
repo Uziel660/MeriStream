@@ -164,7 +164,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('voidstream_show_server_selector') === 'true';
   });
-  const [, setActiveSessionUrl] = useState<string | null>(null);
+  const [activeSessionUrl, setActiveSessionUrl] = useState<string | null>(null);
   const directWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const renewalTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Limpieza de listeners nativos del <video> para poder eliminarlos en cada
@@ -478,7 +478,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       (!server.expires_at || server.expires_at <= Date.now()) &&
       !server.resolved_at;
 
-    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit;
+    // Los locators de stream de proveedor (por ejemplo ZokoAnime `/stream/...`)
+    // son embeds aunque no coincidan con las rutas canónicas genéricas. También
+    // deben pasar por la resolución JIT antes de tocar HLS.js.
+    const needsJit = (server.isEmbed && !isNativeMediaUrl(server.url)) ||
+      server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit;
     if (!needsJit) {
       setCanonicalResolveError(null);
       return;
@@ -548,6 +552,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
 
         if (!res.resolved || !res.url) {
+          // Un fallo transitorio no debe bloquear para siempre el botón de
+          // reintento: el siguiente intento manual volverá a ejecutar JIT.
+          jitCompletedRef.current.delete(jitKey);
           setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
           setDeliveryState('error');
           setServers((prev) => prev.map((candidate) =>
@@ -575,7 +582,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               if (c.id === targetId) return true;
               const cPlatform = c.sourceSite || c.provider || (c as any).platform || (c as any).source_site;
               if (cPlatform && String(cPlatform).toLowerCase() === String(targetPlatform).toLowerCase() && isUnresolvedCanonical(c.url)) {
-                return false;
+                // No quitar candidatos que están antes del servidor activo:
+                // hacerlo desplaza activeServerIndex y puede dejar al player
+                // apuntando a una fuente distinta después del failover.
+                const originalIndex = prev.findIndex((candidate) => candidate.id === c.id);
+                return originalIndex >= 0 && originalIndex <= targetIndex;
               }
               return true;
             });
@@ -624,6 +635,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       })
       .catch(() => {
         if (cancelled || attemptId !== attemptIdRef.current) return;
+        // La fuente puede recuperarse cuando el proveedor vuelve a responder.
+        // No memorizamos este fallo como una resolución permanente.
+        jitCompletedRef.current.delete(jitKey);
         setCanonicalResolveError(
           isUnresolvedCanonical(server.url)
             ? 'No se pudo contactar al resolutor. Puedes probar otro servidor.'
@@ -1227,6 +1241,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const isCanonicalPending = Boolean(
       activeServer && (activeServer.notPlayable || isUnresolvedCanonical(activeServer.url))
     );
+    // `attachSource` monta HLS.js directamente cuando se crea una sesión proxy.
+    // La actualización posterior de generation/delivery_mode cambia la identidad
+    // del servidor, pero no debe desmontar ese HLS recién iniciado y abortar su
+    // manifiesto. handleServerChange limpia activeSessionUrl al cambiar de fuente.
+    if (activeSessionUrl) return;
     if (activeServer && !activeServer.isEmbed && !isCanonicalPending && lastAttachmentKey.current !== key) {
       if (videoRef.current) {
         lastAttachmentKey.current = key;
@@ -1245,7 +1264,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (!activeServer) {
       lastAttachmentKey.current = '';
     }
-  }, [activeServer, attachSource]);
+  }, [activeServer, activeSessionUrl, attachSource]);
 
   useEffect(() => {
     return () => {
@@ -1267,125 +1286,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
   }, []);
-
-  // 3.1 RESOLUCIÓN JIT DE LOCATORS DE PÁGINA/EMBED
-  // Las páginas y embeds son únicamente localizadores de origen. Si la resolución
-  // no produce HLS/DASH/MP4 nativo, el candidato se marca como no reproducible y
-  // se continúa automáticamente con el siguiente servidor.
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeServer || !activeServer.isEmbed || activeServer.notPlayable || isNativeMediaUrl(activeServer.url)) return;
-
-    const attemptId = attemptIdRef.current;
-    const targetId = activeServer.id;
-    const targetIndex = activeServerIndex;
-    const locator = canonicalUrlOf(activeServer) || activeServer.url;
-    setDeliveryState('resolving');
-
-    api.resolveEmbed(locator)
-      .then((res) => {
-        if (cancelled || attemptId !== attemptIdRef.current) return;
-
-        // Una fuente vencida sin locator renovable se salta sin crear sesión proxy.
-        if (res.failure_reason === 'expired_without_locator') {
-          if (activeServerIndex < servers.length - 1) {
-            handleServerChange(activeServerIndex + 1, true);
-          } else {
-            setDeliveryState('error');
-            setPlaybackError(MSG_EXPIRED_WITHOUT_LOCATOR);
-          }
-          return;
-        }
-
-        // No hay stream nativo para este locator.
-        if (!res || !res.resolved || !res.url) {
-          setCanonicalResolveError('No se pudo extraer un stream nativo de esta fuente.');
-          setServers((prev) => prev.map((candidate) =>
-            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
-          ));
-          if (targetIndex < servers.length - 1) {
-            handleServerChange(targetIndex + 1, true);
-          } else {
-            setDeliveryState('error');
-            setPlaybackError(MSG_NO_SERVERS);
-          }
-          return;
-        }
-
-        if (res.type === 'embed' || !isNativeMediaUrl(res.url)) {
-          setCanonicalResolveError('El resolver solo devolvió un reproductor externo; se descarta.');
-          setServers((prev) => prev.map((candidate) =>
-            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
-          ));
-          if (targetIndex < servers.length - 1) {
-            handleServerChange(targetIndex + 1, true);
-          } else {
-            setDeliveryState('error');
-            setPlaybackError(MSG_NO_SERVERS);
-          }
-          return;
-        }
-
-        // El servidor logró extraer el .m3u8 o .mp4 nativo: actualizamos con TODA
-        // la metadata de resolución (no solo la url) conservando el embed original.
-        setServers((prev) => {
-          return prev.map((candidate) => candidate.id === targetId
-            ? applyResolution(candidate, {
-              url: res.url,
-              original_url: res.original_url,
-              resolved: true,
-              type: res.type,
-              delivery_mode: res.delivery_mode,
-              provider: res.provider,
-              canonical_locator: res.canonical_locator,
-              resolution_id: res.resolution_id,
-              generation: res.generation,
-              is_proxyable: res.is_proxyable,
-              is_refreshable: res.is_refreshable,
-              refresh_after: res.refresh_after,
-              expires_at: res.expires_at,
-              resolved_at: res.resolved_at,
-              failure_reason: res.failure_reason,
-              requiredHeaders: res.requiredHeaders,
-              subtitles: res.subtitles,
-            })
-            : candidate);
-        });
-
-        if (res.subtitles && res.subtitles.length > 0) {
-          setResolvedSubtitleTracks(res.subtitles.map((track, index) => ({
-            id: track.id || `resolved-sub-${index}`,
-            label: track.label || track.language || `Subtítulo ${index + 1}`,
-            language: track.language || 'en',
-            url: track.url || track.src || '',
-            is_default: Boolean(track.is_default ?? index === 0),
-          })).filter((track) => Boolean(track.url)));
-        }
-
-        setDeliveryState('trying_direct');
-        setFailoverNotice(`Stream nativo optimizado con éxito (${res.provider || 'Servidor'})`);
-        setTimeout(() => setFailoverNotice(null), 3000);
-      })
-      .catch(() => {
-        if (!cancelled && attemptId === attemptIdRef.current) {
-          setCanonicalResolveError('No se pudo resolver un stream nativo para esta fuente.');
-          setServers((prev) => prev.map((candidate) =>
-            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
-          ));
-          if (targetIndex < servers.length - 1) {
-            handleServerChange(targetIndex + 1, true);
-          } else {
-            setDeliveryState('error');
-            setPlaybackError(MSG_NO_SERVERS);
-          }
-        }
-      })
-      .finally(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed, activeServer?.canonical_locator, servers.length]);
 
   // 4. EVENT LISTENERS DEL ELEMENTO VIDEO
   useEffect(() => {

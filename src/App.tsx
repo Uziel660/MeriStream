@@ -23,7 +23,10 @@ import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
-const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
+// Bumped after the main-path provider cutover so a browser cannot briefly
+// render cards that are now admin/legacy-only while the fresh request loads.
+const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v2';
+const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
@@ -350,6 +353,10 @@ export function App() {
 
       // 1. Try cache first (instant)
       try {
+        // Remove the pre-provider-cutover cache once per browser profile. The
+        // old payload may contain legacy-only cards that the public API no
+        // longer returns.
+        localStorage.removeItem(RETIRED_CATALOG_CACHE_KEY);
         const cached = localStorage.getItem(CATALOG_CACHE_KEY);
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);

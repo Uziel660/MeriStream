@@ -182,5 +182,20 @@
       "embedChecks": [],
       "status": 200
     }
-  ]
+  ],
+  "followUpE2E": {
+    "generatedAt": "2026-09-07T12:26:20.156Z",
+    "provider": "gnula",
+    "sampleUrl": "https://ww3.gnulahd.nu/ver/coyote-vs-acme/",
+    "resolver": {
+      "resolved": true,
+      "type": "direct",
+      "deliveryMode": "proxy_required",
+      "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+      "canonicalLocatorHost": "bysevepoin.com"
+    },
+    "manifest": { "status": 200, "contentType": "application/vnd.apple.mpegurl" },
+    "segment": { "status": 206, "contentType": "video/MP2T" },
+    "note": "The earlier sample above observed only embeds; the follow-up browser probe resolved the Byse locator to native HLS."
+  }
 }

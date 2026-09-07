@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-09-07T11:05:28.744Z",
+  "totals": {
+    "media_items": 12258,
+    "media_episodes": 276288,
+    "episodes_without_links": 157576,
+    "episodes_with_multiple_sites": 30161
+  },
+  "by_kind": {
+    "movie": {
+      "items": 4086,
+      "episodes": 3065,
+      "linked": 2138
+    },
+    "series": {
+      "items": 4008,
+      "episodes": 183629,
+      "linked": 63251
+    },
+    "anime": {
+      "items": 4164,
+      "episodes": 89594,
+      "linked": 53323
+    }
+  },
+  "providers": [
+    {
+      "provider": "wwv",
+      "links": 48032,
+      "episodes": 39470
+    },
+    {
+      "provider": "tioplus",
+      "links": 46095,
+      "episodes": 45632
+    },
+    {
+      "provider": "lamovie",
+      "links": 32934,
+      "episodes": 32727
+    },
+    {
+      "provider": "latanime",
+      "links": 11482,
+      "episodes": 9258
+    },
+    {
+      "provider": "cinecalidad",
+      "links": 9114,
+      "episodes": 9052
+    },
+    {
+      "provider": "animeav1",
+      "links": 8875,
+      "episodes": 7852
+    },
+    {
+      "provider": "tioanime",
+      "links": 6901,
+      "episodes": 6843
+    },
+    {
+      "provider": "doramasflix",
+      "links": 6559,
+      "episodes": 6498
+    },
+    {
+      "provider": "megaplay.buzz",
+      "links": 3085,
+      "episodes": 2413
+    },
+    {
+      "provider": "hianimes",
+      "links": 2011,
+      "episodes": 1981
+    },
+    {
+      "provider": "zokoanime.video",
+      "links": 940,
+      "episodes": 630
+    },
+    {
+      "provider": "animeflv",
+      "links": 617,
+      "episodes": 617
+    },
+    {
+      "provider": "animeplay.cfd",
+      "links": 15,
+      "episodes": 14
+    }
+  ],
+  "duplicate_media_item_groups": 0,
+  "duplicate_media_item_examples": [],
+  "note": "Los enlaces descubiertos no son prueba de reproducción; source_status debe avanzar mediante resolución JIT y validación del reproductor."
+}

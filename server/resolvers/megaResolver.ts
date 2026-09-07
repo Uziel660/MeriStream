@@ -71,6 +71,14 @@ export function parseMegaUrl(url: string): MegaFileLink | null {
     return buildLink("file", segments[1], fragment || queryKey);
   }
 
+  // ── Embed legacy con el identificador después de `#!`: /embed/#!{ID}!{KEY}
+  // Algunos adaptadores publican exactamente esta variante. El fragmento
+  // pertenece al archivo aunque el path solo contenga `/embed`.
+  if (segments[0] === "embed" && segments.length === 1) {
+    const fragmentEmbedMatch = /^!([^!]+)!([^!]+)$/.exec(fragment);
+    if (fragmentEmbedMatch) return buildLink("file", fragmentEmbedMatch[1], fragmentEmbedMatch[2]);
+  }
+
   // ── Embed legacy con "!" en path: /embed/!{ID}!{KEY} (usado por TioAnime) ──
   // Ej: https://mega.nz/embed/!BTU1DKKR!RLPNcC8ohIh769HwlEZUPfJLH5n3Xsd2CiIZeEU0cBk
   // El fileId/key van en el segmento, no en fragment.

@@ -39,11 +39,11 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-multi-1",
       episode_number: 1,
-      media_item: { id: "item-1", title: "Frieren" },
+      media_item: { id: "item-1", title: "Frieren", kind: "movie" },
       links: [
-        { url: "https://vimeos.net/embed-alt1.html", source_site: "animeflv", priority_tier: 1 },
-        { url: "https://vimeos.net/embed-alt2.html", source_site: "animeflv", priority_tier: 2 },
-        { url: "https://vimeos.net/embed-alt3.html", source_site: "animeflv", priority_tier: 3 },
+        { url: "https://vimeos.net/embed-alt1.html", source_site: "cinecalidad", priority_tier: 1 },
+        { url: "https://vimeos.net/embed-alt2.html", source_site: "cinecalidad", priority_tier: 2 },
+        { url: "https://vimeos.net/embed-alt3.html", source_site: "cinecalidad", priority_tier: 3 },
       ],
     };
 
@@ -56,9 +56,9 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     expect(body).toBeDefined();
     expect(body.episode_id).toBe("ep-multi-1");
 
-    // Exactamente 2 candidatos de animeflv sobreviven (el 3ro se descarta por el límite de 2 por sitio)
+    // Exactamente 2 candidatos de Cinecalidad sobreviven (el 3ro se descarta por el límite de 2 por sitio)
     expect(body.ranked_streams).toHaveLength(2);
-    expect(body.ranked_streams.every((s: any) => s.source_site === "animeflv")).toBe(true);
+    expect(body.ranked_streams.every((s: any) => s.source_site === "cinecalidad")).toBe(true);
     expect(body.ranked_streams[0].url).toBe("https://vimeos.net/embed-alt1.html");
     expect(body.ranked_streams[1].url).toBe("https://vimeos.net/embed-alt2.html");
     expect(body.stream_url).toBe("https://vimeos.net/embed-alt1.html");
@@ -72,9 +72,9 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const other = "https://cdn3.turboviplay.com/data/video/video.m3u8";
 
     const cascade = await buildMultiSourceCascade([
-      { url: signedOne, source_site: "tioplus.app", priority_tier: 1 },
-      { url: signedTwo, source_site: "tioplus.app", priority_tier: 2 },
-      { url: other, source_site: "tioplus.app", priority_tier: 3 },
+      { url: signedOne, source_site: "gnula", priority_tier: 1 },
+      { url: signedTwo, source_site: "gnula", priority_tier: 2 },
+      { url: other, source_site: "gnula", priority_tier: 3 },
     ]);
 
     expect(cascade).toHaveLength(2);
@@ -90,10 +90,10 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-expired-1",
       episode_number: 2,
-      media_item: { id: "item-2", title: "Dungeon Meshi" },
+      media_item: { id: "item-2", title: "Dungeon Meshi", kind: "movie" },
       links: [
-        { url: expiredDirect, source_site: "animeflv", priority_tier: 1 },
-        { url: validEmbed, source_site: "animeflv", priority_tier: 2 },
+        { url: expiredDirect, source_site: "cinecalidad", priority_tier: 1 },
+        { url: validEmbed, source_site: "cinecalidad", priority_tier: 2 },
       ],
     };
 
@@ -133,9 +133,9 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-canonical-1",
       episode_number: 1,
-      media_item: { id: "item-3", title: "Frieren Canónica" },
+      media_item: { id: "item-3", title: "Frieren Canónica", kind: "anime" },
       links: [
-        { url: canonicalPage, source_site: "animeflv", priority_tier: 3 },
+        { url: canonicalPage, source_site: "zokoanime", priority_tier: 3 },
       ],
     };
 
@@ -154,14 +154,14 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     expect(stream.is_refreshable).toBe(true);
     expect(stream.is_proxyable).toBe(false);
     expect(stream.delivery_mode).toBe("embed");
-    expect(stream.source_site).toBe("animeflv");
+    expect(stream.source_site).toBe("zokoanime");
     expect(body.stream_url).toBe(canonicalPage);
   });
 
   // 4. El límite global de ocho funciona.
   it("el límite global de ocho funciona cuando hay más de 8 candidatos entre varios sitios", async () => {
     // 6 sitios con 2 links válidos cada uno (12 links en total)
-    const sites = ["site1", "site2", "site3", "site4", "site5", "site6"];
+    const sites = ["direct", "stremio-direct", "flixquest", "vidsrc", "vidsrcto", "archive-org"];
     const links = sites.flatMap((site, siteIndex) => [
       { url: `https://vimeos.net/embed-${site}-1.html`, source_site: site, priority_tier: 1 },
       { url: `https://vimeos.net/embed-${site}-2.html`, source_site: site, priority_tier: 2 },
@@ -170,7 +170,7 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-global-limit",
       episode_number: 1,
-      media_item: { id: "item-4", title: "Obra Multisitio" },
+      media_item: { id: "item-4", title: "Obra Multisitio", kind: "movie" },
       links,
     };
 
@@ -201,9 +201,9 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-db-only",
       episode_number: 1,
-      media_item: { id: "item-5", title: "DB Only Show" },
+      media_item: { id: "item-5", title: "DB Only Show", kind: "movie" },
       links: [
-        { url: "https://vimeos.net/embed-fast.html", source_site: "animeflv" },
+        { url: "https://vimeos.net/embed-fast.html", source_site: "cinecalidad" },
       ],
     };
 
@@ -221,7 +221,7 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
   });
 
   it("no responde con stream vacío si MediaEpisode migrado aún no tiene links", async () => {
-    const legacyUrl = "https://legacy.example/ver/obra-1";
+    const legacyUrl = "https://www.cinecalidad.am/ver-pelicula/obra-1";
     vi.spyOn(prisma.mediaEpisode, "findUnique").mockResolvedValue({
       id: "media-without-links", season_number: 1, episode_number: 1,
       media_item: { title: "Obra migrada", normalized_title: "obra migrada", base_normalized_title: "obra migrada", year: 2024, tmdb_id: null },
@@ -252,8 +252,8 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const embedUrl = "https://vimeos.net/embed-meta.html";
 
     const cascade = await buildMultiSourceCascade([
-      { url: futureDirect, source_site: "animeflv", priority_tier: 1 },
-      { url: embedUrl, source_site: "animeflv", priority_tier: 2 },
+      { url: futureDirect, source_site: "cinecalidad", priority_tier: 1 },
+      { url: embedUrl, source_site: "cinecalidad", priority_tier: 2 },
     ]);
 
     expect(cascade).toHaveLength(2);
@@ -267,7 +267,7 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     expect(directEntry).toHaveProperty("is_refreshable", false);
     expect(directEntry).toHaveProperty("expires_at");
     expect(typeof directEntry.expires_at).toBe("number");
-    expect(directEntry).toHaveProperty("source_site", "animeflv");
+    expect(directEntry).toHaveProperty("source_site", "cinecalidad");
     expect(directEntry).toHaveProperty("tier", 1);
 
     const embedEntry = cascade.find((c) => c.url === embedUrl)!;
@@ -277,7 +277,7 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     expect(embedEntry).toHaveProperty("delivery_mode", "embed");
     expect(embedEntry).toHaveProperty("is_proxyable", false);
     expect(embedEntry).toHaveProperty("is_refreshable", true);
-    expect(embedEntry).toHaveProperty("source_site", "animeflv");
+    expect(embedEntry).toHaveProperty("source_site", "cinecalidad");
     expect(embedEntry).toHaveProperty("tier", 2);
   });
 
@@ -340,9 +340,9 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     const mockEpisode = {
       id: "ep-cross-provider-canonical",
       episode_number: 1,
-      media_item: { id: "item-cross-provider", title: "Carrera de bestias" },
+      media_item: { id: "item-cross-provider", title: "Carrera de bestias", kind: "movie" },
       links: [
-        { url: signedDirect, source_site: "tioplus.app", priority_tier: 1 },
+        { url: signedDirect, source_site: "gnula", priority_tier: 1 },
         { url: canonicalPage, source_site: "cinecalidad.am", link_type: "page", priority_tier: 2 },
       ],
     };

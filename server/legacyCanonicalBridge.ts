@@ -75,7 +75,9 @@ export function selectCanonicalPlaybackCandidate(
       const titleMatch = Boolean(legacyTitleKey && (legacyTitleKey === itemTitleKey || legacyTitleKey === keyOf(item.title, normalizeTitle)));
       const baseMatch = Boolean(legacyBaseKey && legacyBaseKey === itemBaseKey);
       const yearDiff = legacyYear != null && item.year != null ? Math.abs(legacyYear - item.year) : null;
-      const yearMatch = yearDiff == null || yearDiff <= 1;
+      // TMDB is the canonical identity. Once it matches, a stale year on the
+      // legacy row must not block the corresponding canonical episode.
+      const yearMatch = tmdbMatch || yearDiff == null || yearDiff <= 1;
       const kindMatch = !legacyKind || !item.kind || legacyKind === item.kind.toLowerCase();
       const episodeMatch = sameEpisode(legacyEpisodeNumber, candidate.episode_number);
       const canonicalLinks = candidate.links.filter((link) =>

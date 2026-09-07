@@ -31,6 +31,14 @@ import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUr
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
 import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/siteRatingService";
 import { siteFromDomain } from "./server/siteRatingService";
+import { isProviderAllowedInMainPath, normalizeProviderId } from "./server/providers/providerPolicy";
+import {
+  buildDisplayEpisodes,
+  compareMainPathLinks,
+  countDisplayPlatforms,
+  filterMainPathLinks,
+  playbackKindForCategory,
+} from "./server/showEpisodePolicy";
 import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./server/playbackSessions";
 import { streamHealthService } from "./server/streamHealthService";
 import { listHostHealth, reportPlaybackSignal } from "./server/scrapers/hostHealth";
@@ -543,6 +551,7 @@ async function findCanonicalMediaEpisodeForLegacy(
   // conserva el namespace para no devolver accidentalmente una obra de otro
   // tipo cuando ambos comparten el mismo entero.
   const category = String(targetShow.category || "").toLowerCase();
+  const playbackKind = category === "movie" ? "movie" : category === "series" ? "series" : "anime";
   const kindFilter = category === "movie"
     ? { kind: "movie" }
     : category === "anime" || category === "series"
@@ -580,7 +589,10 @@ async function findCanonicalMediaEpisodeForLegacy(
         // so the pure matcher intentionally does not use this field as a gate.
         kind: null,
       },
-      links: episode.links.map((link) => ({ url: link.url, link_type: link.link_type })),
+      links: (() => {
+        return filterMainPathLinks(episode.links, playbackKind)
+          .map((link) => ({ url: link.url, link_type: link.link_type }));
+      })(),
     })));
 
     const selected = selectCanonicalPlaybackCandidate(
@@ -604,7 +616,8 @@ async function findCanonicalMediaEpisodeForLegacy(
       .flatMap((item) => item.episodes)
       .find((episode) => episode.id === selected.id);
     if (!selectedEpisode) return null;
-    const rankedRaw = await buildMultiSourceCascade(selectedEpisode.links, { maxPerSite: 2, maxTotal: 8 });
+    const playbackLinks = filterMainPathLinks(selectedEpisode.links, playbackKind);
+    const rankedRaw = await buildMultiSourceCascade(playbackLinks, { maxPerSite: 2, maxTotal: 8 });
     const ranked = keepCanonicalCandidatesFirst(rankedRaw, selectedEpisode.links);
     return ranked.length > 0 ? { mediaEpisode: selectedEpisode, ranked } : null;
   } catch (error: any) {
@@ -703,16 +716,38 @@ export async function handlePlayEpisode(req: Request, res: Response) {
 
     if (mediaEpisode && mediaEpisode.links?.length > 0) {
       const title = `${mediaEpisode.media_item?.title || "Reproducción"} - Episodio ${mediaEpisode.episode_number}`;
+      const playbackKind = mediaEpisode.media_item?.kind === "movie"
+        ? "movie"
+        : mediaEpisode.media_item?.kind === "series"
+          ? "series"
+          : "anime";
+      const hasZoko = mediaEpisode.links.some((link: any) =>
+        normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime"
+      );
+      const isAllowedLink = (link: any) => {
+        const provider = normalizeProviderId(link.source_site || link.host || link.url);
+        // TioAnime is retained only as the documented anime fallback, and is
+        // suppressed whenever the preferred ZokoAnime locator exists.
+        if (provider === "tioanime") return playbackKind === "anime" && hasZoko;
+        return isProviderAllowedInMainPath(provider, playbackKind);
+      };
 
       const cached = playStreamsCache.get(mediaEpisode.id);
       if (cached && cached.expiresAt > Date.now()) {
+        const cachedRanked = cached.ranked
+          .filter((entry: any) => isAllowedLink(entry))
+          .sort((a: any, b: any) => compareMainPathLinks(a, b, playbackKind));
+        if (cachedRanked.length === 0) {
+          playStreamsCache.delete(mediaEpisode.id);
+        } else {
         return res.json({
           episode_id: mediaEpisode.id,
-          stream_url: cached.streamUrl,
+          stream_url: cachedRanked[0]?.url || "",
           title,
-          all_available_streams: cached.allStreams,
-          ranked_streams: cached.ranked,
+          all_available_streams: cachedRanked.map((entry: any) => entry.url),
+          ranked_streams: cachedRanked,
         });
+        }
       }
 
       // Filtrar links que pertenecen a otra temporada o episodio
@@ -736,7 +771,19 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         return true;
       });
 
-      const linksToUse = validLinks.length > 0 ? validLinks : mediaEpisode.links;
+      const policyLinks = filterMainPathLinks(
+        (validLinks.length > 0 ? validLinks : mediaEpisode.links).filter(isAllowedLink),
+        playbackKind,
+      );
+      const linksToUse = policyLinks;
+      if (linksToUse.length === 0) {
+        return res.status(404).json({
+          error: "Este episodio no tiene una fuente activa reproducible.",
+          episode_id: mediaEpisode.id,
+          ranked_streams: [],
+          all_available_streams: [],
+        });
+      }
       const rankedRaw = await buildMultiSourceCascade(linksToUse, { maxPerSite: 2, maxTotal: 8 });
       const ranked = keepCanonicalCandidatesFirst(rankedRaw, linksToUse);
 
@@ -830,8 +877,26 @@ export async function handlePlayEpisode(req: Request, res: Response) {
     }
 
     const sourceUrl = foundEpisode?.source_url || (targetShow as any)?.source_url || (targetShow as any)?.url || "";
-    if (!sourceUrl && !foundEpisode) {
+    // A legacy episode can exist without a source locator while the canonical
+    // bridge is unavailable. Never pass an empty string to URL-based resolvers.
+    if (!sourceUrl) {
       return res.status(404).json({ detail: "Episodio u obra no encontrada en la base de datos." });
+    }
+
+    const legacyKind = String(targetShow?.category || "").toLowerCase() === "movie"
+      ? "movie"
+      : String(targetShow?.category || "").toLowerCase() === "series"
+        ? "series"
+        : "anime";
+    const legacyProvider = normalizeProviderId(sourceUrl);
+    if (!isProviderAllowedInMainPath(legacyProvider, legacyKind)) {
+      return res.status(404).json({
+        error: "La fuente histórica está deshabilitada para el camino principal.",
+        provider: legacyProvider,
+        episode_id: foundEpisode?.id || targetId,
+        ranked_streams: [],
+        all_available_streams: [],
+      });
     }
 
     const extracted = await extractStreamFromUrl(sourceUrl);
@@ -1159,7 +1224,10 @@ async function startServer() {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
 
       if (isLite) {
-        const result = await getShowsFromDbLite(search, category, page, limit);
+        const includeLegacy = req.query.include_legacy === "true";
+        const result = await getShowsFromDbLite(search, category, page, limit, {
+          onlyMainPath: !includeLegacy,
+        });
         // Cache for 5 minutes, allow stale while revalidating
         res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
         res.setHeader('X-Catalog-Count', String(result.total || 0));
@@ -1181,72 +1249,52 @@ async function startServer() {
       if (!show) {
         return res.status(404).json({ detail: "Serie no encontrada" });
       }
+      const playbackKind = playbackKindForCategory((show as any).category);
       // media_item_id espejo (relaciÃ³n por clave canÃ³nica, sin FK): lo consume el
       // editor del catÃ¡logo para play-multi / "plataformas disponibles".
       let media_item_id: string | null = null;
-      const kind = (show as any).category || "anime";
+      const category = String((show as any).category || "").toLowerCase();
       const norm = (show as any).normalized_title;
       const base = (show as any).base_normalized_title || norm;
-      if (norm) {
-        const item = await prisma.mediaItem.findFirst({
+      let canonicalItem: any = null;
+      if (norm || (show as any).tmdb_id != null) {
+        const canonicalKinds = playbackKind === "movie" ? ["movie"] : [playbackKind, "series", "anime"];
+        canonicalItem = await prisma.mediaItem.findFirst({
           where: {
-            OR: [
-              { base_normalized_title: base, kind },
-              ...(base !== norm ? [{ normalized_title: norm, kind }] : []),
+            AND: [
+              { kind: { in: canonicalKinds } },
+              {
+                OR: [
+                  ...(norm ? [{ base_normalized_title: base }] : []),
+                  ...(base !== norm && norm ? [{ normalized_title: norm }] : []),
+                  ...((show as any).tmdb_id != null ? [{ tmdb_id: (show as any).tmdb_id }] : []),
+                ],
+              },
             ],
           },
           orderBy: { created_at: "asc" },
+          include: {
+            episodes: {
+              orderBy: [{ season_number: "asc" }, { episode_number: "asc" }],
+              include: { links: true },
+            },
+          },
         });
-        media_item_id = item?.id ?? null;
+        media_item_id = canonicalItem?.id ?? null;
       }
-      // Plataformas REALES donde vive la obra: dominio de los source_url de
-      // cada episodio (lamovie.org → lamovie). Cubre obras sin MediaItem.
-      const eps = await prisma.episode.findMany({
-        where: { show_id: showId },
-        select: { source_url: true },
-      });
-      const platCounts = new Map<string, number>();
-      // CDN/known-platform hostname normalization map
-      const CDN_PATTERNS = [
-        [/acek-cdn\.com$/i, null],
-        [/dramiyos-cdn\.com$/i, null],
-        [/turboviplay\.com$/i, null],
-      ];
-      const KNOWN_PLATFORM_HOSTS: Record<string, string> = {
-        animeflv: "animeflv", jkanime: "animeflv",
-        tioanime: "tioanime", "v.tioanime": "tioanime",
-        lamovie: "lamovie",
-        cinecalidad: "cinecalidad",
-        latanime: "latanime",
-        tioplus: "tioplus",
-        veranimes: "veranimes",
-        tubepelis: "tubepelis",
-      };
-      for (const e of eps) {
-        try {
-          const rawHost = new URL(e.source_url).hostname.replace(/^www\./, "");
-          const firstLabel = rawHost.split(".")[0].toLowerCase();
-          // Detect CDN hosts: map to null (skip) or known platform
-          const isCdn = CDN_PATTERNS.some(([pat]) => pat.test(rawHost));
-          let platform: string;
-          if (isCdn) {
-            // CDN links don't represent a real platform — skip from display
-            continue;
-          } else if (KNOWN_PLATFORM_HOSTS[firstLabel]) {
-            platform = KNOWN_PLATFORM_HOSTS[firstLabel];
-          } else {
-            platform = firstLabel;
-          }
-          if (!platform) continue;
-          platCounts.set(platform, (platCounts.get(platform) || 0) + 1);
-        } catch {
-          /* source_url vacío o inválido */
-        }
-      }
-      const episode_platforms = Array.from(platCounts.entries())
-        .map(([domain, episodes]) => ({ domain, episodes }))
-        .sort((a, b) => b.episodes - a.episodes);
-      res.json({ ...(show as any), media_item_id, episode_platforms });
+      const legacyEpisodes = (show as any).episodes || [];
+      const episodes = buildDisplayEpisodes(
+        legacyEpisodes,
+        canonicalItem?.episodes || [],
+        playbackKind,
+        showId,
+      );
+      const episode_platforms = countDisplayPlatforms(
+        canonicalItem?.episodes || [],
+        episodes,
+        playbackKind,
+      );
+      res.json({ ...(show as any), episodes, media_item_id, episode_platforms });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

@@ -67,8 +67,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   },
   nuvio: {
     id: "nuvio",
-    role: "secondary",
-    lifecycle: "active",
+    role: "fallback",
+    lifecycle: "legacy",
     priority: 16,
     defaultRating: 7.8,
     contentKinds: ["movie", "series"],
@@ -77,6 +77,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     discovery: "direct_api",
     resolver: "nuvio",
     hosts: ["nuviostreams.hayd.uk"],
+    notes: "Instancia pública verificada como retirada; no participa en el camino principal.",
   },
   "anime-sdk": {
     id: "anime-sdk",
@@ -186,7 +187,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     discovery: "page",
     resolver: "gnula",
     hosts: ["gnulahd.nu"],
-    notes: "Sonda pública 2026-09-07: la ficha devolvió Vidara, Byse, VOE y SaveFiles; no se observó VidSrc en esa muestra.",
+    notes: "Sonda E2E pública 2026-09-07: la ficha entrega Byse/otros locators; Byse resolvió a HLS SprintCDN con manifest 200 y segmento 206. No se observó VidSrc.",
   },
   "archive-org": {
     id: "archive-org",

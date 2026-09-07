@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "./db";
 import { optionalAuth, AuthRequest } from "./auth";
+import { filterShowsToMainPath } from "./showService";
 
 const recommendationsRouter = Router();
 
@@ -154,55 +155,69 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       take: 20,
     });
 
+    const recommendedCandidates = [
+      ...personalizedShows,
+      ...becauseYouWatchedShows,
+      ...topRatedGenreShows,
+      ...discoveryShows,
+    ];
+    const playableRecommended = await filterShowsToMainPath(recommendedCandidates as any[]);
+    const playableRecommendedIds = new Set(playableRecommended.map((show) => show.id));
+    const visible = (items: any[]) => items.filter((show) => playableRecommendedIds.has(show.id));
+    const visiblePersonalized = visible(personalizedShows);
+    const visibleBecauseWatched = visible(becauseYouWatchedShows);
+    const visibleTopRated = visible(topRatedGenreShows);
+    const visibleDiscovery = visible(discoveryShows);
+
     const rails: RecommendedRail[] = [];
 
-    if (personalizedShows.length > 0) {
+    if (visiblePersonalized.length > 0) {
       rails.push({
         id: "for-you",
         title: "Recomendados para ti",
         reason: "top_affinity",
-        shows: shuffle(personalizedShows).slice(0, 16),
+        shows: shuffle(visiblePersonalized).slice(0, 16),
       });
     }
 
-    if (lastWatchedShow && becauseYouWatchedShows.length > 0) {
+    if (lastWatchedShow && visibleBecauseWatched.length > 0) {
       rails.push({
         id: `because-${lastWatchedShow.id}`,
         title: `Porque viste ${lastWatchedShow.title}`,
         reason: "because_watched",
-        shows: becauseYouWatchedShows.slice(0, 16),
+        shows: visibleBecauseWatched.slice(0, 16),
       });
     }
 
-    if (topRatedGenreShows.length > 0) {
+    if (visibleTopRated.length > 0) {
       rails.push({
         id: "top-rated-genre",
         title: `Lo mejor de ${primaryGenre}`,
         reason: "high_rating",
-        shows: topRatedGenreShows.slice(0, 16),
+        shows: visibleTopRated.slice(0, 16),
       });
     }
 
-    if (discoveryShows.length > 0) {
+    if (visibleDiscovery.length > 0) {
       rails.push({
         id: "discovery",
         title: "Descubre algo nuevo",
         reason: "discovery",
-        shows: shuffle(discoveryShows).slice(0, 16),
+        shows: shuffle(visibleDiscovery).slice(0, 16),
       });
     }
 
     // 5. SELECCIÓN DE LA OBRA HERO DEFINITIVA (Alta calidad visual + Máxima Afinidad)
-    let heroCandidate = personalizedShows.find(
+    let heroCandidate = visiblePersonalized.find(
       (s) => (s as any).backdrop_path || (s as any).banner_url || ((s.rating || 0) >= 8.2 && s.description && s.description.length > 50)
     );
 
-    if (!heroCandidate && personalizedShows.length > 0) {
-      heroCandidate = personalizedShows[0];
+    if (!heroCandidate && visiblePersonalized.length > 0) {
+      heroCandidate = visiblePersonalized[0];
     }
 
-    if (!heroCandidate && topRatedGenreShows.length > 0) {
-      heroCandidate = topRatedGenreShows[0];
+    if (!heroCandidate && visibleTopRated.length > 0) {
+      heroCandidate = visibleTopRated[0];
     }
 
     return res.json({ hero: heroCandidate || null, rails });
@@ -248,9 +263,17 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
       }),
     ]);
 
-    const heroPick = topHeroPicks.length > 0
-      ? topHeroPicks[Math.floor(Math.random() * Math.min(5, topHeroPicks.length))]
-      : trendingAll[0] || null;
+    const allCandidates = [...topHeroPicks, ...popularAnime, ...topMoviesSeries, ...trendingAll];
+    const playable = await filterShowsToMainPath(allCandidates as any[]);
+    const playableIds = new Set(playable.map((show) => show.id));
+    const visible = (items: any[]) => items.filter((show) => playableIds.has(show.id));
+    const visibleHeroPicks = visible(topHeroPicks);
+    const visibleAnime = visible(popularAnime);
+    const visibleMovies = visible(topMoviesSeries);
+    const visibleTrending = visible(trendingAll);
+    const heroPick = visibleHeroPicks.length > 0
+      ? visibleHeroPicks[Math.floor(Math.random() * Math.min(5, visibleHeroPicks.length))]
+      : visibleTrending[0] || null;
 
     return {
       hero: heroPick,
@@ -258,17 +281,17 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
         {
           id: "trending-guest",
           title: "Tendencias",
-          shows: trendingAll,
+          shows: visibleTrending,
         },
         {
           id: "anime-guest",
           title: "Anime Destacado",
-          shows: popularAnime,
+          shows: visibleAnime,
         },
         {
           id: "movies-guest",
           title: "Películas y Series Populares",
-          shows: topMoviesSeries,
+          shows: visibleMovies,
         },
       ],
     };

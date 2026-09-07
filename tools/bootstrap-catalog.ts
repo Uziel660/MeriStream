@@ -161,36 +161,46 @@ async function ensureEpisodeSkeleton(mediaItemId: string, kind: MediaKind, tmdbI
         },
         update: {},
       });
+      await prisma.episode.createMany({
+        data: [{
+          show_id: mediaItemId,
+          episode_number: 1,
+          title: "Película Completa",
+        }],
+        skipDuplicates: true,
+      });
     }
     return 1;
   }
 
   const details = await tmdb<TmdbTvDetails>(`/tv/${tmdbId}`);
-  let count = 0;
+  const episodesToCreate: Array<{ media_item_id: string; season_number: number; episode_number: number }> = [];
   for (const season of details.seasons || []) {
     if (!season || season.season_number <= 0 || season.episode_count <= 0) continue;
     for (let episodeNumber = 1; episodeNumber <= season.episode_count; episodeNumber += 1) {
-      if (!DRY_RUN) {
-        await prisma.mediaEpisode.upsert({
-          where: {
-            media_item_id_season_number_episode_number: {
-              media_item_id: mediaItemId,
-              season_number: season.season_number,
-              episode_number: episodeNumber,
-            },
-          },
-          create: {
-            media_item_id: mediaItemId,
-            season_number: season.season_number,
-            episode_number: episodeNumber,
-          },
-          update: {},
-        });
-      }
-      count += 1;
+      episodesToCreate.push({
+        media_item_id: mediaItemId,
+        season_number: season.season_number,
+        episode_number: episodeNumber,
+      });
     }
   }
-  return count;
+
+  if (!DRY_RUN && episodesToCreate.length > 0) {
+    await prisma.mediaEpisode.createMany({
+      data: episodesToCreate,
+      skipDuplicates: true,
+    });
+    await prisma.episode.createMany({
+      data: episodesToCreate.map((ep) => ({
+        show_id: mediaItemId,
+        episode_number: ep.episode_number,
+        title: `Episodio ${ep.episode_number}`,
+      })),
+      skipDuplicates: true,
+    });
+  }
+  return episodesToCreate.length;
 }
 
 async function upsertMedia(item: TmdbListItem, kind: MediaKind): Promise<{ created: boolean; episodes: number }> {
@@ -200,7 +210,12 @@ async function upsertMedia(item: TmdbListItem, kind: MediaKind): Promise<{ creat
   const baseNormalized = normalizeBaseTitle(title) || normalized;
 
   const existing = await prisma.mediaItem.findFirst({
-    where: { tmdb_id: item.id, kind },
+    where: {
+      OR: [
+        { tmdb_id: item.id, kind },
+        { normalized_title: normalized, kind, year },
+      ],
+    },
     select: { id: true },
   });
 
@@ -221,9 +236,62 @@ async function upsertMedia(item: TmdbListItem, kind: MediaKind): Promise<{ creat
     poster_url: item.poster_path ? `${IMAGE_BASE}${item.poster_path}` : null,
   };
 
-  const media = existing
-    ? await prisma.mediaItem.update({ where: { id: existing.id }, data })
-    : await prisma.mediaItem.create({ data });
+  let media;
+  if (existing) {
+    media = await prisma.mediaItem.update({ where: { id: existing.id }, data });
+  } else {
+    try {
+      media = await prisma.mediaItem.create({ data });
+    } catch (e: any) {
+      if (e?.code === "P2002") {
+        const found = await prisma.mediaItem.findFirst({
+          where: { normalized_title: normalized, kind, year },
+          select: { id: true },
+        });
+        if (found) {
+          media = await prisma.mediaItem.update({ where: { id: found.id }, data });
+        } else {
+          throw e;
+        }
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  await prisma.show.upsert({
+    where: { id: media.id },
+    create: {
+      id: media.id,
+      title: data.title,
+      original_title: data.original_title,
+      normalized_title: data.normalized_title,
+      base_normalized_title: data.base_normalized_title,
+      tmdb_id: data.tmdb_id,
+      category: kind,
+      year: data.year || 2024,
+      poster_url: data.poster_url,
+      banner_url: data.backdrop_path ? `${BACKDROP_BASE}${data.backdrop_path}` : data.poster_url,
+      poster_path: data.poster_path,
+      backdrop_path: data.backdrop_path,
+      description: "",
+      rating: 8.0,
+      genres: kind === "anime" ? "Anime, Animación" : kind === "series" ? "Series" : "Película",
+    },
+    update: {
+      title: data.title,
+      original_title: data.original_title,
+      normalized_title: data.normalized_title,
+      base_normalized_title: data.base_normalized_title,
+      tmdb_id: data.tmdb_id,
+      category: kind,
+      year: data.year || 2024,
+      poster_url: data.poster_url,
+      banner_url: data.backdrop_path ? `${BACKDROP_BASE}${data.backdrop_path}` : data.poster_url,
+      poster_path: data.poster_path,
+      backdrop_path: data.backdrop_path,
+    },
+  });
 
   const episodes = await ensureEpisodeSkeleton(media.id, kind, item.id);
   return { created: !existing, episodes };
@@ -257,6 +325,8 @@ async function maybeResetCanonicalCatalog(): Promise<void> {
     throw new Error("--reset rechazado: existen SourceLink. Limpia/respáldalos explícitamente antes de destruir el catálogo canónico.");
   }
   if (DRY_RUN) return;
+  await prisma.episode.deleteMany();
+  await prisma.show.deleteMany();
   await prisma.mediaEpisode.deleteMany();
   await prisma.mediaItem.deleteMany();
   console.log("[bootstrap] catálogo canónico vacío preparado");

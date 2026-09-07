@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-09-07T12:26:20.156Z",
+  "test": "e2e/provider-boundary-coverage.spec.ts",
+  "provider": "gnula",
+  "samplePage": "https://ww3.gnulahd.nu/ver/coyote-vs-acme/",
+  "landing": {
+    "status": 200,
+    "finalUrl": "https://ww3.gnulahd.nu/ver/coyote-vs-acme/",
+    "contentType": "text/html",
+    "location": null
+  },
+  "resolver": {
+    "status": 200,
+    "resolved": true,
+    "type": "direct",
+    "delivery_mode": "proxy_required",
+    "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+    "finalPath": "/hls2/01/11909/ptd488lrkt3p_x/master.m3u8",
+    "canonicalLocatorHost": "bysevepoin.com"
+  },
+  "manifest": {
+    "status": 200,
+    "contentType": "application/vnd.apple.mpegurl",
+    "childPath": "/hls2/01/11909/ptd488lrkt3p_x/index-v1-a1.m3u8"
+  },
+  "childManifest": {
+    "status": 200,
+    "contentType": "application/vnd.apple.mpegurl",
+    "segmentPath": "/hls2/01/11909/ptd488lrkt3p_x/seg-1-v1-a1.ts"
+  },
+  "segment": {
+    "status": 206,
+    "contentType": "video/MP2T",
+    "contentRange": "bytes 0-1023/3285112"
+  },
+  "notes": [
+    "The signed query string is intentionally omitted from this report.",
+    "The final host can rotate; the test records the live host at runtime.",
+    "The resolver returns only a native HLS URL to MeriStream; the external page is never passed to the video element."
+  ]
+}

@@ -104,9 +104,12 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const showSeason = titleMatch ? parseInt(titleMatch[1], 10) : null;
 
     episodes.forEach(ep => {
-      let season = showSeason ?? 1;
+      const episodeSeason = Number((ep as any).season_number);
+      let season = Number.isFinite(episodeSeason) && episodeSeason > 0
+        ? episodeSeason
+        : (showSeason ?? 1);
 
-      if (showSeason === null) {
+      if (showSeason === null && !(Number.isFinite(episodeSeason) && episodeSeason > 0)) {
         // Try to extract season from title (e.g. "T1E1", "S1 E2", "Season 1", "Temporada 2")
         const rawEpisodeTitle = typeof ep.title === 'string' ? ep.title : '';
         const sMatch = rawEpisodeTitle.match(/\b(?:T|S|Season\s*|Temporada\s*)(\d+)\b/i);

@@ -74,6 +74,7 @@ import {
 import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
+import { providerGatewayRouter } from "./server/providerGatewayRouter";
 import {
   adminLogin,
   adminLogout,
@@ -975,6 +976,9 @@ async function startServer() {
     }
   }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+  // Direct TMDB/AniList provider gateway: public JIT playback data, no iframe providers.
+  app.use(providerGatewayRouter());
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.

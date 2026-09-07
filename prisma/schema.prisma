@@ -88,6 +88,9 @@ model MediaItem {
   base_normalized_title String?
   title                 String
   original_title        String?
+  description           String   @default("")
+  rating                Float    @default(0)
+  genres                String   @default("")
   tmdb_id               Int?
   kind                  String   @default("movie")
   year                  Int?
@@ -136,8 +139,6 @@ model SourceLink {
   source_site    String
   url            String
   link_type      String    @default("direct")
-  // Variante de idioma/rendición declarada por el proveedor. Son opcionales
-  // para conservar compatibilidad con enlaces históricos sin metadata.
   language          String?
   audio_language    String?
   subtitle_language String?
@@ -146,7 +147,6 @@ model SourceLink {
   priority_tier  Int?
   is_verified    Boolean   @default(false)
   last_checked   DateTime?
-  // Estado de evidencia; is_verified se conserva por compatibilidad histórica.
   source_status  String    @default("discovered")
   canonical_locator String?
   external_id    String?

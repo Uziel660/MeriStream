@@ -11,6 +11,7 @@ import { VIMEOS_REQUIRED_HEADERS } from "./hostProfiles";
 import { parseStreamExpiry } from "./resolutionMetadata";
 import { resolveZokoAnime, isZokoAnimeUrl, ZOKO_REQUIRED_HEADERS } from "./resolvers/zokoanimeResolver";
 import { resolveMegaplay, isMegaplayUrl, MEGAPLAY_REQUIRED_HEADERS } from "./resolvers/megaplayResolver";
+import { buildVidSrcMirrorUrls, resolveVidSrcEmbed } from "./providers/api/vidsrcClient";
 import { episodeLinks, fetchHianimesEpisode, hianimesSlugFromUrl, isHianimesWatchUrl } from "./resolvers/hianimesResolver";
 import {
   isPlatformPageUrl,
@@ -239,6 +240,8 @@ export interface ResolvedStreamMeta {
   requiredHeaders?: Record<string, string>;
   /** Pistas WebVTT descubiertas junto al stream (cuando el proveedor las expone). */
   subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
+  /** Pistas de audio declaradas por el master HLS del proveedor. */
+  audio_tracks?: Array<{ id: string; label?: string | null; language?: string | null; url?: string | null; is_default?: boolean }>;
   /** true si la URL directa vigente puede entregarse mediante una sesión proxy. */
   is_proxyable?: boolean;
   /** true si existe un localizador estable capaz de producir una URL nueva. */
@@ -1253,6 +1256,86 @@ export class EmbedResolvers {
 
 // ── Registro Modular de Resolvers por Proveedor ──────────────────────────────
 
+async function isVidSrcManifestUsable(
+  hlsUrl: string | undefined,
+  requiredHeaders: Record<string, string> | undefined,
+): Promise<boolean> {
+  if (!hlsUrl) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6500);
+  try {
+    const response = await fetch(hlsUrl, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        Accept: "*/*",
+        ...(requiredHeaders || {}),
+      },
+    });
+    if (response.status !== 200) return false;
+    return (await response.text()).includes("#EXTM3U");
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveVidSrcLocator(locator: string): Promise<ResolvedStreamMeta> {
+  let lastResult: Awaited<ReturnType<typeof resolveVidSrcEmbed>> | undefined;
+  for (const mirrorUrl of buildVidSrcMirrorUrls(locator)) {
+    const result = await resolveVidSrcEmbed(mirrorUrl);
+    lastResult = result;
+    const resolved = result.status === "direct" && Boolean(result.hlsUrl);
+    if (!resolved || !(await isVidSrcManifestUsable(result.hlsUrl, result.requiredHeaders))) continue;
+
+    return {
+      url: result.hlsUrl!,
+      original_url: locator,
+      canonical_locator: result.embedUrl || mirrorUrl,
+      resolved: true,
+      type: "direct",
+      provider: "vidsrc",
+      requiredHeaders: result.requiredHeaders,
+      ...(result.audioTracks?.length ? {
+        audio_tracks: result.audioTracks.map((track) => ({
+          id: track.id,
+          label: track.label,
+          language: track.language,
+          url: track.url,
+          is_default: track.isDefault,
+        })),
+      } : {}),
+      ...(result.subtitles?.length ? {
+        subtitles: result.subtitles.map((track, index) => ({
+          id: `vidsrc-sub-${index}`,
+          label: track.label || track.language || `Subtítulo ${index + 1}`,
+          language: track.language || "und",
+          src: track.url,
+          is_default: false,
+        })),
+      } : {}),
+      is_proxyable: true,
+      is_refreshable: true,
+      ...(result.requiredHeaders ? { delivery_mode: "proxy_required" as const } : {}),
+    };
+  }
+
+  const failure = lastResult?.status === "blocked" ? "provider_blocked" as const : "unresolved" as const;
+  return {
+    url: locator,
+    original_url: locator,
+    canonical_locator: lastResult?.embedUrl || locator,
+    resolved: false,
+    type: "embed",
+    provider: "vidsrc",
+    requiredHeaders: lastResult?.requiredHeaders,
+    is_proxyable: false,
+    is_refreshable: false,
+    failure_reason: failure,
+  };
+}
+
 export class ProviderResolverRegistry {
   private readonly resolvers: ProviderResolver[] = [];
 
@@ -1300,6 +1383,24 @@ export class ProviderResolverRegistry {
   }
 
   private registerDefaults(): void {
+    // VidSrc devuelve una URL HLS firmada que el navegador no puede consumir
+    // directamente por CORS/headers. Registrar su locator estable aquí permite
+    // que PlaybackSessionStore renueve y relaye el HLS server-side.
+    this.register({
+      name: "VidSrc",
+      matches: (url) => /^(?:vidsrc(?:2|me)?|vidsrc-me|vidsrc-embed|vsrc)\.(?:ir|ru|su|me|to|sbs)$/i.test(
+        url.hostname.replace(/^www\./i, ""),
+      ),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: false,
+        renewable: true,
+        requiresHeaders: true,
+      },
+      resolve: (locator) => resolveVidSrcLocator(locator),
+    });
+
     // 1. Direct Media (.m3u8, .mp4, .webm)
     this.register({
       name: "DirectMedia",

@@ -8,6 +8,16 @@ export interface SubtitleTrack {
   url: string;
 }
 
+export interface AudioTrack {
+  id: string;
+  language?: string | null;
+  label?: string | null;
+  url?: string | null;
+  groupId?: string | null;
+  isDefault?: boolean;
+  autoselect?: boolean;
+}
+
 export interface ProviderRequest {
   tmdbId: number;
   kind: DirectMediaKind;
@@ -28,6 +38,7 @@ export interface PlayableSource {
   url: string;
   streamType: StreamType;
   audioLanguage?: string | null;
+  audioTracks?: AudioTrack[];
   subtitleLanguage?: string | null;
   subtitles: SubtitleTrack[];
   quality?: string | null;

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api, type PlaybackResolution } from '../api/client';
 import type { MediaStreamOut, SubtitleTrack, MediaStreamVariant, RankedStream } from '../types';
+import { parseWebVttCues, type ParsedSubtitleCue } from '../utils/subtitleFormat';
 // proxiedStreamUrl removed
 import {
   rankAndSortServers,
@@ -108,7 +109,12 @@ function formatTime(seconds: number): string {
 export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const { media, onClose, directSource = null } = props;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoNode, setVideoNode] = useState<HTMLVideoElement | null>(null);
+  const videoCallbackRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    setVideoNode(node);
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   // dash.js se carga solo cuando se selecciona un manifiesto MPD.
@@ -206,6 +212,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [audioTracks, setAudioTracks] = useState<AudioOption[]>([]);
   const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | 'off'>('off');
+  const [activeSubtitleCues, setActiveSubtitleCues] = useState<ParsedSubtitleCue[]>([]);
 
   const subtitleTracks: SubtitleTrack[] = (() => {
     const byUrl = new Map<string, SubtitleTrack>();
@@ -229,6 +236,62 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     servers.flatMap((server) => server.subtitles || []).forEach(add);
     return [...byUrl.values()];
   })();
+  const subtitleSignature = subtitleTracks.map((track) => `${track.id}:${track.url}`).join('|');
+  const subtitleSourceUrl = (track: SubtitleTrack): string => {
+    const parsedUrl = new URL(track.url, window.location.href);
+    if (parsedUrl.origin === window.location.origin) return parsedUrl.toString();
+    const isOpenSubtitles = /(^|\.)opensubtitles\.(org|com)$/i.test(parsedUrl.hostname);
+    if (isOpenSubtitles) {
+      return `/api/v1/proxy/subtitle?url=${encodeURIComponent(parsedUrl.toString())}`;
+    }
+    return `/api/v1/proxy/stream?referer=${encodeURIComponent(`${parsedUrl.origin}/`)}&url=${encodeURIComponent(parsedUrl.toString())}`;
+  };
+
+  const activeSubtitleTrack = activeSubtitleId === 'off'
+    ? undefined
+    : subtitleTracks.find((track) => track.id === activeSubtitleId);
+
+  useEffect(() => {
+    const track = activeSubtitleTrack;
+    if (!track) {
+      setActiveSubtitleCues([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setActiveSubtitleCues([]);
+    fetch(subtitleSourceUrl(track), {
+      signal: controller.signal,
+      headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`subtitle_http_${response.status}`);
+        return response.text();
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted) setActiveSubtitleCues(parseWebVttCues(payload));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setActiveSubtitleCues([]);
+      });
+
+    return () => controller.abort();
+  }, [activeSubtitleId, subtitleSignature]);
+
+  const visibleSubtitleText = activeSubtitleCues
+    .filter((cue) => currentTime >= cue.startTime && currentTime < cue.endTime)
+    .map((cue) => cue.text)
+    .join('\n');
+
+  useEffect(() => {
+    const video = videoNode;
+    if (!video) return;
+    const selectedLabel = activeSubtitleTrack?.label;
+    const customCuesLoaded = activeSubtitleCues.length > 0;
+    Array.from(video.textTracks).forEach((track) => {
+      track.mode = selectedLabel && !customCuesLoaded && track.label === selectedLabel ? 'showing' : 'disabled';
+    });
+  }, [activeSubtitleId, activeSubtitleCues.length, subtitleSignature, videoNode]);
   const renditionServers = servers
     .map((server, index) => ({ server, index }))
     .filter(({ server }) => Boolean(server.link_type || server.language || server.audio_language || server.subtitle_language));
@@ -263,7 +326,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     );
     return deduped.join(' - ') || 'Reproduciendo Video';
   })();
-
   // Helper para resetear el temporizador de ocultado de controles
   const showControlsTemporarily = useCallback(() => {
     setControlsVisible(true);
@@ -2126,21 +2188,31 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 /* MODO NATIVO HLS/DASH/MP4 */
                 <>
                   <video
-                    ref={videoRef}
+                    ref={videoCallbackRef}
                     className="h-full w-full object-contain"
                     playsInline
                     preload="auto"
                   >
-                    {subtitleTracks.map((sub: SubtitleTrack) => (
+                    {subtitleTracks.map((track) => (
                       <track
-                        key={sub.id}
+                        key={track.id}
                         kind="subtitles"
-                        src={sub.url}
-                        srcLang={sub.language}
-                        label={sub.label}
+                        src={subtitleSourceUrl(track)}
+                        srcLang={track.language}
+                        label={track.label}
                       />
                     ))}
                   </video>
+
+                  {visibleSubtitleText && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-20 z-20 flex justify-center px-6 text-center">
+                      <div className="max-w-4xl rounded bg-black/70 px-3 py-1 text-base font-medium leading-relaxed text-white shadow-lg sm:text-lg">
+                        {visibleSubtitleText.split(/\r?\n/).map((line, index) => (
+                          <div key={`${index}-${line}`}>{line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* ERROR OVERLAY Y REINTENTO */}
                   {playbackError && (

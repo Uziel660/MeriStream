@@ -14,7 +14,7 @@ export const APP_CONFIG = {
   /** Host local donde escucha el backend y se sirve la SPA en desarrollo. */
   host: "127.0.0.1",
   /** Puerto del backend. Ningún otro valor de puerto existe en el código. */
-  port: 3010,
+  port: 3030,
 } as const;
 
 /** Origen absoluto del backend, para construir URLs desde el cliente. */

@@ -1110,7 +1110,7 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
     clearTimeout(timer);
 
     if (res.ok) {
-      const json = await res.json() as { data?: Array<{ attributes?: Record<string, any> }> };
+      const json = await res.json() as { data?: Array<{ id?: string | number; attributes?: Record<string, any> }> };
       if (Array.isArray(json.data) && json.data.length > 0) {
         const resource = json.data[0];
         const attr = resource?.attributes || {};

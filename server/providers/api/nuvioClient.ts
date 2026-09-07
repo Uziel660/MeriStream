@@ -23,12 +23,12 @@ export class NuvioClient implements DirectStreamProvider {
 
     for (const id of ids) {
       const body = await fetchJson(`${this.baseUrl}/stream/${type}/${encodeURIComponent(id)}.json`);
-      const streams = Array.isArray(body?.streams) ? body.streams : [];
+      const streams: unknown[] = Array.isArray(body?.streams) ? body.streams as unknown[] : [];
       const direct = streams
         .map((raw: any) => directFromUnknown(raw, `nuvio:${raw?.name || raw?.title || "stream"}`, {
           canonicalLocator: `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`,
         }))
-        .filter((source): source is PlayableSource => Boolean(source));
+        .filter((source: PlayableSource | null): source is PlayableSource => Boolean(source));
       if (direct.length > 0) return direct;
     }
     return [];

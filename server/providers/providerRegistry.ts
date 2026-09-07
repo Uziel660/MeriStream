@@ -6,7 +6,7 @@ import {
 } from "./providerPolicy";
 
 /** Public registry shape consumed by discovery, resolution and health code. */
-export type ProviderRegistryEntry = ProviderPolicy & {
+export type ProviderRegistryEntry = Omit<ProviderPolicy, "hosts" | "discovery" | "resolver" | "fallbackProvider"> & {
   hosts: readonly string[];
   discovery: NonNullable<ProviderPolicy["discovery"]>;
   resolver: string;

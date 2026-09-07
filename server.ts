@@ -28,7 +28,7 @@ import {
 } from "./server/showService";
 import { prisma, normalizeTitle, normalizeBaseTitle } from "./server/db";
 import { lookupAnimeIdentityByTitle } from "./server/animeIdentity";
-import { EmbedResolvers, isValidProvider } from "./server/resolvers";
+import { EmbedResolvers, isValidProvider, providerResolverRegistry } from "./server/resolvers";
 import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUrl, familyKeyOfStreamUrl } from "./server/utils/streamSorter";
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
 import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/siteRatingService";
@@ -92,6 +92,8 @@ import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
+import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
+import { subtitleTextToWebVtt } from "./server/subtitleFormat";
 import {
   adminLogin,
   adminLogout,
@@ -101,14 +103,33 @@ import {
 
 const deliveryPlanner = new DeliveryPlanner();
 const resolutionCoordinator = new ResolutionCoordinator(
-  (url) => EmbedResolvers.resolveWithMeta(url),
+  (url) => {
+    // VidSrc's signed HLS needs its provider-specific chain and headers. Keep
+    // the existing lightweight resolver for every other locator so this fix
+    // remains scoped to the isolated VidSrc validation.
+    const resolver = providerResolverRegistry.findResolver(url);
+    return resolver?.name === "VidSrc"
+      ? resolver.resolve(url)
+      : EmbedResolvers.resolveWithMeta(url);
+  },
   { maxEntries: 128 },
 );
+
+// VidSrc signs a fresh CDN URL during every provider resolution. Do not reuse
+// the generic locator lease for playback sessions: a token can be rejected by
+// the CDN before the metadata lease expires, and renewal must obtain a new
+// player/embed/hash chain.
+const resolvePlaybackLocator = async (url: string) => {
+  const resolver = providerResolverRegistry.findResolver(url);
+  return resolver?.name === "VidSrc"
+    ? resolver.resolve(url)
+    : resolutionCoordinator.resolve(url);
+};
 
 // Stable browser-facing HLS sessions. Renewal uses the lightweight, single-flight
 // HTTP/static resolver only; Chromium is intentionally absent from production.
 const playbackSessions = new PlaybackSessionStore({
-  resolver: (url) => resolutionCoordinator.resolve(url),
+  resolver: resolvePlaybackLocator,
   // A 2-hour VOD has ~800 ten-second segments per quality. The class default
   // (300) evicts the first segment ids while rewriting the level playlist,
   // producing browser-visible 404s. Keep enough opaque locators for one active
@@ -1742,6 +1763,43 @@ async function startServer() {
     }
   });
 
+  // VidSrc's subtitle catalog points to OpenSubtitles SRT downloads. Browsers
+  // require WebVTT for <track>; keep this relay host-scoped and same-origin so
+  // the internal player does not depend on subtitle CORS or download MIME.
+  app.get("/api/v1/proxy/subtitle", async (req: Request, res: Response) => {
+    const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    let targetUrl: URL;
+    try {
+      targetUrl = await assertSafePublicHttpUrl(rawUrl);
+    } catch (error) {
+      const detail = error instanceof UnsafeUrlError ? error.code : "unsafe_url";
+      return res.status(400).json({ error: "URL de subtítulo no permitida", detail });
+    }
+    const host = targetUrl.hostname.toLowerCase();
+    const allowedHost = host === "opensubtitles.org" || host.endsWith(".opensubtitles.org")
+      || host === "opensubtitles.com" || host.endsWith(".opensubtitles.com");
+    if (!allowedHost) return res.status(400).json({ error: "Host de subtítulo no permitido" });
+
+    try {
+      const upstream = await fetch(targetUrl, {
+        signal: AbortSignal.timeout(8_000),
+        headers: {
+          Accept: "text/vtt,text/plain,application/x-subrip,*/*;q=0.5",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
+          Referer: `${targetUrl.origin}/`,
+        },
+      });
+      if (!upstream.ok) return res.status(upstream.status).send("Subtitle upstream unavailable");
+      const vtt = subtitleTextToWebVtt(await upstream.text());
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.send(vtt);
+    } catch (error: any) {
+      return res.status(502).json({ error: "No se pudo obtener el subtítulo", detail: error?.message || "upstream_error" });
+    }
+  });
+
   // GET /api/v1/play/:episode_id - Just-In-Time Live Stream Resolver (Multi-source v2)
   app.get("/api/v1/play/:episode_id", handlePlayEpisode);
 
@@ -1766,10 +1824,13 @@ async function startServer() {
       return res.status(503).json({ error: "backend_busy", fallback: "next_candidate" });
     }
     try {
-      const cached = resolutionId
+      const resolver = providerResolverRegistry.findResolver(originalUrl);
+      const cached = resolver?.name === "VidSrc"
+        ? undefined
+        : resolutionId
         ? resolutionCoordinator.getByResolutionId(resolutionId, originalUrl)
         : undefined;
-      const meta = cached ?? await resolutionCoordinator.resolve(originalUrl);
+      const meta = cached ?? await resolvePlaybackLocator(originalUrl);
       // Proxyable and renewable are different properties. A current signed URL
       // may be relayed until its own deadline even when no stable locator exists
       // to renew it later.

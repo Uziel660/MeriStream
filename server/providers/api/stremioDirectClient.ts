@@ -55,7 +55,7 @@ function directStreams(body: any, addon: AddonConfig, locator: string): Playable
       `stremio-direct:${addon.name}`,
       { canonicalLocator: locator },
     ))
-    .filter((source): source is PlayableSource => Boolean(source));
+    .filter((source: PlayableSource | null): source is PlayableSource => Boolean(source));
 }
 
 /**

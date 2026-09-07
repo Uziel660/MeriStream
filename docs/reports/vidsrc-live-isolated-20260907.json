@@ -1,0 +1,443 @@
+{
+  "generatedAt": "2026-09-07T22:37:15.467Z",
+  "branch": "test/vidsrc-live-isolated-20260907",
+  "pipeline": "TMDB → VidSrc → embed → player/iframe → server hash → rcp/prorcp → HLS → manifest → variant → segmento",
+  "cases": [
+    {
+      "tmdb": {
+        "id": 550,
+        "kind": "movie",
+        "title": "Fight Club"
+      },
+      "status": "DIRECT",
+      "embedAttempts": [
+        {
+          "origin": "https://vidsrc.sbs",
+          "status": "direct",
+          "hops": [
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "vidsrc.sbs"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/vnd.apple.mpegurl",
+              "host": "wts.itsnitrox.tech"
+            }
+          ]
+        }
+      ],
+      "selected": {
+        "embedUrl": "https://vidsrc.sbs/embed/movie/550",
+        "mirror": "https://vidsrc.sbs",
+        "playerOrigin": "https://web.nxsha.app",
+        "hlsHost": "wts.itsnitrox.tech",
+        "requiredHeaders": {
+          "Referer": "https://web.nxsha.app",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Sec-Fetch-Dest": "<present>"
+        },
+        "audioTracks": [
+          {
+            "id": "audio0:hi",
+            "language": "hi",
+            "label": "हिन्दी",
+            "groupId": "audio0",
+            "isDefault": false,
+            "autoselect": false,
+            "host": "wts.itsnitrox.tech"
+          },
+          {
+            "id": "audio0:en",
+            "language": "en",
+            "label": "English",
+            "groupId": "audio0",
+            "isDefault": false,
+            "autoselect": false,
+            "host": "wts.itsnitrox.tech"
+          }
+        ],
+        "subtitles": [
+          {
+            "language": "en",
+            "label": "English",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "es",
+            "label": "Spanish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "pb",
+            "label": "Portuguese (BR)",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "is",
+            "label": "Icelandic",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "pt",
+            "label": "Portuguese",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "da",
+            "label": "Danish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "fi",
+            "label": "Finnish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "no",
+            "label": "Norwegian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "sv",
+            "label": "Swedish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "cs",
+            "label": "Czech",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "ru",
+            "label": "Russian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "el",
+            "label": "Greek",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "sr",
+            "label": "Serbian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "sl",
+            "label": "Slovenian",
+            "host": "dl.opensubtitles.org"
+          }
+        ],
+        "manifest": {
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "host": "wts.itsnitrox.tech"
+        },
+        "variant": {
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "host": "wts.itsnitrox.tech"
+        },
+        "segment": {
+          "status": 206,
+          "contentType": "video/mp4",
+          "host": "swk8.clarvista.shop",
+          "mediaLike": true
+        },
+        "subtitle": {
+          "status": 200,
+          "contentType": "application/force-download",
+          "host": "dl.opensubtitles.org"
+        }
+      }
+    },
+    {
+      "tmdb": {
+        "id": 1396,
+        "kind": "series",
+        "title": "Breaking Bad",
+        "season": 1,
+        "episode": 1
+      },
+      "status": "DIRECT",
+      "embedAttempts": [
+        {
+          "origin": "https://vidsrc.sbs",
+          "status": "direct",
+          "hops": [
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "vidsrc.sbs"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            },
+            {
+              "status": 404,
+              "contentType": "text/html; charset=utf8",
+              "host": "cdn30092.hutro433fil.com"
+            }
+          ]
+        },
+        {
+          "origin": "https://vidsrc.to",
+          "status": "embed_only",
+          "reason": "server_hashes_not_found",
+          "hops": [
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "vidsrc.to"
+            },
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "vsembed.ru"
+            }
+          ]
+        },
+        {
+          "origin": "https://vidsrc.me",
+          "status": "direct",
+          "hops": [
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "vidsrcme.ru"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json; charset=utf-8",
+              "host": "vidsrcme.ru"
+            },
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "cloudorchestranova.com"
+            },
+            {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "host": "cloudorchestranova.com"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json; charset=utf-8",
+              "host": "data.vidsrcme.ru"
+            },
+            {
+              "status": 200,
+              "contentType": "application/wasm",
+              "host": "data.vidsrcme.ru"
+            },
+            {
+              "status": 200,
+              "contentType": "text/plain;charset=UTF-8",
+              "host": "antilogarithm-atlas.site"
+            },
+            {
+              "status": 200,
+              "contentType": "application/vnd.apple.mpegurl",
+              "host": "antilogarithm-atlas.site"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "host": "web.nxsha.app"
+            }
+          ]
+        }
+      ],
+      "selected": {
+        "embedUrl": "https://vidsrc.me/embed/tv/1396/1/1",
+        "mirror": "https://vidsrc.me",
+        "playerOrigin": "https://cloudorchestranova.com",
+        "hlsHost": "antilogarithm-atlas.site",
+        "requiredHeaders": {
+          "Referer": "https://cloudorchestranova.com",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Sec-Fetch-Dest": "<present>"
+        },
+        "audioTracks": [],
+        "subtitles": [
+          {
+            "language": "pt",
+            "label": "Portuguese",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "fr",
+            "label": "French",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "es",
+            "label": "Spanish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "en",
+            "label": "English",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "nl",
+            "label": "Dutch",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "de",
+            "label": "German",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "el",
+            "label": "Greek",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "it",
+            "label": "Italian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "tr",
+            "label": "Turkish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "ro",
+            "label": "Romanian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "pb",
+            "label": "Portuguese (BR)",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "he",
+            "label": "Hebrew",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "sv",
+            "label": "Swedish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "cs",
+            "label": "Czech",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "ar",
+            "label": "Arabic",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "et",
+            "label": "Estonian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "hr",
+            "label": "Croatian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "bg",
+            "label": "Bulgarian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "fa",
+            "label": "Persian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "hu",
+            "label": "Hungarian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "sl",
+            "label": "Slovenian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "mk",
+            "label": "Macedonian",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "pl",
+            "label": "Polish",
+            "host": "dl.opensubtitles.org"
+          },
+          {
+            "language": "ko",
+            "label": "Korean",
+            "host": "dl.opensubtitles.org"
+          }
+        ],
+        "manifest": {
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "host": "antilogarithm-atlas.site"
+        },
+        "variant": {
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "host": "antilogarithm-atlas.site"
+        },
+        "segment": {
+          "status": 200,
+          "contentType": "text/html; charset=UTF-8",
+          "host": "antilogarithm-atlas.site",
+          "mediaLike": true
+        },
+        "subtitle": {
+          "status": 200,
+          "contentType": "application/force-download",
+          "host": "dl.opensubtitles.org"
+        }
+      }
+    }
+  ]
+}

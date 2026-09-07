@@ -8,7 +8,11 @@ function firstMetaId(body: any): string | null {
 }
 
 function extractVideoStreams(body: any, provider: string, canonicalLocator: string): PlayableSource[] {
-  const values = Array.isArray(body?.streams) ? body.streams : Array.isArray(body) ? body : [];
+  const values: unknown[] = Array.isArray(body?.streams)
+    ? body.streams as unknown[]
+    : Array.isArray(body)
+      ? body as unknown[]
+      : [];
   return values
     .map((raw: any) => directFromUnknown({
       ...raw,
@@ -16,7 +20,7 @@ function extractVideoStreams(body: any, provider: string, canonicalLocator: stri
       subtitles: raw?.subtitles,
       headers: raw?.headers,
     }, provider, { canonicalLocator }))
-    .filter((source): source is PlayableSource => Boolean(source));
+    .filter((source: PlayableSource | null): source is PlayableSource => Boolean(source));
 }
 
 export class AnimeSdkClient implements DirectStreamProvider {
@@ -66,7 +70,7 @@ export class AnimeSdkClient implements DirectStreamProvider {
         const url = `${this.baseUrl}/meta/stream?provider=${identityProvider}&id=${encodeURIComponent(metaId!)}&episode=${req.episode || 1}&contentProvider=${encodeURIComponent(contentProvider)}&language=${language}`;
         const body = await fetchJson(url, {}, 8_000);
         if (!body || body?.type === "manga") return [] as PlayableSource[];
-        return extractVideoStreams(body, `anime-sdk:${contentProvider}:${language}`, canonicalLocator).map((source) => ({
+        return extractVideoStreams(body, `anime-sdk:${contentProvider}:${language}`, canonicalLocator).map((source: PlayableSource) => ({
           ...source,
           audioLanguage: source.audioLanguage || (language === "dub" ? "en" : "ja"),
         }));

@@ -107,6 +107,149 @@ export function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [orphanNotice, setOrphanNotice] = useState<string | null>(null);
 
+  // Arnés local para validar VidSrc directamente en el reproductor interno.
+  // Solo se activa en Vite dev mediante ?vidsrc-local-test=1; no forma parte
+  // del flujo de producción ni depende del catálogo persistido.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('vidsrc-local-test')) return;
+
+    const kind = params.get('vidsrc-kind') === 'series' ? 'series' : 'movie';
+    const tmdbId = Number(params.get('vidsrc-tmdb') || (kind === 'series' ? 1396 : 550));
+    const season = Number(params.get('vidsrc-season') || 1);
+    const episode = Number(params.get('vidsrc-episode') || 1);
+    const title = kind === 'series' ? 'Breaking Bad — S01E01' : 'Fight Club';
+    const showId = 'vidsrc-local-' + kind + '-' + tmdbId;
+    let cancelled = false;
+
+    setPlayingStreamData({
+      title,
+      streamUrl: '',
+      all_streams: [],
+      ranked_streams: [],
+      showId,
+      showTitle: title,
+      episodeId: showId,
+      episodeNumber: episode,
+      episodeTitle: title,
+      isLoading: true,
+    });
+
+    const query = new URLSearchParams({
+      season: String(season),
+      episode: String(episode),
+      audio: 'es,en,ja',
+      subtitles: 'es,en',
+    });
+    fetch(`/api/v1/providers/${kind}/${tmdbId}?${query.toString()}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('VidSrc gateway HTTP ' + response.status);
+        return response.json();
+      })
+      .then((data) => {
+        const sources = Array.isArray(data?.sources)
+          ? data.sources.filter((source: any) => source?.provider === 'vidsrc' && source?.streamType === 'hls' && source?.url)
+          : [];
+        const fallbackLocator = kind === 'movie'
+          ? `https://vidsrc.me/embed/movie/${tmdbId}`
+          : `https://vidsrc.me/embed/tv/${tmdbId}/${season}/${episode}`;
+        // Para el arnés local preferimos el mirror que ya expone más de una
+        // pista de audio. El resto de mirrors sigue disponible como fallback.
+        const orderedSources = [
+          ...sources.filter((candidate: any) =>
+            Array.isArray(candidate.audioTracks) && candidate.audioTracks.length > 1,
+          ),
+          ...sources,
+        ].filter((candidate: any, index: number, all: any[]) =>
+          all.findIndex((entry) => entry.canonicalLocator === candidate.canonicalLocator) === index,
+        );
+        const fallbackSource = {
+          provider: 'vidsrc',
+          canonicalLocator: fallbackLocator,
+          url: '',
+          streamType: 'hls',
+          audioLanguage: 'en',
+          subtitleLanguage: null,
+        };
+        const sessionSources = orderedSources.length > 0 ? orderedSources : [fallbackSource];
+        const source = sessionSources[0];
+        const subtitleTracksForSource = (candidate: any) => Array.isArray(candidate.subtitles)
+          ? candidate.subtitles.map((track: any, trackIndex: number) => ({
+              id: `${candidate.provider || 'vidsrc'}-${track.id || trackIndex}`,
+              label: track.label || track.language || 'Subtítulo',
+              language: track.language || track.lang || 'und',
+              url: track.url || track.src,
+              is_default: Boolean(track.is_default || track.default),
+            })).filter((track: any) => /^https?:\/\//i.test(String(track.url || '')))
+          : [];
+        const sessionForSource = async (candidate: any, index: number): Promise<any> => {
+          const sessionResponse = await fetch('/api/v1/playback/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ original_url: candidate.canonicalLocator || candidate.url }),
+          });
+          if (sessionResponse.ok) {
+            return {
+              sources: [candidate],
+              session: await sessionResponse.json(),
+              sourceSubtitleTracks: subtitleTracksForSource(candidate),
+            };
+          }
+          if (index + 1 < sessionSources.length) return sessionForSource(sessionSources[index + 1], index + 1);
+          throw new Error('VidSrc proxy session HTTP ' + sessionResponse.status);
+        };
+        return sessionForSource(source, 0);
+      })
+      .then(({ sources, session, sourceSubtitleTracks }) => {
+        if (cancelled) return;
+        const playbackUrl = session.playback_url;
+        const ranked = sources.slice(0, 1).map((source: any, index: number) => ({
+          // El arnés usa la URL opaca local; el HLS firmado queda solo como
+          // evidencia del resolver y nunca se expone al navegador.
+          url: playbackUrl,
+          type: 'direct' as const,
+          tier: index,
+          provider: source.provider,
+          source_site: source.provider,
+          original_url: source.canonicalLocator || source.url,
+          canonical_locator: source.canonicalLocator || source.url,
+          // La URL ya es una sesión proxy local. Sus headers del CDN se
+          // aplican server-side y no deben crear un segundo proxy.
+          requiredHeaders: undefined,
+          is_proxyable: false,
+          is_refreshable: false,
+          delivery_mode: 'direct' as const,
+          rating: 10,
+          audio_language: source.audioLanguage || undefined,
+          subtitle_language: source.subtitleLanguage || undefined,
+          subtitles: sourceSubtitleTracks,
+        }));
+        setPlayingStreamData((previous: any) => previous
+          ? {
+              ...previous,
+              streamUrl: ranked[0].url,
+              all_streams: ranked.map((candidate: any) => candidate.url),
+              // Este arnés valida el relay dentro del player sin mezclar el
+              // failover de mirrors. La sesión ya es local.
+              ranked_streams: ranked,
+              subtitleTracks: sourceSubtitleTracks,
+              isLoading: false,
+            }
+          : previous);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setPlayingStreamData((previous: any) => previous
+          ? { ...previous, loadError: error?.message || 'No se pudo resolver VidSrc', isLoading: false }
+          : previous);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Sincronizar progreso desde el servidor si el usuario está autenticado
   useEffect(() => {
     const syncProgress = async () => {
@@ -516,6 +659,11 @@ export function App() {
               host,
               provider: source.provider,
               source_site: source.provider,
+              original_url: source.canonicalLocator || source.url,
+              canonical_locator: source.canonicalLocator || source.url,
+              is_proxyable: true,
+              is_refreshable: Boolean(source.canonicalLocator),
+              delivery_mode: source.requiredHeaders ? 'proxy_required' as const : 'direct_trial' as const,
               requiredHeaders: source.requiredHeaders,
               rating: 10,
               link_type: source.audioLanguage ? 'audio' : undefined,

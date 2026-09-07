@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveVidSrcEmbed, VidSrcClient } from "./vidsrcClient";
+import { decodeVidSrcTrackPayload, parseVidSrcHlsAudioTracks, resolveVidSrcEmbed, VidSrcClient } from "./vidsrcClient";
 
 function mockResponse(body: string, status = 200, contentType = "text/html") {
   return new Response(body, {
@@ -9,6 +9,62 @@ function mockResponse(body: string, status = 200, contentType = "text/html") {
 }
 
 describe("VidSrc native resolver", () => {
+  it("parses multiaudio declarations from a master HLS manifest", () => {
+    const tracks = parseVidSrcHlsAudioTracks(`#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="Hindi",LANGUAGE="hi",DEFAULT=NO,AUTOSELECT=NO,URI="audio/hi.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="audio/en.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="audio0"
+video/720p.m3u8`, "https://cdn.example/master.m3u8");
+
+    expect(tracks).toEqual([
+      expect.objectContaining({ id: "audio0:hi", label: "Hindi", language: "hi", url: "https://cdn.example/audio/hi.m3u8", isDefault: false }),
+      expect.objectContaining({ id: "audio0:en", label: "English", language: "en", url: "https://cdn.example/audio/en.m3u8", isDefault: true }),
+    ]);
+  });
+
+  it("decodes the encrypted subtitle catalog used by the multilang player", () => {
+    const payload = decodeVidSrcTrackPayload("U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk");
+
+    expect(payload?.subtitles).toEqual([
+      expect.objectContaining({ title: "Español", language: "es", uri: "https://subs.example/fight.srt" }),
+    ]);
+    expect(payload?._req_ts).toBeUndefined();
+  });
+
+  it("attaches audio and subtitle tracks to a direct VidSrc result", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/embed/movie/550")) {
+        return mockResponse('<iframe src="https://player.example/movie/550"></iframe>');
+      }
+      if (url === "https://player.example/movie/550") {
+        return mockResponse('<script>var source = { file: "https://cdn.example/master.m3u8" };</script>');
+      }
+      if (url === "https://cdn.example/master.m3u8") {
+        return mockResponse(`#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="Hindi",LANGUAGE="hi",DEFAULT=NO,URI="hi.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="en.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="audio0"
+video.m3u8`, 200, "application/vnd.apple.mpegurl");
+      }
+      if (url.startsWith("https://web.nxsha.app/api/subtitles?q=")) {
+        return mockResponse(JSON.stringify({ _hash: "U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk" }), 200, "application/json");
+      }
+      return mockResponse("not found", 404);
+    });
+
+    const result = await resolveVidSrcEmbed(
+      "https://vidsrc.me/embed/movie/550",
+      fetcher as unknown as typeof fetch,
+    );
+
+    expect(result.status).toBe("direct");
+    expect(result.audioTracks?.map((track) => track.language)).toEqual(["hi", "en"]);
+    expect(result.subtitles).toEqual([
+      { label: "Español", language: "es", url: "https://subs.example/fight.srt" },
+    ]);
+  });
+
   it("resolves embed -> player -> rcp -> prorcp -> HLS", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -80,5 +136,33 @@ describe("VidSrc native resolver", () => {
     expect(sources[0]?.url).toBe("https://cdn.example/show/master.m3u8");
     expect(sources[0]?.provider).toBe("vidsrc");
     expect(sources[0]?.url).not.toMatch(/\/embed\//);
+  });
+
+  it("resolves the modern data-api -> player -> stream API chain", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://vidsrcme.ru/embed/movie/550") {
+        return mockResponse('<iframe id="player_iframe" data-api="/vs_src.php?type=movie&amp;id=550"></iframe>');
+      }
+      if (url === "https://vidsrcme.ru/vs_src.php?type=movie&id=550") {
+        return mockResponse(JSON.stringify({ src: "https://cloudorchestranova.com/embed/movie/550?vs=token" }), 200, "application/json");
+      }
+      if (url === "https://cloudorchestranova.com/embed/movie/550?vs=token") {
+        return mockResponse('<script>window.CONFIG = {"api":"https://data.vidsrcme.ru/api.php?type=movie&amp;tmdb=550&amp;stream_urls"};</script>');
+      }
+      if (url === "https://data.vidsrcme.ru/api.php?type=movie&tmdb=550&stream_urls") {
+        return mockResponse(JSON.stringify({ data: { stream_urls: ["https://cdn.example/fight-club/master.m3u8"] } }), 200, "application/json");
+      }
+      return mockResponse("not found", 404);
+    });
+
+    const result = await resolveVidSrcEmbed(
+      "https://vidsrcme.ru/embed/movie/550",
+      fetcher as unknown as typeof fetch,
+    );
+
+    expect(result.status).toBe("direct");
+    expect(result.playerOrigin).toBe("https://cloudorchestranova.com");
+    expect(result.hlsUrl).toBe("https://cdn.example/fight-club/master.m3u8");
   });
 });

@@ -22,4 +22,17 @@ URLs firmadas completas.
 Ambas rutas no tuvieron redirecciones. El CDN acepta el `GET` con User-Agent de
 Chrome y `Accept-Encoding: identity`; la validación del resolver y la sesión de
 proxy usan ese mismo perfil. La matriz E2E del navegador comprobó después la
-entrega interna de Cinecalidad, LatAnime y Gnula sin iframes (12/12 casos).
+entrega interna de Cinecalidad, LatAnime y Gnula sin iframes.
+
+## Reprobe de ZokoAnime y aislamiento legacy
+
+La prueba de navegador de `SPY x FAMILY` confirmó que ZokoAnime queda primero
+en el ranking, que su locator `/stream/.../sub` se resuelve a HLS, que el
+manifiesto interno responde `200 #EXTM3U` y que el vídeo avanza sin iframe.
+La misma prueba seleccionó TioAnime manualmente y confirmó el fallback HLS por
+el reproductor interno.
+
+La auditoría de 300 enlaces históricos asociados a proveedores retirados no
+encontró URLs legacy en los detalles públicos. Además, la ruta compatible
+`/api/v1/shows` ahora aplica el mismo filtro que el catálogo `lite` salvo que
+un consumidor administrativo pida explícitamente `include_legacy=true`.

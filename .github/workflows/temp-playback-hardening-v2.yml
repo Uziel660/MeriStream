@@ -1,0 +1,224 @@
+name: Temporary Playback Hardening V2
+
+on:
+  push:
+    branches: [feat/provider-v2-es-multilang]
+    paths:
+      - .github/workflows/temp-playback-hardening-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-v2-es-multilang
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply playback hardening patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected snippet not found in {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          p = Path('server/hostProfiles.ts')
+          text = p.read_text()
+          marker = '''export function resolveHostProfile(targetUrl: string): HostProfile {
+            const lower = targetUrl.toLowerCase();
+            for (const profile of HOST_PROFILES) {
+              if (profile.match.some((m) => lower.includes(m))) return profile;
+            }
+            return DEFAULT_PROFILE;
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('resolveHostProfile marker not found')
+          replacement = marker + '''
+          /** True only for hosts with an explicit, audited delivery profile. */
+          export function hasExplicitHostProfile(targetUrl: string): boolean {
+            const lower = String(targetUrl || "").toLowerCase();
+            return HOST_PROFILES.some((profile) =>
+              profile.match.some((match) => lower.includes(match))
+            );
+          }
+          '''
+          text = text.replace(marker, replacement, 1)
+          append = '''
+
+          /**
+           * Builds final relay headers. Audited host rules win conflicts and can
+           * explicitly remove headers (for example Zilla rejects Referer).
+           */
+          export function buildPlaybackHeaders(
+            targetUrl: string,
+            playerReferer: string | undefined,
+            requiredHeaders: Record<string, string> | undefined,
+            rangeHeader?: string,
+          ): { headers: Record<string, string>; profile: HostProfile } {
+            const profiled = buildProxyHeaders(targetUrl, playerReferer, rangeHeader);
+            const resolverHeaders = requiredHeaders || {};
+            const explicit = hasExplicitHostProfile(targetUrl);
+            const headers: Record<string, string> = explicit
+              ? { ...resolverHeaders, ...profiled.headers }
+              : { ...profiled.headers, ...resolverHeaders };
+            if (explicit && profiled.profile.refererMode === "none") {
+              delete headers.Referer;
+              delete headers.referer;
+            }
+            return { profile: profiled.profile, headers };
+          }
+          '''
+          if 'export function buildPlaybackHeaders(' not in text:
+              text = text.rstrip() + append + '\n'
+          p.write_text(text)
+
+          replace(
+              'server/deliveryPlanner.ts',
+              'import { createResolutionTiming } from "./resolutionMetadata";\n',
+              'import { createResolutionTiming } from "./resolutionMetadata";\nimport { hasExplicitHostProfile } from "./hostProfiles";\n',
+          )
+          replace(
+              'server/deliveryPlanner.ts',
+              '    if (meta.requiredHeaders && Object.keys(meta.requiredHeaders).length > 0) return "proxy_required";\n\n    if (this.directProviders.has(normalizeIdentity(meta.provider))) return "direct";',
+              '    if (meta.requiredHeaders && Object.keys(meta.requiredHeaders).length > 0) return "proxy_required";\n    if (hasExplicitHostProfile(meta.url)) return "proxy_required";\n\n    if (this.directProviders.has(normalizeIdentity(meta.provider))) return "direct";',
+          )
+
+          replace('server/playbackSessions.ts', 'import { buildProxyHeaders } from "./hostProfiles";', 'import { buildPlaybackHeaders } from "./hostProfiles";')
+          replace(
+              'server/playbackSessions.ts',
+              '''        const range = req.header("range");
+                  const profiled = buildProxyHeaders(target, session.original_url, range || undefined);
+                  const headers = new Headers(profiled.headers);
+                  for (const [name, value] of Object.entries(session.current.requiredHeaders || {})) {
+                    headers.set(name, value);
+                  }
+                  return fetch(target, { headers, signal: controller.signal });''',
+              '''        const range = req.header("range");
+                  const merged = buildPlaybackHeaders(
+                    target,
+                    session.original_url,
+                    session.current.requiredHeaders,
+                    range || undefined,
+                  );
+                  return fetch(target, { headers: new Headers(merged.headers), signal: controller.signal });''',
+          )
+
+          replace(
+              'src/utils/streamOptimizer.ts',
+              "  if (u.includes('/api/v1/stream/mega')) return false;\n\n  // Direct media files",
+              "  if (u.includes('/api/v1/stream/mega')) return false;\n  if (u.includes('/m3u8/') || u.includes('hls-vod')) return false;\n\n  // Direct media files",
+          )
+
+          replace(
+              'server/resolvers/megaplayResolver.ts',
+              '''export const MEGAPLAY_REQUIRED_HEADERS = {
+            Referer: MEGAPLAY_REFERER,
+          } as const;''',
+              '''export const MEGAPLAY_REQUIRED_HEADERS = {
+            Referer: "https://megaplay.buzz/",
+          } as const;''',
+          )
+          PY
+
+          cat > server/playbackHostHardening.test.ts <<'EOF'
+          import { describe, expect, it } from "vitest";
+          import { DeliveryPlanner } from "./deliveryPlanner";
+          import { buildPlaybackHeaders, hasExplicitHostProfile } from "./hostProfiles";
+          import type { ResolvedStreamMeta } from "./resolvers";
+
+          const directMeta = (url: string): ResolvedStreamMeta => ({
+            url, original_url: url, resolved: true, type: "direct", provider: "test",
+            is_proxyable: true, is_refreshable: false,
+          });
+
+          describe("special-host playback hardening", () => {
+            it("forces Zilla HLS through proxy", () => {
+              const url = "https://player.zilla-networks.com/m3u8/0123456789abcdef0123456789abcdef";
+              expect(hasExplicitHostProfile(url)).toBe(true);
+              expect(new DeliveryPlanner().classify(directMeta(url))).toBe("proxy_required");
+            });
+
+            it("forces Megaplay CDN through proxy", () => {
+              const url = "https://edge.imgnex.top/master.m3u8";
+              expect(hasExplicitHostProfile(url)).toBe(true);
+              expect(new DeliveryPlanner().classify(directMeta(url))).toBe("proxy_required");
+            });
+
+            it("uses Megaplay CDN Referer instead of stale resolver Referer", () => {
+              const result = buildPlaybackHeaders(
+                "https://edge.imgnex.top/master.m3u8",
+                "https://anipulse.to/watch/123",
+                { Referer: "https://anipulse.to/", "X-Resolver-Test": "kept" },
+              );
+              expect(result.headers.Referer).toBe("https://megaplay.buzz/");
+              expect(result.headers["X-Resolver-Test"]).toBe("kept");
+              expect(result.headers["User-Agent"]).toContain("Chrome/");
+            });
+
+            it("applies Zilla WAF headers and removes forbidden Referer", () => {
+              const result = buildPlaybackHeaders(
+                "https://player.zilla-networks.com/segs/part-1.ts",
+                "https://animeav1.com/media/example/1",
+                { Referer: "https://animeav1.com/" },
+              );
+              expect(result.headers["Sec-Fetch-Site"]).toBe("same-origin");
+              expect(result.headers["Sec-Fetch-Mode"]).toBe("cors");
+              expect(result.headers.Accept).toBe("*/*");
+              expect(result.headers.Referer).toBeUndefined();
+            });
+
+            it("keeps resolver headers authoritative for unknown hosts", () => {
+              const result = buildPlaybackHeaders(
+                "https://unknown.example/video.m3u8",
+                "https://origin.example/",
+                { Referer: "https://required.example/", Authorization: "Bearer test" },
+              );
+              expect(result.headers.Referer).toBe("https://required.example/");
+              expect(result.headers.Authorization).toBe("Bearer test");
+            });
+          });
+          EOF
+
+          cat > src/utils/streamOptimizer.zilla.test.ts <<'EOF'
+          import { describe, expect, it } from "vitest";
+          import { isEmbedUrl } from "./streamOptimizer";
+
+          describe("Zilla stream classification", () => {
+            it("treats Zilla HLS routes as native media", () => {
+              expect(isEmbedUrl("https://player.zilla-networks.com/m3u8/0123456789abcdef0123456789abcdef")).toBe(false);
+              expect(isEmbedUrl("https://player.zilla-networks.com/m3u8/master.m3u8")).toBe(false);
+            });
+            it("still treats Zilla player pages as embeds", () => {
+              expect(isEmbedUrl("https://player.zilla-networks.com/play/0123456789abcdef0123456789abcdef")).toBe(true);
+              expect(isEmbedUrl("https://player.zilla-networks.com/video/123")).toBe(true);
+            });
+          });
+          EOF
+
+      - name: Targeted playback tests
+        run: npx vitest run server/playbackHostHardening.test.ts server/deliveryPlanner.test.ts server/resolvers.test.ts src/utils/streamOptimizer.zilla.test.ts src/utils/streamOptimizer.test.ts
+      - name: Typecheck
+        run: npm run lint
+      - name: Commit playback hardening
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/hostProfiles.ts server/deliveryPlanner.ts server/playbackSessions.ts server/resolvers/megaplayResolver.ts src/utils/streamOptimizer.ts server/playbackHostHardening.test.ts src/utils/streamOptimizer.zilla.test.ts
+          git commit -m "fix: harden provider playback delivery"
+          git push origin HEAD:feat/provider-v2-es-multilang

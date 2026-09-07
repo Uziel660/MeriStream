@@ -34,6 +34,38 @@ function safeEpisodeTitle(episode: { title?: string; episode_number?: number }):
   return displayEpisodeTitle(episode.title, episode.episode_number);
 }
 
+/**
+ * Subtitle URLs are issued by our backend proxy. External provider URLs are
+ * intentionally dropped at this boundary so the browser never contacts a
+ * subtitle host directly.
+ */
+function internalSubtitleUrl(raw: unknown): string | null {
+  const value = String(raw || '').trim();
+  const internalPath = /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i;
+  if (internalPath.test(value)) return value;
+  if (!/^https?:\/\//i.test(value) || typeof window === 'undefined') return null;
+  try {
+    const parsed = new URL(value, window.location.origin);
+    return parsed.origin === window.location.origin && internalPath.test(`${parsed.pathname}${parsed.search}`)
+      ? `${parsed.pathname}${parsed.search}`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function mapInternalSubtitleTrack(raw: any, id: string): any | null {
+  const url = internalSubtitleUrl(raw?.url || raw?.src || raw?.file);
+  if (!url) return null;
+  return {
+    id,
+    label: raw?.label || raw?.language || 'Subtítulo',
+    language: raw?.language || raw?.lang || 'und',
+    url,
+    is_default: Boolean(raw?.is_default || raw?.default),
+  };
+}
+
 export function App() {
   const { user, isAuthenticated } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
@@ -480,13 +512,9 @@ export function App() {
               audio_language: source.audioLanguage || undefined,
               subtitle_language: source.subtitleLanguage || undefined,
               subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles.map((track: any, trackIndex: number) => ({
-                    id: `${source.provider || 'api'}-${trackIndex}`,
-                    label: track.label || track.language || 'Subtítulo',
-                    language: track.language || 'und',
-                    url: track.url,
-                    is_default: false,
-                  }))
+                ? source.subtitles
+                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'api'}-${trackIndex}`))
+                    .filter(Boolean)
                 : [],
             };
           })
@@ -519,13 +547,9 @@ export function App() {
               audio_language: source.audioLanguage || undefined,
               subtitle_language: source.subtitleLanguage || undefined,
               subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles.map((track: any, trackIndex: number) => ({
-                    id: `${source.provider || 'fallback'}-${index}-${trackIndex}`,
-                    label: track.label || track.language || 'Subtítulo',
-                    language: track.language || 'und',
-                    url: track.url || track.src,
-                    is_default: false,
-                  }))
+                ? source.subtitles
+                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'fallback'}-${index}-${trackIndex}`))
+                    .filter(Boolean)
                 : [],
             };
           })
@@ -535,13 +559,9 @@ export function App() {
       if (legacyResponse?.ok) legacyData = await legacyResponse.json();
 
       const externalSubtitles = Array.isArray(subtitleData?.tracks)
-        ? subtitleData.tracks.map((track: any, index: number) => ({
-            id: String(track.id || `opensubtitles-${index}`),
-            label: String(track.label || track.language || 'Subtítulo'),
-            language: String(track.language || 'und'),
-            url: String(track.url || track.src || ''),
-            is_default: Boolean(track.is_default),
-          })).filter((track: any) => /^https?:\/\//i.test(track.url))
+        ? subtitleData.tracks
+            .map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || `opensubtitles-${index}`)))
+            .filter(Boolean)
         : [];
 
       const mergedRanked: any[] = [];

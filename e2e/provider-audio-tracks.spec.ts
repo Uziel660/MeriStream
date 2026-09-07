@@ -92,27 +92,26 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   let subtitleApiCalls = 0;
   await page.route('**/api/v1/subtitles**', async (route) => {
     subtitleApiCalls += 1;
+    if (/\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt/i.test(route.request().url())) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/vtt',
+        body: 'WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nPrueba de subtítulos en español\n',
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        configured: true,
         tracks: [{
           id: 'e2e-es',
           label: 'Español (prueba)',
           language: 'es',
-          url: 'https://subtitles.test/es.vtt',
+          url: '/api/v1/subtitles/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vtt',
           is_default: false,
         }],
       }),
-    });
-  });
-  await page.route('https://subtitles.test/es.vtt', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/vtt',
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: 'WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nPrueba de subtítulos en español\n',
     });
   });
 

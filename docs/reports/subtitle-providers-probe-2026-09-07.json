@@ -1,0 +1,203 @@
+{
+  "generatedAt": "2026-09-07T19:39:46.922Z",
+  "samples": {
+    "movie": "Matrix (TMDB 603 / IMDb tt0133093)",
+    "series": "Game of Thrones S01E01 (TMDB 1399 / IMDb tt0949477)"
+  },
+  "providerCounts": {
+    "opensubtitlesMovie": 27,
+    "opensubtitlesSeries": 94,
+    "yifyMovie": 40,
+    "tvsubtitlesEpisode": 2
+  },
+  "records": [
+    {
+      "url": "https://opensubtitles-v3.strem.io/manifest.json",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://opensubtitles-v3.strem.io/manifest.json",
+      "bytes": 284,
+      "requestHeaders": {
+        "Accept": "application/json"
+      },
+      "sample": "{\"id\":\"org.strem"
+    },
+    {
+      "url": "https://opensubtitles-v3.strem.io/subtitles/movie/tt0133093.json",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://opensubtitles-v3.strem.io/subtitles/movie/tt0133093.json",
+      "bytes": 7677,
+      "requestHeaders": {
+        "Accept": "application/json"
+      },
+      "sample": "{\"subtitles\":[{\""
+    },
+    {
+      "url": "https://opensubtitles-v3.strem.io/subtitles/series/tt0949477:1:1.json",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://opensubtitles-v3.strem.io/subtitles/series/tt0949477:1:1.json",
+      "bytes": 75,
+      "requestHeaders": {
+        "Accept": "application/json"
+      },
+      "sample": "{\"subtitles\":[],"
+    },
+    {
+      "url": "https://www.tvsubtitles.net/",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://www.tvsubtitles.net/",
+      "bytes": 32643,
+      "requestHeaders": {},
+      "sample": "<!DOCTYPE html P"
+    },
+    {
+      "url": "https://www.yifysubtitles.ch/movie-imdb/tt0133093",
+      "status": 301,
+      "contentType": "text/html; charset=UTF-8",
+      "location": "https://yifysubtitles.ch/movie-imdb/tt0133093",
+      "responseUrl": "https://www.yifysubtitles.ch/movie-imdb/tt0133093",
+      "bytes": 167,
+      "requestHeaders": {},
+      "sample": "<html>\r\n<head><t"
+    },
+    {
+      "provider": "opensubtitles-v3",
+      "candidate": {
+        "id": "opensubtitles-v3:20796:es",
+        "language": "es",
+        "sourceUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/23792",
+        "sourceHeaders": {}
+      }
+    },
+    {
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/23792",
+      "status": 200,
+      "contentType": "application/x-subrip; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/23792",
+      "bytes": 93871,
+      "requestHeaders": {},
+      "sample": "1\r\n00:00:46,640 "
+    },
+    {
+      "provider": "opensubtitles-v3",
+      "candidate": {
+        "id": "opensubtitles-v3:4164618:es",
+        "language": "es",
+        "sourceUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952844800",
+        "sourceHeaders": {}
+      }
+    },
+    {
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952844800",
+      "status": 200,
+      "contentType": "application/x-subrip; charset=utf-8",
+      "location": null,
+      "responseUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952844800",
+      "bytes": 46109,
+      "requestHeaders": {},
+      "sample": "1\r\n00:00:09,538 "
+    },
+    {
+      "provider": "yify",
+      "candidate": {
+        "id": "yify:the-matrix-1999-english-yify-119099",
+        "language": "en",
+        "sourceUrl": "https://www.yifysubtitles.ch/subtitle/the-matrix-1999-english-yify-119099.zip",
+        "sourceHeaders": {
+          "Referer": "https://www.yifysubtitles.ch/subtitles/the-matrix-1999-english-yify-119099"
+        }
+      }
+    },
+    {
+      "url": "https://www.yifysubtitles.ch/subtitle/the-matrix-1999-english-yify-119099.zip",
+      "status": 301,
+      "contentType": "text/html; charset=UTF-8",
+      "location": "https://yifysubtitles.ch/subtitle/the-matrix-1999-english-yify-119099.zip",
+      "responseUrl": "https://www.yifysubtitles.ch/subtitle/the-matrix-1999-english-yify-119099.zip",
+      "bytes": 167,
+      "requestHeaders": {
+        "Referer": "https://www.yifysubtitles.ch/subtitles/the-matrix-1999-english-yify-119099"
+      },
+      "sample": "<html>\r\n<head><t"
+    },
+    {
+      "provider": "tvsubtitles",
+      "candidate": {
+        "id": "tvsubtitles:166653:es",
+        "language": "es",
+        "sourceUrl": "https://www.tvsubtitles.net/files/Game of Thrones_1x01_720p HDTV.es.zip",
+        "sourceHeaders": {}
+      }
+    },
+    {
+      "url": "https://www.tvsubtitles.net/files/Game of Thrones_1x01_720p HDTV.es.zip",
+      "status": 200,
+      "contentType": "application/zip",
+      "location": null,
+      "responseUrl": "https://www.tvsubtitles.net/files/Game%20of%20Thrones_1x01_720p%20HDTV.es.zip",
+      "bytes": 19519,
+      "requestHeaders": {},
+      "sample": "PK\u0003\u0004\n\u0000\u0000\u0000\b\u0000�sLQ��"
+    }
+  ],
+  "conversions": [
+    {
+      "provider": "opensubtitles-v3",
+      "language": "es",
+      "sourceUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/23792",
+      "sourceHeaders": {},
+      "tokenPath": "/api/v1/subtitles/file/738fc3c0c37e47748cf00c991d84af6e.vtt",
+      "status": 200,
+      "contentType": "text/vtt; charset=utf-8",
+      "format": "srt",
+      "bytes": 87906,
+      "webvtt": true
+    },
+    {
+      "provider": "opensubtitles-v3",
+      "language": "es",
+      "sourceUrl": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952844800",
+      "sourceHeaders": {},
+      "tokenPath": "/api/v1/subtitles/file/0701bded93cd4d35895c9e4d7fc522b0.vtt",
+      "status": 200,
+      "contentType": "text/vtt; charset=utf-8",
+      "format": "srt",
+      "bytes": 43254,
+      "webvtt": true
+    },
+    {
+      "provider": "yify",
+      "language": "en",
+      "sourceUrl": "https://www.yifysubtitles.ch/subtitle/the-matrix-1999-english-yify-119099.zip",
+      "sourceHeaders": {
+        "Referer": "https://www.yifysubtitles.ch/subtitles/the-matrix-1999-english-yify-119099"
+      },
+      "tokenPath": "/api/v1/subtitles/file/2243cb23270e4e71b4867541660900a0.vtt",
+      "status": 200,
+      "contentType": "text/vtt; charset=utf-8",
+      "format": "srt",
+      "bytes": 88916,
+      "webvtt": true
+    },
+    {
+      "provider": "tvsubtitles",
+      "language": "es",
+      "sourceUrl": "https://www.tvsubtitles.net/files/Game of Thrones_1x01_720p HDTV.es.zip",
+      "sourceHeaders": {},
+      "tokenPath": "/api/v1/subtitles/file/2d43778fed27404ab338779788a22116.vtt",
+      "status": 200,
+      "contentType": "text/vtt; charset=utf-8",
+      "format": "srt",
+      "bytes": 45330,
+      "webvtt": true
+    }
+  ]
+}

@@ -61,7 +61,12 @@ function normalizeSubtitleTracks(raw: unknown): GatewaySubtitle[] {
     language: normalizeLanguageTag(entry?.language || entry?.lang),
     label: entry?.label || entry?.name || null,
     url: String(entry?.url || entry?.src || entry?.file || ""),
-  })).filter((entry) => /^https?:\/\//i.test(entry.url));
+  })).filter((entry) =>
+    // SubtitleGateway owns the only public subtitle delivery path. Direct
+    // provider/CDN URLs are removed here before the response reaches the
+    // browser; proxied tracks use the same token shape as the subtitle API.
+    /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i.test(entry.url)
+  );
 }
 
 function scoreSource(req: GatewayRequest, source: PlayableSource): number {

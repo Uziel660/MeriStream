@@ -91,7 +91,7 @@ import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
-import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
+import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import {
   adminLogin,
   adminLogout,
@@ -928,7 +928,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
 
       const cached = playStreamsCache.get(mediaEpisode.id);
       if (!aliasMerge.changed && cached && cached.expiresAt > Date.now()) {
-        const cachedRanked = cached.ranked
+        const cachedRanked = proxyRankedSubtitles(cached.ranked)
           .filter((entry: any) => isAllowedLink(entry))
           .sort((a: any, b: any) => compareMainPathLinks(a, b, playbackKind));
         if (cachedRanked.length === 0) {
@@ -990,13 +990,14 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         });
       }
 
-      const allMergedStreams = ranked.map((entry) => entry.url);
-      const streamUrl = ranked[0]?.url || "";
+      const safeRanked = proxyRankedSubtitles(ranked);
+      const allMergedStreams = safeRanked.map((entry) => entry.url);
+      const streamUrl = safeRanked[0]?.url || "";
 
       playStreamsCache.set(mediaEpisode.id, {
         streamUrl,
         allStreams: allMergedStreams,
-        ranked,
+        ranked: safeRanked,
         expiresAt: Date.now() + 10 * 60 * 1000,
       });
 
@@ -1005,7 +1006,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         stream_url: streamUrl,
         title,
         all_available_streams: allMergedStreams,
-        ranked_streams: ranked,
+        ranked_streams: safeRanked,
       });
     }
 
@@ -1059,13 +1060,14 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       const title = foundEpisode?.title
         ? `${targetShow?.title || canonicalBridge.mediaEpisode.media_item?.title || ""} - ${foundEpisode.title}`
         : targetShow?.title || canonicalBridge.mediaEpisode.media_item?.title || "Reproducción";
-      const allCanonicalStreams = canonicalBridge.ranked.map((entry) => entry.url);
+      const safeCanonicalRanked = proxyRankedSubtitles(canonicalBridge.ranked);
+      const allCanonicalStreams = safeCanonicalRanked.map((entry) => entry.url);
       return res.json({
         episode_id: foundEpisode?.id || targetShow?.id || targetId,
-        stream_url: canonicalBridge.ranked[0]?.url || "",
+        stream_url: safeCanonicalRanked[0]?.url || "",
         title,
         all_available_streams: allCanonicalStreams,
-        ranked_streams: canonicalBridge.ranked,
+        ranked_streams: safeCanonicalRanked,
         media_episode_id: canonicalBridge.mediaEpisode.id,
       });
     }
@@ -1157,15 +1159,16 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         seenRankedUrls.add(entry.url);
         return true;
       });
+    const safeRanked = proxyRankedSubtitles(ranked);
     const allMergedStreams = Array.from(
       new Set([
-        ...ranked.map((r) => r.url),
+        ...safeRanked.map((r) => r.url),
       ].filter(Boolean))
     );
 
     const streamUrl =
-      ranked.find((r) => r.url === extracted.stream_url)?.url ||
-      ranked[0]?.url ||
+      safeRanked.find((r) => r.url === extracted.stream_url)?.url ||
+      safeRanked[0]?.url ||
       sourceUrl;
 
     res.json({
@@ -1173,7 +1176,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       stream_url: streamUrl,
       title,
       all_available_streams: allMergedStreams.length > 0 ? allMergedStreams : [sourceUrl],
-      ranked_streams: ranked,
+      ranked_streams: safeRanked,
     });
   } catch (e: any) {
     logPlayerEvent({
@@ -1184,6 +1187,47 @@ export async function handlePlayEpisode(req: Request, res: Response) {
     });
     res.status(500).json({ error: e.message });
   }
+}
+
+const INTERNAL_SUBTITLE_PATH = /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i;
+
+/**
+ * Normalizes subtitle metadata returned by legacy embed resolvers before it
+ * crosses an API boundary. Existing internal tokens remain usable; public
+ * provider URLs are registered with SubtitleProxy and replaced by tokens.
+ */
+function proxyResolvedSubtitles<T extends { subtitles?: any[] }>(meta: T, providerHint?: string): T {
+  if (!Array.isArray(meta.subtitles)) return meta;
+  const provider = normalizeProviderId(providerHint || (meta as any).provider || "");
+  const subtitles = meta.subtitles.flatMap((track: any, index: number) => {
+    const sourceUrl = String(track?.src || track?.url || "").trim();
+    if (INTERNAL_SUBTITLE_PATH.test(sourceUrl)) {
+      return [{ ...track, src: sourceUrl, url: sourceUrl }];
+    }
+    if (!/^https:\/\//i.test(sourceUrl)) return [];
+    const url = subtitleGateway.proxy.register({
+      id: String(track?.id || `${provider || "subtitle"}-${index}`),
+      provider,
+      language: String(track?.language || track?.lang || "und"),
+      label: String(track?.label || track?.language || track?.lang || "Subtítulo"),
+      sourceUrl,
+      format: /\.vtt(?:[?#]|$)/i.test(sourceUrl) ? "vtt" : "unknown",
+      ...(provider === "zokoanime" ? { sourceHeaders: { Referer: "https://zokoanime.video/" } } : {}),
+    });
+    return url ? [{ ...track, src: url, url }] : [];
+  });
+  return { ...meta, subtitles };
+}
+
+function proxyRankedSubtitles<T extends { subtitles?: any[]; source_site?: string; provider?: string }>(entries: T[]): T[] {
+  return entries.map((entry) => {
+    if (!Array.isArray(entry.subtitles)) return entry;
+    const provider = entry.source_site || entry.provider;
+    return {
+      ...entry,
+      subtitles: proxyResolvedSubtitles({ subtitles: entry.subtitles }, provider).subtitles || [],
+    };
+  });
 }
 
 async function startServer() {
@@ -1231,7 +1275,7 @@ async function startServer() {
 
   // Direct TMDB/AniList provider gateway: public JIT playback data, no iframe providers.
   app.use(providerGatewayRouter());
-  app.use(openSubtitlesRouter());
+  app.use(subtitleRouter(subtitleGateway));
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.
@@ -1799,7 +1843,10 @@ async function startServer() {
       if (/zokoanime\.video\/stream\//i.test(rawUrl)) {
         const zokoMeta = await EmbedResolvers.resolveWithMeta(rawUrl);
         if (zokoMeta.resolved && zokoMeta.url) {
-          return res.json(buildResolveDeliveryResponse(zokoMeta, "zokoanime", deliveryPlanner));
+          return res.json(proxyResolvedSubtitles(
+            buildResolveDeliveryResponse(zokoMeta, "zokoanime", deliveryPlanner),
+            "zokoanime",
+          ));
         }
       }
 
@@ -1813,7 +1860,10 @@ async function startServer() {
           for (const cand of candidates) {
             const resolvedMeta = await resolutionCoordinator.resolve(cand);
             if (resolvedMeta.resolved && resolvedMeta.type === "direct") {
-              return res.json(buildResolveDeliveryResponse(resolvedMeta, "regex_fast", deliveryPlanner));
+              return res.json(proxyResolvedSubtitles(
+                buildResolveDeliveryResponse(resolvedMeta, "regex_fast", deliveryPlanner),
+                resolvedMeta.provider,
+              ));
             }
           }
         } catch {}
@@ -1822,14 +1872,20 @@ async function startServer() {
       // Capa ligera: fetch HTTP + extractores específicos, sin navegador headless.
       const meta = await resolutionCoordinator.resolve(rawUrl);
       if (meta.resolved) {
-        return res.json(buildResolveDeliveryResponse(meta, "regex_fast", deliveryPlanner));
+        return res.json(proxyResolvedSubtitles(
+          buildResolveDeliveryResponse(meta, "regex_fast", deliveryPlanner),
+          meta.provider,
+        ));
       }
 
       // Fallback barato: el navegador abre el embed o avanza al siguiente host.
-      return res.json(buildResolveDeliveryResponse(
-        { ...meta, url: meta.url || rawUrl },
-        "unresolved_embed",
-        deliveryPlanner,
+      return res.json(proxyResolvedSubtitles(
+        buildResolveDeliveryResponse(
+          { ...meta, url: meta.url || rawUrl },
+          "unresolved_embed",
+          deliveryPlanner,
+        ),
+        meta.provider,
       ));
     } catch (e: any) {
       return res.status(500).json({ error: e.message || "Error al resolver embed" });
@@ -2525,6 +2581,15 @@ async function startServer() {
         return a.tier - b.tier;
       });
 
+      const safeRankedStreams = rankedStreams.map((stream) => {
+        const provider = stream.source_site || siteFromDomain(hostOfStreamUrl(url)) || stream.provider;
+        if (!Array.isArray(stream.subtitles)) return stream;
+        return {
+          ...stream,
+          subtitles: proxyResolvedSubtitles({ subtitles: stream.subtitles }, provider).subtitles || [],
+        };
+      });
+
       const primaryCandidate = rankedStreams.find((r) => r.type === "direct" || isDirectMedia(r.url)) || rankedStreams[0];
       const finalStreamUrl = primaryCandidate?.url || extracted.stream_url;
       const isResolved = rankedStreams.length > 0 && !isSourcePage(finalStreamUrl);
@@ -2536,7 +2601,7 @@ async function startServer() {
         title: extracted.title,
         resolved: isResolved,
         requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,
-        ranked_streams: rankedStreams,
+        ranked_streams: safeRankedStreams,
       });
     } catch (e: any) {
       res.status(500).json({ detail: `Error resolviendo servidores del episodio: ${e.message}` });

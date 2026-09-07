@@ -211,7 +211,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const byUrl = new Map<string, SubtitleTrack>();
     const add = (raw: any, index: number) => {
       const url = String(raw?.url || raw?.src || '').trim();
-      if (!/^https?:\/\//i.test(url) || byUrl.has(url)) return;
+      // Subtitle URLs must be our own normalized WebVTT proxy paths. This
+      // prevents provider pages/CDNs from being exposed to the player.
+      if (!/^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i.test(url) || byUrl.has(url)) return;
       byUrl.set(url, {
         id: String(raw?.id || `subtitle-${index}`),
         label: String(raw?.label || raw?.language || 'Subtítulo'),

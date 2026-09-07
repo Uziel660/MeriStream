@@ -73,13 +73,18 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
   const zokoSubtitles = zokoResolution.subtitles || zokoResolution.ranked_streams?.[0]?.subtitles || [];
   expect(zokoSubtitles.length).toBeGreaterThan(0);
   expect(zokoSubtitles[0].language).toBe('en');
+  const zokoSubtitleUrl = zokoSubtitles[0].src || zokoSubtitles[0].url;
+  expect(zokoSubtitleUrl).toMatch(/^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt$/i);
+  const zokoSubtitleResponse = await page.request.get(`${BASE_URL}${zokoSubtitleUrl}`);
+  expect(zokoSubtitleResponse.status()).toBe(200);
+  expect(zokoSubtitleResponse.headers()['content-type']).toMatch(/text\/vtt/i);
   expect(zokoManifestResponse.status()).toBe(200);
   expect(await zokoManifestResponse.text()).toContain('#EXTM3U');
   const zokoPlayer = page.getByRole('dialog').last();
   const zokoSubtitleButton = zokoPlayer.locator('button[title="Subtítulos"]');
   await expect(zokoSubtitleButton).toBeVisible({ timeout: 30_000 });
   await zokoSubtitleButton.click();
-  await expect(zokoPlayer.getByRole('button', { name: /English/i })).toBeVisible();
+  await expect(zokoPlayer.getByRole('button', { name: 'English', exact: true })).toBeVisible();
 
   const player = page.getByRole('dialog').last();
   const switchButton = player.locator('button[title="Cambiar o Inspeccionar Servidor de Streaming"]');

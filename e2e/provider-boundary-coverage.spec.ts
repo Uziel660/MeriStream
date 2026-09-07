@@ -109,12 +109,22 @@ test.describe('Cobertura E2E de límites de proveedores', () => {
     }
   });
 
-  test('subtítulos externos quedan cerrados hasta configurar la API pública', async ({ page }) => {
-    const response = await page.request.get(`${BASE_URL}/api/v1/subtitles?tmdb_id=27205&kind=movie&languages=es,en`);
+  test('los subtítulos se entregan como WebVTT interno, nunca como URL externa', async ({ page }) => {
+    test.setTimeout(90_000);
+    const response = await page.request.get(`${BASE_URL}/api/v1/subtitles/movie/603?languages=es,en`, { timeout: 60_000 });
     expect(response.status()).toBe(200);
     const body = await response.json();
-    expect(body.configured).toBe(false);
-    expect(body.tracks).toEqual([]);
-    expect(body.reason).toBe('not_configured');
+    expect(Array.isArray(body.tracks)).toBe(true);
+    expect(body.providers?.queried).toEqual(expect.arrayContaining(['opensubtitles-v3', 'yify']));
+    expect(body.tracks.length).toBeGreaterThan(0);
+    for (const track of body.tracks) {
+      expect(track.url).toMatch(/^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt$/i);
+      expect(track.url).not.toMatch(/^https?:\/\//i);
+    }
+
+    const subtitleResponse = await page.request.get(`${BASE_URL}${body.tracks[0].url}`, { timeout: 60_000 });
+    expect(subtitleResponse.status()).toBe(200);
+    expect(subtitleResponse.headers()['content-type']).toMatch(/text\/vtt/i);
+    expect(await subtitleResponse.text()).toMatch(/^WEBVTT/);
   });
 });

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { SubtitleGateway } from "./SubtitleGateway";
-import type { SubtitleProvider } from "./types";
+import type { SubtitleKind, SubtitleProvider } from "./types";
 
-function provider(id: string, result: any[], delay = 0): SubtitleProvider {
-  return { id, kinds: ["movie"], search: async () => {
+function provider(id: string, result: any[], delay = 0, kinds: readonly SubtitleKind[] = ["movie"]): SubtitleProvider {
+  return { id, kinds, search: async () => {
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
     return result;
   }};
@@ -28,5 +28,27 @@ describe("SubtitleGateway", () => {
     const result = await gateway.search({ tmdbId: 1, kind: "movie", preferredLanguages: ["es", "en"] });
     expect(result.providers.queried).toEqual(["a", "b"]);
     expect(Object.keys(gateway.healthSnapshot())).toEqual(["a", "b"]);
+  });
+
+  it("serves movie, series and anime through the same gateway contract", async () => {
+    const gateway = new SubtitleGateway([
+      provider("opensubtitles-v3", [{ id: "es", provider: "opensubtitles-v3", language: "es", label: "Español", sourceUrl: "https://subs5.strem.io/es.srt" }], 0, ["movie", "series", "anime"]),
+      provider("tvsubtitles", [{ id: "tv-es", provider: "tvsubtitles", language: "es", label: "Español", sourceUrl: "https://www.tvsubtitles.net/files/show.zip" }], 0, ["series"]),
+      provider("yify", [{ id: "en", provider: "yify", language: "en", label: "English", sourceUrl: "https://www.yifysubtitles.ch/subtitle/movie.zip" }], 0, ["movie"]),
+    ], { idResolver: { resolve: async () => "tt1234567", clear: () => {} } as any });
+
+    const movie = await gateway.search({ tmdbId: 1, kind: "movie", preferredLanguages: ["es", "en"] });
+    const series = await gateway.search({ tmdbId: 2, kind: "series", season: 1, episode: 1, preferredLanguages: ["es", "en"] });
+    const anime = await gateway.search({ tmdbId: 3, kind: "anime", season: 1, episode: 1, preferredLanguages: ["es", "en"] });
+
+    expect(movie.tracks.length).toBeGreaterThan(0);
+    expect(series.tracks.length).toBeGreaterThan(0);
+    expect(anime.tracks.length).toBeGreaterThan(0);
+    expect(movie.providers.queried).toEqual(expect.arrayContaining(["opensubtitles-v3", "yify"]));
+    expect(series.providers.queried).toEqual(expect.arrayContaining(["opensubtitles-v3", "tvsubtitles"]));
+    expect(anime.providers.queried).toEqual(["opensubtitles-v3"]);
+    for (const result of [movie, series, anime]) {
+      expect(result.tracks.every((track) => /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt$/i.test(track.url))).toBe(true);
+    }
   });
 });

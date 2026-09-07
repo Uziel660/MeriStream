@@ -2,7 +2,8 @@ name: Temporary Wire Provider Frontend
 
 on:
   push:
-    branches: [feat/provider-v2-es-multilang]
+    branches:
+      - feat/provider-v2-es-multilang
     paths:
       - .github/workflows/temp-wire-provider-frontend.yml
 
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   patch-and-verify:
-    if: github.actor != 'github-actions[bot]'
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,174 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Patch player entry flow
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          p = Path('src/App.tsx')
-          text = p.read_text()
-          old = '''    try {
-      const res = await fetch(`/api/v1/play/${episode.id}`);
-      if (res.status === 404) {
-        // Episodio huérfano (#2/R2): eliminar de "Seguir Viendo" y avisar sin error crudo
-        removeContinueWatchingItem(episode.id);
-        setPlayingStreamData((prev: any) =>
-          prev?.episodeId === episode.id ? null : prev
-        );
-        setOrphanNotice(
-          `"${showTitle} — ${resolvedTitle}" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.`
-        );
-        return;
-      }
-      if (!res.ok) throw new Error('No se pudo resolver el video');
-      const data = await res.json();
-
-      // 2. Transición fluida con los streams listos
-      setPlayingStreamData((prev: any) => {
-        if (!prev || prev.episodeId !== episode.id) return prev;
-        return {
-          ...prev,
-          title: `${showTitle} - ${resolvedTitle}`,
-          streamUrl: data.stream_url,
-          all_streams: data.all_available_streams,
-          ranked_streams: data.ranked_streams,
-          isLoading: false,
-        };
-      });
-    } catch (e: any) {
-'''
-          new = '''    try {
-      // PRIMARY: resolver APIs directas por TMDB en paralelo con el fallback legacy.
-      // El gateway garantiza que `sources` solo contiene HLS/DASH/MP4, nunca iframes.
-      const tmdbId = Number((currentShow as any)?.tmdb_id || 0);
-      const rawCategory = String((currentShow as any)?.kind || currentShow?.category || '').toLowerCase();
-      const gatewayKind = rawCategory.includes('anime')
-        ? 'anime'
-        : (rawCategory.includes('movie') || rawCategory.includes('pel'))
-          ? 'movie'
-          : 'series';
-      const seasonNumber = Number((episode as any).season_number || 1);
-      const gatewayUrl = tmdbId > 0
-        ? `/api/v1/providers/${gatewayKind}/${tmdbId}?season=${seasonNumber}&episode=${episode.episode_number}&audio=es,en,ja&subtitles=es,en`
-        : null;
-
-      const gatewayPromise = gatewayUrl
-        ? fetch(gatewayUrl).then(async (response) => response.ok ? response.json() : null).catch(() => null)
-        : Promise.resolve(null);
-      const legacyPromise = fetch(`/api/v1/play/${episode.id}`).catch(() => null);
-      const [gatewayData, legacyResponse] = await Promise.all([gatewayPromise, legacyPromise]);
-
-      const gatewayRanked = Array.isArray(gatewayData?.sources)
-        ? gatewayData.sources.map((source: any, index: number) => {
-            let host: string | null = null;
-            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
-            return {
-              url: source.url,
-              type: 'direct' as const,
-              tier: index,
-              host,
-              provider: source.provider,
-              source_site: source.provider,
-              requiredHeaders: source.requiredHeaders,
-              rating: 10,
-              link_type: source.audioLanguage ? 'audio' : undefined,
-              language: source.audioLanguage || undefined,
-              audio_language: source.audioLanguage || undefined,
-              subtitle_language: source.subtitleLanguage || undefined,
-              subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles.map((track: any, trackIndex: number) => ({
-                    id: `${source.provider || 'api'}-${trackIndex}`,
-                    label: track.label || track.language || 'Subtítulo',
-                    language: track.language || 'und',
-                    url: track.url,
-                    is_default: false,
-                  }))
-                : [],
-            };
-          })
-        : [];
-
-      let legacyData: any = null;
-      if (legacyResponse?.ok) {
-        legacyData = await legacyResponse.json();
-      }
-
-      // APIs directas primero; adapters/resolvers locales quedan como fallback.
-      const mergedRanked: any[] = [];
-      const seenUrls = new Set<string>();
-      for (const candidate of [
-        ...gatewayRanked,
-        ...(Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : []),
-      ]) {
-        if (!candidate?.url || seenUrls.has(candidate.url)) continue;
-        seenUrls.add(candidate.url);
-        mergedRanked.push(candidate);
-      }
-
-      const mergedStreams = mergedRanked.map((candidate) => candidate.url);
-      const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
-
-      if (!primaryStream) {
-        if (legacyResponse?.status === 404) {
-          // Solo es huérfano si TAMPOCO las APIs directas pudieron resolverlo.
-          removeContinueWatchingItem(episode.id);
-          setPlayingStreamData((prev: any) =>
-            prev?.episodeId === episode.id ? null : prev
-          );
-          setOrphanNotice(
-            `"${showTitle} — ${resolvedTitle}" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.`
-          );
-          return;
-        }
-        throw new Error('No se encontró un stream directo ni un fallback reproducible');
-      }
-
-      // 2. Transición fluida: APIs directas delante, fuentes ES/legacy detrás.
-      setPlayingStreamData((prev: any) => {
-        if (!prev || prev.episodeId !== episode.id) return prev;
-        return {
-          ...prev,
-          title: `${showTitle} - ${resolvedTitle}`,
-          streamUrl: primaryStream,
-          all_streams: mergedStreams.length > 0 ? mergedStreams : [primaryStream],
-          ranked_streams: mergedRanked,
-          isLoading: false,
-        };
-      });
-    } catch (e: any) {
-'''
-          if old not in text:
-              raise SystemExit('handleSelectEpisode block not found')
-          p.write_text(text.replace(old, new, 1))
-
-          p = Path('src/types.ts')
-          text = p.read_text()
-          text = text.replace('''export interface Episode {
-  id: string;
-  show_id?: string;
-  title: string;
-  episode_number: number;
-''', '''export interface Episode {
-  id: string;
-  show_id?: string;
-  title: string;
-  episode_number: number;
-  season_number?: number;
-''', 1)
-          text = text.replace('''export interface Show {
-  id: string;
-  title: string;
-''', '''export interface Show {
-  id: string;
-  title: string;
-  tmdb_id?: number | null;
-  anilist_id?: string | null;
-  mal_id?: number | null;
-''', 1)
-          p.write_text(text)
-          PY
+      - name: Apply frontend patch
+        run: python tools/patch-provider-frontend.py
       - name: Direct provider contract tests
         run: npx vitest run server/providers/api/types.test.ts
       - name: Typecheck
@@ -198,7 +33,6 @@ jobs:
       - name: Production build
         run: npm run build
       - name: Commit frontend integration
-        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

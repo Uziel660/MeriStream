@@ -81,6 +81,8 @@ interface HLSPlayerModalProps {
   streamUrl?: string;
   all_streams?: string[];
   ranked_streams?: RankedStream[];
+  /** Pistas externas opcionales (por ejemplo OpenSubtitles) ya normalizadas. */
+  subtitleTracks?: SubtitleTrack[];
   initialTime?: number;
   onProgressUpdate?: (currentTime: number, duration: number) => void;
   onNextEpisode?: () => void;
@@ -201,9 +203,26 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | 'off'>('off');
 
-  const subtitleTracks: SubtitleTrack[] = resolvedSubtitleTracks.length > 0
-    ? resolvedSubtitleTracks
-    : (streamInfo?.subtitles || []);
+  const subtitleTracks: SubtitleTrack[] = (() => {
+    const byUrl = new Map<string, SubtitleTrack>();
+    const add = (raw: any, index: number) => {
+      const url = String(raw?.url || raw?.src || '').trim();
+      if (!/^https?:\/\//i.test(url) || byUrl.has(url)) return;
+      byUrl.set(url, {
+        id: String(raw?.id || `subtitle-${index}`),
+        label: String(raw?.label || raw?.language || 'Subtítulo'),
+        language: String(raw?.language || raw?.lang || 'und'),
+        url,
+        src: raw?.src,
+        is_default: Boolean(raw?.is_default || raw?.default),
+      });
+    };
+    (props.subtitleTracks || []).forEach(add);
+    resolvedSubtitleTracks.forEach(add);
+    (streamInfo?.subtitles || []).forEach(add);
+    servers.flatMap((server) => server.subtitles || []).forEach(add);
+    return [...byUrl.values()];
+  })();
   const renditionServers = servers
     .map((server, index) => ({ server, index }))
     .filter(({ server }) => Boolean(server.link_type || server.language || server.audio_language || server.subtitle_language));

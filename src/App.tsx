@@ -440,7 +440,12 @@ export function App() {
         ? fetch(gatewayUrl).then(async (response) => response.ok ? response.json() : null).catch(() => null)
         : Promise.resolve(null);
       const legacyPromise = fetch(`/api/v1/play/${episode.id}`).catch(() => null);
-      const [gatewayData, legacyResponse] = await Promise.all([gatewayPromise, legacyPromise]);
+      const subtitlePromise = tmdbId > 0
+        ? fetch(`/api/v1/subtitles?tmdb_id=${tmdbId}&kind=${gatewayKind}&season=${seasonNumber}&episode=${episode.episode_number}&languages=es,en`)
+            .then(async (response) => response.ok ? response.json() : null)
+            .catch(() => null)
+        : Promise.resolve(null);
+      const [gatewayData, legacyResponse, subtitleData] = await Promise.all([gatewayPromise, legacyPromise, subtitlePromise]);
 
       const gatewayRanked = Array.isArray(gatewayData?.sources)
         ? gatewayData.sources.map((source: any, index: number) => {
@@ -474,6 +479,16 @@ export function App() {
 
       let legacyData: any = null;
       if (legacyResponse?.ok) legacyData = await legacyResponse.json();
+
+      const externalSubtitles = Array.isArray(subtitleData?.tracks)
+        ? subtitleData.tracks.map((track: any, index: number) => ({
+            id: String(track.id || `opensubtitles-${index}`),
+            label: String(track.label || track.language || 'Subtítulo'),
+            language: String(track.language || 'und'),
+            url: String(track.url || track.src || ''),
+            is_default: Boolean(track.is_default),
+          })).filter((track: any) => /^https?:\/\//i.test(track.url))
+        : [];
 
       const mergedRanked: any[] = [];
       const seenUrls = new Set<string>();
@@ -511,6 +526,7 @@ export function App() {
           streamUrl: primaryStream,
           all_streams: mergedStreams.length > 0 ? mergedStreams : [primaryStream],
           ranked_streams: mergedRanked,
+          subtitleTracks: externalSubtitles,
           isLoading: false,
         };
       });

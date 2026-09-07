@@ -98,4 +98,13 @@ test.describe('Cobertura E2E de límites de proveedores', () => {
       expect(candidate.url).toMatch(/^https?:\/\//i);
     }
   });
+
+  test('subtítulos externos quedan cerrados hasta configurar la API pública', async ({ page }) => {
+    const response = await page.request.get(`${BASE_URL}/api/v1/subtitles?tmdb_id=27205&kind=movie&languages=es,en`);
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.configured).toBe(false);
+    expect(body.tracks).toEqual([]);
+    expect(body.reason).toBe('not_configured');
+  });
 });

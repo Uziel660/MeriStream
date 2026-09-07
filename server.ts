@@ -83,6 +83,7 @@ import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
+import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import {
   adminLogin,
   adminLogout,
@@ -1037,6 +1038,7 @@ async function startServer() {
 
   // Direct TMDB/AniList provider gateway: public JIT playback data, no iframe providers.
   app.use(providerGatewayRouter());
+  app.use(openSubtitlesRouter());
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.

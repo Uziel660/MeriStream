@@ -1,7 +1,15 @@
 import { prisma } from "./db";
 import { normalizeLanguageTag, renditionPreferenceScore } from "./providers/providerPolicy";
+import { getDirectStreamProviders } from "./providers/api";
+import type {
+  DirectMediaKind,
+  PlayableSource,
+  ProviderRequest,
+  SubtitleTrack,
+} from "./providers/api";
+import { inferStreamType } from "./providers/api/types";
 
-export type GatewayKind = "movie" | "series" | "anime";
+export type GatewayKind = DirectMediaKind;
 
 export interface GatewayRequest {
   tmdbId: number;
@@ -13,137 +21,109 @@ export interface GatewayRequest {
   persist?: boolean;
 }
 
-export interface GatewaySubtitle {
-  language?: string | null;
-  label?: string | null;
-  url: string;
-}
+export type GatewaySubtitle = SubtitleTrack;
+export type GatewaySource = PlayableSource & { score: number };
 
-export interface GatewaySource {
+export interface GatewayFallbackCandidate {
   provider: string;
-  providerGroup: "api" | "spanish-local" | "database";
+  providerGroup: "spanish-local" | "database";
   url: string;
   canonicalLocator?: string | null;
-  type: "direct" | "embed" | "page";
+  type: "embed" | "page";
   audioLanguage?: string | null;
   subtitleLanguage?: string | null;
   subtitles?: GatewaySubtitle[];
-  quality?: string | null;
-  headers?: Record<string, string>;
   score: number;
   sourceStatus?: string | null;
 }
 
-interface NormalizedProviderResponse {
-  sources?: Array<{
-    url?: string;
-    stream_url?: string;
-    canonical_locator?: string;
-    provider?: string;
-    source_site?: string;
-    type?: string;
-    link_type?: string;
-    language?: string;
-    audio_language?: string;
-    subtitle_language?: string;
-    quality?: string;
-    headers?: Record<string, string>;
-    subtitles?: Array<{ language?: string; label?: string; url?: string; src?: string }>;
-  }>;
-  streams?: Array<any>;
-  links?: Array<any>;
-}
-
-const SPANISH_LOCAL = new Set(["cinecalidad", "lamovie", "gnula", "doramasflix", "tioplus", "tubepelis"]);
+const SPANISH_LOCAL = new Set([
+  "cinecalidad", "lamovie", "gnula", "doramasflix", "tioplus", "tubepelis",
+  "animeflv", "jkanime", "latanime", "tioanime", "veranimes",
+]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
-const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.PROVIDER_GATEWAY_TIMEOUT_MS || 4_500));
-const cache = new Map<string, { expires: number; value: GatewaySource[] }>();
+const cache = new Map<string, {
+  expires: number;
+  sources: GatewaySource[];
+  fallbackCandidates: GatewayFallbackCandidate[];
+}>();
 
-function configuredApiBases(): string[] {
-  const raw = [
-    process.env.MERISTREAM_PROVIDER_API_URLS,
-    process.env.MERISTREAM_MOVIE_API_URLS,
-    process.env.MERISTREAM_ANIME_API_URLS,
-  ].filter(Boolean).join(",");
-  return Array.from(new Set(raw.split(",").map((v) => v.trim().replace(/\/$/, "")).filter(Boolean)));
+function normalizeSubtitleTracks(raw: unknown): GatewaySubtitle[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry: any) => ({
+    language: normalizeLanguageTag(entry?.language || entry?.lang),
+    label: entry?.label || entry?.name || null,
+    url: String(entry?.url || entry?.src || entry?.file || ""),
+  })).filter((entry) => /^https?:\/\//i.test(entry.url));
 }
 
-function mediaPath(req: GatewayRequest): string {
-  if (req.kind === "movie") return `/movie/${req.tmdbId}`;
-  if (req.kind === "anime") return `/anime/${req.tmdbId}/${req.episode || 1}`;
-  return `/tv/${req.tmdbId}/${req.season || 1}/${req.episode || 1}`;
-}
-
-function sourceType(url: string, declared?: string): GatewaySource["type"] {
-  const value = String(declared || "").toLowerCase();
-  if (value === "page" || value === "embed" || value === "direct") return value;
-  if (/\.(m3u8|mp4|webm)(\?|#|$)/i.test(url)) return "direct";
-  if (/embed|player|watch/i.test(url)) return "embed";
-  return "page";
-}
-
-function normalizeExternalSource(raw: any, base: string, req: GatewayRequest): GatewaySource | null {
-  const url = String(raw?.url || raw?.stream_url || raw?.src || "").trim();
-  if (!/^https?:\/\//i.test(url)) return null;
-  const provider = String(raw?.provider || raw?.source_site || new URL(base).hostname).toLowerCase();
-  const audioLanguage = normalizeLanguageTag(raw?.audio_language || raw?.audioLanguage || raw?.language);
-  const subtitleLanguage = normalizeLanguageTag(raw?.subtitle_language || raw?.subtitleLanguage);
-  const subtitles: GatewaySubtitle[] = Array.isArray(raw?.subtitles)
-    ? raw.subtitles.map((s: any) => ({
-        language: normalizeLanguageTag(s?.language),
-        label: s?.label || null,
-        url: String(s?.url || s?.src || ""),
-      })).filter((s: GatewaySubtitle) => /^https?:\/\//i.test(s.url))
-    : [];
-  const score = renditionPreferenceScore({
+function scoreSource(req: GatewayRequest, source: PlayableSource): number {
+  const base = renditionPreferenceScore({
     contentKind: req.kind,
-    audio_language: audioLanguage,
-    subtitle_language: subtitleLanguage,
-    subtitles,
+    audio_language: normalizeLanguageTag(source.audioLanguage),
+    subtitle_language: normalizeLanguageTag(source.subtitleLanguage),
+    subtitles: source.subtitles,
   });
+  const preferredAudio = (req.preferredAudio || []).map(normalizeLanguageTag).filter(Boolean);
+  const preferredSubs = (req.preferredSubtitles || []).map(normalizeLanguageTag).filter(Boolean);
+  const audio = normalizeLanguageTag(source.audioLanguage);
+  const subtitle = normalizeLanguageTag(source.subtitleLanguage);
+  const audioBoost = audio && preferredAudio.includes(audio) ? 100 : 0;
+  const subBoost = subtitle && preferredSubs.includes(subtitle) ? 40 : 0;
+  return base + audioBoost + subBoost;
+}
+
+async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
+  const [canonical, legacy] = await Promise.all([
+    prisma.mediaItem.findFirst({
+      where: { tmdb_id: req.tmdbId, kind: req.kind },
+      select: { title: true, year: true },
+    }),
+    req.kind === "anime"
+      ? prisma.show.findFirst({
+          where: { tmdb_id: req.tmdbId },
+          select: { title: true, year: true, anilist_id: true, mal_id: true },
+        })
+      : Promise.resolve(null),
+  ]);
   return {
-    provider,
-    providerGroup: "api",
-    url,
-    canonicalLocator: raw?.canonical_locator || raw?.canonicalLocator || null,
-    type: sourceType(url, raw?.type || raw?.link_type),
-    audioLanguage,
-    subtitleLanguage,
-    subtitles,
-    quality: raw?.quality || null,
-    headers: raw?.headers || raw?.requiredHeaders || undefined,
-    score,
-    sourceStatus: "discovered",
+    tmdbId: req.tmdbId,
+    kind: req.kind,
+    season: req.season || 1,
+    episode: req.episode || 1,
+    preferredAudio: req.preferredAudio,
+    preferredSubtitles: req.preferredSubtitles,
+    title: canonical?.title || legacy?.title || null,
+    year: canonical?.year || legacy?.year || null,
+    anilistId: legacy?.anilist_id || null,
+    malId: legacy?.mal_id || null,
   };
 }
 
-async function fetchApi(base: string, req: GatewayRequest): Promise<GatewaySource[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${base}${mediaPath(req)}`, {
-      signal: controller.signal,
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) return [];
-    const body = await response.json() as NormalizedProviderResponse | any[];
-    const values = Array.isArray(body)
-      ? body
-      : [...(body.sources || []), ...(body.streams || []), ...(body.links || [])];
-    return values.map((value) => normalizeExternalSource(value, base, req)).filter((v): v is GatewaySource => Boolean(v));
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timer);
-  }
+async function resolvePrimaryApis(req: GatewayRequest): Promise<GatewaySource[]> {
+  const context = await mediaContext(req);
+  const providers = getDirectStreamProviders(context);
+  const settled = await Promise.allSettled(providers.map((provider) => provider.resolve(context)));
+  const direct = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+
+  return direct.map((source) => ({
+    ...source,
+    audioLanguage: normalizeLanguageTag(source.audioLanguage),
+    subtitleLanguage: normalizeLanguageTag(source.subtitleLanguage),
+    subtitles: normalizeSubtitleTracks(source.subtitles),
+    score: scoreSource(req, source),
+  }));
 }
 
-async function sourcesFromDatabase(req: GatewayRequest): Promise<GatewaySource[]> {
+async function sourcesFromDatabase(req: GatewayRequest): Promise<{
+  direct: GatewaySource[];
+  fallbackCandidates: GatewayFallbackCandidate[];
+}> {
   const media = await prisma.mediaItem.findFirst({
     where: { tmdb_id: req.tmdbId, kind: req.kind },
     select: { id: true },
   });
-  if (!media) return [];
+  if (!media) return { direct: [], fallbackCandidates: [] };
 
   const episode = await prisma.mediaEpisode.findFirst({
     where: {
@@ -153,50 +133,81 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<GatewaySource[]
     },
     include: { links: true },
   });
-  if (!episode) return [];
+  if (!episode) return { direct: [], fallbackCandidates: [] };
 
-  return episode.links.map((link) => {
+  const direct: GatewaySource[] = [];
+  const fallbackCandidates: GatewayFallbackCandidate[] = [];
+  for (const link of episode.links) {
     const provider = String(link.source_site || "unknown").toLowerCase();
-    const audioLanguage = normalizeLanguageTag(link.audio_language || link.language);
+    const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
+    const audioLanguage = normalizeLanguageTag(link.audio_language || link.language) || (SPANISH_LOCAL.has(provider) ? "es" : null);
     const subtitleLanguage = normalizeLanguageTag(link.subtitle_language);
-    const subtitles = Array.isArray(link.subtitles) ? link.subtitles as any[] : [];
-    return {
-      provider,
-      providerGroup: SPANISH_LOCAL.has(provider) ? "spanish-local" : "database",
-      url: link.url,
-      canonicalLocator: link.canonical_locator,
-      type: sourceType(link.url, link.link_type),
-      audioLanguage: audioLanguage || (SPANISH_LOCAL.has(provider) ? "es" : null),
-      subtitleLanguage,
-      subtitles: subtitles.map((s: any) => ({ language: normalizeLanguageTag(s?.language), label: s?.label || null, url: String(s?.url || s?.src || "") })).filter((s: GatewaySubtitle) => Boolean(s.url)),
-      score: renditionPreferenceScore({
-        contentKind: req.kind,
-        audio_language: audioLanguage || (SPANISH_LOCAL.has(provider) ? "es" : null),
-        subtitle_language: subtitleLanguage,
+    const subtitles = normalizeSubtitleTracks(link.subtitles);
+    const streamType = inferStreamType(link.url, link.link_type);
+    const score = renditionPreferenceScore({
+      contentKind: req.kind,
+      audio_language: audioLanguage,
+      subtitle_language: subtitleLanguage,
+      subtitles,
+    });
+
+    if (streamType) {
+      direct.push({
+        provider,
+        providerGroup,
+        url: link.url,
+        streamType,
+        audioLanguage,
+        subtitleLanguage,
         subtitles,
-      }),
+        score: score + (providerGroup === "spanish-local" ? 25 : 0),
+        sourceStatus: link.source_status,
+        canonicalLocator: link.canonical_locator,
+      });
+      continue;
+    }
+
+    fallbackCandidates.push({
+      provider,
+      providerGroup,
+      url: link.url,
+      canonicalLocator: link.canonical_locator || link.url,
+      type: String(link.link_type).toLowerCase() === "embed" ? "embed" : "page",
+      audioLanguage,
+      subtitleLanguage,
+      subtitles,
+      score: score + (providerGroup === "spanish-local" ? 50 : 0),
       sourceStatus: link.source_status,
-    } satisfies GatewaySource;
-  });
+    });
+  }
+  return { direct, fallbackCandidates };
 }
 
 function dedupeAndRank(sources: GatewaySource[]): GatewaySource[] {
   const byKey = new Map<string, GatewaySource>();
   for (const source of sources) {
-    const key = `${source.provider}|${source.canonicalLocator || source.url}`;
+    const key = `${source.provider}|${source.url}`;
     const current = byKey.get(key);
     if (!current || source.score > current.score) byKey.set(key, source);
   }
   return [...byKey.values()].sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    const groupWeight = (v: GatewaySource) => v.providerGroup === "spanish-local" ? 3 : v.providerGroup === "api" ? 2 : 1;
-    return groupWeight(b) - groupWeight(a);
+    const weight = (source: GatewaySource) => source.providerGroup === "api" ? 3 : source.providerGroup === "spanish-local" ? 2 : 1;
+    return weight(b) - weight(a);
   });
 }
 
-async function persistSources(req: GatewayRequest, sources: GatewaySource[]): Promise<number> {
-  const media = await prisma.mediaItem.findFirst({ where: { tmdb_id: req.tmdbId, kind: req.kind }, select: { id: true } });
+function rankFallbacks(values: GatewayFallbackCandidate[]): GatewayFallbackCandidate[] {
+  return [...values].sort((a, b) => b.score - a.score);
+}
+
+async function persistApiSources(req: GatewayRequest, sources: GatewaySource[]): Promise<number> {
+  const media = await prisma.mediaItem.findFirst({
+    where: { tmdb_id: req.tmdbId, kind: req.kind },
+    select: { id: true },
+  });
   if (!media) return 0;
+
   const episode = await prisma.mediaEpisode.upsert({
     where: {
       media_item_id_season_number_episode_number: {
@@ -214,7 +225,7 @@ async function persistSources(req: GatewayRequest, sources: GatewaySource[]): Pr
   });
 
   let saved = 0;
-  for (const source of sources) {
+  for (const source of sources.filter((value) => value.providerGroup === "api")) {
     await prisma.sourceLink.upsert({
       where: {
         media_episode_id_source_site_url: {
@@ -227,21 +238,22 @@ async function persistSources(req: GatewayRequest, sources: GatewaySource[]): Pr
         media_episode_id: episode.id,
         source_site: source.provider,
         url: source.url,
-        link_type: source.type,
+        link_type: "direct",
         language: source.audioLanguage,
         audio_language: source.audioLanguage,
         subtitle_language: source.subtitleLanguage,
         subtitles: source.subtitles as any,
-        canonical_locator: source.canonicalLocator || (source.type === "direct" ? null : source.url),
+        canonical_locator: source.canonicalLocator || null,
         source_status: "discovered",
-        extraction_method: source.providerGroup === "api" ? "provider_gateway" : "catalog_import",
-        resolver_version: "gateway-v1",
+        extraction_method: "direct_api_jit",
+        resolver_version: "gateway-v2-direct",
       },
       update: {
         audio_language: source.audioLanguage,
         subtitle_language: source.subtitleLanguage,
         subtitles: source.subtitles as any,
         canonical_locator: source.canonicalLocator || undefined,
+        source_status: "discovered",
       },
     });
     saved += 1;
@@ -249,23 +261,47 @@ async function persistSources(req: GatewayRequest, sources: GatewaySource[]): Pr
   return saved;
 }
 
-export async function resolveByTmdb(req: GatewayRequest): Promise<{ sources: GatewaySource[]; persisted: number; elapsedMs: number }> {
+export async function resolveByTmdb(req: GatewayRequest): Promise<{
+  sources: GatewaySource[];
+  fallbackCandidates: GatewayFallbackCandidate[];
+  persisted: number;
+  elapsedMs: number;
+}> {
   const started = Date.now();
-  const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`;
+  const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}:${(req.preferredAudio || []).join(",")}:${(req.preferredSubtitles || []).join(",")}`;
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
-    return { sources: cached.value, persisted: 0, elapsedMs: Date.now() - started };
+    return {
+      sources: cached.sources,
+      fallbackCandidates: cached.fallbackCandidates,
+      persisted: 0,
+      elapsedMs: Date.now() - started,
+    };
   }
 
-  const bases = configuredApiBases();
-  const [dbSources, ...apiResults] = await Promise.all([
+  // Primary direct APIs and local DB are queried in parallel. Primary API results
+  // win ties; local Spanish embeds/pages are returned separately for the legacy
+  // resolver cascade and can never leak into the internal player as media URLs.
+  const [apiSources, database] = await Promise.all([
+    resolvePrimaryApis(req),
     sourcesFromDatabase(req),
-    ...bases.map((base) => fetchApi(base, req)),
   ]);
-  const ranked = dedupeAndRank([...dbSources, ...apiResults.flat()]);
-  cache.set(key, { expires: Date.now() + CACHE_TTL_MS, value: ranked });
-  const persisted = req.persist ? await persistSources(req, ranked.filter((s) => s.providerGroup === "api")) : 0;
-  return { sources: ranked, persisted, elapsedMs: Date.now() - started };
+
+  const ranked = dedupeAndRank([...apiSources, ...database.direct]);
+  const fallbackCandidates = rankFallbacks(database.fallbackCandidates);
+  cache.set(key, {
+    expires: Date.now() + CACHE_TTL_MS,
+    sources: ranked,
+    fallbackCandidates,
+  });
+
+  const persisted = req.persist ? await persistApiSources(req, apiSources) : 0;
+  return {
+    sources: ranked,
+    fallbackCandidates,
+    persisted,
+    elapsedMs: Date.now() - started,
+  };
 }
 
 export function clearProviderGatewayCache(): void {

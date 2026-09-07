@@ -18,6 +18,12 @@ has supplied a native HLS, DASH or MP4 URL. Provider pages and iframes stay in
 to the direct source list. Signed media URLs are resolved JIT; stable locators
 are retained when an API supplies one so the player can renew a source.
 
+The internal player accepts only native HLS, DASH and MP4. A page or embed
+candidate may be resolved on demand, but an unresolved or embed-only result is
+marked unavailable and advances the provider failover chain; it is never opened
+as an external player. MPD playback is handled by the lazy `dash.js` client and
+manifests that require origin headers use the internal proxy session.
+
 ## Curated sources
 
 | Content | Primary | Secondary/fallback |

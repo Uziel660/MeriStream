@@ -130,12 +130,13 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('doramasflix.') ||
       lower.includes('gnulahd.nu/')) &&
     !lower.includes('.m3u8') &&
+    !lower.includes('.mpd') &&
     !lower.includes('.mp4')
   );
 }
 
 /**
- * Detecta si una URL debe cargarse en iframe embed o en motor HLS/video nativo.
+ * Detecta si una URL es un locator de proveedor o un recurso para el motor nativo.
  */
 export function isEmbedUrl(url: string): boolean {
   if (!url) return false;
@@ -145,10 +146,10 @@ export function isEmbedUrl(url: string): boolean {
   if (u.includes('/api/v1/stream/mega')) return false;
   if (u.includes('/m3u8/') || u.includes('hls-vod')) return false;
 
-  // Direct media files (.m3u8, .mp4, .webm, .mkv) are played via native HLS/Video.
+  // Direct media files (.m3u8, .mpd, .mp4, .webm, .mkv) are played natively.
   // Extension regex (not substring): evita que ".mp4upload.com" haga match de ".mp4".
   if (
-    (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/.test(u)) &&
+    (/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/.test(u)) &&
     !u.includes('mega.nz') &&
     !u.includes('/embed') &&
     !u.includes('/e/')
@@ -282,7 +283,8 @@ export function scoreServer(rawUrl: string, index: number, metadataOverrides?: P
   }
 
   // Mega.nz: enrutar por nuestro backend de descifrado on-the-fly (stream nativo Plyr)
-  // en vez de iframe /embed/. El fallback al embed se maneja en el reproductor si falla.
+  // en vez de abrir la página del proveedor. El reproductor resuelve el locator
+  // bajo demanda y continúa al siguiente candidato si no hay media nativa.
   // RUTA RELATIVA: funciona en local y a través del túnel de Cloudflare (mismo origen).
   const megaMatch = /^https?:\/\/(www\.)?(mega\.nz|mega\.io|mega\.co\.nz)\/(file|embed)\/([A-Za-z0-9_-]+)#(.+)$/i.exec(url);
   if (megaMatch) {
@@ -363,14 +365,14 @@ export function scoreServer(rawUrl: string, index: number, metadataOverrides?: P
       health = 'buena';
       score += 10;
     } else if (u.includes('mega.nz')) {
-      // Embed legacy de Mega sin clave: reproducible vía iframe pero con ads/limits
+      // Locator legacy de Mega sin clave: queda fuera del playback nativo.
       health = 'buena';
       score += 8;
     } else {
       health = 'estable';
     }
   } else if (u.includes('/api/v1/stream/mega')) {
-    // Cuota anónima de Mega puede agotarse; el reproductor hace fallback a embed si ocurre
+    // Cuota anónima de Mega puede agotarse; el reproductor activa failover nativo.
     health = 'buena';
   }
 
@@ -638,7 +640,7 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
  * Comprobación ultrarrápida de salud en segundo plano (no bloqueante)
  */
 export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 2500): Promise<number | null> {
-  if (server.isEmbed) return null; // Los iframes no se pueden sondear por CORS
+  if (server.isEmbed) return null; // Los locators no tienen media que sondear
   if (server.notPlayable || server.score < 0) return null; // Páginas crudas/placeholders: nada que sondear
   
   // Usar el proxy anti-CORS para sondear, o la URL directa si ya es local

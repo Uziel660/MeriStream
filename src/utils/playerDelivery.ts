@@ -27,6 +27,23 @@ export const MSG_EXPIRED_WITHOUT_LOCATOR = 'Esta fuente antigua necesita reimpor
 export const MSG_PROXY_FAILED = 'No se pudo usar el proxy. Puedes probar otro servidor.';
 export const MSG_NO_SERVERS = 'Ningún servidor automático funcionó. Elige uno manualmente:';
 
+/**
+ * A candidate may be a provider page/embed locator until the backend resolves it.
+ * Once it reaches the player it must be a native HLS, DASH or MP4 resource.
+ */
+export function isNativeMediaUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const value = String(url).trim().toLowerCase();
+  return (
+    /\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(value) ||
+    value.includes('/m3u8/') ||
+    value.includes('hls-vod') ||
+    value.includes('/api/v1/stream/mega') ||
+    value.includes('/api/v1/playback/') ||
+    value.includes('/api/v1/proxy/stream')
+  );
+}
+
 export const deliveryModeOf = (mode?: DeliveryMode | string): DeliveryMode | undefined => {
   if (mode === 'direct' || mode === 'direct_trial' || mode === 'proxy_required' || mode === 'embed') {
     return mode;
@@ -59,12 +76,12 @@ export function isExpiredWithoutLocator(
 
 /**
  * Comprueba si una URL es una página canónica no resuelta (ej. fichas de LaMovie, CineCalidad, AnimeFLV, etc.)
- * que NO debe montarse directamente como iframe.
+ * que necesita pasar por un resolutor JIT antes de entrar al player.
  */
 export function isUnresolvedCanonical(url: string | null | undefined): boolean {
   if (!url) return false;
   const lower = String(url).toLowerCase();
-  if (lower.includes('.m3u8') || lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mkv')) return false;
+  if (lower.includes('.m3u8') || lower.includes('.mpd') || lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mkv')) return false;
   return (
     lower.includes('/anime/') ||
     lower.includes('/series/') ||
@@ -95,31 +112,23 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
 }
 
 /**
- * Comprueba si un servidor califica como un embed real que legítimamente puede
- * reproducirse en un iframe (fallback controlado).
+ * Conserva esta clasificación para diagnósticos y compatibilidad de datos. Los
+ * embeds nunca se entregan al reproductor; solo sirven como locators JIT.
  */
 export function isRealPlayableEmbed(server: ScoredServer | null | undefined): boolean {
-  if (!server) return false;
-  if (!server.isEmbed) return false;
-  if (isExpiredWithoutLocator(server)) return false;
-  if (server.notPlayable) return false;
-  if (server.failure_reason === 'unresolved') return false;
-  if (isUnresolvedCanonical(server.url)) return false;
-  return true;
+  return Boolean(server?.isEmbed && !isExpiredWithoutLocator(server) && !server.notPlayable && !isUnresolvedCanonical(server.url));
 }
 
 /**
  * Ordena candidatos para el primer intento sin perder el orden del backend
  * dentro de cada grupo. Los directos (incluido direct_trial/proxy_required)
- * se prueban antes que un embed; los embeds reales quedan como fallback y las
- * páginas canónicas/no reproducibles al final para que no bloqueen el arranque.
+ * se prueban antes que locators de página/embed. Estos últimos permanecen al
+ * final para permitir una resolución JIT, pero nunca son playback por sí mismos.
  */
 export function prioritizeDirectCandidates(servers: ScoredServer[]): ScoredServer[] {
   const playbackRank = (server: ScoredServer): number => {
     if (server.notPlayable || isExpiredWithoutLocator(server)) return 2;
-    if (!server.isEmbed) return 0;
-    if (isRealPlayableEmbed(server)) return 1;
-    return 2;
+    return server.isEmbed ? 2 : 0;
   };
 
   return servers
@@ -188,9 +197,9 @@ export function applyResolution(
     };
   }
 
-  // Stream resuelto: si el resultado sigue siendo un embed, la URL se monta en
-  // iframe aunque el candidato original fuese una página canónica. Esto evita
-  // enviar una URL HTML a HLS.js como si fuese un manifiesto nativo.
+  // Un resultado embed sigue siendo un locator no reproducible por el player
+  // interno. Se conserva para diagnóstico/failover, pero se marca para que el
+  // reproductor lo descarte y pruebe el siguiente candidato nativo.
   const wasEmbed = server.isEmbed;
   const resolvedIsEmbed = resolution.type === 'embed' || mode === 'embed';
   const resolvedMetadata = {
@@ -199,17 +208,17 @@ export function applyResolution(
       resolution.original_url || server.original_url || (wasEmbed ? server.url : undefined),
   };
 
-  // Si el resolve devuelve un tipo embed (no nativo), mantener el iframe con metadata.
-  // También aplica a páginas canónicas que se resolvieron JIT a un embed real.
+  // Nunca convertir un embed en una modalidad de playback.
   if (resolvedIsEmbed) {
     return {
       ...server,
       url: resolvedUrl,
       isEmbed: true,
       streamType: 'embed',
-      delivery_mode: mode || server.delivery_mode,
-      notPlayable: false,
+      delivery_mode: 'embed',
       ...resolvedMetadata,
+      notPlayable: true,
+      failure_reason: 'unresolved',
     };
   }
 
@@ -271,7 +280,10 @@ export function nextDeliveryIntent(
 ): 'direct' | 'proxy' | 'skip' {
   if (!server) return 'direct';
   if (isExpiredWithoutLocator(server)) return 'skip';
-  if (server.isEmbed) return 'direct';
+  if (server.isEmbed) return 'skip';
+  if (server.requiredHeaders && Object.keys(server.requiredHeaders).length > 0) {
+    return canEscalateToProxy(server) ? 'proxy' : 'skip';
+  }
   if (server.delivery_mode === 'proxy_required' || capability === 'proxy_required') {
     if (canEscalateToProxy(server)) {
       return 'proxy';
@@ -288,8 +300,7 @@ export function nextDeliveryIntent(
 export function isPlaybackEstablished(deliveryState: DeliveryState | string): boolean {
   return (
     deliveryState === 'playing_direct' ||
-    deliveryState === 'playing_proxy' ||
-    deliveryState === 'playing_embed'
+    deliveryState === 'playing_proxy'
   );
 }
 
@@ -320,7 +331,7 @@ export function updateRenewedServer(
   const url = (renewal.url || '').trim() || server.url;
   const wasEmbed = server.isEmbed;
   const urlChanged = url !== server.url;
-  const looksNative = /\.m3u8|\.mp4|\/m3u8\//i.test(url);
+  const looksNative = isNativeMediaUrl(url);
 
   // Si el embed original seguía siéndolo y la renovación extrae un stream nativo,
   // degradar a directo conservando el embed original en original_url.
@@ -373,9 +384,7 @@ export function recordAttemptedMode(
   attemptedSet.add(`${serverId}:${mode}`);
 }
 
-/**
- * Regla 5: Un iframe/embed no cambia automáticamente de servidor por timeout; ofrece elección manual.
- */
+/** Embeds son locators, no una modalidad de entrega reproducible. */
 export function handleEmbedTimeout(_currentState: DeliveryState): DeliveryState {
-  return 'awaiting_manual_choice';
+  return 'error';
 }

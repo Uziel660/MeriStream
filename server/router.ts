@@ -57,7 +57,7 @@ export class StrategyRouter {
 
   /**
    * Determina el plan de acción secuencial según la jerarquía de prioridades:
-   * 1. Medios directos válidos (.mp4 / .m3u8 detectados).
+   * 1. Medios directos válidos (.mp4 / .m3u8 / .mpd detectados).
    * 2. Iframes / Embeds decodificados (servidores conocidos o genéricos).
    * 3. Parseo de snippets JSON locales en memoria.
    * 4. Fallback desconocido.
@@ -68,7 +68,7 @@ export class StrategyRouter {
 
     return obs.media_sources.filter(m =>
       this.isValidMediaUrl(m.url) &&
-      (m.mime_type.toLowerCase().includes("video") || m.mime_type.toLowerCase().includes("mpegurl") || m.url.toLowerCase().includes(".m3u8") || m.url.toLowerCase().includes(".mp4"))
+      (m.mime_type.toLowerCase().includes("video") || m.mime_type.toLowerCase().includes("mpegurl") || m.mime_type.toLowerCase().includes("dash+xml") || m.url.toLowerCase().includes(".m3u8") || m.url.toLowerCase().includes(".mpd") || m.url.toLowerCase().includes(".mp4"))
     ).map(m => m.url);
   }
 

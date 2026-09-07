@@ -1,6 +1,6 @@
 // src/types.ts
 
-export type StreamProtocol = "hls" | "mp4";
+export type StreamProtocol = "hls" | "dash" | "mp4";
 
 export interface Episode {
   id: string;

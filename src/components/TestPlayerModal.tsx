@@ -49,7 +49,7 @@ export function TestPlayerModal({ isOpen, onClose }: TestPlayerModalProps) {
   const handleTestZoko = () => {
     if (!zokoId.trim()) return;
     const url = `https://zokoanime.video/stream/${zokoSource}/${zokoId.trim()}/${zokoEp}/${zokoTrack}?color=35d5bf`;
-    logMessage(`[ZokoAnime API] Generando Iframe Embed: ${url}`);
+    logMessage(`[ZokoAnime API] Preparando locator para resolución JIT: ${url}`);
     setPlayerData({
       title: `ZokoAnime — Ep.${zokoEp} (${zokoSource.toUpperCase()} ID ${zokoId})`,
       streamUrl: url,
@@ -128,7 +128,7 @@ export function TestPlayerModal({ isOpen, onClose }: TestPlayerModalProps) {
           ],
         });
       } else {
-        logMessage(`[AniPulse API] No se pudo extraer .m3u8 nativo; cargando fallback embed`);
+        logMessage(`[AniPulse API] No se pudo extraer .m3u8 nativo; conservando locator para failover`);
         setPlayerData({
           title: `AniPulse AnimeAPI — Episode ${epId}`,
           streamUrl: s1,
@@ -196,7 +196,7 @@ export function TestPlayerModal({ isOpen, onClose }: TestPlayerModalProps) {
     try {
       const res = await api.getEpisodeServers(targetUrl);
       const ranked = (res.ranked_streams || []) as RankedStream[];
-      logMessage(`[MeriStream Backend] Procesados ${ranked.length} servidores optimizados (HLS Nativo + Proxy + Embed Fallback)`);
+      logMessage(`[MeriStream Backend] Procesados ${ranked.length} servidores optimizados (HLS Nativo + Proxy + Locator de respaldo)`);
 
       setPlayerData({
         title: `MeriStream TioAnimeAdapter — ${clean}`,

@@ -1242,10 +1242,10 @@ export function App() {
             streamResult.all_available_streams ||
             (streamResult.stream_url ? [streamResult.stream_url] : [])
           ).filter(Boolean);
-          // Playable = medio directo (.m3u8/.mp4/...) o embed de host conocido;
+          // Playable = medio directo (.m3u8/.mpd/.mp4/...) o locator conocido;
           // lo demás son páginas web crudas que requieren resolución JIT.
           const isPlayable = (u: string) =>
-            /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || isEmbedUrl(u);
+            /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || isEmbedUrl(u);
           const playableCandidates = candidates.filter(isPlayable);
 
           if (playableCandidates.length === 0 && streamResult.stream_url) {

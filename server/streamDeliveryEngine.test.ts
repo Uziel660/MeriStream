@@ -523,9 +523,9 @@ describe("Stream Delivery Engine - Matriz Completa de 25 Casos de Entrega", () =
   });
 
   // 20. Embed silencioso no hace failover automático
-  it("20. handleEmbedTimeout cambia a awaiting_manual_choice en vez de error o failover ciego", () => {
+  it("20. handleEmbedTimeout descarta el embed sin playback nativo", () => {
     const nextState = handleEmbedTimeout("playing_embed");
-    expect(nextState).toBe("awaiting_manual_choice");
+    expect(nextState).toBe("error");
   });
 
   // 21. Health-check no bloquea el primer intento

@@ -125,7 +125,7 @@ export function PlyrPlayerModal(props: PlyrPlayerModalProps) {
   // 3. INICIALIZACIÓN DE HLS.JS + PLYR
   useEffect(() => {
     if (!activeServer || activeServer.isEmbed || !videoRef.current) {
-      // Destruir instancias previas si pasamos a embed
+      // Destruir instancias previas si el candidato es un locator no nativo
       if (plyrRef.current) {
         plyrRef.current.destroy();
         plyrRef.current = null;
@@ -409,16 +409,18 @@ export function PlyrPlayerModal(props: PlyrPlayerModalProps) {
         {!isLoading && !loadError && activeServer && (
           <>
             {activeServer.isEmbed ? (
-              /* REPRODUCTOR IFRAME EMBED */
-              <div className="w-full h-full relative">
-                <iframe
-                  src={activeServer.url}
-                  title={displayTitle}
-                  className="w-full h-full border-0"
-                  allowFullScreen
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
-                />
+              <div className="flex flex-col items-center justify-center gap-3 text-center px-6">
+                <AlertTriangle className="h-10 w-10 text-amber-400" />
+                <p className="text-sm text-zinc-200">Esta fuente no ofrece un stream nativo reproducible.</p>
+                {servers.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveServerIndex((prev) => (prev + 1) % servers.length)}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition"
+                  >
+                    Probar siguiente servidor
+                  </button>
+                )}
               </div>
             ) : (
               /* REPRODUCTOR PLYR + HLS NATIVO */

@@ -15,7 +15,6 @@ import {
   RotateCcw,
   RotateCw,
   Server,
-  ExternalLink,
   Check,
   Languages,
   PictureInPicture,
@@ -49,9 +48,9 @@ import {
   prioritizeDirectCandidates,
   hasAttemptedMode,
   recordAttemptedMode,
+  isNativeMediaUrl,
   DIRECT_WATCHDOG_MS,
   DIRECT_BLACK_SCREEN_MS,
-  EMBED_FAILOVER_TIMEOUT_MS,
   MAX_PROBE_CANDIDATES,
   MSG_EXPIRED_WITHOUT_LOCATOR,
   MSG_PROXY_FAILED,
@@ -109,6 +108,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  // dash.js se carga solo cuando se selecciona un manifiesto MPD.
+  const dashRef = useRef<any>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
@@ -126,6 +127,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const playbackConfirmedRef = useRef<boolean>(false);
   const bufferCountRef = useRef<number>(0);
   const bufferingStartMsRef = useRef<number | null>(null);
+  const stallFailoverTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Preserva la posición al cambiar entre una fuente subtitulada/doblada o
   // durante un failover. Se consume al recibir MANIFEST_PARSED/metadata.
   const pendingResumeTimeRef = useRef<number | null>(null);
@@ -140,9 +142,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [failoverNotice, setFailoverNotice] = useState<string | null>(null);
   const [canonicalResolveError, setCanonicalResolveError] = useState<string | null>(null);
-  // Aviso con acción manual: un embed sin confirmar deja de hacer failover
-  // automático; se muestra una notificación interactiva para que el usuario elija.
-  const [embedStall, setEmbedStall] = useState<{ message: string; targetIndex: number } | null>(null);
 
   // Estados de Reproducción
   const [isPlaying, setIsPlaying] = useState(false);
@@ -163,30 +162,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // cambio de servidor (fantasmas de un intento anterior).
   const nativeListenersCleanupRef = useRef<(() => void) | null>(null);
 
-  // SELECTOR MANUAL: SIEMPRE visible con >1 servidor. Antes era "oculto por defecto"
-  // (gate serverSelectorVisible / toggle en Configuración / F4), pero un embed que
-  // falla en silencio —ej. Mega con archivo muerto— nunca activaba playbackError ni
-  // agotaba la cascada, y el usuario quedaba atrapado en un servidor muerto sin
-  // forma de cambiar. El toggle de Configuración y su listener quedaron obsoletos.
+  // SELECTOR MANUAL: visible con >1 candidato para permitir elegir otra fuente
+  // nativa cuando el watchdog o la resolución JIT marcan una fuente como caída.
 
   // Controles de UI & Auto-Hide
   const [controlsVisible, setControlsVisible] = useState(true);
   const [hoverTime, setHoverTime] = useState<{ time: number; posPercent: number } | null>(null);
   const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers'>('none');
-
-  // Listener de eventos postMessage para ZokoAnime embed
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://zokoanime.video') return;
-      const { type, payload } = event.data || {};
-      if (type === 'progress' && payload && typeof payload.currentTime === 'number') {
-        const duration = payload.duration || 0;
-        props.onProgressUpdate?.(payload.currentTime, duration);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [props.onProgressUpdate]);
 
   // Menús de Configuración de Video
   const [qualityLevels, setQualityLevels] = useState<{ index: number; label: string; height?: number }[]>([]);
@@ -358,7 +340,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       if (candidateSignatureRef.current !== signature) {
         candidateSignatureRef.current = signature;
         setServers(ranked);
-        const firstPlayableIdx = ranked.findIndex((s) => !isExpiredWithoutLocator(s) && !s.notPlayable);
+        const firstPlayableIdx = ranked.findIndex((s) =>
+          !isExpiredWithoutLocator(s) && !s.notPlayable && !s.isEmbed && isNativeMediaUrl(s.url)
+        );
         setActiveServerIndex(firstPlayableIdx >= 0 ? firstPlayableIdx : 0);
       }
       setIsLoadingStream(false);
@@ -459,18 +443,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const server = activeServer;
     if (!server) return;
 
-    const isDirectMedia =
-      /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(server.url) ||
-      server.url.includes('/m3u8/') ||
-      server.url.includes('/api/v1/stream/mega');
-
     const signedNeedsJit =
       hasExpiringSignature(server.url) &&
       (!server.expires_at || server.expires_at <= Date.now()) &&
       !server.resolved_at;
 
-    const embedNeedsJit = server.isEmbed && !server.resolved_at && !isDirectMedia;
-    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit || embedNeedsJit;
+    const needsJit = server.notPlayable === true || isUnresolvedCanonical(server.url) || signedNeedsJit;
     if (!needsJit) {
       setCanonicalResolveError(null);
       return;
@@ -495,15 +473,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     // receta correcta de catálogo → episodio → media.
     const resolutionPromise = isUnresolvedCanonical(locator)
       ? api.getEpisodeServers(locator).then((episodeResult) => {
-          const isMediaUrl = (value: string) =>
-            /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(value) ||
-            value.includes('/m3u8/') ||
-            value.includes('.m3u8') ||
-            value.includes('/api/v1/proxy/stream');
+          const isMediaUrl = (value: string) => isNativeMediaUrl(value);
           const ranked = Array.isArray(episodeResult.ranked_streams) ? episodeResult.ranked_streams : [];
-          const first = ranked.find((candidate) => candidate?.url && (candidate.type === 'direct' || isMediaUrl(candidate.url))) || ranked[0];
-          const resolvedUrl = first?.url || episodeResult.stream_url || '';
-          const resolved = Boolean(episodeResult.resolved && resolvedUrl && resolvedUrl !== locator && !isUnresolvedCanonical(resolvedUrl));
+          const first = ranked.find((candidate) => candidate?.url && candidate.type !== 'embed' && isMediaUrl(candidate.url));
+          const streamUrl = typeof episodeResult.stream_url === 'string' ? episodeResult.stream_url : '';
+          const resolvedUrl = first?.url || (isMediaUrl(streamUrl) ? streamUrl : '');
+          const resolved = Boolean(episodeResult.resolved && resolvedUrl && resolvedUrl !== locator && isMediaUrl(resolvedUrl));
           return {
             url: resolved ? resolvedUrl : locator,
             original_url: locator,
@@ -543,11 +518,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
 
         if (!res.resolved || !res.url) {
-          if (isUnresolvedCanonical(server.url)) {
-            setCanonicalResolveError('No se pudo extraer un stream reproducible de esta página.');
-            setDeliveryState('error');
+          setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
+          setDeliveryState('error');
+          setServers((prev) => prev.map((candidate) =>
+            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
+          ));
+          if (targetIndex < servers.length - 1) {
+            handleServerChange(targetIndex + 1, true);
           } else {
-            setDeliveryState('playing_direct');
+            setPlaybackError(MSG_NO_SERVERS);
           }
           return;
         }
@@ -631,62 +610,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError]);
 
-  // Fallback Mega: dado un stream local /api/v1/stream/mega?url=..., derivar la URL
-  // /embed/ oficial para inyectarla como iframe si el descifrado nativo falla (cuota).
-  const megaEmbedFallback = (streamLocalUrl: string): string | null => {
-    try {
-      const q = new URL(streamLocalUrl, window.location.origin).searchParams.get('url');
-      if (!q || !q.includes('mega.nz')) return null;
-      const m = /^https?:\/\/(www\.)?mega\.nz\/file\/([A-Za-z0-9_-]+)#(.+)$/.exec(q);
-      return m ? `https://mega.nz/embed/${m[2]}#${m[3]}` : null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Convierte el servidor activo Mega-nativo a modo iframe embed (fallback por cuota)
-  const failoverMegaToEmbed = () => {
-    if (!activeServer) return false;
-    const embedUrl = megaEmbedFallback(activeServer.url);
-    if (!embedUrl) return false;
-
-    if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
-    api.reportPlayerEvent({
-      eventType: "quota_fallback",
-      provider: activeServer.provider || "MEGA",
-      serverUrl: activeServer.url,
-      mediaTitle: props.title || media?.title,
-      details: "Cuota MEGA excedida -> fallback a embed",
-    });
-
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.removeAttribute('src');
-      videoRef.current.load();
-    }
-
-    setServers((prev) => {
-      const copy = [...prev];
-      if (copy[activeServerIndex]) {
-        copy[activeServerIndex] = {
-          ...copy[activeServerIndex],
-          url: embedUrl,
-          isEmbed: true,
-          streamType: 'embed',
-          label: `${copy[activeServerIndex].provider} (Embed)`,
-        };
-      }
-      return copy;
-    });
-    setFailoverNotice('Cuota de MEGA agotada: cambiando al reproductor embebido...');
-    setTimeout(() => setFailoverNotice(null), 4000);
-    return true;
-  };
-
   // 2. CAMBIO DE SERVIDOR MANUAL O POR FAILOVER AUTOMÁTICO
   const handleServerChange = (index: number, isAutoFailover = false) => {
     if (index === activeServerIndex && !isAutoFailover) return;
@@ -704,12 +627,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
     if (renewalTimerRef.current) clearTimeout(renewalTimerRef.current);
     if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
+    if (stallFailoverTimerRef.current) {
+      clearTimeout(stallFailoverTimerRef.current);
+      stallFailoverTimerRef.current = null;
+    }
     proxyRequestInFlightRef.current = false;
     setActiveSessionUrl(null);
     playbackConfirmedRef.current = false;
     loadStartMsRef.current = Date.now();
-    // Descartar cualquier aviso manual de embed pendiente al cambiar de servidor.
-    setEmbedStall(null);
 
     const currentSrv = servers[activeServerIndex];
     if (isAutoFailover && currentSrv) {
@@ -740,6 +665,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
+    }
+    if (dashRef.current) {
+      dashRef.current.reset?.();
+      dashRef.current = null;
     }
     if (nativeListenersCleanupRef.current) {
       nativeListenersCleanupRef.current();
@@ -800,7 +729,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     playbackConfirmedRef.current = false;
     loadStartMsRef.current = Date.now();
 
-    // Watchdog de pantalla negra: si tras 6.5s no arranca frames ni playback, reportar stall
+    // Watchdog de pantalla negra: si tras 6.5s no arranca frames ni playback,
+    // registrar el fallo y avanzar al siguiente candidato nativo.
     blackScreenTimerRef.current = setTimeout(() => {
       if (attemptId !== attemptIdRef.current) return;
       if (!playbackConfirmedRef.current && activeServer) {
@@ -812,6 +742,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
           details: "El reproductor esperó >6.5s sin recibir frames ni iniciar reproducción (pantalla negra)",
         });
+        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
+        if (activeServerIndex < servers.length - 1) {
+          handleServerChange(activeServerIndex + 1, true);
+        } else {
+          setDeliveryState('error');
+          setPlaybackError(MSG_NO_SERVERS);
+        }
       }
     }, DIRECT_BLACK_SCREEN_MS);
 
@@ -827,6 +764,80 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const currentTitle = props.title || media?.title || '';
     const currentProv = activeServer?.provider || 'Servidor';
+
+    const markNativePlaybackStarted = () => {
+      if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
+      playbackConfirmedRef.current = true;
+      setPlaybackError(null);
+      setDeliveryState('playing_direct');
+      if (activeServer) {
+        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
+      }
+    };
+
+    const setupDash = async (playUrl: string) => {
+      try {
+        const dashModule: any = await import('dashjs');
+        if (attemptId !== attemptIdRef.current) return;
+        const dashApi = dashModule.default ?? dashModule;
+        const player = dashApi.MediaPlayer().create();
+        dashRef.current = player;
+        player.initialize(video, playUrl, true);
+        player.on?.('streamInitialized', () => {
+          if (attemptId !== attemptIdRef.current) return;
+
+          const bitrates = player.getBitrateInfoListFor?.('video') || [];
+          const levels = bitrates.map((bitrate: any, index: number) => ({
+            index,
+            label: bitrate.height
+              ? `${bitrate.height}p`
+              : `${Math.round((bitrate.bitrate || 0) / 1000)} kbps`,
+            height: bitrate.height,
+          }));
+          setQualityLevels(levels);
+          if (levels.length > 0) setCurrentResolutionLabel('Auto HD');
+
+          const tracks = player.getTracksFor?.('audio') || [];
+          if (tracks.length > 0) {
+            setAudioTracks(tracks.map((track: any, index: number) => ({
+              id: index,
+              name: track.lang || track.labels?.[0]?.text || `Pista ${index + 1}`,
+              lang: track.lang,
+            })));
+            const currentTrack = player.getCurrentTrackFor?.('audio');
+            const currentIndex = currentTrack ? tracks.indexOf(currentTrack) : 0;
+            setActiveAudioTrack(currentIndex >= 0 ? currentIndex : 0);
+          }
+
+          const resumeTime = pendingResumeTimeRef.current ?? props.initialTime;
+          if (resumeTime && resumeTime > 0) {
+            video.currentTime = resumeTime;
+            pendingResumeTimeRef.current = null;
+          }
+          video.play().catch(() => {});
+        });
+        player.on?.('playbackStarted', () => {
+          if (attemptId !== attemptIdRef.current) return;
+          markNativePlaybackStarted();
+        });
+        player.on?.('error', () => {
+          if (attemptId !== attemptIdRef.current) return;
+          setServerHealthMap((prev) => ({ ...prev, [activeServer?.id || '']: 'failed' }));
+          if (activeServerIndex < servers.length - 1) handleServerChange(activeServerIndex + 1, true);
+          else {
+            setDeliveryState('error');
+            setPlaybackError(MSG_NO_SERVERS);
+          }
+        });
+      } catch {
+        if (attemptId !== attemptIdRef.current) return;
+        if (activeServerIndex < servers.length - 1) handleServerChange(activeServerIndex + 1, true);
+        else {
+          setDeliveryState('error');
+          setPlaybackError('El manifiesto DASH no pudo reproducirse en este navegador.');
+        }
+      }
+    };
 
     const setupHls = (playUrl: string) => {
       const isHlsUrl = playUrl.includes('.m3u8') || playUrl.includes('/m3u8/');
@@ -859,7 +870,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           // Un intento anterior puede haber dejado un mensaje de fallo mientras
           // este manifiesto se resolvía. Un manifiesto válido invalida ese aviso.
           setPlaybackError(null);
-          setEmbedStall(null);
           setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
           if (activeServer) {
             setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
@@ -1065,8 +1075,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           });
           setDeliveryState('playing_proxy');
           const sessionIsHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
+          const sessionIsDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
           if (sessionIsHls && Hls.isSupported()) {
             setupHls(finalUrl);
+          } else if (sessionIsDash) {
+            void setupDash(finalUrl);
           } else {
             video.src = finalUrl;
           }
@@ -1135,9 +1148,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     }, DIRECT_WATCHDOG_MS);
 
     const isHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
+    const isDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
     if (isHls && Hls.isSupported()) {
       setupHls(finalUrl);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl') || true) {
+    } else if (isDash) {
+      void setupDash(finalUrl);
+    } else if (isNativeMediaUrl(finalUrl)) {
       video.src = finalUrl;
       const onLoadedMetadata = () => {
         if (attemptId !== attemptIdRef.current) return;
@@ -1160,6 +1176,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       nativeListenersCleanupRef.current = () => {
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
       };
+    } else if (activeServerIndex < servers.length - 1) {
+      handleServerChange(activeServerIndex + 1, true);
+    } else {
+      setDeliveryState('error');
+      setPlaybackError(MSG_NO_SERVERS);
     }
   }, [activeServer, activeServerIndex, servers.length, props.initialTime, props.title, media?.title]);
 
@@ -1180,7 +1201,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         lastAttachmentKey.current = key;
         attachSource(activeServer.url || '');
       } else {
-        // Si el elemento <video> aún no está montado (transición desde iframe), reintentar en el siguiente frame
+        // Si el elemento <video> aún no está montado durante la transición, reintentar en el siguiente frame
         const timer = requestAnimationFrame(() => {
           if (videoRef.current) {
             lastAttachmentKey.current = key;
@@ -1201,9 +1222,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      if (dashRef.current) {
+        dashRef.current.reset?.();
+        dashRef.current = null;
+      }
       if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
       if (renewalTimerRef.current) clearTimeout(renewalTimerRef.current);
       if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
+      if (stallFailoverTimerRef.current) clearTimeout(stallFailoverTimerRef.current);
       if (nativeListenersCleanupRef.current) {
         nativeListenersCleanupRef.current();
         nativeListenersCleanupRef.current = null;
@@ -1211,60 +1237,25 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, []);
 
-  // 3.1 INTENTO DE RESOLUCIÓN ON-DEMAND PARA SERVIDORES EMBED
-  // Un embed NO resoluble por HTTP (resolved:false) NO se descarta: el iframe puede
-  // seguir siendo válido. Solo se degrada/propaga a si el backend extrae un stream
-  // nativo, y el failover de un iframe ocurre únicamente por error verificable,
-  // acción manual, timeout largo controlado o mensaje explícito del iframe.
+  // 3.1 RESOLUCIÓN JIT DE LOCATORS DE PÁGINA/EMBED
+  // Las páginas y embeds son únicamente localizadores de origen. Si la resolución
+  // no produce HLS/DASH/MP4 nativo, el candidato se marca como no reproducible y
+  // se continúa automáticamente con el siguiente servidor.
   useEffect(() => {
     let cancelled = false;
-    if (!activeServer || !activeServer.isEmbed) return;
-    if (activeServer.url.includes("mega.nz/embed")) {
-      recordAttemptedMode(attemptedModesRef.current, activeServer.id, 'embed');
-      setDeliveryState('playing_embed');
-      return;
-    }
+    if (!activeServer || !activeServer.isEmbed || activeServer.notPlayable || isNativeMediaUrl(activeServer.url)) return;
 
     const attemptId = attemptIdRef.current;
-    recordAttemptedMode(attemptedModesRef.current, activeServer.id, 'embed');
-
-    const isPlaceholderUrl = (u: string) => {
-      const lower = u.toLowerCase();
-      return (
-        lower.includes('big_buck_bunny') ||
-        lower.includes('big-buck-bunny') ||
-        lower.includes('bigbuckbunny') ||
-        lower.endsWith('_5mb.mp4')
-      );
-    };
-
-    // Timeout largo y controlado: tras ese tiempo sin señal de vida, NO failover
-    // automático — solo mostramos un aviso con acción manual para que el usuario
-    // decida si cambiar de servidor (un embed cross-origin puede estar sano aunque
-    // no podamos verificar su reproducción).
-    let resolveTimer: NodeJS.Timeout | null = null;
-    const startResolveTimeout = () => {
-      resolveTimer = setTimeout(() => {
-        if (cancelled || attemptId !== attemptIdRef.current) return;
-        if (!playbackConfirmedRef.current && activeServerIndex < servers.length - 1) {
-          setDeliveryState('awaiting_manual_choice');
-          setEmbedStall({
-            message: `El reproductor embebido no confirmó reproducción tras ${Math.round(
-              EMBED_FAILOVER_TIMEOUT_MS / 1000
-            )}s. ¿Deseas mantenerlo o probar el siguiente servidor?`,
-            targetIndex: activeServerIndex + 1,
-          });
-        }
-      }, EMBED_FAILOVER_TIMEOUT_MS);
-    };
-
+    const targetId = activeServer.id;
+    const targetIndex = activeServerIndex;
+    const locator = canonicalUrlOf(activeServer) || activeServer.url;
     setDeliveryState('resolving');
 
-    api.resolveEmbed(activeServer.url)
+    api.resolveEmbed(locator)
       .then((res) => {
         if (cancelled || attemptId !== attemptIdRef.current) return;
 
-        // Regla 1: expired_without_locator jamás entra en trying_direct ni requesting_proxy
+        // Una fuente vencida sin locator renovable se salta sin crear sesión proxy.
         if (res.failure_reason === 'expired_without_locator') {
           if (activeServerIndex < servers.length - 1) {
             handleServerChange(activeServerIndex + 1, true);
@@ -1275,27 +1266,28 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           return;
         }
 
-        // Embed NO resoluble por HTTP o página canónica:
+        // No hay stream nativo para este locator.
         if (!res || !res.resolved || !res.url) {
-          if (isUnresolvedCanonical(activeServer.url)) {
-            // Una página web canónica no resuelta NO es un embed real reproducible.
-            setDeliveryState('resolving');
-            setFailoverNotice('Página no reproducible directamente. Esperando resolución...');
-            return;
+          setCanonicalResolveError('No se pudo extraer un stream nativo de esta fuente.');
+          setServers((prev) => prev.map((candidate) =>
+            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
+          ));
+          if (targetIndex < servers.length - 1) {
+            handleServerChange(targetIndex + 1, true);
+          } else {
+            setDeliveryState('error');
+            setPlaybackError(MSG_NO_SERVERS);
           }
-          setDeliveryState('playing_embed');
-          setFailoverNotice('El servidor se mantiene como reproductor embebido.');
-          setTimeout(() => setFailoverNotice(null), 2500);
           return;
         }
 
-        // El host sirve un demo placeholder (ej. VOE -> Big Buck Bunny): failover al
-        // siguiente server solo si hay más opciones.
-        if (isPlaceholderUrl(res.url)) {
-          if (activeServerIndex < servers.length - 1) {
-            setFailoverNotice('Servidor sin contenido real, cambiando de servidor...');
-            setTimeout(() => setFailoverNotice(null), 3000);
-            handleServerChange(activeServerIndex + 1, true);
+        if (res.type === 'embed' || !isNativeMediaUrl(res.url)) {
+          setCanonicalResolveError('El resolver solo devolvió un reproductor externo; se descarta.');
+          setServers((prev) => prev.map((candidate) =>
+            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
+          ));
+          if (targetIndex < servers.length - 1) {
+            handleServerChange(targetIndex + 1, true);
           } else {
             setDeliveryState('error');
             setPlaybackError(MSG_NO_SERVERS);
@@ -1306,9 +1298,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         // El servidor logró extraer el .m3u8 o .mp4 nativo: actualizamos con TODA
         // la metadata de resolución (no solo la url) conservando el embed original.
         setServers((prev) => {
-          const copy = [...prev];
-          if (copy[activeServerIndex]) {
-              copy[activeServerIndex] = applyResolution(copy[activeServerIndex], {
+          return prev.map((candidate) => candidate.id === targetId
+            ? applyResolution(candidate, {
               url: res.url,
               original_url: res.original_url,
               resolved: true,
@@ -1324,11 +1315,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               expires_at: res.expires_at,
               resolved_at: res.resolved_at,
               failure_reason: res.failure_reason,
-                requiredHeaders: res.requiredHeaders,
-                subtitles: res.subtitles,
-              });
-          }
-          return copy;
+              requiredHeaders: res.requiredHeaders,
+              subtitles: res.subtitles,
+            })
+            : candidate);
         });
 
         if (res.subtitles && res.subtitles.length > 0) {
@@ -1341,70 +1331,30 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           })).filter((track) => Boolean(track.url)));
         }
 
-        if (res.type === 'direct' || res.delivery_mode === 'direct' || res.delivery_mode === 'proxy_required') {
-          setFailoverNotice(`Stream nativo optimizado con éxito (${res.provider || 'Servidor'})`);
-          setTimeout(() => setFailoverNotice(null), 3000);
-        } else {
-          setDeliveryState('playing_embed');
-        }
+        setDeliveryState('trying_direct');
+        setFailoverNotice(`Stream nativo optimizado con éxito (${res.provider || 'Servidor'})`);
+        setTimeout(() => setFailoverNotice(null), 3000);
       })
       .catch(() => {
-        // Error de red/timeout del resolve: NO failover automático; el iframe sigue
-        // siendo válido si era un embed real y el timeout largo controlado decidirá si finalmente falla.
         if (!cancelled && attemptId === attemptIdRef.current) {
-          if (!isUnresolvedCanonical(activeServer.url)) {
-            setDeliveryState('playing_embed');
+          setCanonicalResolveError('No se pudo resolver un stream nativo para esta fuente.');
+          setServers((prev) => prev.map((candidate) =>
+            candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
+          ));
+          if (targetIndex < servers.length - 1) {
+            handleServerChange(targetIndex + 1, true);
           } else {
-            setDeliveryState('resolving');
+            setDeliveryState('error');
+            setPlaybackError(MSG_NO_SERVERS);
           }
         }
       })
-      .finally(() => {
-        if (!cancelled && attemptId === attemptIdRef.current && !resolveTimer) {
-          startResolveTimeout();
-        }
-      });
+      .finally(() => undefined);
 
     return () => {
       cancelled = true;
-      if (resolveTimer) clearTimeout(resolveTimer);
     };
-  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed, servers.length]);
-
-  // 3.2 TELEMETRÍA Y WATCHDOG PARA SERVIDORES EMBED
-  useEffect(() => {
-    if (!activeServer || !activeServer.isEmbed) return;
-
-    loadStartMsRef.current = Date.now();
-    playbackConfirmedRef.current = false;
-    if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
-
-    api.reportPlayerEvent({
-      eventType: "embed_opened",
-      provider: activeServer.provider || "Servidor Embed",
-      serverUrl: activeServer.url,
-      mediaTitle: props.title || media?.title,
-      details: "Abierto reproductor embebido (iframe con posibles anuncios o redirects)",
-    });
-
-    // Watchdog para embeds: si tarda >8s sin confirmación
-    blackScreenTimerRef.current = setTimeout(() => {
-      if (!playbackConfirmedRef.current) {
-        api.reportPlayerEvent({
-          eventType: "black_screen_stalled",
-          provider: activeServer.provider || "Servidor Embed",
-          serverUrl: activeServer.url,
-          mediaTitle: props.title || media?.title,
-          durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
-          details: "El embed tardó >8s en responder o quedó bloqueado",
-        });
-      }
-    }, 8000);
-
-    return () => {
-      if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
-    };
-  }, [activeServer?.url, activeServer?.isEmbed, props.title, media?.title]);
+  }, [activeServerIndex, activeServer?.url, activeServer?.isEmbed, activeServer?.canonical_locator, servers.length]);
 
   // 4. EVENT LISTENERS DEL ELEMENTO VIDEO
   useEffect(() => {
@@ -1427,7 +1377,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       // después de que HLS.js había comenzado a reproducir.
       if (video.currentTime > 0.3 && !video.paused) {
         setPlaybackError(null);
-        setEmbedStall(null);
       }
 
       // Confirmar playback saludable y cancelar watchdog de pantalla negra y directo
@@ -1436,7 +1385,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
         if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
         setPlaybackError(null);
-        setEmbedStall(null);
         api.reportPlayerEvent({
           eventType: "playback_started",
           provider: activeServer.provider || "Servidor",
@@ -1471,7 +1419,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       if (listenerAttemptId !== attemptIdRef.current) return;
       setIsPlaying(true);
       setPlaybackError(null);
-      setEmbedStall(null);
       if (!playbackConfirmedRef.current && video.currentTime > 0.1) {
         playbackConfirmedRef.current = true;
         if (blackScreenTimerRef.current) clearTimeout(blackScreenTimerRef.current);
@@ -1485,11 +1432,37 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
 
+    const scheduleStallFailover = () => {
+      if (video.paused || video.currentTime <= 0.5 || stallFailoverTimerRef.current) return;
+      stallFailoverTimerRef.current = setTimeout(() => {
+        stallFailoverTimerRef.current = null;
+        if (listenerAttemptId !== attemptIdRef.current || video.paused || video.readyState >= 3) return;
+        api.reportPlayerEvent({
+          eventType: "black_screen_stalled",
+          provider: activeServer.provider || "Servidor",
+          serverUrl: activeServer.url,
+          mediaTitle: props.title || media?.title,
+          durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
+          details: "El stream quedó detenido durante la reproducción; se activa failover automático",
+        });
+        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
+        if (activeServerIndex < servers.length - 1) {
+          handleServerChange(activeServerIndex + 1, true);
+        } else {
+          setDeliveryState('error');
+          setPlaybackError(MSG_NO_SERVERS);
+        }
+      }, 12000);
+    };
+
     const onPlaying = () => {
       if (listenerAttemptId !== attemptIdRef.current) return;
       setIsPlaying(true);
       setPlaybackError(null);
-      setEmbedStall(null);
+      if (stallFailoverTimerRef.current) {
+        clearTimeout(stallFailoverTimerRef.current);
+        stallFailoverTimerRef.current = null;
+      }
       // El evento `playing` confirma reproducción real: cancelar el watchdog directo.
       if (directWatchdogRef.current) {
         clearTimeout(directWatchdogRef.current);
@@ -1521,6 +1494,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         bufferPauseCount: bufferCountRef.current,
         details: `Video pausado por falta de buffer (Pausa #${bufferCountRef.current} de CDN)`,
       });
+      scheduleStallFailover();
     };
 
     const onStalled = () => {
@@ -1531,10 +1505,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         mediaTitle: props.title || media?.title,
         details: "Descarga de datos de video detenida por lentitud de CDN (stalled)",
       });
+      scheduleStallFailover();
     };
 
     const onPause = () => {
       setIsPlaying(false);
+      if (stallFailoverTimerRef.current) {
+        clearTimeout(stallFailoverTimerRef.current);
+        stallFailoverTimerRef.current = null;
+      }
       if (props.onProgressUpdate) {
         props.onProgressUpdate(video.currentTime, video.duration || 0);
       }
@@ -1566,8 +1545,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           details: `HTML5 video error: code ${(video.error as any)?.code || 'unknown'}`,
         });
 
-        // Fallback específico Mega: cuota de transferencia agotada → iframe /embed/ oficial
-        if (activeServer.url.includes('/api/v1/stream/mega') && failoverMegaToEmbed()) return;
         if (activeServerIndex < servers.length - 1) {
           handleServerChange(activeServerIndex + 1, true);
         } else {
@@ -1612,6 +1589,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       video.removeEventListener('pause', onPause);
       video.removeEventListener('volumechange', onVolumeChange);
       video.removeEventListener('error', onError);
+      if (stallFailoverTimerRef.current) {
+        clearTimeout(stallFailoverTimerRef.current);
+        stallFailoverTimerRef.current = null;
+      }
       if (nativeListenersCleanupRef.current) nativeListenersCleanupRef.current = null;
     };
   }, [activeServer, activeServerIndex, servers.length, props.title, media?.title]);
@@ -1772,12 +1753,27 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setCurrentResolutionLabel(lvl?.label || 'Manual');
       }
     }
+    if (dashRef.current) {
+      if (levelIndex < 0) {
+        dashRef.current.setAutoSwitchQualityFor?.('video', true);
+        setCurrentResolutionLabel('Auto (Máxima Calidad)');
+      } else {
+        dashRef.current.setAutoSwitchQualityFor?.('video', false);
+        dashRef.current.setQualityFor?.('video', levelIndex);
+        const level = qualityLevels.find((q) => q.index === levelIndex);
+        setCurrentResolutionLabel(level?.label || 'Manual');
+      }
+    }
     setActiveQuality(levelIndex);
     setActiveMenu('none');
   };
 
   const selectAudioTrack = (trackIndex: number) => {
     if (hlsRef.current) hlsRef.current.audioTrack = trackIndex;
+    if (dashRef.current) {
+      const tracks = dashRef.current.getTracksFor?.('audio') || [];
+      if (tracks[trackIndex]) dashRef.current.setCurrentTrack?.(tracks[trackIndex]);
+    }
     setActiveAudioTrack(trackIndex);
     setActiveMenu('none');
   };
@@ -1801,8 +1797,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
 
-  // REINTENTO REAL (R4): reinicia el estado del servidor activo y fuerza el
-  // pipeline completo (re-resolve JIT si aplica → attachSource/embed). Antes el
+  // REINTENTO REAL: reinicia el estado del servidor activo y fuerza el
+  // pipeline completo (re-resolve JIT si aplica → attachSource). Antes el
   // botón solo repintaba el mismo src sin disparar ninguna petición nueva.
   const handleRetryCurrentServer = () => {
     if (!activeServer) return;
@@ -1815,13 +1811,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setBufferedEnd(0);
 
     if (activeServer.isEmbed) {
-      // El iframe se remonta por la key={activeServer.url}; forzar remount
-      // cambiando temporalmente el índice no es necesario: recrear el objeto
-      // servidor dispara los efectos de resolución/attach.
       setServers((prev) => {
         const copy = [...prev];
         if (copy[activeServerIndex]) {
-          copy[activeServerIndex] = { ...copy[activeServerIndex] };
+          copy[activeServerIndex] = {
+            ...copy[activeServerIndex],
+            notPlayable: false,
+            failure_reason: undefined,
+            resolved_at: undefined,
+          };
         }
         return copy;
       });
@@ -1991,7 +1989,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                                     {isJit && !srv.resolved_at
                                       ? 'Resolución JIT al reproducir'
                                       : srv.isEmbed
-                                      ? 'Reproductor Web (Embed)'
+                                      ? 'Locator de proveedor (se resuelve JIT)'
                                       : srv.url.includes('/api/v1/stream/mega')
                                       ? 'Mega Directo (Nativo, con subtítulos)'
                                       : 'Stream Directo (HLS)'}
@@ -2034,18 +2032,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
             )}
 
-            {activeServer && (
-              <a
-                href={activeServer.url}
-                target="_blank"
-                rel="noreferrer"
-                className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 px-3 py-1.5 rounded-lg border border-zinc-700/60 transition shadow-sm backdrop-blur-md"
-                title="Abrir fuente en pestaña nueva"
-              >
-                <ExternalLink size={13} />
-                <span>Pestaña</span>
-              </a>
-            )}
           </div>
         </div>
 
@@ -2055,41 +2041,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             <div className="rounded-full bg-zinc-900/90 border border-emerald-500/40 px-4 py-1.5 text-xs text-emerald-300 shadow-xl backdrop-blur-md flex items-center gap-2 font-medium">
               <Zap size={14} className="animate-pulse" />
               <span>{failoverNotice}</span>
-            </div>
-          </div>
-        )}
-
-        {/* AVISO CON ACCIÓN MANUAL: embed sin confirmar (NO failover automático) */}
-        {embedStall && (
-          <div className="absolute top-16 inset-x-0 z-50 flex justify-center animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="rounded-lg bg-zinc-900/95 border border-amber-500/50 px-4 py-3 text-xs text-amber-200 shadow-xl backdrop-blur-md flex flex-col gap-2 max-w-md">
-              <div className="flex items-center gap-2 font-medium">
-                <Zap size={14} className="animate-pulse text-amber-400" />
-                <span>{embedStall.message}</span>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmbedStall(null);
-                    setDeliveryState('playing_embed');
-                  }}
-                  className="pointer-events-auto rounded-md border border-zinc-600 px-3 py-1 text-zinc-300 hover:bg-zinc-800 transition-colors"
-                >
-                  Mantener
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = embedStall.targetIndex;
-                    setEmbedStall(null);
-                    handleServerChange(target, false);
-                  }}
-                  className="pointer-events-auto rounded-md bg-amber-500 px-3 py-1 font-semibold text-zinc-950 hover:bg-amber-400 transition-colors"
-                >
-                  Cambiar al siguiente servidor
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -2139,8 +2090,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {!isLoadingStream && !loadError && activeServer && (
             <>
-              {isUnresolvedCanonical(activeServer.url) || activeServer.notPlayable ? (
-                /* ESTADO RESOLVIENDO FUENTE CANÓNICA NO RESUELTA */
+              {activeServer.isEmbed || isUnresolvedCanonical(activeServer.url) || activeServer.notPlayable ? (
+                /* LOCATOR SIN STREAM NATIVO: se resuelve JIT o se hace failover */
                 <div className="flex flex-col items-center gap-4 text-white z-20 px-6 text-center animate-in fade-in duration-200">
                   <div className="relative flex items-center justify-center">
                     <div className={`h-14 w-14 rounded-full border-2 ${canonicalResolveError ? 'border-amber-500/30 border-t-amber-400' : 'border-emerald-500/20 border-t-emerald-500 animate-spin'}`} />
@@ -2151,7 +2102,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       {canonicalResolveError ? 'Fuente no disponible' : `Resolviendo fuente de ${activeServer.sourceSite ? activeServer.sourceSite.toUpperCase() : activeServer.provider}...`}
                     </p>
                     <p className="text-xs text-zinc-400">
-                      {canonicalResolveError || 'Esta página canónica no contiene un reproductor directo y se está extrayendo su stream nativo.'}
+                      {canonicalResolveError || 'Esta fuente no contiene un stream nativo y se está resolviendo para el reproductor interno.'}
                     </p>
                   </div>
                   <div className="mt-2 flex items-center gap-3">
@@ -2175,25 +2126,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     )}
                   </div>
                 </div>
-              ) : activeServer.isEmbed && !isUnresolvedCanonical(activeServer.url) ? (
-                /* REPRODUCTOR EMBEBIDO CON PROTECCIÓN SANDBOX ANTI-POPUPS */
-                <div className="relative w-full h-full flex flex-col items-center justify-center bg-black">
-                  <iframe
-                    key={activeServer.id}
-                    src={activeServer.url}
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                    allowFullScreen
-                    sandbox={
-                      activeServer.url.includes('megaplay') || activeServer.url.includes('zokoanime')
-                        ? undefined
-                        : 'allow-forms allow-scripts allow-same-origin allow-presentation'
-                    }
-                    title={activeServer.label || 'Reproductor Embebido'}
-                  />
-                </div>
               ) : (
-                /* MODO NATIVO HLS */
+                /* MODO NATIVO HLS/DASH/MP4 */
                 <>
                   <video
                     ref={videoRef}
@@ -2618,19 +2552,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             </>
           )}
 
-          {/* CONTROLES PARA MODO EMBED (IFRAME) */}
-          {activeServer && activeServer.isEmbed && (
-            <div className="flex items-center justify-end text-xs text-zinc-400">
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                className="flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white bg-zinc-900/90 px-3 py-1.5 rounded-lg border border-zinc-700/60 transition shadow-sm"
-              >
-                {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
-                <span>Pantalla Completa</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

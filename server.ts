@@ -70,6 +70,7 @@ import {
   getRecentPlayerEvents,
   clearLogs,
   getLogFilePaths,
+  maskSignedTokens,
 } from "./server/networkLogger";
 import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
@@ -138,7 +139,7 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
   return sortStreamsByPriority(
     entries.map((url) => ({
       url,
-      type: (/\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url) ? "direct" : "embed") as "direct" | "embed",
+      type: (/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(url) ? "direct" : "embed") as "direct" | "embed",
       tier: getStreamTier(url),
       host: (() => {
         try {
@@ -1408,7 +1409,7 @@ async function startServer() {
 
     const resolutionLease = runtimeBudget.tryBeginResolution({ interactive: true });
     if (!resolutionLease) {
-      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
+      return res.status(503).json({ error: "backend_busy", fallback: "next_candidate" });
     }
     try {
       const cached = resolutionId
@@ -1421,7 +1422,7 @@ async function startServer() {
       if (!meta.resolved || !meta.url || meta.is_proxyable === false) {
         return res.status(422).json({
           error: "stream_not_proxyable",
-          fallback: "embed",
+          fallback: "next_candidate",
           failure_reason: meta.failure_reason || "unresolved",
         });
       }
@@ -1437,7 +1438,7 @@ async function startServer() {
       });
     } catch (error) {
       console.warn("[PlaybackSession] No se pudo crear sesión ligera:", error instanceof Error ? error.message : error);
-      return res.status(502).json({ error: "session_resolution_failed", fallback: "embed" });
+      return res.status(502).json({ error: "session_resolution_failed", fallback: "next_candidate" });
     } finally {
       resolutionLease.release();
     }
@@ -1473,7 +1474,7 @@ async function startServer() {
     }
     const resolutionLease = runtimeBudget.tryBeginResolution({ interactive: true });
     if (!resolutionLease) {
-      return res.status(503).json({ error: "backend_busy", fallback: "embed" });
+      return res.status(503).json({ error: "backend_busy", fallback: "next_candidate" });
     }
 
     try {
@@ -1640,6 +1641,7 @@ async function startServer() {
       const lowerTargetUrl = targetUrl.toLowerCase();
       const isHlsResource =
         lowerTargetUrl.includes('.m3u8') ||
+        lowerTargetUrl.includes('.mpd') ||
         lowerTargetUrl.includes('.ts') ||
         lowerTargetUrl.includes('.m4s') ||
         lowerTargetUrl.includes('/segs/') ||
@@ -1720,11 +1722,15 @@ async function startServer() {
             : ArrayBuffer.isView(rawBody)
               ? Buffer.from(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength)
               : Buffer.from(rawBody ?? '');
-        const isManifest = lowerTargetUrl.includes('.m3u8') || contentType.includes('mpegurl');
+        const isManifest =
+          lowerTargetUrl.includes('.m3u8') ||
+          lowerTargetUrl.includes('.mpd') ||
+          contentType.includes('mpegurl') ||
+          contentType.includes('dash+xml');
 
         // â”€â”€ UPSTREAM ERROR PROPAGATION â”€â”€
         if (upstreamStatus < 200 || upstreamStatus >= 400) {
-          console.warn(`[proxy/stream] upstream ${upstreamStatus} for ${targetUrl.slice(0, 120)}`);
+          console.warn(`[proxy/stream] upstream ${upstreamStatus} for ${maskSignedTokens(targetUrl).slice(0, 120)}`);
           logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, error: `HTTP ${upstreamStatus}`, referer, client: isGoodstream ? "undici" : "stealth" });
           res.status(upstreamStatus);
           if (getHeader('content-type')) res.setHeader('Content-Type', getHeader('content-type'));
@@ -1733,7 +1739,12 @@ async function startServer() {
         }
 
         res.status(upstreamStatus);
-        res.setHeader('Content-Type', contentType || (isManifest ? 'application/vnd.apple.mpegurl' : 'application/octet-stream'));
+        res.setHeader(
+          'Content-Type',
+          contentType || (isManifest
+            ? (lowerTargetUrl.includes('.mpd') ? 'application/dash+xml' : 'application/vnd.apple.mpegurl')
+            : 'application/octet-stream')
+        );
 
         if (!isManifest) {
           const cr = getHeader('content-range');
@@ -1751,20 +1762,38 @@ async function startServer() {
           return res.end(bodyBuffer);
         }
 
-        // â”€â”€ M3U8 MANIFEST REWRITE â”€â”€
+        // â”€â”€ MANIFEST REWRITE (HLS y DASH) â”€â”€
         const text = bodyBuffer.toString('utf8');
         const baseUrl = new URL(targetUrl);
-        const proxyUri = (uri: string) => {
+        const proxyUri = (uri: string, preserveDashTemplate = false) => {
           const absoluteUri = /^https?:\/\//i.test(uri) ? uri : new URL(uri, baseUrl).toString();
           const titleParam = mediaTitle ? `&title=${encodeURIComponent(mediaTitle)}` : '';
           const provParam = explicitProvider ? `&provider=${encodeURIComponent(explicitProvider)}` : '';
-          return `/api/v1/proxy/stream?referer=${encodeURIComponent(referer)}&url=${encodeURIComponent(absoluteUri)}${titleParam}${provParam}`;
+          const encodedTarget = encodeURIComponent(absoluteUri).replace(
+            preserveDashTemplate ? /%24/g : /^$/g,
+            preserveDashTemplate ? '$' : '%24',
+          );
+          return `/api/v1/proxy/stream?referer=${encodeURIComponent(referer)}&url=${encodedTarget}${titleParam}${provParam}`;
         };
-        const rewritten = text.split(/\r?\n/).map((line) => {
-          const trimmed = line.trim();
-          if (trimmed && !trimmed.startsWith('#')) return proxyUri(trimmed);
-          return line.replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${proxyUri(uri)}"`);
-        }).join('\n');
+        const rewritten = lowerTargetUrl.includes('.mpd') || contentType.includes('dash+xml')
+          ? (() => {
+              // Most MPDs expose a single BaseURL. Resolve segment attributes
+              // against it while keeping the BaseURL itself upstream; every
+              // concrete segment then travels through the internal proxy.
+              const match = text.match(/<BaseURL\b[^>]*>([^<]+)<\/BaseURL>/i);
+              const dashBase = match?.[1]?.trim()
+                ? new URL(match[1].trim(), baseUrl).toString()
+                : baseUrl.toString();
+              return text.replace(/\b(media|initialization|sourceURL)=("|')([^"']+)("|')/gi, (_match, attr, quote, uri) => {
+                const absolute = /^https?:\/\//i.test(uri) ? uri : new URL(uri, dashBase).toString();
+                return `${attr}=${quote}${proxyUri(absolute, true)}${quote}`;
+              });
+            })()
+          : text.split(/\r?\n/).map((line) => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) return proxyUri(trimmed);
+            return line.replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${proxyUri(uri)}"`);
+          }).join('\n');
 
         const rewrittenBuffer = Buffer.from(rewritten, 'utf8');
         res.setHeader('Content-Length', rewrittenBuffer.length);
@@ -1809,7 +1838,7 @@ async function startServer() {
             }
             return { response, finalUrl: currentUrl };
           }
-          throw new Error(`Demasiadas redirecciones (> ${MAX_PROXY_REDIRECTS}) desde ${targetUrl.slice(0, 120)}`);
+          throw new Error(`Demasiadas redirecciones (> ${MAX_PROXY_REDIRECTS}) desde ${maskSignedTokens(targetUrl).slice(0, 120)}`);
         };
 
         // El HEAD de metadatos puede acabar en otra URL final (datanode); ese es el
@@ -1859,7 +1888,7 @@ async function startServer() {
         const cachedEntry = getMp4SizeCacheEntry(targetUrl);
         if (cachedEntry && cachedEntry.size !== totalFileSize) {
           console.warn(
-            `[proxy/stream] size mismatch para ${targetUrl.slice(0, 120)}: cache=${cachedEntry.size} upstream=${totalFileSize} â†’ 416`
+            `[proxy/stream] size mismatch para ${maskSignedTokens(targetUrl).slice(0, 120)}: cache=${cachedEntry.size} upstream=${totalFileSize} â†’ 416`
           );
           logProxyRequest({
             targetUrl,
@@ -1975,7 +2004,7 @@ async function startServer() {
         if (!res.destroyed) res.end();
       }
     } catch (e: any) {
-      console.error(`[proxy/stream] Error para ${targetUrl?.slice(0, 100)}:`, e.message);
+      console.error(`[proxy/stream] Error para ${targetUrl ? maskSignedTokens(targetUrl).slice(0, 100) : 'unknown'}:`, e.message);
       logProxyRequest({ targetUrl: targetUrl || "unknown", upstreamStatus: 0, durationMs: Date.now() - _proxyStartMs, bytesReceived: 0, mediaTitle, provider: explicitProvider, error: e.message, referer, client: "undici" });
       if (!res.headersSent) {
         res.status(500).json({ error: `Error en proxy: ${e.message}` });
@@ -2091,7 +2120,7 @@ async function startServer() {
           const pathname = new URL(u).pathname.toLowerCase();
           return (
             /\/(ver|watch|episode|ep|capitulo)\//.test(pathname) &&
-            !/\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u)
+            !/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u)
           );
         } catch {
           return false;
@@ -2100,7 +2129,7 @@ async function startServer() {
 
       // Una fuente directa con extensiÃ³n de media es resoluble aunque coincida con la URL
       // pedida (caso archive.org/details â†’ .mp4 directo): el player nativo sÃ­ la reproduce.
-      const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes(".m3u8") || u.includes("/m3u8/");
+      const isDirectMedia = (u: string) => /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes(".m3u8") || u.includes("/m3u8/");
 
       const realStreams = all.filter((u) => (u !== url || isDirectMedia(u)) && !isSourcePage(u));
 
@@ -3085,6 +3114,7 @@ async function startServer() {
       const contentType = resp.headers.get("content-type") || "";
       const textSample = await resp.text().catch(() => "");
       const is_m3u8 = textSample.includes("#EXTM3U") || contentType.includes("mpegurl");
+      const is_mpd = textSample.includes("<MPD") || contentType.includes("dash+xml") || /\.mpd(?:[?#]|$)/i.test(resp.url || url);
       const is_mp4 = contentType.includes("video/mp4") || url.includes(".mp4");
       const is_html = contentType.includes("text/html") || textSample.includes("<!DOCTYPE") || textSample.includes("<html");
 
@@ -3096,6 +3126,7 @@ async function startServer() {
         redirected: resp.redirected,
         final_url: resp.url,
         is_m3u8,
+        is_mpd,
         is_mp4,
         is_html,
         sample_snippet: textSample.slice(0, 100).replace(/\r?\n/g, " "),
@@ -3110,6 +3141,7 @@ async function startServer() {
         redirected: false,
         final_url: url,
         is_m3u8: false,
+        is_mpd: false,
         is_mp4: false,
         is_html: false,
         sample_snippet: "",
@@ -3140,10 +3172,12 @@ async function startServer() {
     const rankedStreams = playData?.ranked_streams || [];
 
     const primaryProbe = primaryUrl ? await probeStreamNetwork(primaryUrl, rankedStreams[0]?.requiredHeaders, portNum) : null;
-    const isDirect = Boolean(EmbedResolvers.isDirectMediaUrl(primaryUrl) || primaryProbe?.is_m3u8 || primaryProbe?.is_mp4);
+    const isDirect = Boolean(EmbedResolvers.isDirectMediaUrl(primaryUrl) || primaryProbe?.is_m3u8 || primaryProbe?.is_mpd || primaryProbe?.is_mp4);
     const isIframe = !isDirect && (playData?.delivery_mode === "embed" || Boolean(primaryProbe?.is_html));
     const playerEngine = isDirect
-      ? (primaryUrl.includes(".m3u8") || primaryProbe?.is_m3u8 ? "hls.js (Reproductor Nativo HLS)" : "HTML5 Video (<video src=mp4>)")
+      ? (primaryUrl.includes(".mpd") || primaryProbe?.is_mpd
+        ? "dash.js (Reproductor Nativo DASH)"
+        : (primaryUrl.includes(".m3u8") || primaryProbe?.is_m3u8 ? "hls.js (Reproductor Nativo HLS)" : "HTML5 Video (<video src=mp4>)"))
       : (isIframe ? "IFRAME_BLOQUEADO" : "Desconocido");
 
     const fallbackProbes = [];

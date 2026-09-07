@@ -11,6 +11,7 @@ import {
   shouldScheduleRenewal,
   canEscalateToProxy,
   isExpiredWithoutLocator,
+  isNativeMediaUrl,
   isUnresolvedCanonical,
   isRealPlayableEmbed,
   prioritizeDirectCandidates,
@@ -167,13 +168,11 @@ describe('playerDelivery — 8 pruebas obligatorias', () => {
     expect(buildAttachmentKey(s1)).toBe(buildAttachmentKey({ ...s1 }));
   });
 
-  it('7. Timeout de iframe no produce failover automático', () => {
+  it('7. Locator embed sin stream nativo termina en error/failover', () => {
     const embedState: DeliveryState = 'playing_embed';
     const nextState = handleEmbedTimeout(embedState);
 
-    // El timeout de embed pasa a awaiting_manual_choice, NO a cambio automático ni error directo
-    expect(nextState).toBe('awaiting_manual_choice');
-    expect(nextState).not.toBe('error');
+    expect(nextState).toBe('error');
     expect(nextState).not.toBe('trying_direct');
   });
 
@@ -229,7 +228,7 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
   it('isPlaybackEstablished identifica estados de reproducción confirmada', () => {
     expect(isPlaybackEstablished('playing_direct')).toBe(true);
     expect(isPlaybackEstablished('playing_proxy')).toBe(true);
-    expect(isPlaybackEstablished('playing_embed')).toBe(true);
+    expect(isPlaybackEstablished('playing_embed')).toBe(false);
     expect(isPlaybackEstablished('trying_direct')).toBe(false);
     expect(isPlaybackEstablished('requesting_proxy')).toBe(false);
     expect(isPlaybackEstablished('resolving')).toBe(false);
@@ -253,6 +252,14 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(isUnresolvedCanonical('https://ww3.gnulahd.nu/bleach-1x96/')).toBe(true);
     expect(isUnresolvedCanonical('https://streamtape.com/e/abc123xyz')).toBe(false);
     expect(isUnresolvedCanonical('https://edge.cdn.com/master.m3u8')).toBe(false);
+  });
+
+  it('acepta HLS, DASH, MP4 y sesiones internas como playback nativo', () => {
+    expect(isNativeMediaUrl('https://cdn.example/master.m3u8')).toBe(true);
+    expect(isNativeMediaUrl('https://cdn.example/manifest.mpd')).toBe(true);
+    expect(isNativeMediaUrl('https://cdn.example/movie.mp4')).toBe(true);
+    expect(isNativeMediaUrl('/api/v1/playback/session/master.m3u8')).toBe(true);
+    expect(isNativeMediaUrl('https://provider.example/embed/abc')).toBe(false);
   });
 
   it('isRealPlayableEmbed valida embeds reales y rechaza páginas no resueltas o expiradas', () => {
@@ -319,7 +326,7 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
       streamType: 'embed',
     });
     expect(prioritizeDirectCandidates([unresolved, embed]).map((s) => s.id))
-      .toEqual(['embed', 'page']);
+      .toEqual(['page', 'embed']);
   });
 
   it('canonicalUrlOf garantiza que la solicitud proxy use canonical_locator preferentemente', () => {
@@ -331,7 +338,15 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(canonicalUrlOf(serverWithLocator)).toBe('https://upstream-provider.com/embed/ref-999');
   });
 
-  it('una página canónica resuelta a embed se monta como iframe, no como HLS', () => {
+  it('envía a proxy los directos que requieren headers del CDN', () => {
+    const server = makeServer({
+      requiredHeaders: { Referer: 'https://provider.example/' },
+      canonical_locator: 'https://provider.example/episode/1',
+    });
+    expect(nextDeliveryIntent(server, null)).toBe('proxy');
+  });
+
+  it('una página canónica resuelta a embed se marca no reproducible para el player interno', () => {
     const canonicalPage = makeServer({
       id: 'canonical-page',
       url: 'https://tioanime.com/ver/yozakurasan-chi-no-daisakusen-1',
@@ -354,6 +369,6 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(resolved.isEmbed).toBe(true);
     expect(resolved.streamType).toBe('embed');
     expect(resolved.delivery_mode).toBe('embed');
-    expect(resolved.notPlayable).toBe(false);
+    expect(resolved.notPlayable).toBe(true);
   });
 });

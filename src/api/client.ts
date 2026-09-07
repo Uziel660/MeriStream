@@ -22,9 +22,10 @@ import type {
 
 const BASE_URL = "/api/v1";
 
-function inferProtocolFromUrl(url?: string | null): "hls" | "mp4" {
+function inferProtocolFromUrl(url?: string | null): "hls" | "dash" | "mp4" {
   if (!url) return "mp4";
   const normalized = url.toLowerCase();
+  if (normalized.includes(".mpd") || normalized.includes("dash")) return "dash";
   return normalized.includes(".m3u8") || normalized.includes("m3u8") ? "hls" : "mp4";
 }
 

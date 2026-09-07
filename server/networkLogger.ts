@@ -117,7 +117,7 @@ export interface ProxyLogEntry {
   providerName: string;
   category: string;
   mediaTitle?: string;
-  resourceType: "m3u8" | "segment" | "mp4" | "mega" | "other";
+  resourceType: "m3u8" | "mpd" | "segment" | "mp4" | "mega" | "other";
   upstreamStatus: number;
   ok: boolean;
   durationMs: number;
@@ -169,13 +169,13 @@ export type PlayerEventType =
   | "playback_confirmed"
   | "scraper_resolution"      // El backend extrajo los servidores de un episodio
   | "scraper_failed"          // El backend no pudo encontrar servidores para un episodio
-  | "embed_opened"            // Se abrió un servidor Embed (iframe con posibles anuncios/captchas)
+  | "embed_opened"            // Evento legacy de locator (el player actual no abre iframes)
   | "playback_started"        // El video comenzó a reproducir frames reales (OK)
   | "playback_buffering"      // El video se pausó a mitad por falta de buffer (CDN lenta)
   | "black_screen_stalled"    // El reproductor esperó >6s y nunca mostró imagen ni avanzó
   | "playback_error"          // Error fatal de HTML5 <video> o Hls.js
   | "failover_auto"           // El reproductor saltó automáticamente al siguiente server
-  | "quota_fallback"          // MEGA o host devolvió cuota agotada -> fallback a embed
+  | "quota_fallback"          // Evento legacy de cuota; el player actual hace failover nativo
   | "embed_unresolvable";
 
 export interface PlayerEventEntry {
@@ -291,6 +291,7 @@ function extractHost(url: string): string {
 function classifyResource(url: string): ProxyLogEntry["resourceType"] {
   const lower = url.toLowerCase();
   if (lower.includes("mega.nz") || lower.includes("/stream/mega")) return "mega";
+  if (lower.includes(".mpd") || lower.includes("dash+xml")) return "mpd";
   if (lower.includes(".m3u8") || lower.includes("mpegurl")) return "m3u8";
   if (
     lower.includes(".ts") ||
@@ -358,7 +359,7 @@ export function logProxyRequest(data: {
     bytesReceived: data.bytesReceived,
     error: data.error,
     errorType: classifyError(data.upstreamStatus, data.error),
-    referer: data.referer,
+    referer: data.referer ? maskSignedTokens(data.referer) : undefined,
     client: data.client,
   };
 

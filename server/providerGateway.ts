@@ -15,6 +15,7 @@ import type {
   SubtitleTrack,
 } from "./providers/api";
 import { inferStreamType } from "./providers/api/types";
+import { hasSignedQuery } from "./resolutionMetadata";
 
 export type GatewayKind = DirectMediaKind;
 
@@ -251,26 +252,37 @@ async function persistApiSources(req: GatewayRequest, sources: GatewaySource[]):
 
   let saved = 0;
   for (const source of sources.filter((value) => value.providerGroup === "api")) {
+    // Las respuestas JIT pueden traer una URL CDN firmada y efímera. Nunca la
+    // usamos como identidad persistente: si hay un locator HTTP estable,
+    // guardamos ese locator como página para resolverlo de nuevo bajo demanda;
+    // de lo contrario la fuente vive únicamente en la respuesta actual.
+    const signed = hasSignedQuery(source.url);
+    const stableLocator = source.canonicalLocator?.trim();
+    if (signed && (!stableLocator || !/^https?:\/\//i.test(stableLocator) || hasSignedQuery(stableLocator))) {
+      continue;
+    }
+    const persistedUrl = signed ? stableLocator! : source.url;
+    const persistedType = signed ? "page" : "direct";
     await prisma.sourceLink.upsert({
       where: {
         media_episode_id_source_site_url: {
           media_episode_id: episode.id,
           source_site: source.provider,
-          url: source.url,
+          url: persistedUrl,
         },
       },
       create: {
         media_episode_id: episode.id,
         source_site: source.provider,
-        url: source.url,
-        link_type: "direct",
+        url: persistedUrl,
+        link_type: persistedType,
         language: source.audioLanguage,
         audio_language: source.audioLanguage,
         subtitle_language: source.subtitleLanguage,
         subtitles: source.subtitles as any,
         canonical_locator: source.canonicalLocator || null,
         source_status: "discovered",
-        extraction_method: "direct_api_jit",
+        extraction_method: signed ? "canonical_locator_jit" : "direct_api_jit",
         resolver_version: "gateway-v2-direct",
       },
       update: {

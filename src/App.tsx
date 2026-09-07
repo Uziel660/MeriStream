@@ -487,8 +487,19 @@ export function App() {
         ? fetch(gatewayUrl).then(async (response) => response.ok ? response.json() : null).catch(() => null)
         : Promise.resolve(null);
       const legacyPromise = fetch(`/api/v1/play/${episode.id}`).catch(() => null);
+      const subtitleQuery = new URLSearchParams({
+        tmdb_id: String(tmdbId),
+        kind: gatewayKind,
+        languages: 'es,en',
+      });
+      // Las películas no tienen temporada ni episodio. Enviarlos hace que
+      // OpenSubtitles interprete la búsqueda como una serie y devuelva cero.
+      if (gatewayKind !== 'movie') {
+        subtitleQuery.set('season', String(seasonNumber));
+        subtitleQuery.set('episode', String(episode.episode_number));
+      }
       const subtitlePromise = tmdbId > 0
-        ? fetch(`/api/v1/subtitles?tmdb_id=${tmdbId}&kind=${gatewayKind}&season=${seasonNumber}&episode=${episode.episode_number}&languages=es,en`)
+        ? fetch(`/api/v1/subtitles?${subtitleQuery.toString()}`)
             .then(async (response) => response.ok ? response.json() : null)
             .catch(() => null)
         : Promise.resolve(null);

@@ -90,8 +90,10 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   // únicamente la respuesta pública que consumiría la aplicación para cubrir
   // el flujo real del usuario: API → <track> → menú → pista activa.
   let subtitleApiCalls = 0;
+  const subtitleSearchUrls: string[] = [];
   await page.route('**/api/v1/subtitles**', async (route) => {
     subtitleApiCalls += 1;
+    if (!/\/file\//i.test(route.request().url())) subtitleSearchUrls.push(route.request().url());
     if (/\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt/i.test(route.request().url())) {
       await route.fulfill({
         status: 200,
@@ -142,6 +144,12 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   const player = page.getByRole('dialog').last();
   await expect(player).toBeVisible();
   await expect.poll(() => subtitleApiCalls, { timeout: 15_000 }).toBeGreaterThan(0);
+  expect(subtitleSearchUrls.some((url) => {
+    const parsed = new URL(url);
+    return parsed.searchParams.get('kind') === 'movie'
+      && !parsed.searchParams.has('season')
+      && !parsed.searchParams.has('episode');
+  })).toBeTruthy();
   await expect(page.locator('iframe')).toHaveCount(0);
 
   const video = player.locator('video').first();

@@ -75,6 +75,17 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   await expect(player).toBeVisible();
   await expect.poll(() => subtitleApiCalls, { timeout: 15_000 }).toBeGreaterThan(0);
   await expect(page.locator('iframe')).toHaveCount(0);
+
+  // El ranking puede poner temporalmente Gnula/ Vidara delante mientras
+  // Cinecalidad resuelve su ficha. Para probar las pistas de Cinecalidad de
+  // forma determinista, seguimos el mismo control de failover que tendría el
+  // usuario y avanzamos una vez si el primer locator es Gnula.
+  if (await player.getByText(/Resolviendo fuente de GNULA/i).count()) {
+    const nextServer = player.getByRole('button', { name: /Probar siguiente servidor/i });
+    await expect(nextServer).toBeVisible({ timeout: 15_000 });
+    await nextServer.click();
+  }
+
   const video = player.locator('video').first();
   await expect(video).toBeVisible();
   await expect.poll(() => video.evaluate((element) => element.readyState), { timeout: 60_000 })

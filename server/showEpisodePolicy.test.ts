@@ -52,6 +52,15 @@ describe("show episode main-path presentation", () => {
     expect(filterMainPathLinks([{ url: "https://tioanime.com/ver/show-2", source_site: "tioanime" }], "anime")).toEqual([]);
   });
 
+  it("ordena Cinecalidad antes de Gnula en el camino principal", () => {
+    const links = filterMainPathLinks([
+      { url: "https://ww3.gnulahd.nu/ver/demo/", source_site: "gnula", link_type: "page" },
+      { url: "https://www.cinecalidad.am/ver-pelicula/demo/", source_site: "cinecalidad", link_type: "page" },
+    ], "movie");
+
+    expect(links.map((link) => link.source_site)).toEqual(["cinecalidad", "gnula"]);
+  });
+
   it("counts only active canonical providers", () => {
     const canonical = [
       {

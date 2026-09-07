@@ -1,5 +1,5 @@
 import type { ContentKind } from "./types";
-import { isProviderAllowedInMainPath, normalizeProviderId } from "./providers/providerPolicy";
+import { getProviderPriority, isProviderAllowedInMainPath, normalizeProviderId } from "./providers/providerPolicy";
 
 export type MainPathKind = Extract<ContentKind, "movie" | "series" | "anime">;
 
@@ -50,7 +50,10 @@ function providerOf(link: MainPathSourceLink | string): string {
 
 function sourcePriority(link: MainPathSourceLink, kind: MainPathKind): number {
   const provider = providerOf(link);
-  let priority = provider === "zokoanime" ? 0 : provider === "tioanime" ? 90 : 10;
+  // Use the shared provider registry so primary/secondary roles remain
+  // consistent in catalog display and playback. Cinecalidad (10) must precede
+  // Gnula (20) even when both expose canonical page locators.
+  let priority = getProviderPriority(provider);
 
   // ZokoAnime exposes both /sub and /dub locators. The requested anime
   // default is Japanese audio with Spanish subtitles, so choose /sub first.

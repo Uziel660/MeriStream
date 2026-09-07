@@ -33,6 +33,7 @@ import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/sit
 import { siteFromDomain } from "./server/siteRatingService";
 import {
   isProviderAllowedInCrossPlatformRecovery,
+  getProviderPriority,
   isProviderAllowedInMainPath,
   normalizeProviderId,
 } from "./server/providers/providerPolicy";
@@ -401,7 +402,16 @@ function keepCanonicalCandidatesFirst(
   };
   return ranked
     .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .sort((a, b) => {
+      const kindDelta = rank(a.entry) - rank(b.entry);
+      if (kindDelta !== 0) return kindDelta;
+      // When two canonical locators are both awaiting JIT resolution, keep
+      // the configured primary/secondary provider order deterministic. Site
+      // ratings remain useful inside the generic cascade, but must not make
+      // Gnula outrank Cinecalidad on the normal Spanish path.
+      const providerDelta = getProviderPriority(a.entry.source_site) - getProviderPriority(b.entry.source_site);
+      return providerDelta !== 0 ? providerDelta : a.index - b.index;
+    })
     .map(({ entry }) => entry);
 }
 

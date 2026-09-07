@@ -378,7 +378,10 @@ export class EmbedResolvers {
       };
     }
 
-    const provider = this.getProviderName(rawUrl);
+    // ZokoAnime embeds are discovered by the HiAnimes catalog adapter, but the
+    // playback locator belongs to ZokoAnime. Keep that identity in the delivery
+    // response so the player labels the source accurately.
+    const provider = isZokoAnimeUrl(rawUrl) ? "ZokoAnime" : this.getProviderName(rawUrl);
 
     // Si ya es un stream directo, retornar inmediatamente (salvo placeholders del host).
     // Semántica de renovación: una URL directa con expiración explícita (firmada) es

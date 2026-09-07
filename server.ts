@@ -27,6 +27,7 @@ import {
   refreshShowStreams,
 } from "./server/showService";
 import { prisma, normalizeTitle, normalizeBaseTitle } from "./server/db";
+import { lookupAnimeIdentityByTitle } from "./server/animeIdentity";
 import { EmbedResolvers, isValidProvider } from "./server/resolvers";
 import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUrl, familyKeyOfStreamUrl } from "./server/utils/streamSorter";
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
@@ -575,11 +576,6 @@ async function findCanonicalMediaEpisodeForLegacy(
   const title = String(targetShow.title || targetShow.normalized_title || "").trim();
   const normalized = normalizeTitle(title || String(targetShow.normalized_title || ""));
   const baseNormalized = normalizeBaseTitle(title || String(targetShow.base_normalized_title || ""));
-  const where: Array<Record<string, unknown>> = [];
-  if (targetShow.tmdb_id != null) where.push({ tmdb_id: targetShow.tmdb_id });
-  if (normalized) where.push({ normalized_title: normalized });
-  if (baseNormalized) where.push({ base_normalized_title: baseNormalized });
-  if (where.length === 0) return null;
   // TMDB comparte el espacio numérico entre películas y TV. El puente legacy
   // conserva el namespace para no devolver accidentalmente una obra de otro
   // tipo cuando ambos comparten el mismo entero.
@@ -590,6 +586,27 @@ async function findCanonicalMediaEpisodeForLegacy(
     : category === "anime" || category === "series"
       ? { kind: { in: ["anime", "series"] } }
       : {};
+
+  // Algunos catálogos guardan el mismo anime con su nombre japonés en una
+  // fila (Jigokuraku) y el nombre inglés en otra (Hell's Paradise). Kitsu
+  // aporta los aliases públicos para reunir esas filas cuando falta TMDB en
+  // la importación original. Si la API no responde, el matching local sigue
+  // funcionando como antes.
+  const animeIdentity = playbackKind === "anime" && targetShow.tmdb_id == null
+    ? await lookupAnimeIdentityByTitle(title)
+    : null;
+  const titleKeys = [...new Set([
+    normalized,
+    baseNormalized,
+    ...(animeIdentity?.normalizedAliases || []),
+  ].filter(Boolean))];
+  const where: Array<Record<string, unknown>> = [];
+  if (targetShow.tmdb_id != null) where.push({ tmdb_id: targetShow.tmdb_id });
+  if (titleKeys.length > 0) {
+    where.push({ normalized_title: { in: titleKeys } });
+    where.push({ base_normalized_title: { in: titleKeys } });
+  }
+  if (where.length === 0) return null;
 
   const rawEpisodeNumber = Number(foundEpisode?.episode_number ?? 1);
   const episodeNumber = Number.isFinite(rawEpisodeNumber) ? rawEpisodeNumber : 1;
@@ -656,6 +673,29 @@ async function findCanonicalMediaEpisodeForLegacy(
       [selectedEpisode],
       mediaItems.flatMap((item) => item.episodes).filter((episode) => episode.id !== selectedEpisode.id),
     ])[0] || selectedEpisode;
+    // HiAnime/Zoko sometimes omits the first episode from its list even though
+    // the public Zoko locator is live. Once an alias row proves that Zoko has
+    // this season, fill only the requested episode with the two public
+    // renditions; the normal JIT resolver validates the locator before use.
+    const hasZokoForSeason = mediaItems.some((item) => item.episodes.some((episode) =>
+      episode.season_number === seasonNumber && episode.links.some((link: any) => normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime"),
+    ));
+    if (playbackKind === "anime" && animeIdentity?.malId && hasZokoForSeason &&
+      !mergedEpisode.links.some((link: any) => normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime")) {
+      const malId = animeIdentity.malId;
+      const locator = (rendition: "sub" | "dub") => `https://zokoanime.video/stream/mal/${malId}/${episodeNumber}/${rendition}?color=35d5bf`;
+      mergedEpisode.links.push(
+        {
+          url: locator("sub"), source_site: "zokoanime.video", link_type: "sub",
+          language: "sub", audio_language: "ja", subtitle_language: "en",
+          canonical_locator: locator("sub"),
+        },
+        {
+          url: locator("dub"), source_site: "zokoanime.video", link_type: "dub",
+          language: "dub", audio_language: "en", canonical_locator: locator("dub"),
+        },
+      );
+    }
     const playbackLinks = filterMainPathLinks(mergedEpisode.links, playbackKind);
     const rankedRaw = await buildMultiSourceCascade(playbackLinks, { maxPerSite: 2, maxTotal: 8 });
     const ranked = keepCanonicalCandidatesFirst(rankedRaw, mergedEpisode.links);
@@ -741,6 +781,115 @@ function isExpiredSignedUrl(url: string): boolean {
 
 const playStreamsCache = new Map<string, { streamUrl: string; allStreams: string[]; ranked: any[]; expiresAt: number }>();
 
+/**
+ * Enriches a canonical anime episode with equivalent title rows discovered
+ * through Kitsu aliases. Some importers call the same season "Jigokuraku"
+ * while others use "Hell's Paradise", leaving the canonical episode with
+ * only LatAnime links even though the ZokoAnime row exists under the alias.
+ */
+async function enrichAnimeMediaEpisodeWithAliases(
+  mediaEpisode: any,
+): Promise<{ episode: any; changed: boolean }> {
+  const item = mediaEpisode?.media_item;
+  if (!item || String(item.kind || "").toLowerCase() === "movie") {
+    return { episode: mediaEpisode, changed: false };
+  }
+  const title = String(item.title || "").trim();
+  if (!title || item.tmdb_id != null) return { episode: mediaEpisode, changed: false };
+
+  // An episode that already carries a Zoko locator is complete for the alias
+  // bridge. Avoid a needless external metadata lookup on these rows (and keep
+  // playback latency bounded when the public Kitsu API is slow).
+  const alreadyHasZoko = (mediaEpisode.links || []).some((link: any) =>
+    normalizeProviderId(link?.source_site || link?.host || link?.url) === "zokoanime",
+  );
+  if (alreadyHasZoko) return { episode: mediaEpisode, changed: false };
+
+  const identity = await lookupAnimeIdentityByTitle(title);
+  if (!identity) return { episode: mediaEpisode, changed: false };
+
+  const titleKeys = [...new Set([
+    normalizeTitle(title),
+    normalizeBaseTitle(title),
+    ...(identity.normalizedAliases || []),
+  ].filter(Boolean))];
+  if (titleKeys.length === 0) return { episode: mediaEpisode, changed: false };
+
+  const seasonNumber = Number(mediaEpisode.season_number) > 0
+    ? Number(mediaEpisode.season_number)
+    : 1;
+  const episodeNumber = Number(mediaEpisode.episode_number);
+  if (!Number.isFinite(episodeNumber)) return { episode: mediaEpisode, changed: false };
+
+  try {
+    const mediaItems = await prisma.mediaItem.findMany({
+      where: {
+        kind: { in: ["anime", "series"] },
+        OR: [
+          { normalized_title: { in: titleKeys } },
+          { base_normalized_title: { in: titleKeys } },
+        ],
+      } as any,
+      include: {
+        episodes: {
+          where: { season_number: seasonNumber },
+          include: { links: true },
+        },
+      },
+      take: 50,
+    });
+
+    const equivalentEpisodes = mediaItems.flatMap((candidate: any) =>
+      (candidate.episodes || []).map((episode: any) => ({ ...episode, media_item: candidate }))
+    );
+    const requested = equivalentEpisodes.filter((episode: any) =>
+      Number(episode.episode_number) === episodeNumber,
+    );
+    const seasonEpisodes = [mediaEpisode, ...equivalentEpisodes];
+    const links = [
+      ...mediaEpisode.links,
+      ...requested.flatMap((episode: any) => episode.links || []),
+    ];
+    const deduped = Array.from(new Map(
+      links
+        .filter((link: any) => String(link?.url || "").trim())
+        .map((link: any) => [
+          `${normalizeProviderId(link.source_site || link.host || link.url)}|${String(link.url).trim()}`,
+          link,
+        ]),
+    ).values());
+
+    const hasZokoForSeason = seasonEpisodes.some((episode: any) =>
+      (episode.links || []).some((link: any) =>
+        normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime",
+      ),
+    );
+    if (identity.malId && hasZokoForSeason && !deduped.some((link: any) =>
+      normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime",
+    )) {
+      const locator = (rendition: "sub" | "dub") =>
+        `https://zokoanime.video/stream/mal/${identity.malId}/${episodeNumber}/${rendition}?color=35d5bf`;
+      deduped.push(
+        {
+          url: locator("sub"), source_site: "zokoanime.video", link_type: "sub",
+          language: "sub", audio_language: "ja", subtitle_language: "en",
+          canonical_locator: locator("sub"),
+        },
+        {
+          url: locator("dub"), source_site: "zokoanime.video", link_type: "dub",
+          language: "dub", audio_language: "en", canonical_locator: locator("dub"),
+        },
+      );
+    }
+
+    const changed = deduped.length !== mediaEpisode.links.length;
+    return { episode: changed ? { ...mediaEpisode, links: deduped } : mediaEpisode, changed };
+  } catch (error: any) {
+    console.warn("[Playback] enriquecimiento anime por alias omitido:", error?.message || error);
+    return { episode: mediaEpisode, changed: false };
+  }
+}
+
 export async function handlePlayEpisode(req: Request, res: Response) {
   const targetId = req.params.episode_id;
   const _playResolveStart = Date.now();
@@ -761,7 +910,12 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         : mediaEpisode.media_item?.kind === "series"
           ? "series"
           : "anime";
-      const hasZoko = mediaEpisode.links.some((link: any) =>
+      const aliasMerge = playbackKind === "anime"
+        ? await enrichAnimeMediaEpisodeWithAliases(mediaEpisode)
+        : { episode: mediaEpisode, changed: false };
+      const playbackEpisode = aliasMerge.episode;
+      if (aliasMerge.changed) playStreamsCache.delete(mediaEpisode.id);
+      const hasZoko = playbackEpisode.links.some((link: any) =>
         normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime"
       );
       const isAllowedLink = (link: any) => {
@@ -773,7 +927,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       };
 
       const cached = playStreamsCache.get(mediaEpisode.id);
-      if (cached && cached.expiresAt > Date.now()) {
+      if (!aliasMerge.changed && cached && cached.expiresAt > Date.now()) {
         const cachedRanked = cached.ranked
           .filter((entry: any) => isAllowedLink(entry))
           .sort((a: any, b: any) => compareMainPathLinks(a, b, playbackKind));
@@ -791,7 +945,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       }
 
       // Filtrar links que pertenecen a otra temporada o episodio
-      const validLinks = mediaEpisode.links.filter((l: any) => {
+      const validLinks = playbackEpisode.links.filter((l: any) => {
         const url = (l.url || "").trim();
         if (!url) return false;
         const sxp = url.match(/(?:[-_/]|^)(\d+)x(\d+)(?:[-_/.]|$)/i);
@@ -812,7 +966,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       });
 
       const policyLinks = filterMainPathLinks(
-        (validLinks.length > 0 ? validLinks : mediaEpisode.links).filter(isAllowedLink),
+        (validLinks.length > 0 ? validLinks : playbackEpisode.links).filter(isAllowedLink),
         playbackKind,
       );
       const linksToUse = policyLinks;
@@ -1317,6 +1471,14 @@ async function startServer() {
       const category = String((show as any).category || "").toLowerCase();
       const norm = (show as any).normalized_title;
       const base = (show as any).base_normalized_title || norm;
+      const animeIdentity = playbackKind === "anime" && (show as any).tmdb_id == null
+        ? await lookupAnimeIdentityByTitle(String((show as any).title || norm || ""))
+        : null;
+      const titleKeys = [...new Set([
+        norm,
+        base,
+        ...(animeIdentity?.normalizedAliases || []),
+      ].filter(Boolean))];
       let canonicalItem: any = null;
       let canonicalCandidates: any[] = [];
       if (norm || (show as any).tmdb_id != null) {
@@ -1327,8 +1489,8 @@ async function startServer() {
               { kind: { in: canonicalKinds } },
               {
                 OR: [
-                  ...(norm ? [{ base_normalized_title: base }] : []),
-                  ...(base !== norm && norm ? [{ normalized_title: norm }] : []),
+                  ...(titleKeys.length ? [{ base_normalized_title: { in: titleKeys } }] : []),
+                  ...(titleKeys.length ? [{ normalized_title: { in: titleKeys } }] : []),
                   ...((show as any).tmdb_id != null ? [{ tmdb_id: (show as any).tmdb_id }] : []),
                 ],
               },
@@ -1376,6 +1538,21 @@ async function startServer() {
           .filter((item: any) => item.id !== canonicalItem?.id)
           .map((item: any) => item.episodes || [])),
       ]);
+      const requestedSeason = Number.parseInt(String(parseTitleQuery(String((show as any).title || "")).season || 1), 10) || 1;
+      const hasZokoForSeason = canonicalEpisodes.some((episode: any) =>
+        episode.season_number === requestedSeason && (episode.links || []).some((link: any) => normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime"),
+      );
+      if (playbackKind === "anime" && animeIdentity?.malId && hasZokoForSeason) {
+        const malId = animeIdentity.malId;
+        for (const episode of canonicalEpisodes) {
+          if (episode.season_number !== requestedSeason || (episode.links || []).some((link: any) => normalizeProviderId(link.source_site || link.host || link.url) === "zokoanime")) continue;
+          const locator = (rendition: "sub" | "dub") => `https://zokoanime.video/stream/mal/${malId}/${episode.episode_number}/${rendition}?color=35d5bf`;
+          episode.links.push(
+            { url: locator("sub"), source_site: "zokoanime.video", link_type: "sub", language: "sub", audio_language: "ja", subtitle_language: "en", canonical_locator: locator("sub") },
+            { url: locator("dub"), source_site: "zokoanime.video", link_type: "dub", language: "dub", audio_language: "en", canonical_locator: locator("dub") },
+          );
+        }
+      }
       const episodes = buildDisplayEpisodes(
         legacyEpisodes,
         canonicalEpisodes,

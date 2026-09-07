@@ -4,10 +4,6 @@ const BASE_URL = 'http://127.0.0.1:3010';
 
 test('la ficha de anime expone LatAnime y ZokoAnime en el selector de fuentes', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.addInitScript(() => {
-    window.localStorage.setItem('voidstream_show_server_selector', 'true');
-  });
-
   const catalogResponse = await page.request.get(
     `${BASE_URL}/api/v1/shows?lite=true&category=anime&search=${encodeURIComponent('Gachiakuta')}&limit=20`,
   );

@@ -163,9 +163,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [hasEnded, setHasEnded] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [deliveryState, setDeliveryState] = useState<DeliveryState>('resolving');
-  // La cascada automática mantiene la infraestructura fuera de la UI normal.
-  // Administración puede habilitar el selector para diagnóstico o el usuario
-  // lo ve cuando la cascada ya agotó sus candidatos.
+  // La cascada sigue eligiendo automáticamente el primer servidor, pero si
+  // hay varias fuentes el usuario debe poder inspeccionarlas y cambiar de
+  // plataforma sin entrar al panel de administración.
   const [serverSelectorAlways, setServerSelectorAlways] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('voidstream_show_server_selector') === 'true';
@@ -189,7 +189,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, []);
 
-  const showServerSelector = serverSelectorAlways || Boolean(playbackError) || deliveryState === 'error';
+  const showServerSelector = servers.length > 1 || serverSelectorAlways || Boolean(playbackError) || deliveryState === 'error';
 
   // SELECTOR MANUAL: visible con >1 candidato para permitir elegir otra fuente
   // nativa cuando el watchdog o la resolución JIT marcan una fuente como caída.
@@ -1108,6 +1108,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     }; // end setupHls
 
     // Direct-first & Proxy-on-demand logic
+    // A provider locator is resolved by the JIT effect above. Do not treat the
+    // unresolved embed as a failed playback attempt while that request is in
+    // flight; doing so races the resolver and skips the preferred source.
+    if (activeServer?.isEmbed || isUnresolvedCanonical(activeServer?.url)) {
+      return;
+    }
     const capability = getDeliveryCapability(url, activeServer?.provider);
     let finalUrl = url;
 
@@ -1293,6 +1299,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     // manifiesto. handleServerChange limpia activeSessionUrl al cambiar de fuente.
     if (activeSessionUrl) return;
     if (activeServer && !activeServer.isEmbed && !isCanonicalPending && lastAttachmentKey.current !== key) {
+      // `attachSource` owns the direct/proxy decision. Calling it for every
+      // resolved candidate lets sources that require request headers (for
+      // example ZokoAnime's CDN) create the internal playback session instead
+      // of being attached directly by this bookkeeping effect.
       if (videoRef.current) {
         lastAttachmentKey.current = key;
         attachSource(activeServer.url || '');
@@ -1869,8 +1879,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {/* ACCIONES SUPERIORES: CAMBIO RÁPIDO DE SERVIDORES Y APERTURA EXTERNA */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* La cascada selecciona y cambia de servidor automáticamente. Solo
-                exponemos infraestructura en error o en modo diagnóstico. */}
+            {/* La cascada selecciona automáticamente, pero el selector queda
+                disponible cuando existen varias fuentes. */}
             {showServerSelector && servers.length > 1 && (
               <div className="relative">
                 <button

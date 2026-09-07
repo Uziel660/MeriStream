@@ -26,7 +26,7 @@ Ahí están centralizados:
 - Hls.js/Plyr para reproducción
 - Vitest para tests
 
-## Inicio rápido
+## Inicio rápido desde BD vacía
 
 ```bash
 npm install
@@ -48,8 +48,11 @@ Luego:
 npx prisma generate
 npx prisma db push
 npm run bootstrap
+npm run ingest:all
 npm run dev
 ```
+
+### 1. Bootstrap del catálogo
 
 `npm run bootstrap` está pensado para una BD vacía. Por defecto crea un catálogo inicial canónico con TMDB:
 
@@ -78,10 +81,56 @@ Opciones útiles:
 
 El bootstrap es idempotente por `tmdb_id + kind`: puedes volver a ejecutarlo para ampliar/actualizar el catálogo sin duplicar obras.
 
+### 2. Ingestión completa de providers
+
+`npm run ingest:all` crea tareas `full_catalog` para todos los catálogos registrados en `server/providers/ingestionRegistry.ts` y el worker las procesa cuando arranca el servidor.
+
+Incluye actualmente AnimeAV1, AnimeFLV, JKAnime, HiAnimes, GNULA, Cinecalidad, LaMovie, TubePelis, TioPlus, Doramasflix, LatAnime, TioAnime y VerAnimes.
+
+Modo normal:
+
+```bash
+npm run ingest:all
+npm run dev
+```
+
+Modo agresivo:
+
+```bash
+npm run ingest:all -- --fast
+npm run dev
+```
+
+Volver a recorrer todos los catálogos desde cero sin duplicar jobs:
+
+```bash
+npm run ingest:all -- --refresh
+npm run dev
+```
+
+Combinar refresh + máximo ritmo:
+
+```bash
+npm run ingest:all -- --refresh --fast
+npm run dev
+```
+
+Solo ver qué tareas crearía:
+
+```bash
+npm run ingest:all -- --dry
+```
+
+`npm run fast-start` se conserva como alias de `npm run ingest:all -- --fast`.
+
+El modo `full_catalog` no usa un número fijo de páginas: avanza hasta que el sitio deja de devolver contenido, con reanudación persistente y un fusible anti-loop.
+
 Scripts principales:
 
 ```bash
 npm run bootstrap
+npm run ingest:all
+npm run fast-start
 npm run dev
 npm run build
 npm test

@@ -6,12 +6,12 @@
       "sampleUrl": "https://www.cinecalidad.am/ver-pelicula/bolt/",
       "adapter": "cinecalidad",
       "streams": [
-        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
-        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q"
+        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8",
+        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8"
       ],
       "directStreams": [
-        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
-        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q"
+        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8",
+        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8"
       ],
       "finalHosts": [
         "vimeos.zip",
@@ -19,7 +19,7 @@
       ],
       "mediaChecks": [
         {
-          "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+          "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8",
           "status": 200,
           "contentType": "application/vnd.apple.mpegurl",
           "bytesRead": 1846,
@@ -29,14 +29,14 @@
             "Accept-Encoding": "identity"
           },
           "segment": {
-            "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_n/seg-1-v1-a1.ts?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+            "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_n/seg-1-v1-a1.ts",
             "status": 206,
             "contentType": "video/MP2T",
             "bytesRead": 1024
           }
         },
         {
-          "url": "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q",
+          "url": "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8",
           "status": 403,
           "contentType": "text/html; charset=utf-8",
           "bytesRead": 146,
@@ -106,18 +106,18 @@
       "sampleUrl": "https://latanime.org/ver/mushoku-tensei-jobless-reincarnation-s3-castellano-episodio-1",
       "adapter": "latanime",
       "streams": [
-        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8",
         "https://hexload.com/embed-p25vo27elhc6"
       ],
       "directStreams": [
-        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0"
+        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8"
       ],
       "finalHosts": [
         "edge1-moscow-sprintcdn.owphbf24.com"
       ],
       "mediaChecks": [
         {
-          "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+          "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8",
           "status": 200,
           "contentType": "application/vnd.apple.mpegurl",
           "bytesRead": 647,
@@ -127,7 +127,7 @@
             "Accept-Encoding": "identity"
           },
           "segment": {
-            "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/seg-1-v1-a1.ts?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+            "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/seg-1-v1-a1.ts",
             "status": 206,
             "contentType": "video/MP2T",
             "bytesRead": 1024

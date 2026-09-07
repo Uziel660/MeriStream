@@ -48,12 +48,12 @@
       "provider": "latanime",
       "role": "primary",
       "landing": {
-        "initialUrl": "https://latanime.org/animes?p=1",
-        "finalUrl": "https://latanime.org/animes?p=1",
+        "initialUrl": "https://latanime.org/animes",
+        "finalUrl": "https://latanime.org/animes",
         "finalHost": "latanime.org",
         "hops": [
           {
-            "url": "https://latanime.org/animes?p=1",
+            "url": "https://latanime.org/animes",
             "status": 200,
             "contentType": "text/html; charset=UTF-8",
             "location": null,

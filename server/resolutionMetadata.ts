@@ -118,7 +118,7 @@ export function isResolutionFresh(timing: Pick<ResolutionTiming, "refresh_after"
 export function isDirectMedia(url: string): boolean {
   if (!url) return false;
   const u = url.toLowerCase();
-  return /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes("/m3u8/") || u.includes("hls-vod");
+  return /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes("/m3u8/") || u.includes("hls-vod");
 }
 
 export function hasSignedQuery(url: string): boolean {

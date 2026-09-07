@@ -12,6 +12,11 @@ export interface ProviderPolicy {
   contentKinds: ContentKind[];
   audioLanguages: string[];
   subtitleLanguages: string[];
+  /** Runtime registry metadata shared by discovery, resolver and health layers. */
+  discovery?: "catalog" | "page" | "direct_api" | "metadata";
+  resolver?: string;
+  hosts?: string[];
+  fallbackProvider?: string;
   notes?: string;
 }
 
@@ -30,13 +35,94 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["movie", "series", "anime", "documentary", "open_archive"],
     audioLanguages: [],
     subtitleLanguages: [],
+    discovery: "direct_api",
+    resolver: "direct",
+  },
+  "stremio-direct": {
+    id: "stremio-direct",
+    role: "primary",
+    lifecycle: "active",
+    priority: 5,
+    defaultRating: 9,
+    contentKinds: ["movie", "series"],
+    audioLanguages: ["en", "es", "ja"],
+    subtitleLanguages: ["es", "en"],
+    discovery: "direct_api",
+    resolver: "stremio-direct",
+    hosts: ["configured-addon"],
+    notes: "Puente de addons públicos que entregan streams HLS/DASH/MP4 directamente.",
+  },
+  flixquest: {
+    id: "flixquest",
+    role: "primary",
+    lifecycle: "active",
+    priority: 12,
+    defaultRating: 8,
+    contentKinds: ["movie", "series"],
+    audioLanguages: ["en", "es"],
+    subtitleLanguages: ["es", "en"],
+    discovery: "direct_api",
+    resolver: "flixquest",
+    hosts: ["flixquest-api.vercel.app"],
+  },
+  nuvio: {
+    id: "nuvio",
+    role: "secondary",
+    lifecycle: "active",
+    priority: 16,
+    defaultRating: 7.8,
+    contentKinds: ["movie", "series"],
+    audioLanguages: ["en", "es"],
+    subtitleLanguages: ["es", "en"],
+    discovery: "direct_api",
+    resolver: "nuvio",
+    hosts: ["nuviostreams.hayd.uk"],
+  },
+  "anime-sdk": {
+    id: "anime-sdk",
+    role: "primary",
+    lifecycle: "active",
+    priority: 12,
+    defaultRating: 8,
+    contentKinds: ["anime"],
+    audioLanguages: ["ja", "en"],
+    subtitleLanguages: ["es", "en"],
+    discovery: "direct_api",
+    resolver: "anime-sdk",
+  },
+  vidsrc: {
+    id: "vidsrc",
+    role: "primary",
+    lifecycle: "active",
+    priority: 18,
+    defaultRating: 7.5,
+    contentKinds: ["movie", "series", "anime"],
+    audioLanguages: ["en"],
+    subtitleLanguages: ["en", "es"],
+    discovery: "direct_api",
+    resolver: "vidsrc",
+    hosts: ["vidsrc.sbs", "vidsrc.to", "vidsrc.me"],
+    notes: "Solo se aceptan respuestas de API que contengan HLS/DASH/MP4.",
+  },
+  vidsrcto: {
+    id: "vidsrcto",
+    role: "secondary",
+    lifecycle: "active",
+    priority: 20,
+    defaultRating: 7.2,
+    contentKinds: ["movie", "series", "anime"],
+    audioLanguages: ["en"],
+    subtitleLanguages: ["en", "es"],
+    discovery: "direct_api",
+    resolver: "vidsrcto",
+    hosts: ["vidsrcto.to"],
   },
   animeav1: {
     id: "animeav1",
-    role: "primary",
-    lifecycle: "active",
-    priority: 10,
-    defaultRating: 8.8,
+    role: "fallback",
+    lifecycle: "legacy",
+    priority: 80,
+    defaultRating: 5.8,
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
@@ -44,20 +130,20 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   },
   animeflv: {
     id: "animeflv",
-    role: "primary",
-    lifecycle: "active",
-    priority: 20,
-    defaultRating: 8.4,
+    role: "fallback",
+    lifecycle: "legacy",
+    priority: 82,
+    defaultRating: 5.8,
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
   },
   jkanime: {
     id: "jkanime",
-    role: "primary",
-    lifecycle: "active",
-    priority: 22,
-    defaultRating: 8.0,
+    role: "fallback",
+    lifecycle: "legacy",
+    priority: 84,
+    defaultRating: 5.6,
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
@@ -66,19 +152,24 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   cinecalidad: {
     id: "cinecalidad",
     role: "primary",
-    lifecycle: "maintained",
-    priority: 25,
-    defaultRating: 8.1,
+    lifecycle: "active",
+    priority: 10,
+    defaultRating: 8.5,
     contentKinds: ["movie", "series"],
     audioLanguages: ["es", "en"],
     subtitleLanguages: ["es", "en"],
+    discovery: "page",
+    resolver: "cinecalidad",
+    hosts: ["cinecalidad.am", "vimeos.zip", "goodstream.one"],
+    fallbackProvider: "gnula",
+    notes: "Sonda pública 2026-09-07: Vimeos HLS directo confirmado; Goodstream apareció como alternativa, con 403 intermitente.",
   },
   lamovie: {
     id: "lamovie",
-    role: "secondary",
-    lifecycle: "maintained",
-    priority: 30,
-    defaultRating: 7.8,
+    role: "fallback",
+    lifecycle: "legacy",
+    priority: 86,
+    defaultRating: 5.5,
     contentKinds: ["movie", "series", "anime"],
     audioLanguages: ["es", "en", "ja"],
     subtitleLanguages: ["es", "en"],
@@ -86,12 +177,16 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   gnula: {
     id: "gnula",
     role: "secondary",
-    lifecycle: "maintained",
-    priority: 35,
-    defaultRating: 7.5,
-    contentKinds: ["movie", "series", "anime"],
-    audioLanguages: ["es", "en", "ja"],
+    lifecycle: "active",
+    priority: 20,
+    defaultRating: 7.8,
+    contentKinds: ["movie", "series"],
+    audioLanguages: ["es", "en"],
     subtitleLanguages: ["es", "en"],
+    discovery: "page",
+    resolver: "gnula",
+    hosts: ["gnulahd.nu"],
+    notes: "Sonda pública 2026-09-07: la ficha devolvió Vidara, Byse, VOE y SaveFiles; no se observó VidSrc en esa muestra.",
   },
   "archive-org": {
     id: "archive-org",
@@ -105,33 +200,40 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   },
   hianimes: {
     id: "hianimes",
-    role: "secondary",
-    lifecycle: "maintained",
-    priority: 45,
-    defaultRating: 6.8,
+    role: "fallback",
+    lifecycle: "legacy",
+    priority: 88,
+    defaultRating: 5.5,
     contentKinds: ["anime"],
     audioLanguages: ["ja", "en"],
     subtitleLanguages: ["en"],
   },
   latanime: {
     id: "latanime",
-    role: "fallback",
-    lifecycle: "legacy",
-    priority: 60,
-    defaultRating: 6.2,
+    role: "primary",
+    lifecycle: "active",
+    priority: 10,
+    defaultRating: 8.2,
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es"],
+    discovery: "page",
+    resolver: "latanime",
+    hosts: ["latanime.org", "sprintcdn"],
+    notes: "Sonda pública 2026-09-07: HLS directo confirmado en sprintcdn; Hexload quedó como respaldo de página.",
   },
   tioanime: {
     id: "tioanime",
     role: "fallback",
     lifecycle: "legacy",
-    priority: 65,
+    priority: 90,
     defaultRating: 6.0,
     contentKinds: ["anime"],
     audioLanguages: ["ja"],
     subtitleLanguages: ["es"],
+    discovery: "page",
+    resolver: "tioanime",
+    hosts: ["tioanime.com"],
   },
   veranimes: {
     id: "veranimes",
@@ -182,6 +284,23 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["series"],
     audioLanguages: [],
     subtitleLanguages: [],
+    discovery: "metadata",
+    resolver: "tvmaze",
+  },
+  zokoanime: {
+    id: "zokoanime",
+    role: "primary",
+    lifecycle: "active",
+    priority: 10,
+    defaultRating: 8.2,
+    contentKinds: ["anime"],
+    audioLanguages: ["ja"],
+    subtitleLanguages: ["es", "en"],
+    discovery: "page",
+    resolver: "zokoanime",
+    hosts: ["zokoanime.video", "aniwatchtv.uk"],
+    fallbackProvider: "tioanime",
+    notes: "Sonda pública 2026-09-07: HLS en aniwatchtv.uk; el CDN exige Referer https://zokoanime.video/. Solo se admite media expuesta por el player.",
   },
 };
 
@@ -203,6 +322,11 @@ const SITE_ALIASES: Record<string, string> = {
   "tubepelis.com": "tubepelis",
   "archive.org": "archive-org",
   "tvmaze.com": "tvmaze",
+  "zokoanime.video": "zokoanime",
+  "vidsrc.sbs": "vidsrc",
+  "vidsrc.to": "vidsrc",
+  "vidsrc.me": "vidsrc",
+  "vidsrcto.to": "vidsrcto",
 };
 
 function hostFromProviderValue(raw: string): string {
@@ -219,6 +343,12 @@ export function normalizeProviderId(value: string | null | undefined): string {
   if (!raw) return "unknown";
   if (PROVIDER_POLICIES[raw]) return raw;
 
+  // API adapters commonly prefix a site id (for example `flixquest:vidsrc`)
+  // so telemetry can retain the adapter and the final source. Resolve the
+  // right-most policy id before falling back to host normalization.
+  const namespaced = raw.split(":").filter(Boolean).reverse().find((part) => Boolean(PROVIDER_POLICIES[part]));
+  if (namespaced) return namespaced;
+
   const host = hostFromProviderValue(raw);
   for (const [domain, id] of Object.entries(SITE_ALIASES)) {
     if (host === domain || host.endsWith(`.${domain}`)) return id;
@@ -234,6 +364,27 @@ export function normalizeProviderId(value: string | null | undefined): string {
 
 export function getProviderPolicy(value: string | null | undefined): ProviderPolicy | undefined {
   return PROVIDER_POLICIES[normalizeProviderId(value)];
+}
+
+/**
+ * Providers admitted to the normal playback path. Legacy sources remain
+ * available to explicit recovery jobs, but cannot silently re-enter ranking.
+ * TioAnime is the single intentional legacy exception for ZokoAnime fallback.
+ */
+export function isProviderAllowedInMainPath(
+  value: string | null | undefined,
+  contentKind?: ContentKind | null,
+): boolean {
+  const id = normalizeProviderId(value);
+  const policy = PROVIDER_POLICIES[id];
+  if (!policy || policy.role === "metadata") return false;
+  if (contentKind && !policy.contentKinds.includes(contentKind)) return false;
+  if (policy.lifecycle === "active" || policy.lifecycle === "maintained") return true;
+  return id === "tioanime" && contentKind === "anime";
+}
+
+export function isLegacyProvider(value: string | null | undefined): boolean {
+  return getProviderPolicy(value)?.lifecycle === "legacy";
 }
 
 export function getProviderPriority(value: string | null | undefined): number {

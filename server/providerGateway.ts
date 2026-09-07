@@ -1,5 +1,12 @@
 import { prisma } from "./db";
-import { normalizeLanguageTag, renditionPreferenceScore } from "./providers/providerPolicy";
+import {
+  getProviderPriority,
+  isProviderAllowedInMainPath,
+  normalizeLanguageTag,
+  normalizeProviderId,
+  renditionPreferenceScore,
+} from "./providers/providerPolicy";
+import { getHostHealth, isHostBlacklisted } from "./scrapers/hostHealth";
 import { getDirectStreamProviders } from "./providers/api";
 import type {
   DirectMediaKind,
@@ -38,8 +45,7 @@ export interface GatewayFallbackCandidate {
 }
 
 const SPANISH_LOCAL = new Set([
-  "cinecalidad", "lamovie", "gnula", "doramasflix", "tioplus", "tubepelis",
-  "animeflv", "jkanime", "latanime", "tioanime", "veranimes",
+  "cinecalidad", "gnula", "latanime",
 ]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
 const cache = new Map<string, {
@@ -106,7 +112,7 @@ async function resolvePrimaryApis(req: GatewayRequest): Promise<GatewaySource[]>
   const settled = await Promise.allSettled(providers.map((provider) => provider.resolve(context)));
   const direct = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
 
-  return direct.map((source) => ({
+  return direct.filter((source) => !isHostBlacklisted(source.url)).map((source) => ({
     ...source,
     audioLanguage: normalizeLanguageTag(source.audioLanguage),
     subtitleLanguage: normalizeLanguageTag(source.subtitleLanguage),
@@ -138,7 +144,11 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
   const direct: GatewaySource[] = [];
   const fallbackCandidates: GatewayFallbackCandidate[] = [];
   for (const link of episode.links) {
-    const provider = String(link.source_site || "unknown").toLowerCase();
+    const provider = normalizeProviderId(link.source_site);
+    // Database rows from retired crawlers remain useful for explicit recovery,
+    // but they must not leak into the normal gateway response. TioAnime is the
+    // only legacy exception and is handled below as ZokoAnime fallback.
+    if (!isProviderAllowedInMainPath(provider, req.kind)) continue;
     const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
     const audioLanguage = normalizeLanguageTag(link.audio_language || link.language) || (SPANISH_LOCAL.has(provider) ? "es" : null);
     const subtitleLanguage = normalizeLanguageTag(link.subtitle_language);
@@ -151,7 +161,7 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
       subtitles,
     });
 
-    if (streamType) {
+    if (streamType && provider !== "tioanime") {
       direct.push({
         provider,
         providerGroup,
@@ -183,7 +193,7 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
   return { direct, fallbackCandidates };
 }
 
-function dedupeAndRank(sources: GatewaySource[]): GatewaySource[] {
+function dedupeAndRank(sources: GatewaySource[], req: GatewayRequest): GatewaySource[] {
   const byKey = new Map<string, GatewaySource>();
   for (const source of sources) {
     const key = `${source.provider}|${source.url}`;
@@ -191,9 +201,24 @@ function dedupeAndRank(sources: GatewaySource[]): GatewaySource[] {
     if (!current || source.score > current.score) byKey.set(key, source);
   }
   return [...byKey.values()].sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    const weight = (source: GatewaySource) => source.providerGroup === "api" ? 3 : source.providerGroup === "spanish-local" ? 2 : 1;
-    return weight(b) - weight(a);
+    // An explicit language request is authoritative. Without one, policy
+    // priority expresses the curated primary/secondary order (Cinecalidad and
+    // LatAnime before the generic API pool), while health can still open a
+    // failover when a primary host is degraded or offline.
+    const hasLanguagePreference = (req.preferredAudio || []).length > 0 || (req.preferredSubtitles || []).length > 0;
+    if (hasLanguagePreference && b.score !== a.score) return b.score - a.score;
+    const health = (source: GatewaySource) => {
+      const state = getHostHealth(source.url).state;
+      return state === "online" ? 3 : state === "unknown" ? 2 : state === "degraded" ? 1 : 0;
+    };
+    const healthDelta = health(b) - health(a);
+    if (healthDelta !== 0) return healthDelta;
+    const priorityDelta = getProviderPriority(a.provider) - getProviderPriority(b.provider);
+    if (priorityDelta !== 0) return priorityDelta;
+    const group = (source: GatewaySource) => source.providerGroup === "api" ? 2 : source.providerGroup === "spanish-local" ? 1 : 0;
+    const groupDelta = group(b) - group(a);
+    if (groupDelta !== 0) return groupDelta;
+    return b.score - a.score;
   });
 }
 
@@ -287,8 +312,14 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
     sourcesFromDatabase(req),
   ]);
 
-  const ranked = dedupeAndRank([...apiSources, ...database.direct]);
-  const fallbackCandidates = rankFallbacks(database.fallbackCandidates);
+  const ranked = dedupeAndRank([...apiSources, ...database.direct], req);
+  const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
+    .some((source) => normalizeProviderId(source.provider) === "zokoanime");
+  const fallbackCandidates = rankFallbacks(
+    hasZokoCandidate
+      ? database.fallbackCandidates.filter((source) => normalizeProviderId(source.provider) !== "tioanime")
+      : database.fallbackCandidates,
+  );
   cache.set(key, {
     expires: Date.now() + CACHE_TTL_MS,
     sources: ranked,

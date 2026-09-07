@@ -15,6 +15,7 @@ import { DoramasflixAdapter } from "./adapters/DoramasflixAdapter";
 import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
 import { HiAnimesAdapter } from "./adapters/HiAnimesAdapter";
 import { GnulaAdapter } from "./adapters/GnulaAdapter";
+import { ZokoAnimeAdapter } from "./adapters/ZokoAnimeAdapter";
 import { compareProviderIds } from "../providers/providerPolicy";
 
 import { UniversalAnalysisResult, ExtractedCatalogItem } from "../types";
@@ -41,6 +42,7 @@ export class ScraperManager {
     this.registerAdapter(new ArchiveOrgAdapter());
     this.registerAdapter(new HiAnimesAdapter());
     this.registerAdapter(new LatAnimeAdapter());
+    this.registerAdapter(new ZokoAnimeAdapter());
     this.registerAdapter(new TioAnimeAdapter());
     this.registerAdapter(new VerAnimesAdapter());
     this.registerAdapter(new DoramasflixAdapter());

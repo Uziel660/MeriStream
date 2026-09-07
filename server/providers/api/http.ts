@@ -48,11 +48,8 @@ export function directFromUnknown(
   return {
     provider,
     providerGroup: "api",
-    url: candidate.url,
-    streamType: candidate.streamType,
     audioLanguage: raw?.audio_language || raw?.audioLanguage || raw?.language || extra.audioLanguage || null,
     subtitleLanguage: raw?.subtitle_language || raw?.subtitleLanguage || extra.subtitleLanguage || null,
-    subtitles,
     quality: raw?.quality || raw?.resolution || extra.quality || null,
     requiredHeaders: raw?.headers || raw?.requiredHeaders || raw?.behaviorHints?.proxyHeaders?.request || extra.requiredHeaders,
     canonicalLocator: raw?.canonical_locator || raw?.canonicalLocator || extra.canonicalLocator || null,

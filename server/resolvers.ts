@@ -299,7 +299,7 @@ export class EmbedResolvers {
     if (!url) return false;
     const u = url.toLowerCase();
     return (
-      /\.(m3u8|mp4|webm)(\?|$)/i.test(u) ||
+      /\.(m3u8|mpd|mp4|webm)(\?|$)/i.test(u) ||
       u.includes("/m3u8/") ||
       u.includes("hls-vod") ||
       u.includes("/api/v1/stream/mega")
@@ -1328,6 +1328,22 @@ export class ProviderResolverRegistry {
         supportsDirect: true,
         supportsProxy: true,
         supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: true,
+      },
+      resolve: async (locator) => EmbedResolvers.resolveWithMeta(locator),
+    });
+
+    // 3b. ZokoAnime: site-specific public player resolver. Keeping this entry
+    // ahead of GenericHtml ensures registry callers receive HLS plus subtitles
+    // instead of an iframe/page fallback.
+    this.register({
+      name: "ZokoAnime",
+      matches: (url) => isZokoAnimeUrl(url.href),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: false,
         renewable: true,
         requiresHeaders: true,
       },

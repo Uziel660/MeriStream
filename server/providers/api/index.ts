@@ -3,12 +3,14 @@ import { FlixQuestClient } from "./flixquestClient";
 import { NuvioClient } from "./nuvioClient";
 import { AnimeSdkClient } from "./animeSdkClient";
 import { StreamProviderClient } from "./streamProviderClient";
+import { StremioDirectClient } from "./stremioDirectClient";
 
 const providers: DirectStreamProvider[] = [
   new FlixQuestClient(),
   new NuvioClient(),
   new AnimeSdkClient(),
   new StreamProviderClient(),
+  new StremioDirectClient(),
 ];
 
 export function getDirectStreamProviders(req: ProviderRequest): DirectStreamProvider[] {

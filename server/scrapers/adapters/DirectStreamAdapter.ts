@@ -5,12 +5,13 @@ import { cleanQueryTitle } from "../../metadataEngine";
 export class DirectStreamAdapter extends BaseScraperAdapter {
   readonly id = "direct_stream";
   readonly name = "Direct Video / HLS Stream";
-  readonly supportedDomains = ["* (Direct .m3u8, .mp4, .webm, .mkv)"];
+  readonly supportedDomains = ["* (Direct .m3u8, .mpd, .mp4, .webm, .mkv)"];
 
   canHandle(url: string): boolean {
     const lower = url.trim().toLowerCase();
     return (
       lower.endsWith(".m3u8") ||
+      lower.endsWith(".mpd") ||
       lower.endsWith(".mp4") ||
       lower.endsWith(".webm") ||
       lower.endsWith(".mkv") ||
@@ -28,7 +29,7 @@ export class DirectStreamAdapter extends BaseScraperAdapter {
       const urlObj = new URL(streamUrl);
       const filename = urlObj.pathname.split("/").pop() || "";
       if (filename) {
-        title = filename.replace(/\.(m3u8|mp4|webm|mkv)$/i, "").replace(/[-_]/g, " ");
+        title = filename.replace(/\.(m3u8|mpd|mp4|webm|mkv)$/i, "").replace(/[-_]/g, " ");
       }
     } catch {}
 

@@ -295,10 +295,11 @@ function scoreCandidate(candidateUrl: string, cleanUrl: string, now: number): Sc
     }
     const lower = c.toLowerCase();
     const isHls = lower.includes(".m3u8") || lower.includes("/m3u8/") || lower.includes("hls-vod");
+    const isDash = lower.includes(".mpd");
     return {
       url: c,
       isDirect: true,
-      score: isHls ? 100 : 80,
+      score: isHls || isDash ? 100 : 80,
     };
   }
 

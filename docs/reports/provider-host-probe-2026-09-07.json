@@ -1,0 +1,132 @@
+{
+  "generatedAt": "2026-09-07T06:05:38.428Z",
+  "userAgent": "MeriStream-provider-probe/2.0 (+public-direct-stream-check)",
+  "probes": [
+    {
+      "provider": "cinecalidad",
+      "role": "primary",
+      "landing": {
+        "initialUrl": "https://www.cinecalidad.am/",
+        "finalUrl": "https://www.cinecalidad.am/",
+        "finalHost": "www.cinecalidad.am",
+        "hops": [
+          {
+            "url": "https://www.cinecalidad.am/",
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "location": null,
+            "server": "cloudflare"
+          }
+        ],
+        "bodyBytes": 83203,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    },
+    {
+      "provider": "gnula",
+      "role": "secondary",
+      "landing": {
+        "initialUrl": "https://ww3.gnulahd.nu/",
+        "finalUrl": "https://ww3.gnulahd.nu/",
+        "finalHost": "ww3.gnulahd.nu",
+        "hops": [
+          {
+            "url": "https://ww3.gnulahd.nu/",
+            "status": 200,
+            "contentType": "text/html",
+            "location": null,
+            "server": "ddos-guard"
+          }
+        ],
+        "bodyBytes": 131072,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    },
+    {
+      "provider": "latanime",
+      "role": "primary",
+      "landing": {
+        "initialUrl": "https://latanime.org/animes?p=1",
+        "finalUrl": "https://latanime.org/animes?p=1",
+        "finalHost": "latanime.org",
+        "hops": [
+          {
+            "url": "https://latanime.org/animes?p=1",
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "location": null,
+            "server": "cloudflare"
+          }
+        ],
+        "bodyBytes": 66445,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    },
+    {
+      "provider": "zokoanime",
+      "role": "primary",
+      "landing": {
+        "initialUrl": "https://zokoanime.video/player",
+        "finalUrl": "https://zokoanime.video/player",
+        "finalHost": "zokoanime.video",
+        "hops": [
+          {
+            "url": "https://zokoanime.video/player",
+            "status": 200,
+            "contentType": "text/html",
+            "location": null,
+            "server": "cloudflare"
+          }
+        ],
+        "bodyBytes": 1069,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    },
+    {
+      "provider": "tioanime",
+      "role": "legacy-fallback",
+      "landing": {
+        "initialUrl": "https://tioanime.com/directorio",
+        "finalUrl": "https://tioanime.com/directorio",
+        "finalHost": "tioanime.com",
+        "hops": [
+          {
+            "url": "https://tioanime.com/directorio",
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "location": null,
+            "server": "cloudflare"
+          }
+        ],
+        "bodyBytes": 33924,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    },
+    {
+      "provider": "vidsrc",
+      "role": "english-direct-api",
+      "landing": {
+        "initialUrl": "https://vidsrc.sbs/",
+        "finalUrl": "https://vidsrc.sbs/",
+        "finalHost": "vidsrc.sbs",
+        "hops": [
+          {
+            "url": "https://vidsrc.sbs/",
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "location": null,
+            "server": "hcdn"
+          }
+        ],
+        "bodyBytes": 79584,
+        "mediaCandidates": []
+      },
+      "mediaProbes": []
+    }
+  ]
+}

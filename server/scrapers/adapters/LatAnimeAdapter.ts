@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
-import { EmbedResolvers } from "../../resolvers";
+import { EmbedResolvers, isSupportedServer } from "../../resolvers";
 
 const BASE_URL = "https://latanime.org";
 
@@ -346,7 +346,12 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     if (iframeUrls.length === 0) {
       // Fallback: extracción genérica de embeds del HTML
       const genericStreams = await super.extractStream(cleanUrl);
-      return { ...genericStreams, title };
+      const safe = genericStreams.all_available_streams.filter((value) => this.isPlayableCandidate(value));
+      return {
+        stream_url: safe[0] || "",
+        all_available_streams: safe.slice(0, 4),
+        title,
+      };
     }
 
     // Resolver todos los iframes en paralelo con timeout de seguridad (4.5s)
@@ -368,16 +373,16 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const directStreams: string[] = [];
 
     for (const { iframeUrl, resolved } of resolutions) {
-      if (resolved && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
+      if (resolved && this.isPlayableCandidate(resolved) && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
         all_available_streams.push(resolved);
       }
       // Stream directo confirmado (.m3u8/.mp4) distinto del propio iframe
-      const isDirectMedia = /\.(m3u8|mp4|webm)(\?|$)/i.test(resolved) && resolved !== iframeUrl;
+      const isDirectMedia = this.isDirectMedia(resolved) && resolved !== iframeUrl;
       if (isDirectMedia && !isDeadOrBlocked(resolved) && !directStreams.includes(resolved)) {
         directStreams.push(resolved);
       }
       // El iframe crudo solo si no se obtuvo media directa para ese player
-      if (!isDirectMedia && !isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
+      if (!isDirectMedia && this.isPlayableCandidate(iframeUrl) && !isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
         all_available_streams.push(iframeUrl);
       }
     }
@@ -385,7 +390,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const finalStreams = directStreams.length > 0 ? [...directStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))] : all_available_streams;
 
     // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
-    const directMedia = finalStreams.filter((u) => /\.(m3u8|mp4|webm)(\?|#|$)/i.test(u));
+    const directMedia = finalStreams.filter((u) => this.isDirectMedia(u));
     const backupEmbeds = finalStreams.filter((u) => !directMedia.includes(u));
     
     const topStreams: string[] = [];
@@ -407,6 +412,15 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       all_available_streams: resultStreams,
       title,
     };
+  }
+
+  private isDirectMedia(value: string): boolean {
+    return EmbedResolvers.isDirectMediaUrl(value) && /^(?:https?):\/\//i.test(value);
+  }
+
+  private isPlayableCandidate(value: string): boolean {
+    if (!value || /\.(?:jpe?g|png|gif|webp|svg)(?:[?#]|$)/i.test(value)) return false;
+    return this.isDirectMedia(value) || isSupportedServer(value);
   }
 
   private titleFromSlug(url: string): string {

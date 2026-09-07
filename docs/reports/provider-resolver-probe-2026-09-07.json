@@ -1,0 +1,186 @@
+{
+  "generatedAt": "2026-09-07T06:06:22.661Z",
+  "results": [
+    {
+      "provider": "cinecalidad",
+      "sampleUrl": "https://www.cinecalidad.am/ver-pelicula/bolt/",
+      "adapter": "cinecalidad",
+      "streams": [
+        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q"
+      ],
+      "directStreams": [
+        "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+        "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q"
+      ],
+      "finalHosts": [
+        "vimeos.zip",
+        "hls1.goodstream.one"
+      ],
+      "mediaChecks": [
+        {
+          "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_,n,h,.urlset/master.m3u8?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "bytesRead": 1846,
+          "requestHeaders": {
+            "User-Agent": "MeriStream-provider-probe/2.0",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity"
+          },
+          "segment": {
+            "url": "https://vimeos.zip/hls2/03/00010/nk67hr7y1i7g_n/seg-1-v1-a1.ts?t=pvBZmeCAOqZk0SrJaBOcLY5MPtN_8fWpp-bNqhSK6is&s=1788761169&e=43200&v=350120411&srv=s12&i=0.0&sp=0&fr=nk67hr7y1i7g&r=e",
+            "status": 206,
+            "contentType": "video/MP2T",
+            "bytesRead": 1024
+          }
+        },
+        {
+          "url": "https://hls1.goodstream.one/hls2/03/00091/j1c09vdhtn4q_,l,n,h,x,.urlset/master.m3u8?t=iOhjl7luHFjM3Oj0PFyUfbo4NvttVM2aEnJeCmuxHHc&s=1788761167&e=43200&v=383364363&srv=s5&i=0.3&sp=0&fr=j1c09vdhtn4q",
+          "status": 403,
+          "contentType": "text/html; charset=utf-8",
+          "bytesRead": 146,
+          "requestHeaders": {
+            "User-Agent": "MeriStream-provider-probe/2.0",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity"
+          }
+        }
+      ],
+      "embedChecks": [],
+      "status": 200,
+      "title": "Bolt: Un perro fuera de serie Online Gratis HD"
+    },
+    {
+      "provider": "gnula",
+      "sampleUrl": "https://ww3.gnulahd.nu/ver/una-pelicula-de-amor-y-guerra/",
+      "adapter": "gnula",
+      "streams": [
+        "https://vidara.to/e/jqjq61bYd2BvX",
+        "https://bysevepoin.com/e/cxzxbvcjq0dl",
+        "https://voe.sx/e/01aqua7xltrf",
+        "https://savefiles.com/e/k48dvmak5dsi"
+      ],
+      "directStreams": [],
+      "finalHosts": [],
+      "mediaChecks": [],
+      "embedChecks": [
+        {
+          "url": "https://vidara.to/e/jqjq61bYd2BvX",
+          "finalUrl": "https://vidara.to/e/jqjq61bYd2BvX",
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "server": "cloudflare",
+          "bytesRead": 16384
+        },
+        {
+          "url": "https://bysevepoin.com/e/cxzxbvcjq0dl",
+          "finalUrl": "https://bysevepoin.com/e/cxzxbvcjq0dl",
+          "status": 200,
+          "contentType": "text/html",
+          "server": "cloudflare",
+          "bytesRead": 1972
+        },
+        {
+          "url": "https://voe.sx/e/01aqua7xltrf",
+          "finalUrl": "https://voe.sx/e/01aqua7xltrf",
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "server": "ddos-guard",
+          "bytesRead": 747
+        },
+        {
+          "url": "https://savefiles.com/e/k48dvmak5dsi",
+          "finalUrl": "https://savefiles.com/e/k48dvmak5dsi",
+          "status": 403,
+          "contentType": "text/html; charset=UTF-8",
+          "server": "cloudflare",
+          "bytesRead": 5595
+        }
+      ],
+      "status": 200,
+      "title": "Una Película de Amor y Guerra"
+    },
+    {
+      "provider": "latanime",
+      "sampleUrl": "https://latanime.org/ver/mushoku-tensei-jobless-reincarnation-s3-castellano-episodio-1",
+      "adapter": "latanime",
+      "streams": [
+        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+        "https://hexload.com/embed-p25vo27elhc6"
+      ],
+      "directStreams": [
+        "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0"
+      ],
+      "finalHosts": [
+        "edge1-moscow-sprintcdn.owphbf24.com"
+      ],
+      "mediaChecks": [
+        {
+          "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/master.m3u8?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "bytesRead": 647,
+          "requestHeaders": {
+            "User-Agent": "MeriStream-provider-probe/2.0",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity"
+          },
+          "segment": {
+            "url": "https://edge1-moscow-sprintcdn.owphbf24.com/hls2/01/11704/payy8545laoh_x/seg-1-v1-a1.ts?t=xJZXKDGGVRmRMKVkvC0prjWV1uyDY3F87lrY-ZfVUiA&s=1788761174&e=10800&f=58520464&srv=1065&asn=174&sp=5500&p=0",
+            "status": 206,
+            "contentType": "video/MP2T",
+            "bytesRead": 1024
+          }
+        }
+      ],
+      "embedChecks": [
+        {
+          "url": "https://hexload.com/embed-p25vo27elhc6",
+          "finalUrl": "https://hexload.com/embed-p25vo27elhc6",
+          "status": 200,
+          "contentType": "text/html; charset=UTF-8",
+          "server": "cloudflare",
+          "bytesRead": 16384
+        }
+      ],
+      "status": 200,
+      "title": "Mushoku Tensei Jobless Reincarnation S3 Castellano episodio 1"
+    },
+    {
+      "provider": "zokoanime",
+      "sampleUrl": "https://zokoanime.video/stream/mal/32281/1/sub",
+      "adapter": "zokoanime",
+      "streams": [
+        "https://hls2.aniwatchtv.uk/v/scxqicy/ev3x8rkw2t/6lmj4izpuz/xlqs9yu8d0r8un/master.m3u8"
+      ],
+      "directStreams": [
+        "https://hls2.aniwatchtv.uk/v/scxqicy/ev3x8rkw2t/6lmj4izpuz/xlqs9yu8d0r8un/master.m3u8"
+      ],
+      "finalHosts": [
+        "hls2.aniwatchtv.uk"
+      ],
+      "mediaChecks": [
+        {
+          "url": "https://hls2.aniwatchtv.uk/v/scxqicy/ev3x8rkw2t/6lmj4izpuz/xlqs9yu8d0r8un/master.m3u8",
+          "status": 200,
+          "contentType": "application/vnd.apple.mpegurl",
+          "bytesRead": 308,
+          "requestHeaders": {
+            "User-Agent": "MeriStream-provider-probe/2.0",
+            "Accept": "*/*",
+            "Referer": "https://zokoanime.video/"
+          },
+          "segment": {
+            "url": "https://hls2.aniwatchtv.uk/v/scxqicy/ev3x8rkw2t/6lmj4izpuz/xlqs9yu8d0r8un/360/seg_000.ts",
+            "status": 206,
+            "contentType": "video/mp2t",
+            "bytesRead": 1024
+          }
+        }
+      ],
+      "embedChecks": [],
+      "status": 200
+    }
+  ]
+}

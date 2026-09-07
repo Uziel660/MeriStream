@@ -89,7 +89,7 @@ export function isInvalidCatalogSource(url: string): boolean {
       return true;
     }
 
-    const isDirectMedia = /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(pathname);
+    const isDirectMedia = /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(pathname);
     if (!isDirectMedia) {
       const hasEpisodeOrMedia =
         /\d+x\d+|\/(?:episodio|capitulo|episode|ep)-\d+|\/(?:temporada|season)-\d+|\/\d+\/\d+|\/\d+\/?$/i.test(pathname) ||

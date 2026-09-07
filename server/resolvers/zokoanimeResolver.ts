@@ -100,7 +100,7 @@ export async function resolveZokoAnime(
     if (!token) return fail();
     const payload = decodePayload(token);
     const mediaUrl = asString(payload?.src);
-    if (!mediaUrl || !/^https:\/\//i.test(mediaUrl) || !/\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(mediaUrl)) {
+    if (!mediaUrl || !/^https:\/\//i.test(mediaUrl) || !/\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(mediaUrl)) {
       return fail();
     }
     return {

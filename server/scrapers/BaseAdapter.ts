@@ -32,7 +32,7 @@ export abstract class BaseScraperAdapter {
    */
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const cleanUrl = targetUrl.trim();
-    const isDirectMedia = (u: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes("/m3u8/") || u.includes(".m3u8");
+    const isDirectMedia = (u: string) => /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes("/m3u8/") || u.includes(".m3u8");
     const isSourceWebPage = (u: string) => {
       try {
         if (isDirectMedia(u)) return false;
@@ -225,7 +225,7 @@ export abstract class BaseScraperAdapter {
     }
 
     // 6. Scan for direct .m3u8 or .mp4 files inside scripts
-    const mediaFileRegex = /https?:\/\/[^\s"'<>]+\.(?:m3u8|mp4|webm)[^\s"'<>]*/gi;
+    const mediaFileRegex = /https?:\/\/[^\s"'<>]+\.(?:m3u8|mpd|mp4|webm)[^\s"'<>]*/gi;
     const mediaMatches = html.match(mediaFileRegex);
     if (mediaMatches) {
       mediaMatches.forEach((m) => {

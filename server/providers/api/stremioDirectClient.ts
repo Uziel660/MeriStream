@@ -52,7 +52,7 @@ function directStreams(body: any, addon: AddonConfig, locator: string): Playable
         url: raw?.url,
         headers: raw?.behaviorHints?.proxyHeaders?.request || raw?.headers,
       },
-      `stremio:${addon.name}`,
+      `stremio-direct:${addon.name}`,
       { canonicalLocator: locator },
     ))
     .filter((source): source is PlayableSource => Boolean(source));

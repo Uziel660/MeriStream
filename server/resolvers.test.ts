@@ -162,6 +162,11 @@ describe("ProviderResolverRegistry & Capabilities", () => {
     expect(direct).toBeDefined();
     expect(direct?.name).toBe("DirectMedia");
     expect(direct?.capabilities.supportsDirect).toBe(true);
+
+    const zoko = providerResolverRegistry.findResolver("https://zokoanime.video/stream/mal/32281/1/sub");
+    expect(zoko).toBeDefined();
+    expect(zoko?.name).toBe("ZokoAnime");
+    expect(zoko?.capabilities.supportsEmbed).toBe(false);
   });
 
   it("handles empty and unrecognized locators safely", async () => {

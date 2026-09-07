@@ -27,6 +27,7 @@ describe("getStreamTier", () => {
     expect(getStreamTier("https://doodstream.com/e/xyz")).toBe(2);
     expect(getStreamTier("https://ducvomes.com/hls/abc.m3u8")).toBe(2);
     expect(getStreamTier("https://playmudos.com/hls/abc.m3u8")).toBe(2);
+    expect(getStreamTier("https://bysevepoin.com/e/server-2")).toBe(2);
   });
 
   it("asigna TIER 3 a vidhide", () => {

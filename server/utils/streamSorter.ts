@@ -21,7 +21,8 @@
 const TIERS: ReadonlyArray<{ tier: number; tokens: readonly string[] }> = [
   { tier: 1, tokens: ["streamwish", "premilkyway", "sfastwish", "flaswish", "yourupload", "vidcache", "ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos.", "zilla-networks", "/api/v1/stream/mega"] },
   // Genéricos AnimeFLV verificados sin 403 en validador y Doodstream
-  { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream", "dood"] },
+  // Byse locators are the stable Gnula pages that JIT-resolve to SprintCDN HLS.
+  { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream", "dood", "byse"] },
   { tier: 3, tokens: ["ok.ru", "okru", "vidhide", "vixhide"] },
   { tier: 4, tokens: ["mega.nz", "mega.io", "mega.co.nz", "mp4upload"] },
 ];

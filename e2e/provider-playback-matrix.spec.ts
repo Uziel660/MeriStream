@@ -111,4 +111,15 @@ test.describe('Matriz E2E de proveedores activos', () => {
     test.setTimeout(180_000);
     await playCatalogTitle(page, 'Shiguang Dailiren', 'Shiguang Dailiren', 'latanime', /latanime\.org/i, 'Temporada 3');
   });
+
+  test('GnulaHD entrega reproducción nativa después de probar sus locators Byse', async ({ page }) => {
+    test.setTimeout(180_000);
+    await playCatalogTitle(
+      page,
+      'Odisea del Espacio',
+      'Odisea del Espacio',
+      'gnula',
+      /gnulahd\.nu|byse|they\.tube/i,
+    );
+  });
 });

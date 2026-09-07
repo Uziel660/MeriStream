@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getProviderPriority,
   getProviderPolicy,
+  isProviderAllowedInCrossPlatformRecovery,
   isLegacyProvider,
   isProviderAllowedInMainPath,
   normalizeLanguageTag,
@@ -61,6 +62,15 @@ describe("provider policy v2", () => {
     expect(isProviderAllowedInMainPath("animeflv", "anime")).toBe(false);
     expect(isProviderAllowedInMainPath("nuvio", "movie")).toBe(false);
     expect(isLegacyProvider("animeflv")).toBe(true);
+  });
+
+  it("never reintroduces legacy providers during cross-platform recovery", () => {
+    expect(isProviderAllowedInCrossPlatformRecovery("cinecalidad", "movie")).toBe(true);
+    expect(isProviderAllowedInCrossPlatformRecovery("animeflv", "anime")).toBe(false);
+    expect(isProviderAllowedInCrossPlatformRecovery("lamovie", "movie")).toBe(false);
+    expect(isProviderAllowedInCrossPlatformRecovery("tioanime", "anime")).toBe(false);
+    expect(isProviderAllowedInCrossPlatformRecovery("tioanime", "anime", true)).toBe(true);
+    expect(isProviderAllowedInCrossPlatformRecovery("tioanime", "movie", true)).toBe(false);
   });
 
   it("does not enqueue retired crawlers in the normal ingestion registry", () => {

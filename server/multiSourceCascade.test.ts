@@ -356,4 +356,54 @@ describe("Cascada multi-fuente y GET /api/v1/play/:episode_id", () => {
     expect(body.ranked_streams[0].url).toBe(canonicalPage);
     expect(body.ranked_streams.some((entry: any) => entry.url === signedDirect)).toBe(true);
   });
+
+  it("mantiene fuera los proveedores legacy al recuperar un id Episode antiguo", async () => {
+    const legacyEpisode = {
+      id: "legacy-mixed-episode",
+      episode_number: 1,
+      source_url: "https://www.cinecalidad.am/ver-pelicula/obra-activa/",
+      title: "Episodio 1",
+      show_id: "legacy-mixed-show",
+      show: {
+        id: "legacy-mixed-show",
+        title: "Obra activa",
+        normalized_title: "obra activa",
+        base_normalized_title: "obra activa",
+        tmdb_id: 999001,
+        year: 2024,
+        category: "movie",
+      },
+    };
+
+    vi.spyOn(prisma.mediaEpisode, "findUnique").mockResolvedValue(null);
+    vi.spyOn(prisma.episode, "findUnique").mockResolvedValue(legacyEpisode as any);
+    // First call is the canonical bridge (no mirror yet); second call is the
+    // cross-platform inventory used by the legacy compatibility path.
+    vi.spyOn(prisma.mediaItem, "findMany")
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([{ id: "cross-item" }] as any);
+    vi.spyOn(prisma.sourceLink, "findMany").mockResolvedValue([
+      { url: "https://animeflv.or.at/obra-activa/episodio-1/", source_site: "animeflv" },
+      { url: "https://ww3.gnulahd.nu/ver/obra-activa/", source_site: "gnula" },
+    ] as any);
+    vi.spyOn(prisma.episode, "findMany").mockResolvedValue([] as any);
+    vi.spyOn(siteRatingService, "getSiteRating").mockResolvedValue(5);
+    vi.spyOn(universalScraper, "extractStreamFromUrl").mockImplementation(async (url: string) => ({
+      stream_url: url.includes("gnulahd")
+        ? "https://gnula-edge.example/obra-activa.m3u8"
+        : "https://cine-edge.example/obra-activa.m3u8",
+      all_available_streams: [url.includes("gnulahd")
+        ? "https://gnula-edge.example/obra-activa.m3u8"
+        : "https://cine-edge.example/obra-activa.m3u8"],
+    } as any));
+
+    const { req, res, getBody, getStatus } = mockReqRes("legacy-mixed-episode");
+    await handlePlayEpisode(req, res);
+
+    expect(getStatus()).toBe(200);
+    const body = getBody();
+    expect(body.ranked_streams.map((entry: any) => entry.source_site)).toEqual(["cinecalidad", "gnula"]);
+    expect(body.ranked_streams.some((entry: any) => entry.source_site === "animeflv")).toBe(false);
+    expect(body.ranked_streams.some((entry: any) => /animeflv\.or\.at/i.test(entry.url))).toBe(false);
+  });
 });

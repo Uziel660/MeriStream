@@ -74,6 +74,19 @@ describe("Trabajo 1 — Pruebas obligatorias de fuentes canónicas y resolución
     }, "series")).toEqual([]);
   });
 
+  it("2d. Normaliza episodios cero basados en catálogos a partir de uno", () => {
+    const episodes = buildNormalizedEpisodes({
+      title: "Catálogo indexado desde cero",
+      category: "anime",
+      episodes: [
+        { number: 0, url: "https://latanime.org/ver/obra-episodio-0" },
+        { number: 2, url: "https://latanime.org/ver/obra-episodio-2" },
+      ],
+    }, "latanime");
+
+    expect(episodes.map((episode) => episode.number)).toEqual([1, 2]);
+  });
+
   // 3. HLS s+e vencido nunca crea sesión.
   it("3. HLS s+e vencido nunca crea sesión", async () => {
     const expiredStart = 1_600_000_000;

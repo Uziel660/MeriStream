@@ -9,6 +9,7 @@ import {
   getProviderName,
   isRawWebpageUrl,
   hasExpiringSignature,
+  quickProbeServerHealth,
 } from './streamOptimizer';
 
 describe('streamOptimizer — URL honesty helpers', () => {
@@ -86,6 +87,18 @@ describe('streamOptimizer — URL honesty helpers', () => {
       // La página cruda se descarta cuando hay streams reales
       expect(result).toHaveLength(1);
       expect(result[0].url).toContain('.m3u8');
+    });
+
+    it('does not probe canonical provider pages through the media proxy', async () => {
+      const latency = await quickProbeServerHealth({
+        id: 'cine-page',
+        url: 'https://www.cinecalidad.am/ver-pelicula/thunderbolts/',
+        label: 'Cinecalidad',
+        score: 40,
+        isEmbed: false,
+        streamType: 'direct',
+      } as any);
+      expect(latency).toBeNull();
     });
   });
 });

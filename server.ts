@@ -31,7 +31,11 @@ import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUr
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
 import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/siteRatingService";
 import { siteFromDomain } from "./server/siteRatingService";
-import { isProviderAllowedInMainPath, normalizeProviderId } from "./server/providers/providerPolicy";
+import {
+  isProviderAllowedInCrossPlatformRecovery,
+  isProviderAllowedInMainPath,
+  normalizeProviderId,
+} from "./server/providers/providerPolicy";
 import {
   buildDisplayEpisodes,
   compareMainPathLinks,
@@ -448,7 +452,18 @@ async function resolveCrossPlatformStreams(
         select: { url: true, source_site: true },
         orderBy: [{ priority_tier: "asc" }, { last_checked: "desc" }],
       });
+      const hasZoko = sourceLinks.some((link) =>
+        normalizeProviderId(link.source_site || link.url) === "zokoanime"
+      );
       for (const link of sourceLinks) {
+        const provider = normalizeProviderId(link.source_site || link.url);
+        // Cross-platform recovery must obey the same allow-list as the public
+        // ficha and canonical playback path. Without this gate, a legacy
+        // Episode id could reintroduce AnimeFLV/LaMovie/Doramasflix/TioPlus
+        // after the primary resolver had correctly excluded them.
+        if (!isProviderAllowedInCrossPlatformRecovery(provider, kind as any, hasZoko)) {
+          continue;
+        }
         const site = siteFromDomain(link.source_site) || siteFromDomain(hostOfStreamUrl(link.url));
         if (!site || site === primarySite) continue;
         const current = platformMap.get(site);
@@ -472,6 +487,11 @@ async function resolveCrossPlatformStreams(
     });
     for (const ep of sameTitleEpisodes) {
       const site = siteFromDomain(hostOfStreamUrl(ep.source_url || ""));
+      const provider = normalizeProviderId(ep.source_url || site);
+      // This compatibility branch has no canonical link inventory. TioAnime
+      // is therefore never admitted here; the canonical SourceLink branch
+      // above can allow it only when ZokoAnime is present.
+      if (!isProviderAllowedInCrossPlatformRecovery(provider, kind as any, false)) continue;
       if (site && site !== primarySite && !platformMap.has(site)) {
         platformMap.set(site, ep.source_url);
       }

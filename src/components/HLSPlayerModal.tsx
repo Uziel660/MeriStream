@@ -122,6 +122,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const attemptIdRef = useRef<number>(0);
   // Regla 7: Un servidor no puede intentarse más de una vez por modo dentro del mismo intento de reproducción.
   const attemptedModesRef = useRef<Set<string>>(new Set());
+  // Los locators de páginas/embeds pueden fallar por una respuesta transitoria
+  // del proveedor. Permitimos un único reintento del mismo locator antes de
+  // avanzar para que el failover no descarte una fuente primaria recuperable.
+  const jitRetryCountsRef = useRef<Map<string, number>>(new Map());
 
   // Telemetría de salud y detección de pantalla negra / stalls
   const loadStartMsRef = useRef<number>(Date.now());
@@ -388,6 +392,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
       if (candidateSignatureRef.current !== signature) {
         candidateSignatureRef.current = signature;
+        jitRetryCountsRef.current.clear();
+        jitCompletedRef.current.clear();
         setServers(ranked);
         const firstPlayableIdx = ranked.findIndex((s) =>
           !isExpiredWithoutLocator(s) && !s.notPlayable && !s.isEmbed && isNativeMediaUrl(s.url)
@@ -552,6 +558,22 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         })
       : api.resolveEmbed(locator);
 
+    const retryJitOnceBeforeFailover = (): boolean => {
+      const previous = jitRetryCountsRef.current.get(jitKey) || 0;
+      if (previous >= 1) return false;
+      jitRetryCountsRef.current.set(jitKey, previous + 1);
+      jitInFlightRef.current.delete(jitKey);
+      jitCompletedRef.current.delete(jitKey);
+      setServers((prev) => prev.map((candidate) =>
+        candidate.id === targetId
+          ? { ...candidate, notPlayable: false, failure_reason: undefined }
+          : candidate
+      ));
+      setCanonicalResolveError('Reintentando la fuente principal…');
+      setDeliveryState('resolving');
+      return true;
+    };
+
     resolutionPromise
       .then((res: any) => {
         if (cancelled || attemptId !== attemptIdRef.current) return;
@@ -572,7 +594,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
         if (!res.resolved || !res.url) {
           // Un fallo transitorio no debe bloquear para siempre el botón de
-          // reintento: el siguiente intento manual volverá a ejecutar JIT.
+          // reintento: reintentar una vez la misma fuente antes de pasar al
+          // siguiente proveedor evita el patrón "primer servidor falla,
+          // segundo también, primer servidor sí funciona al volver a pulsar".
+          if (retryJitOnceBeforeFailover()) return;
           jitCompletedRef.current.delete(jitKey);
           setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
           setDeliveryState('error');
@@ -656,6 +681,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (cancelled || attemptId !== attemptIdRef.current) return;
         // La fuente puede recuperarse cuando el proveedor vuelve a responder.
         // No memorizamos este fallo como una resolución permanente.
+        if (retryJitOnceBeforeFailover()) return;
         jitCompletedRef.current.delete(jitKey);
         setCanonicalResolveError(
           isUnresolvedCanonical(server.url)
@@ -722,6 +748,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       // Permitir reintentar una resolución JIT si el usuario vuelve a elegir
       // manualmente la fuente después de un error transitorio.
       jitCompletedRef.current.clear();
+      jitRetryCountsRef.current.clear();
     }
 
     // Destruir la instancia HLS anterior y eliminar listeners nativos pendientes.

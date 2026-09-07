@@ -643,6 +643,11 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
 export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 2500): Promise<number | null> {
   if (server.isEmbed) return null; // Los locators no tienen media que sondear
   if (server.notPlayable || server.score < 0) return null; // Páginas crudas/placeholders: nada que sondear
+  // A canonical provider page is intentionally represented as a refreshable
+  // direct candidate so the JIT resolver can upgrade it. It is still HTML,
+  // however, and probing it through `/proxy/stream` only creates a noisy
+  // Premature close and can make a healthy primary look unavailable.
+  if (isRawWebpageUrl(server.url)) return null;
   
   // Usar el proxy anti-CORS para sondear, o la URL directa si ya es local
   const lowerUrl = server.url.toLowerCase();

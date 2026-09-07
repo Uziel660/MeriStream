@@ -384,6 +384,22 @@ export function isProviderAllowedInMainPath(
   return id === "tioanime" && contentKind === "anime";
 }
 
+/**
+ * Allow-list for a cross-platform recovery pass. The main-path predicate
+ * keeps TioAnime as an anime exception for compatibility, but a recovery pass
+ * must additionally prove that the preferred ZokoAnime locator exists before
+ * admitting that legacy fallback.
+ */
+export function isProviderAllowedInCrossPlatformRecovery(
+  value: string | null | undefined,
+  contentKind: ContentKind,
+  hasZokoAnime = false,
+): boolean {
+  const id = normalizeProviderId(value);
+  if (id === "tioanime") return contentKind === "anime" && hasZokoAnime;
+  return isProviderAllowedInMainPath(id, contentKind);
+}
+
 export function isLegacyProvider(value: string | null | undefined): boolean {
   return getProviderPolicy(value)?.lifecycle === "legacy";
 }

@@ -53,6 +53,11 @@ function tmdbKindFilter(kind: ContentKind): { kind: string | { in: string[] } } 
     : { kind };
 }
 
+function positiveCatalogNumber(value: unknown, fallback = 1): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
 export interface SaveShowInput {
   mal_id?: number | null;
   anilist_id?: number | null;
@@ -215,7 +220,13 @@ export function buildNormalizedEpisodes(input: SaveShowInput, kind: ContentKind)
   const normalizedEpisodes = inputEpisodes
     .filter((ep) => Boolean(ep.url || ep.source_url || (ep.sources && ep.sources.length > 0)))
     .map((ep, idx) => {
-      const epNum = ep.number ?? ep.episode_number ?? idx + 1;
+      const rawEpisodeNumber = Number(ep.number ?? ep.episode_number);
+      // Algunos catálogos publican su primer episodio como "0". El contrato
+      // interno empieza en 1; usar la posición del adaptador evita persistir
+      // MediaEpisode inválidos y conserva el orden de la ficha.
+      const epNum = Number.isFinite(rawEpisodeNumber) && rawEpisodeNumber > 0
+        ? rawEpisodeNumber
+        : idx + 1;
       const primaryUrl = ep.url || ep.source_url || (ep.sources && ep.sources[0]?.url) || "";
       const epSources: SourceLinkInput[] = [];
       const seen = new Set<string>();
@@ -576,7 +587,7 @@ async function syncMediaItemSources(
     if (!norm) return 0;
 
     const baseNorm = titleInfo.baseNorm || norm;
-    const season = input.season ?? parseTitleQuery(canonical).season ?? 1;
+    const season = positiveCatalogNumber(input.season ?? parseTitleQuery(canonical).season, 1);
     const enrichedAny = (input as any)._enriched || null;
     const year =
       titleInfo.year !== null && isPlausibleYear(titleInfo.year)
@@ -758,7 +769,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   const parsed = parseTitleQuery(canonicalTitle);
   const rawTitle = parsed.baseTitle || canonicalTitle;
   const kind: ContentKind = (input.content_type || input.category || "anime") as ContentKind;
-  const season = input.season ?? rawParsed.season ?? parsed.season ?? 1;
+  const season = positiveCatalogNumber(input.season ?? rawParsed.season ?? parsed.season, 1);
 
   if (rawParsed.plausible === false || !isPlausibleTitle(canonicalTitle)) {
     throw new Error(`Título implausible descartado por el guard: "${input.title}"`);
@@ -1540,7 +1551,10 @@ export async function quickSyncKnownShow(
     title: data.title || show.title,
   };
 
-  const season = data.season ?? parseTitleQuery(data.title || "").season ?? parseTitleQuery(show.title).season ?? 1;
+  const season = positiveCatalogNumber(
+    data.season ?? parseTitleQuery(data.title || "").season ?? parseTitleQuery(show.title).season,
+    1,
+  );
 
   // El modelo legacy `Episode` no tiene columna de temporada. Para una
   // reimportación S2/S3 debemos conservar la numeración de la fuente en

@@ -15,7 +15,11 @@ export interface ProviderIngestionTarget {
  */
 export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "cinecalidad", targetUrl: "https://www.cinecalidad.am/", name: "Cinecalidad (ES-LATAM · principal)" },
-  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/", name: "GnulaHD (ES-LATAM · secundario)" },
+  // Gnula mantiene índices separados para películas y series. Importarlos
+  // por separado evita que la portada (un carrusel de novedades) se confunda
+  // con el catálogo completo y permite reanudar cada sección de forma aislada.
+  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/peliculas/", name: "GnulaHD Películas (ES-LATAM · secundario)" },
+  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/series/", name: "GnulaHD Series (ES-LATAM · secundario)" },
   { providerId: "latanime", targetUrl: "https://latanime.org/animes?p=1", name: "LatAnime (ES-LATAM · principal)" },
   // Archive.org remains an explicit public-domain/open-license source for EN.
   { providerId: "archive-org", targetUrl: "https://archive.org/details/movies", name: "Internet Archive (contenido abierto)" },

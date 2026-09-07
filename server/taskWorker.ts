@@ -99,6 +99,12 @@ const DB_SETTING_KEYS: Array<keyof WorkerSettings> = [
 // obras. Este techo existe SOLO como fusible anti-bucle-infinite.
 const FULL_CATALOG_HARD_PAGE_CAP = 10000;
 const MAX_CONSECUTIVE_PAGE_ERRORS = 5;
+// HiAnimes has intermittently returned deterministic 500s for individual
+// filter pages (the upstream projection error `__v`). Keep walking the
+// catalogue through those holes instead of truncating a full crawl after the
+// generic five-page safety fuse. The per-page request deadline and the global
+// endPageExclusive bound still protect the worker from an endless loop.
+const MAX_HIANIMES_CONSECUTIVE_PAGE_ERRORS = 50;
 const NO_NEW_ITEM_PAGES_BEFORE_STOP = 2;
 
 // Marcador persistido dentro de items_queue ("descubrimiento terminado").
@@ -1007,6 +1013,10 @@ class BackgroundCrawlerWorker {
               const itemKind = (itemAnalysis.content_type || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
               const { added } = await quickSyncKnownShow(knownShow.id, {
                 title: itemAnalysis.title || item.title,
+                mal_id: (itemAnalysis as any).mal_id,
+                anilist_id: (itemAnalysis as any).anilist_id,
+                kitsu_id: (itemAnalysis as any).kitsu_id,
+                tmdb_id: (itemAnalysis as any).tmdb_id,
                 // Algunos adaptadores quitan el sufijo de temporada del
                 // título normalizado; conservarlo desde título+slug evita
                 // mezclar fuentes de S2/S3 dentro de T1.
@@ -1059,6 +1069,9 @@ class BackgroundCrawlerWorker {
             episodes: itemAnalysis.episodes,
             detected_streams: itemAnalysis.detected_streams,
             original_title: (itemAnalysis as any).original_title,
+            mal_id: (itemAnalysis as any).mal_id,
+            anilist_id: (itemAnalysis as any).anilist_id,
+            kitsu_id: (itemAnalysis as any).kitsu_id,
             tmdb_id: (itemAnalysis as any).tmdb_id,
             ...(() => {
               const extra = itemAnalysis as any;
@@ -1172,7 +1185,8 @@ class BackgroundCrawlerWorker {
    * pidan en paralelo) y AVANZA HASTA AGOTAR EL CATÁLOGO:
    *  - página vacía → fin natural;
    *  - páginas consecutivas sin obras nuevas → fin (el sitio repite la última);
-   *  - MAX_CONSECUTIVE_PAGE_ERRORS fallos seguidos → fin defensivo;
+   *  - un umbral de fallos consecutivos por proveedor → fin defensivo
+   *    (HiAnimes full_catalog tolera huecos de páginas con errores upstream);
    *  - nunca supera endPageExclusive (fusible anti-bucle en full_catalog).
    * Un fallo de UNA página jamás aborta el barrido. Persiste current_page tras
    * cada página exitosa para poder REANUDAR sin saltar ni repetir páginas.
@@ -1184,6 +1198,10 @@ class BackgroundCrawlerWorker {
     endPageExclusive: number
   ): Promise<"stopped" | "completed"> {
     const pageConcurrency = clampConcurrency(this.settings.page_concurrency, DEFAULT_SETTINGS.page_concurrency);
+    const maxConsecutivePageErrors =
+      job.scope === "full_catalog" && /hianimes\.se/i.test(job.target_url)
+        ? MAX_HIANIMES_CONSECUTIVE_PAGE_ERRORS
+        : MAX_CONSECUTIVE_PAGE_ERRORS;
     const seen = new Set(queue.map((q) => canonicalCatalogUrl(q.url)));
     let consecutiveErrors = 0;
     let consecutiveNoNew = 0;
@@ -1222,11 +1240,11 @@ class BackgroundCrawlerWorker {
           consecutiveErrors++;
           this.notePossibleAntiBot(job.id, batchUrls[i].page_url || batchUrls[i].url, r.error);
           await this.addLog(job.id, "warn", `Aviso en página ${pageNo}: ${r.error}. El barrido continúa con las siguientes.`);
-          if (consecutiveErrors >= MAX_CONSECUTIVE_PAGE_ERRORS) {
+          if (consecutiveErrors >= maxConsecutivePageErrors) {
             await this.addLog(
               job.id,
               "error",
-              `${MAX_CONSECUTIVE_PAGE_ERRORS} páginas consecutivas fallaron: se detiene el descubrimiento por seguridad y se indexa lo ya descubierto (${queue.length} obras).`
+              `${maxConsecutivePageErrors} páginas consecutivas fallaron: se detiene el descubrimiento por seguridad y se indexa lo ya descubierto (${queue.length} obras).`
             );
             return "completed";
           }

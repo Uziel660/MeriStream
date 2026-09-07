@@ -115,6 +115,53 @@ function episodeSort(a: DisplayEpisode, b: DisplayEpisode): number {
 }
 
 /**
+ * Une episodios equivalentes importados por varias fuentes del mismo título.
+ * Las importaciones históricas pueden crear un MediaItem por plataforma; si
+ * solo se utiliza una de esas filas, una fuente como ZokoAnime queda oculta
+ * detrás de la fila elegida para LatAnime. Conservamos el primer id (la fila
+ * canónica elegida por el caller) y unimos sus SourceLinks sin duplicados.
+ */
+export function mergeCanonicalEpisodes(
+  groups: Array<CanonicalEpisodeForDisplay[] | null | undefined>,
+): CanonicalEpisodeForDisplay[] {
+  const merged = new Map<string, CanonicalEpisodeForDisplay>();
+  for (const episodes of groups) {
+    for (const episode of episodes || []) {
+      const season = Number(episode.season_number) || 1;
+      const number = Number(episode.episode_number);
+      if (!Number.isFinite(number)) continue;
+      const key = `${season}:${number}`;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, {
+          ...episode,
+          season_number: season,
+          episode_number: number,
+          links: [...(episode.links || [])],
+        });
+        continue;
+      }
+
+      const seen = new Set(existing.links.map((link) =>
+        `${String(link.source_site || link.host || "").toLowerCase()}|${String(link.url || "").trim()}`,
+      ));
+      for (const link of episode.links || []) {
+        const keyForLink = `${String(link.source_site || link.host || "").toLowerCase()}|${String(link.url || "").trim()}`;
+        if (!link.url || seen.has(keyForLink)) continue;
+        seen.add(keyForLink);
+        existing.links.push(link);
+      }
+    }
+  }
+
+  return [...merged.values()].sort((a, b) =>
+    a.season_number - b.season_number ||
+    a.episode_number - b.episode_number ||
+    a.id.localeCompare(b.id),
+  );
+}
+
+/**
  * Produces the episode list shown by a title ficha. Canonical MediaEpisodes
  * win whenever they have a main-path source; legacy rows are only a filtered,
  * deduplicated fallback for titles not yet mirrored into the canonical table.

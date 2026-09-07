@@ -43,6 +43,7 @@ import {
   compareMainPathLinks,
   countDisplayPlatforms,
   filterMainPathLinks,
+  mergeCanonicalEpisodes,
   playbackKindForCategory,
 } from "./server/showEpisodePolicy";
 import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./server/playbackSessions";
@@ -648,10 +649,17 @@ async function findCanonicalMediaEpisodeForLegacy(
       .flatMap((item) => item.episodes)
       .find((episode) => episode.id === selected.id);
     if (!selectedEpisode) return null;
-    const playbackLinks = filterMainPathLinks(selectedEpisode.links, playbackKind);
+    // Una obra puede tener una fila canónica por plataforma. El candidato
+    // elegido conserva el id estable para compatibilidad, pero el playback
+    // debe ver los enlaces de todas las filas equivalentes del mismo episodio.
+    const mergedEpisode = mergeCanonicalEpisodes([
+      [selectedEpisode],
+      mediaItems.flatMap((item) => item.episodes).filter((episode) => episode.id !== selectedEpisode.id),
+    ])[0] || selectedEpisode;
+    const playbackLinks = filterMainPathLinks(mergedEpisode.links, playbackKind);
     const rankedRaw = await buildMultiSourceCascade(playbackLinks, { maxPerSite: 2, maxTotal: 8 });
-    const ranked = keepCanonicalCandidatesFirst(rankedRaw, selectedEpisode.links);
-    return ranked.length > 0 ? { mediaEpisode: selectedEpisode, ranked } : null;
+    const ranked = keepCanonicalCandidatesFirst(rankedRaw, mergedEpisode.links);
+    return ranked.length > 0 ? { mediaEpisode: mergedEpisode, ranked } : null;
   } catch (error: any) {
     // The legacy extractor remains available if the optional bridge cannot
     // query a partially migrated database.
@@ -1310,9 +1318,10 @@ async function startServer() {
       const norm = (show as any).normalized_title;
       const base = (show as any).base_normalized_title || norm;
       let canonicalItem: any = null;
+      let canonicalCandidates: any[] = [];
       if (norm || (show as any).tmdb_id != null) {
         const canonicalKinds = playbackKind === "movie" ? ["movie"] : [playbackKind, "series", "anime"];
-        const canonicalCandidates = await prisma.mediaItem.findMany({
+        canonicalCandidates = await prisma.mediaItem.findMany({
           where: {
             AND: [
               { kind: { in: canonicalKinds } },
@@ -1356,14 +1365,25 @@ async function startServer() {
         media_item_id = canonicalItem?.id ?? null;
       }
       const legacyEpisodes = (show as any).episodes || [];
+      // Los crawlers pueden haber guardado LatAnime y ZokoAnime en MediaItems
+      // distintos. Mostrar únicamente `canonicalItem.episodes` hacía que la
+      // ficha ocultara una plataforma aunque existiera para la misma obra.
+      // La fila elegida sigue siendo la primera para conservar ids estables;
+      // sus episodios se combinan con todos los twins equivalentes.
+      const canonicalEpisodes = mergeCanonicalEpisodes([
+        canonicalItem?.episodes || [],
+        ...((canonicalCandidates || [])
+          .filter((item: any) => item.id !== canonicalItem?.id)
+          .map((item: any) => item.episodes || [])),
+      ]);
       const episodes = buildDisplayEpisodes(
         legacyEpisodes,
-        canonicalItem?.episodes || [],
+        canonicalEpisodes,
         playbackKind,
         showId,
       );
       const episode_platforms = countDisplayPlatforms(
-        canonicalItem?.episodes || [],
+        canonicalEpisodes,
         episodes,
         playbackKind,
       );
@@ -2354,8 +2374,41 @@ async function startServer() {
     const season = Number.parseInt(String(req.query.season ?? "1"), 10) || 1;
 
     try {
+      const selectedItem = await prisma.mediaItem.findUnique({
+        where: { id: mediaItemId },
+        select: {
+          id: true,
+          kind: true,
+          tmdb_id: true,
+          title: true,
+          normalized_title: true,
+          base_normalized_title: true,
+        },
+      });
+      if (!selectedItem) {
+        return res.status(404).json({ detail: "Obra canónica no encontrada." });
+      }
+
+      // Reunir twins creados por importaciones de distintas plataformas. El
+      // editor suele conservar un solo media_item_id, pero la cascada debe
+      // incluir todos sus SourceLinks equivalentes.
+      const title = selectedItem.title || selectedItem.normalized_title;
+      const normalized = selectedItem.normalized_title || normalizeTitle(title);
+      const baseNormalized = selectedItem.base_normalized_title || normalizeBaseTitle(title);
+      const identityOr: Array<Record<string, unknown>> = [];
+      if (selectedItem.tmdb_id != null) identityOr.push({ tmdb_id: selectedItem.tmdb_id });
+      if (normalized) identityOr.push({ normalized_title: normalized });
+      if (baseNormalized) identityOr.push({ base_normalized_title: baseNormalized });
+      const equivalentItems = await prisma.mediaItem.findMany({
+        where: {
+          kind: selectedItem.kind,
+          OR: identityOr,
+        } as any,
+        select: { id: true },
+      });
+      const mediaItemIds = Array.from(new Set([mediaItemId, ...equivalentItems.map((item) => item.id)]));
       const links = await prisma.sourceLink.findMany({
-        where: { media_episode: { media_item_id: mediaItemId, season_number: season } },
+        where: { media_episode: { media_item_id: { in: mediaItemIds }, season_number: season } },
         select: {
           url: true,
           source_site: true,
@@ -2378,6 +2431,7 @@ async function startServer() {
       const cascade = await buildMultiSourceCascade(links);
       res.json({
         media_item_id: mediaItemId,
+        media_item_ids: mediaItemIds,
         season,
         stream_url: cascade[0]?.url ?? null,
         cascade,

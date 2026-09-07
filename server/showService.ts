@@ -1039,16 +1039,45 @@ type LiteShowsOptions = {
   onlyMainPath?: boolean;
 };
 
+/**
+ * Run Prisma `IN` lookups in bounded batches. Prisma expands every item in an
+ * `in` filter (including nested relation filters) into a prepared-statement
+ * bind variable; loading the full public catalog in one query can therefore
+ * exceed PostgreSQL's 32,767-variable limit.
+ */
+async function findManyInChunks<TValue, TResult>(
+  values: readonly TValue[],
+  query: (chunk: TValue[]) => Promise<TResult[]>,
+  chunkSize = 2_000,
+): Promise<TResult[]> {
+  if (values.length === 0) return [];
+
+  const chunks: TValue[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(Array.from(values.slice(index, index + chunkSize)));
+  }
+
+  const results: TResult[] = [];
+  // Keep a small amount of concurrency so a large catalog does not exhaust
+  // the Prisma pool while still avoiding a long serial query chain.
+  const concurrency = 4;
+  for (let index = 0; index < chunks.length; index += concurrency) {
+    const batch = await Promise.all(chunks.slice(index, index + concurrency).map(query));
+    results.push(...batch.flat());
+  }
+  return results;
+}
+
 export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   if (shows.length === 0) return shows;
 
-  const ids = shows.map((show) => String(show.id)).filter(Boolean);
-  const tmdbIds = shows
+  const ids = [...new Set(shows.map((show) => String(show.id)).filter(Boolean))];
+  const tmdbIds = [...new Set(shows
     .map((show) => Number(show.tmdb_id))
-    .filter((value) => Number.isInteger(value) && value > 0);
-  const baseTitles = shows
+    .filter((value) => Number.isInteger(value) && value > 0))];
+  const baseTitles = [...new Set(shows
     .map((show) => String(show.base_normalized_title || show.normalized_title || "").trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   const mainPathSourceSites = [...new Set(
     Object.values(PROVIDER_POLICIES)
       .filter((policy) => ["movie", "series", "anime"].some((kind) =>
@@ -1088,29 +1117,23 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   // ceiling. Most canonical rows share the legacy Show id; TMDB/title matches
   // cover rows imported before the id mirror was added.
   const [mediaById, mediaByTmdb, mediaByBase, legacyEpisodes] = await Promise.all([
-    ids.length > 0
-      ? prisma.mediaItem.findMany({
-          where: { id: { in: ids }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-          select: mediaItemSelect,
-        })
-      : Promise.resolve([]),
-    tmdbIds.length > 0
-      ? prisma.mediaItem.findMany({
-          where: { tmdb_id: { in: tmdbIds }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-          select: mediaItemSelect,
-        })
-      : Promise.resolve([]),
-    baseTitles.length > 0
-      ? prisma.mediaItem.findMany({
-          where: { base_normalized_title: { in: baseTitles }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-          select: mediaItemSelect,
-        })
-      : Promise.resolve([]),
-    prisma.episode.findMany({
-      where: { show_id: { in: ids }, source_url: { not: "" } },
+    findManyInChunks(ids, (chunk) => prisma.mediaItem.findMany({
+      where: { id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+      select: mediaItemSelect,
+    })),
+    findManyInChunks(tmdbIds, (chunk) => prisma.mediaItem.findMany({
+      where: { tmdb_id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+      select: mediaItemSelect,
+    })),
+    findManyInChunks(baseTitles, (chunk) => prisma.mediaItem.findMany({
+      where: { base_normalized_title: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+      select: mediaItemSelect,
+    })),
+    findManyInChunks(ids, (chunk) => prisma.episode.findMany({
+      where: { show_id: { in: chunk }, source_url: { not: "" } },
       select: { show_id: true, source_url: true },
       orderBy: { episode_number: "asc" },
-    }),
+    })),
   ]);
   const mediaItems = [...mediaById, ...mediaByTmdb, ...mediaByBase];
 
@@ -1514,6 +1537,10 @@ export async function refreshShowStreams(showId: string): Promise<RefreshStreams
 
 export interface QuickSyncInput {
   title?: string;
+  mal_id?: number | null;
+  anilist_id?: number | null;
+  kitsu_id?: string | null;
+  tmdb_id?: number | null;
   /** Temporada detectada en el título/slug de la ficha reescaneada. */
   season?: number | null;
   episodes: Array<{ number: number; title: string; url: string; sources?: SourceLinkInput[] }>;
@@ -1550,9 +1577,10 @@ export async function quickSyncKnownShow(
   }
 
   const showData: any = {
-    malId: null,
-    anilistId: null,
-    kitsuId: null,
+    malId: data.mal_id || null,
+    anilistId: data.anilist_id || null,
+    kitsuId: data.kitsu_id || null,
+    tmdbId: data.tmdb_id || null,
     title: data.title || show.title,
   };
 

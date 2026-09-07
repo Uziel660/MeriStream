@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { prisma, normalizeTitle, normalizeBaseTitle } from "./db";
 import {
   getProviderPriority,
   isProviderAllowedInMainPath,
@@ -127,30 +127,42 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
   direct: GatewaySource[];
   fallbackCandidates: GatewayFallbackCandidate[];
 }> {
-  const media = await prisma.mediaItem.findFirst({
-    where: { tmdb_id: req.tmdbId, kind: req.kind },
+  const context = await mediaContext(req);
+  const normalized = context.title ? normalizeTitle(context.title) : "";
+  const baseNormalized = context.title ? normalizeBaseTitle(context.title) : "";
+  const identityOr: Array<Record<string, unknown>> = [{ tmdb_id: req.tmdbId }];
+  if (normalized) identityOr.push({ normalized_title: normalized });
+  if (baseNormalized && baseNormalized !== normalized) identityOr.push({ base_normalized_title: baseNormalized });
+
+  const mediaItems = await prisma.mediaItem.findMany({
+    where: { kind: req.kind, OR: identityOr } as any,
     select: { id: true },
   });
-  if (!media) return { direct: [], fallbackCandidates: [] };
+  const mediaItemIds = Array.from(new Set(mediaItems.map((media) => media.id)));
+  if (mediaItemIds.length === 0) return { direct: [], fallbackCandidates: [] };
 
-  const episode = await prisma.mediaEpisode.findFirst({
+  const episodes = await prisma.mediaEpisode.findMany({
     where: {
-      media_item_id: media.id,
+      media_item_id: { in: mediaItemIds },
       season_number: req.kind === "movie" ? 1 : (req.season || 1),
       episode_number: req.kind === "movie" ? 1 : (req.episode || 1),
     },
     include: { links: true },
   });
-  if (!episode) return { direct: [], fallbackCandidates: [] };
+  if (episodes.length === 0) return { direct: [], fallbackCandidates: [] };
 
   const direct: GatewaySource[] = [];
   const fallbackCandidates: GatewayFallbackCandidate[] = [];
-  for (const link of episode.links) {
+  const seen = new Set<string>();
+  for (const episode of episodes) for (const link of episode.links) {
     const provider = normalizeProviderId(link.source_site);
     // Database rows from retired crawlers remain useful for explicit recovery,
     // but they must not leak into the normal gateway response. TioAnime is the
     // only legacy exception and is handled below as ZokoAnime fallback.
     if (!isProviderAllowedInMainPath(provider, req.kind)) continue;
+    const linkKey = `${provider}|${link.url}`;
+    if (seen.has(linkKey)) continue;
+    seen.add(linkKey);
     const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
     const audioLanguage = normalizeLanguageTag(link.audio_language || link.language) || (SPANISH_LOCAL.has(provider) ? "es" : null);
     const subtitleLanguage = normalizeLanguageTag(link.subtitle_language);
@@ -225,7 +237,15 @@ function dedupeAndRank(sources: GatewaySource[], req: GatewayRequest): GatewaySo
 }
 
 function rankFallbacks(values: GatewayFallbackCandidate[]): GatewayFallbackCandidate[] {
-  return [...values].sort((a, b) => b.score - a.score);
+  const seen = new Set<string>();
+  return [...values]
+    .filter((value) => {
+      const key = `${normalizeProviderId(value.provider)}|${value.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 async function persistApiSources(req: GatewayRequest, sources: GatewaySource[]): Promise<number> {

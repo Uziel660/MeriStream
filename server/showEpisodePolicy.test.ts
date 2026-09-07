@@ -3,6 +3,7 @@ import {
   buildDisplayEpisodes,
   countDisplayPlatforms,
   filterMainPathLinks,
+  mergeCanonicalEpisodes,
 } from "./showEpisodePolicy";
 
 describe("show episode main-path presentation", () => {
@@ -97,5 +98,29 @@ describe("show episode main-path presentation", () => {
     ];
 
     expect(countDisplayPlatforms(canonical, display, "series")).toEqual([{ domain: "gnula", episodes: 1 }]);
+  });
+
+  it("merges platform links from equivalent canonical rows without duplicating URLs", () => {
+    const merged = mergeCanonicalEpisodes([
+      [{
+        id: "lat-episode-1",
+        season_number: 1,
+        episode_number: 1,
+        links: [{ url: "https://latanime.org/ver/show-1", source_site: "latanime" }],
+      }],
+      [{
+        id: "zoko-episode-1",
+        season_number: 1,
+        episode_number: 1,
+        links: [
+          { url: "https://zokoanime.video/stream/mal/21/1/sub", source_site: "zokoanime.video" },
+          { url: "https://latanime.org/ver/show-1", source_site: "latanime" },
+        ],
+      }],
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("lat-episode-1");
+    expect(merged[0].links.map((link) => link.source_site)).toEqual(["latanime", "zokoanime.video"]);
   });
 });

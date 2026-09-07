@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HiAnimesAdapter } from "./HiAnimesAdapter";
 
 const anime = {
+  mal_id: 32281,
   title: "Your Name.",
   English: "Your Name.",
   Japanese: "Kimi no Na wa.",
@@ -52,6 +53,7 @@ describe("HiAnimesAdapter", () => {
 
     const result = await new HiAnimesAdapter().analyze("https://hianimes.se/details/your-name.-wdzkfy", "detail");
     expect(result.content_type).toBe("movie");
+    expect(result.mal_id).toBe(32281);
     expect(result.episodes).toHaveLength(1);
     expect(result.episodes[0]?.url).toContain("/watch/your-name-episode-1-7642rk");
     expect(result.episodes[0]?.sources).toEqual([

@@ -492,6 +492,45 @@ export function App() {
           })
         : [];
 
+      // El gateway mantiene los locators de plataforma separados de los
+      // directos reproducibles. Son fuentes válidas para el reproductor porque
+      // HLSPlayerModal las resuelve JIT mediante el adaptador especializado;
+      // omitirlas aquí dejaba visible únicamente LatAnime aunque ZokoAnime
+      // estuviera registrado para el mismo episodio.
+      const gatewayFallbacks = Array.isArray(gatewayData?.fallbackCandidates)
+        ? gatewayData.fallbackCandidates.map((source: any, index: number) => {
+            let host: string | null = null;
+            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
+            return {
+              url: source.url,
+              type: 'embed' as const,
+              tier: gatewayRanked.length + index,
+              host,
+              provider: source.provider,
+              source_site: source.provider,
+              canonical_locator: source.canonicalLocator || source.url,
+              original_url: source.url,
+              delivery_mode: 'embed' as const,
+              is_refreshable: true,
+              is_proxyable: false,
+              requiredHeaders: undefined,
+              link_type: source.type,
+              language: source.audioLanguage || undefined,
+              audio_language: source.audioLanguage || undefined,
+              subtitle_language: source.subtitleLanguage || undefined,
+              subtitles: Array.isArray(source.subtitles)
+                ? source.subtitles.map((track: any, trackIndex: number) => ({
+                    id: `${source.provider || 'fallback'}-${index}-${trackIndex}`,
+                    label: track.label || track.language || 'Subtítulo',
+                    language: track.language || 'und',
+                    url: track.url || track.src,
+                    is_default: false,
+                  }))
+                : [],
+            };
+          })
+        : [];
+
       let legacyData: any = null;
       if (legacyResponse?.ok) legacyData = await legacyResponse.json();
 
@@ -509,6 +548,7 @@ export function App() {
       const seenUrls = new Set<string>();
       for (const candidate of [
         ...gatewayRanked,
+        ...gatewayFallbacks,
         ...(Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : []),
       ]) {
         if (!candidate?.url || seenUrls.has(candidate.url)) continue;

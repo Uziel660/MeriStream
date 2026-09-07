@@ -17,6 +17,9 @@ export interface HianimesEpisodeRecord {
 export interface HianimesAnimeRecord {
   slug: string;
   title: string;
+  mal_id?: number;
+  anilist_id?: number;
+  kitsu_id?: string;
   englishTitle?: string;
   japaneseTitle?: string;
   synopsis?: string;
@@ -110,6 +113,15 @@ export function normalizeAnimeRecord(value: unknown): HianimesAnimeRecord | unde
   return {
     slug,
     title,
+    mal_id: (() => {
+      const value = typeof item.mal_id === "number" ? item.mal_id : Number.parseInt(asString(item.mal_id) || "", 10);
+      return Number.isFinite(value) && value > 0 ? value : undefined;
+    })(),
+    anilist_id: (() => {
+      const value = typeof item.anilist_id === "number" ? item.anilist_id : Number.parseInt(asString(item.anilist_id) || "", 10);
+      return Number.isFinite(value) && value > 0 ? value : undefined;
+    })(),
+    kitsu_id: asString(item.kitsu_id),
     englishTitle: asString(item.English),
     japaneseTitle: asString(item.Japanese),
     synopsis: asString(item.synopsis),
@@ -132,23 +144,35 @@ async function requestApi(path: string, init: RequestInit = {}, timeoutMs = DEFA
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    for (const base of API_BASES) {
-      try {
-        const response = await fetch(`${base}${path}`, {
-          ...init,
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-            Origin: "https://hianimes.se",
-            Referer: "https://hianimes.se/",
-            ...(init.headers || {}),
-          },
-        });
-        if (response.ok) return await response.json();
-      } catch {
-        // Try the configured fallback API while the same deadline remains active.
+    const retryable = new Set([408, 425, 429, 500, 502, 503, 504]);
+    const started = Date.now();
+    // The public filter endpoint occasionally answers 429 while a catalogue is
+    // being paged. Retry the same page briefly before giving up/falling back so
+    // one transient response does not make the crawler stop early.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (const base of API_BASES) {
+        try {
+          const response = await fetch(`${base}${path}`, {
+            ...init,
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              Origin: "https://hianimes.se",
+              Referer: "https://hianimes.se/",
+              ...(init.headers || {}),
+            },
+          });
+          if (response.ok) return await response.json();
+          if (!retryable.has(response.status)) continue;
+        } catch {
+          // Try the configured fallback API while the same deadline remains active.
+        }
       }
+      const remaining = timeoutMs - (Date.now() - started);
+      if (attempt >= 2 || remaining <= 0) break;
+      const delay = Math.min(900 * (attempt + 1), Math.max(0, remaining - 25));
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
     return null;
   } finally {

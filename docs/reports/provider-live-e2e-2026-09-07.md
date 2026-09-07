@@ -41,3 +41,13 @@ de 300 enlaces históricos asociados a proveedores retirados no encontró URLs
 legacy en los detalles públicos. Además, la ruta compatible
 `/api/v1/shows` ahora aplica el mismo filtro que el catálogo `lite` salvo que
 un consumidor administrativo pida explícitamente `include_legacy=true`.
+
+Los otros hosts finales confirmados por la sonda con manifiesto y segmento son:
+
+| Sitio | Host final observado | Master | Segmento |
+| --- | --- | --- | --- |
+| LatAnime | `edge1-moscow-sprintcdn.owphbf24.com` | `200 application/vnd.apple.mpegurl` | `206 video/MP2T` |
+| ZokoAnime | `hls2.aniwatchtv.uk` | `200 application/vnd.apple.mpegurl` | `206 video/mp2t` |
+
+Estos hosts son efímeros y pueden rotar; se conserva el locator del sitio y se
+resuelve de nuevo al reproducir.

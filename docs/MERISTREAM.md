@@ -107,14 +107,21 @@ Ahí se define:
 
 No se debe duplicar el orden de providers en adapters, UI y servicios distintos.
 
+Las URLs de catálogos completos viven en:
+
+`server/providers/ingestionRegistry.ts`
+
+Ese archivo es la única lista operativa usada por `npm run ingest:all`.
+
 ### Prioridad inicial
 
 #### Anime
 
 1. `animeav1`
 2. `animeflv`
-3. `hianimes`
-4. `latanime`, `tioanime`, `veranimes` como fallback
+3. `jkanime`
+4. `hianimes`
+5. `latanime`, `tioanime`, `veranimes` como fallback
 
 #### Películas/series
 
@@ -147,11 +154,56 @@ DUB -> audio_language=es
 
 No se implementan bypasses de DRM, CAPTCHA o controles de acceso.
 
-## 5. Ingestión: crawlers y workers
+## 5. Ingestión: bootstrap, crawlers y workers
 
 Los crawlers/workers **se quedan**.
 
-Su responsabilidad es descubrir y mantener fuentes:
+### BD vacía: flujo recomendado
+
+```bash
+npm install
+npx prisma generate
+npx prisma db push
+npm run bootstrap
+npm run ingest:all
+npm run dev
+```
+
+`npm run bootstrap` crea catálogo canónico TMDB y esqueletos `MediaEpisode` sin inventar streams.
+
+`npm run ingest:all` crea jobs `full_catalog` para todos los targets registrados. El worker los consume al iniciar `npm run dev`.
+
+Modos disponibles:
+
+```bash
+npm run ingest:all                 # modo seguro
+npm run ingest:all -- --fast       # más concurrencia, delay 0
+npm run ingest:all -- --refresh    # reinicia todos los catálogos desde página 1
+npm run ingest:all -- --refresh --fast
+npm run ingest:all -- --dry        # solo muestra lo que haría
+```
+
+`npm run fast-start` se mantiene únicamente como alias de `ingest:all --fast`; el antiguo script duplicado fue eliminado.
+
+Targets actuales de ingestión global:
+
+- AnimeAV1
+- AnimeFLV
+- JKAnime
+- HiAnimes
+- GNULA
+- Cinecalidad
+- LaMovie (películas/series/anime)
+- TubePelis (películas/series)
+- TioPlus (películas/series)
+- Doramasflix (doramas/películas/variedades)
+- LatAnime
+- TioAnime
+- VerAnimes
+
+El modo `full_catalog` sigue páginas hasta agotamiento del catálogo; no depende de `max_pages`. Mantiene checkpoint persistente y un hard cap anti-loop.
+
+Responsabilidad del pipeline:
 
 ```text
 provider catalog/page
@@ -359,6 +411,7 @@ interface ProviderSource {
 server/
   providers/
     providerPolicy.ts
+    ingestionRegistry.ts
   scrapers/
     ScraperManager.ts
     adapters/
@@ -367,6 +420,10 @@ server/
   playbackSessions.ts
   showService.ts
   metadataEngine.ts
+
+tools/
+  bootstrap-catalog.ts
+  ingest-all.ts
 
 src/
   api/client.ts

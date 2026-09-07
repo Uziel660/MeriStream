@@ -143,6 +143,7 @@ export function isEmbedUrl(url: string): boolean {
 
   // Stream nativo servido por nuestro backend (descifrado Mega on-the-fly): siempre directo
   if (u.includes('/api/v1/stream/mega')) return false;
+  if (u.includes('/m3u8/') || u.includes('hls-vod')) return false;
 
   // Direct media files (.m3u8, .mp4, .webm, .mkv) are played via native HLS/Video.
   // Extension regex (not substring): evita que ".mp4upload.com" haga match de ".mp4".

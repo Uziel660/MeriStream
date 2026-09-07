@@ -3,7 +3,7 @@ import type { RequestHandler } from "express";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { EmbedResolvers, type ResolvedStreamMeta } from "./resolvers";
-import { buildProxyHeaders } from "./hostProfiles";
+import { buildPlaybackHeaders } from "./hostProfiles";
 import { createResolutionTiming } from "./resolutionMetadata";
 
 export type PlaybackResolver = (originalUrl: string) => Promise<ResolvedStreamMeta>;
@@ -361,12 +361,13 @@ export function createPlaybackSessionHandlers(
       if (!session) { res.sendStatus(404); return; }
       const fetchUpstream = async (target: string) => {
         const range = req.header("range");
-        const profiled = buildProxyHeaders(target, session.original_url, range || undefined);
-        const headers = new Headers(profiled.headers);
-        for (const [name, value] of Object.entries(session.current.requiredHeaders || {})) {
-          headers.set(name, value);
-        }
-        return fetch(target, { headers, signal: controller.signal });
+        const merged = buildPlaybackHeaders(
+          target,
+          session.original_url,
+          session.current.requiredHeaders,
+          range || undefined,
+        );
+        return fetch(target, { headers: new Headers(merged.headers), signal: controller.signal });
       };
       let upstream = await fetchUpstream(url);
       if (upstream.status === 401 || upstream.status === 403) {

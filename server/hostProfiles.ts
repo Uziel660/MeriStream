@@ -208,6 +208,14 @@ export function resolveHostProfile(targetUrl: string): HostProfile {
   return DEFAULT_PROFILE;
 }
 
+/** True only for hosts with an explicit, audited delivery profile. */
+export function hasExplicitHostProfile(targetUrl: string): boolean {
+  const lower = String(targetUrl || "").toLowerCase();
+  return HOST_PROFILES.some((profile) =>
+    profile.match.some((match) => lower.includes(match))
+  );
+}
+
 /**
  * Construye los headers de request saliente para el proxy según el perfil
  * y el referer que mandó el player (?referer=...).
@@ -241,3 +249,27 @@ export function buildProxyHeaders(
 
   return { headers, profile };
 }
+
+/**
+ * Builds final relay headers. Audited host rules win conflicts and can
+ * explicitly remove headers (for example Zilla rejects Referer).
+ */
+export function buildPlaybackHeaders(
+  targetUrl: string,
+  playerReferer: string | undefined,
+  requiredHeaders: Record<string, string> | undefined,
+  rangeHeader?: string,
+): { headers: Record<string, string>; profile: HostProfile } {
+  const profiled = buildProxyHeaders(targetUrl, playerReferer, rangeHeader);
+  const resolverHeaders = requiredHeaders || {};
+  const explicit = hasExplicitHostProfile(targetUrl);
+  const headers: Record<string, string> = explicit
+    ? { ...resolverHeaders, ...profiled.headers }
+    : { ...profiled.headers, ...resolverHeaders };
+  if (explicit && profiled.profile.refererMode === "none") {
+    delete headers.Referer;
+    delete headers.referer;
+  }
+  return { profile: profiled.profile, headers };
+}
+

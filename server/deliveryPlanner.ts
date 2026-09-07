@@ -1,5 +1,6 @@
 import type { ResolvedStreamMeta } from "./resolvers";
 import { createResolutionTiming } from "./resolutionMetadata";
+import { hasExplicitHostProfile } from "./hostProfiles";
 
 export type DeliveryMode = "direct" | "direct_trial" | "proxy_required" | "embed";
 
@@ -42,6 +43,7 @@ export class DeliveryPlanner {
   classify(meta: Readonly<ResolvedStreamMeta>): DeliveryMode {
     if (!meta.resolved || meta.is_proxyable === false || meta.type === "embed") return "embed";
     if (meta.requiredHeaders && Object.keys(meta.requiredHeaders).length > 0) return "proxy_required";
+    if (hasExplicitHostProfile(meta.url)) return "proxy_required";
 
     if (this.directProviders.has(normalizeIdentity(meta.provider))) return "direct";
     const hostname = hostnameOf(meta.url);

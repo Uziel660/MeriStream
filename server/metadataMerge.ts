@@ -37,6 +37,7 @@ export interface ScraperMetadataInput {
 export interface MergeableMetadataTarget {
   malId: number | null;
   anilistId: number | null;
+  kitsuId?: string | null;
   title: string;
   japaneseTitle: string | null;
   englishTitle: string | null;
@@ -52,6 +53,7 @@ export interface MergeableMetadataTarget {
 interface EnrichedLike {
   mal_id?: number | null;
   anilist_id?: number | null;
+  kitsu_id?: string | null;
   title?: string;
   japanese_title?: string | null;
   english_title?: string | null;
@@ -127,6 +129,7 @@ export function applyEnrichmentGapFill(
   // IDs externos: siempre valiosos para deduplicación, solo si faltan
   if (!target.malId && enriched.mal_id) target.malId = enriched.mal_id;
   if (!target.anilistId && enriched.anilist_id) target.anilistId = enriched.anilist_id;
+  if (!target.kitsuId && enriched.kitsu_id) target.kitsuId = enriched.kitsu_id;
 
   // Títulos alternativos: completan, nunca sustituyen al título del scraper
   if (!target.japaneseTitle && enriched.japanese_title) {

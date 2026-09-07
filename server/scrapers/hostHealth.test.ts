@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isHostBlacklisted,
+  listHostHealth,
   probeStream,
   recordPlaybackResult,
   resetHostHealth,
@@ -20,6 +21,20 @@ describe("host health probes", () => {
     expect(result).toMatchObject({ ok: true, state: "online", status: 200 });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://cdn.example/video.m3u8",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("GETs DASH and validates an MPD before marking the host online", async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      "<?xml version=\"1.0\"?><MPD><Period><AdaptationSet><SegmentTemplate media=\"chunk-$Number$.m4s\" /></AdaptationSet></Period></MPD>",
+      { status: 200, headers: { "content-type": "application/dash+xml" } },
+    ));
+    const result = await probeStream("https://cdn.example/video.mpd", { fetch: fetchMock });
+
+    expect(result).toMatchObject({ ok: true, state: "online", status: 200 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.example/video.mpd",
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -93,6 +108,14 @@ describe("host health probes", () => {
     expect(health.playbackAttempts).toBe(3);
     expect(health.playbackSuccesses).toBe(2);
     expect(health.state).toBe("online");
+  });
+
+  it("exposes cooldown and playback counters for every observed host", () => {
+    const url = "https://metrics.example/movie.mp4";
+    recordPlaybackResult(url, { ok: false, reason: "playback_timeout" });
+    const snapshot = listHostHealth();
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]).toMatchObject({ host: "metrics.example", consecutiveFailures: 1, playbackAttempts: 1 });
   });
 });
 

@@ -40,7 +40,20 @@ export class AnimeSdkClient implements DirectStreamProvider {
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
     if (req.kind !== "anime" || !this.baseUrl) return [];
 
-    let metaId = req.anilistId ? `anilist:${req.anilistId}` : req.malId ? `mal:anime:${req.malId}` : null;
+    const identityProvider = req.anilistId
+      ? "anilist"
+      : req.malId
+        ? "mal"
+        : req.kitsuId
+          ? "kitsu"
+          : "anilist";
+    let metaId = req.anilistId
+      ? `anilist:${req.anilistId}`
+      : req.malId
+        ? `mal:anime:${req.malId}`
+        : req.kitsuId
+          ? `kitsu:${req.kitsuId}`
+          : null;
     if (!metaId && req.title) {
       const search = await fetchJson(`${this.baseUrl}/meta/search?provider=anilist&q=${encodeURIComponent(req.title)}`);
       metaId = firstMetaId(search);
@@ -50,7 +63,7 @@ export class AnimeSdkClient implements DirectStreamProvider {
     const canonicalLocator = `${metaId}:${req.episode || 1}`;
     const resolved = await Promise.allSettled(
       this.contentProviders.flatMap((contentProvider) => ["sub", "dub"].map(async (language) => {
-        const url = `${this.baseUrl}/meta/stream?provider=anilist&id=${encodeURIComponent(metaId!)}&episode=${req.episode || 1}&contentProvider=${encodeURIComponent(contentProvider)}&language=${language}`;
+        const url = `${this.baseUrl}/meta/stream?provider=${identityProvider}&id=${encodeURIComponent(metaId!)}&episode=${req.episode || 1}&contentProvider=${encodeURIComponent(contentProvider)}&language=${language}`;
         const body = await fetchJson(url, {}, 8_000);
         if (!body || body?.type === "manga") return [] as PlayableSource[];
         return extractVideoStreams(body, `anime-sdk:${contentProvider}:${language}`, canonicalLocator).map((source) => ({

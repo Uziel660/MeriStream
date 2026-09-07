@@ -89,7 +89,7 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
     req.kind === "anime"
       ? prisma.show.findFirst({
           where: { tmdb_id: req.tmdbId },
-          select: { title: true, year: true, anilist_id: true, mal_id: true },
+          select: { title: true, year: true, anilist_id: true, mal_id: true, kitsu_id: true },
         })
       : Promise.resolve(null),
   ]);
@@ -104,6 +104,7 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
     year: canonical?.year || legacy?.year || null,
     anilistId: legacy?.anilist_id || null,
     malId: legacy?.mal_id || null,
+    kitsuId: legacy?.kitsu_id || null,
   };
 }
 

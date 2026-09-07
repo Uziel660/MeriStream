@@ -199,14 +199,29 @@ export class PlaybackSessionStore {
     return key;
   }
 
-  resourceUrl(id: string, key: string): string | undefined {
+  resourceUrl(id: string, key: string, relativePath?: string): string | undefined {
     const session = this.get(id);
     const resource = session?.resources.get(key);
     if (!session || !resource) return undefined;
     // Refresh resource recency while preserving its deterministic opaque ID.
     session.resources.delete(key);
     session.resources.set(key, resource);
-    return this.resolveResourceUrl(session, key, new Set());
+    const base = this.resolveResourceUrl(session, key, new Set());
+    if (!base || !relativePath) return base;
+    // DASH templates are kept in the browser-facing path (for example
+    // `segment-$Number$.m4s`) and arrive here after the player expands the
+    // template. Never accept an absolute URL as a suffix.
+    if (/^[a-z][a-z\d+.-]*:/i.test(relativePath) || relativePath.startsWith("//")) return undefined;
+    try {
+      const baseUrl = new URL(base.endsWith("/") ? base : `${base}/`);
+      const child = new URL(relativePath.replace(/^\/+/, ""), baseUrl);
+      // Some CDNs put the auth token on the directory URL. Carry it forward
+      // unless the template supplied its own query string.
+      if (!child.search && baseUrl.search) child.search = baseUrl.search;
+      return child.toString();
+    } catch {
+      return undefined;
+    }
   }
 
   rewriteManifest(id: string, manifest: string, parentUrl: string, pathPrefix = "/api/v1/playback", parentResourceId?: string): string {
@@ -223,6 +238,82 @@ export class PlaybackSessionStore {
       }
       return this.toOpaqueResource(id, value, parentUrl, pathPrefix, parentResourceId) ?? line;
     }).join("\n");
+  }
+
+  /**
+   * Rewrites an MPD to opaque resource paths while preserving DASH URL
+   * templates. A BaseURL becomes an internal directory; media and
+   * initialization attributes then resolve through the same session resource
+   * endpoint after dash.js expands `$Number$`, `$Time$`, etc.
+   */
+  rewriteDashManifest(id: string, manifest: string, parentUrl: string, pathPrefix = "/api/v1/playback", parentResourceId?: string): string {
+    const baseKeyCache = new Map<string, string>();
+    const rootBase = (() => {
+      try {
+        const url = new URL(parentUrl);
+        url.pathname = url.pathname.replace(/[^/]*$/, "");
+        url.hash = "";
+        return url.toString();
+      } catch {
+        return parentUrl;
+      }
+    })();
+    const opaqueBase = (value: string, baseUrl: string): string | undefined => {
+      try {
+        const absolute = new URL(value, baseUrl).toString();
+        const keyBase = absolute.endsWith("/") ? absolute : `${absolute}/`;
+        let key = baseKeyCache.get(keyBase);
+        if (!key) {
+          const generation = this.require(id).current.generation;
+          key = this.registerResource(id, {
+            upstreamUrl: keyBase,
+            registeredGeneration: generation,
+            registeredBaseUrl: baseUrl,
+            ...(parentResourceId ? { parentResourceId, parentRelative: value } : { rootRelative: value }),
+          });
+          baseKeyCache.set(keyBase, key);
+        }
+        return `${pathPrefix}/${encodeURIComponent(id)}/resource/${encodeURIComponent(key)}/`;
+      } catch {
+        return undefined;
+      }
+    };
+    const opaqueTemplate = (value: string, baseUrl: string): string | undefined => {
+      try {
+        const absolute = new URL(value, baseUrl).toString();
+        const parsed = new URL(absolute);
+        const slash = parsed.pathname.lastIndexOf("/");
+        const directory = `${parsed.origin}${slash >= 0 ? parsed.pathname.slice(0, slash + 1) : "/"}`;
+        const suffix = `${slash >= 0 ? parsed.pathname.slice(slash + 1) : parsed.pathname}${parsed.search}${parsed.hash}`;
+        const base = opaqueBase(directory, baseUrl);
+        if (!base) return undefined;
+        // Keep DASH placeholders readable so dash.js can expand them before
+        // issuing the request; encode the rest to avoid changing query syntax.
+        const encodedSuffix = encodeURIComponent(suffix).replace(/%24/g, "$");
+        return `${base}${encodedSuffix}`;
+      } catch {
+        return undefined;
+      }
+    };
+
+    let sawBaseUrl = false;
+    let rewritten = manifest.replace(/(<BaseURL\b[^>]*>)([^<]+)(<\/BaseURL>)/gi, (match, open, value, close) => {
+      const opaque = opaqueBase(String(value).trim(), parentUrl);
+      if (!opaque) return match;
+      sawBaseUrl = true;
+      return `${open}${opaque}${close}`;
+    });
+
+    // Relative templates can use the rewritten BaseURL directly. Absolute
+    // templates (or MPDs with no BaseURL) need their own opaque directory.
+    rewritten = rewritten.replace(/\b(media|initialization|sourceURL)=("|')([^"']+)("|')/gi, (match, attr, quote, value) => {
+      const raw = String(value);
+      const isAbsolute = /^https?:\/\//i.test(raw);
+      if (!isAbsolute && sawBaseUrl) return match;
+      const replacement = opaqueTemplate(raw, sawBaseUrl ? parentUrl : rootBase);
+      return replacement ? `${attr}=${quote}${replacement}${quote}` : match;
+    });
+    return rewritten;
   }
 
   private toOpaqueResource(id: string, value: string, parentUrl: string, pathPrefix: string, parentResourceId?: string): string | undefined {
@@ -298,14 +389,18 @@ export class PlaybackSessionStore {
 }
 
 function isManifest(response: Response, url: string): boolean {
-  return /mpegurl/i.test(response.headers.get("content-type") || "") || /\.m3u8(?:\?|$)/i.test(url);
+  return /mpegurl|dash\+xml/i.test(response.headers.get("content-type") || "") || /\.(?:m3u8|mpd)(?:\?|$)/i.test(url);
+}
+
+function isDashManifest(response: Response, url: string): boolean {
+  return /dash\+xml/i.test(response.headers.get("content-type") || "") || /\.mpd(?:\?|$)/i.test(url);
 }
 
 async function readManifestLimited(response: Response, maxBytes = 2 * 1024 * 1024): Promise<string> {
   const advertised = Number(response.headers.get("content-length"));
   if (Number.isFinite(advertised) && advertised > maxBytes) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error("Manifiesto HLS demasiado grande");
+    throw new Error("Manifiesto HLS/DASH demasiado grande");
   }
   if (!response.body) return "";
   const reader = response.body.getReader();
@@ -317,7 +412,7 @@ async function readManifestLimited(response: Response, maxBytes = 2 * 1024 * 102
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > maxBytes) throw new Error("Manifiesto HLS demasiado grande");
+      if (bytes > maxBytes) throw new Error("Manifiesto HLS/DASH demasiado grande");
       text += decoder.decode(value, { stream: true });
     }
     return text + decoder.decode();
@@ -354,8 +449,15 @@ export function createPlaybackSessionHandlers(
     try { hooks.onRelayStart?.(context); } catch { /* best-effort hook */ }
     try {
       const sessionId = context.sessionId;
-      const resourceId = String(req.params.resourceId || "");
-      const url = root ? (await store.upstream(sessionId)).url : store.resourceUrl(sessionId, resourceId);
+      const resourceId = String(req.params.resourceId || req.params[1] || "");
+      const resourcePathRaw = !root
+        ? String(req.params.resourcePath || req.params[2] || req.query.path || "")
+        : "";
+      let resourcePath = resourcePathRaw;
+      try { resourcePath = decodeURIComponent(resourcePathRaw); } catch { /* keep raw */ }
+      const url = root
+        ? (await store.upstream(sessionId)).url
+        : store.resourceUrl(sessionId, resourceId, resourcePath || undefined);
       if (!url) { res.sendStatus(404); return; }
       const session = store.get(sessionId);
       if (!session) { res.sendStatus(404); return; }
@@ -391,7 +493,11 @@ export function createPlaybackSessionHandlers(
         // would be incorrect even though those headers are preserved for media.
         res.removeHeader("content-length");
         res.removeHeader("content-range");
-        res.status(upstream.status).type("application/vnd.apple.mpegurl").send(store.rewriteManifest(sessionId, body, upstream.url || url, pathPrefix, root ? undefined : resourceId));
+        const dash = isDashManifest(upstream, upstream.url || url);
+        const rewritten = dash
+          ? store.rewriteDashManifest(sessionId, body, upstream.url || url, pathPrefix, root ? undefined : resourceId)
+          : store.rewriteManifest(sessionId, body, upstream.url || url, pathPrefix, root ? undefined : resourceId);
+        res.status(upstream.status).type(dash ? "application/dash+xml" : "application/vnd.apple.mpegurl").send(rewritten);
         return;
       }
       if (!upstream.body) { res.status(upstream.status).end(); return; }

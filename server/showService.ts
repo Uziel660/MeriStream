@@ -50,6 +50,7 @@ function tmdbKindFilter(kind: ContentKind): { kind: string | { in: string[] } } 
 export interface SaveShowInput {
   mal_id?: number | null;
   anilist_id?: number | null;
+  kitsu_id?: string | null;
   tmdb_id?: number | null;
   /** Temporada detectada en el título ("TP2", "Temporada 2"). Default: 1. */
   season?: number | null;
@@ -95,6 +96,7 @@ function applyEnrichedMetadata(
   target: {
     malId: number | null;
     anilistId: number | null;
+    kitsuId: string | null;
     title: string;
     japaneseTitle: string | null;
     englishTitle: string | null;
@@ -475,6 +477,7 @@ async function mergeShowEpisodes(existingShow: any, showData: any, normalizedEpi
 
   if (!existingShow.mal_id && showData.malId) updatePayload.mal_id = showData.malId;
   if (!existingShow.anilist_id && showData.anilistId) updatePayload.anilist_id = showData.anilistId;
+  if (!existingShow.kitsu_id && showData.kitsuId) updatePayload.kitsu_id = showData.kitsuId;
   if (!existingShow.tmdb_id && showData.tmdbId) updatePayload.tmdb_id = showData.tmdbId;
   if (!existingShow.original_title && showData.originalTitle) updatePayload.original_title = showData.originalTitle;
   if (!existingShow.japanese_title && showData.japaneseTitle) updatePayload.japanese_title = showData.japaneseTitle;
@@ -719,6 +722,7 @@ async function mergeSequelIntoTwin(
   const patch: any = {};
   if (!twin.mal_id && showData.malId) patch.mal_id = showData.malId;
   if (!twin.anilist_id && showData.anilistId) patch.anilist_id = showData.anilistId;
+  if (!twin.kitsu_id && showData.kitsuId) patch.kitsu_id = showData.kitsuId;
   if (Object.keys(patch).length > 0) {
     enqueueShowUpdate(twin.id, patch);
   }
@@ -754,6 +758,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   const showData = {
     malId: input.mal_id || null,
     anilistId: input.anilist_id || null,
+    kitsuId: input.kitsu_id || null,
     tmdbId: input.tmdb_id || null,
     title: isSlugLikeTitle(canonicalTitle) ? cleanSlugToWords(canonicalTitle) : canonicalTitle,
     originalTitle: input.original_title || null,
@@ -788,7 +793,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
       for (const query of identityQueries) {
         const candidate = await enrichUniversalMetadata(query, kind);
         if (!enriched) enriched = candidate;
-        if (candidate?.tmdb_id || candidate?.mal_id || candidate?.anilist_id) {
+        if (candidate?.tmdb_id || candidate?.mal_id || candidate?.anilist_id || candidate?.kitsu_id) {
           enriched = candidate;
           break;
         }
@@ -877,6 +882,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   const showId = enqueueShowCreate({
     mal_id: showData.malId,
     anilist_id: showData.anilistId,
+    kitsu_id: showData.kitsuId,
     tmdb_id: showData.tmdbId,
     title: showData.title,
     original_title: showData.originalTitle,
@@ -921,6 +927,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     status: showData.status,
     mal_id: showData.malId,
     anilist_id: showData.anilistId,
+    kitsu_id: showData.kitsuId,
     tmdb_id: showData.tmdbId,
     episodes: normalizedEpisodes.map((ep, i) => ({
       id: `${showId}-ep${ep.number}`,
@@ -1325,6 +1332,7 @@ export async function quickSyncKnownShow(
   const showData: any = {
     malId: null,
     anilistId: null,
+    kitsuId: null,
     title: data.title || show.title,
   };
 

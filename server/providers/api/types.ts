@@ -17,6 +17,7 @@ export interface ProviderRequest {
   year?: number | null;
   anilistId?: string | null;
   malId?: number | null;
+  kitsuId?: string | null;
   preferredAudio?: string[];
   preferredSubtitles?: string[];
 }

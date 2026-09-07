@@ -68,6 +68,30 @@ describe("PlaybackSessionStore", () => {
     expect(store.resourceUrl(session.id, resourceId)).toBe("https://cdn.example/v2/part-1.ts");
   });
 
+  it("rewrites DASH BaseURL and expands opaque resources after template substitution", async () => {
+    const store = new PlaybackSessionStore({ now: () => 100 });
+    const session = store.createFromResolved(
+      "https://embed.example/dash",
+      meta("https://embed.example/dash", "https://cdn.example/v1/manifest.mpd", 9_999),
+    );
+    const raw = [
+      "<?xml version=\"1.0\"?>",
+      "<MPD><Period><AdaptationSet>",
+      "<BaseURL>segments/</BaseURL>",
+      "<SegmentTemplate media=\"chunk-$Number$.m4s\" initialization=\"init.mp4\" />",
+      "</AdaptationSet></Period></MPD>",
+    ].join("\n");
+    const rewritten = store.rewriteDashManifest(session.id, raw, session.current.url);
+    expect(rewritten).toContain("/api/v1/playback/");
+    expect(rewritten).toContain("chunk-$Number$.m4s");
+    expect(rewritten).not.toContain(">segments/<");
+    const baseMatch = rewritten.match(/<BaseURL>([^<]+)<\/BaseURL>/i);
+    expect(baseMatch?.[1]).toMatch(/\/resource\/[^/]+\/$/);
+    const baseKey = baseMatch![1].split("/").at(-2)!;
+    expect(store.resourceUrl(session.id, baseKey, "chunk-7.m4s"))
+      .toBe("https://cdn.example/v1/segments/chunk-7.m4s");
+  });
+
   it("rebases an absolute signed resource onto the renewed root token", async () => {
     let calls = 0;
     const store = new PlaybackSessionStore({

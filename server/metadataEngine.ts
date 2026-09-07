@@ -18,6 +18,8 @@ export interface EnrichedMetadata {
   content_type: ContentKind;
   suggested_episodes?: Array<{ number: number; title: string; url?: string }>;
   mal_id?: number | null;
+  anilist_id?: number | null;
+  kitsu_id?: string | null;
   /** ID interno de TMDB cuando la metadata viene de allí. */
   tmdb_id?: number;
   /** Ruta relativa del póster TMDB (ej. "/abc.jpg"); sirve para armar URLs con otros tamaños. */
@@ -1028,6 +1030,7 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
       query ($search: String) {
         Media(search: $search, type: ANIME) {
           id
+          idMal
           title {
             romaji
             english
@@ -1084,6 +1087,8 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
             ? translateGenresToEs(media.genres)
             : ["Anime"],
           content_type: "anime",
+          anilist_id: media.id != null ? Number(media.id) : null,
+          mal_id: media.idMal ?? null,
         };
       }
     }
@@ -1107,7 +1112,8 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
     if (res.ok) {
       const json = await res.json() as { data?: Array<{ attributes?: Record<string, any> }> };
       if (Array.isArray(json.data) && json.data.length > 0) {
-        const attr = json.data[0]?.attributes || {};
+        const resource = json.data[0];
+        const attr = resource?.attributes || {};
         const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
         const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
 
@@ -1124,6 +1130,7 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
           status: attr.status === "current" ? "En emisión" : "Finalizado",
           genres: ["Anime"],
           content_type: "anime",
+          kitsu_id: resource?.id != null ? String(resource.id) : null,
         };
       }
     }

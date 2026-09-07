@@ -83,6 +83,7 @@ interface HLSPlayerModalProps {
   ranked_streams?: RankedStream[];
   initialTime?: number;
   onProgressUpdate?: (currentTime: number, duration: number) => void;
+  onNextEpisode?: () => void;
   [key: string]: any;
 }
 
@@ -153,14 +154,36 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [isPipActive, setIsPipActive] = useState(false);
+  const [hasEnded, setHasEnded] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [deliveryState, setDeliveryState] = useState<DeliveryState>('resolving');
+  // La cascada automática mantiene la infraestructura fuera de la UI normal.
+  // Administración puede habilitar el selector para diagnóstico o el usuario
+  // lo ve cuando la cascada ya agotó sus candidatos.
+  const [serverSelectorAlways, setServerSelectorAlways] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('voidstream_show_server_selector') === 'true';
+  });
   const [, setActiveSessionUrl] = useState<string | null>(null);
   const directWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const renewalTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Limpieza de listeners nativos del <video> para poder eliminarlos en cada
   // cambio de servidor (fantasmas de un intento anterior).
   const nativeListenersCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const syncSelectorPreference = () => {
+      setServerSelectorAlways(window.localStorage.getItem('voidstream_show_server_selector') === 'true');
+    };
+    window.addEventListener('voidstream:server-selector-changed', syncSelectorPreference);
+    window.addEventListener('storage', syncSelectorPreference);
+    return () => {
+      window.removeEventListener('voidstream:server-selector-changed', syncSelectorPreference);
+      window.removeEventListener('storage', syncSelectorPreference);
+    };
+  }, []);
+
+  const showServerSelector = serverSelectorAlways || Boolean(playbackError) || deliveryState === 'error';
 
   // SELECTOR MANUAL: visible con >1 candidato para permitir elegir otra fuente
   // nativa cuando el watchdog o la resolución JIT marcan una fuente como caída.
@@ -274,6 +297,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               hlsRef.current.loadSource(res.url);
               if (currentPos > 0) videoRef.current!.currentTime = currentPos;
               if (wasPlaying) videoRef.current!.play().catch(() => {});
+            } else if (dashRef.current && res.url !== activeServer.url) {
+              // dash.js no expone un `loadSource` estable entre versiones;
+              // reiniciar la instancia conserva el mismo punto de reanudación
+              // y vuelve a construir el grafo con el manifiesto renovado.
+              dashRef.current.reset?.();
+              dashRef.current = null;
+              attachSource(res.url);
             }
           }
         } catch (_err) {
@@ -682,6 +712,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     }
 
     setPlaybackError(null);
+    setHasEnded(false);
     setIsPlaying(false);
     setQualityLevels([]);
     setActiveQuality(-1);
@@ -1519,6 +1550,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
 
+    const onEnded = () => {
+      if (listenerAttemptId !== attemptIdRef.current) return;
+      setIsPlaying(false);
+      setHasEnded(true);
+      if (props.onProgressUpdate) props.onProgressUpdate(video.currentTime, video.duration || 0);
+    };
+
     const onVolumeChange = () => {
       setVolume(video.volume);
       setIsMuted(video.muted);
@@ -1561,6 +1599,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('stalled', onStalled);
     video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
     video.addEventListener('volumechange', onVolumeChange);
     video.addEventListener('error', onError);
 
@@ -1574,6 +1613,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('stalled', onStalled);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
       video.removeEventListener('volumechange', onVolumeChange);
       video.removeEventListener('error', onError);
     };
@@ -1587,6 +1627,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('stalled', onStalled);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
       video.removeEventListener('volumechange', onVolumeChange);
       video.removeEventListener('error', onError);
       if (stallFailoverTimerRef.current) {
@@ -1882,12 +1923,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {/* ACCIONES SUPERIORES: CAMBIO RÁPIDO DE SERVIDORES Y APERTURA EXTERNA */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* SELECTOR DE SERVIDORES: SIEMPRE disponible mientras haya >1 opción.
-                (Antes dependía de serverSelectorVisible, pero un embed que falla
-                "silenciosamente" —ej. Mega con archivo muerto— nunca activaba
-                playbackError y el selector jamás aparecía.) */}
-            {/* SELECTOR DE SERVIDORES DESDE EL HEADER SUPERIOR (Visible siempre que haya al menos 1 servidor) */}
-            {servers.length >= 1 && (
+            {/* La cascada selecciona y cambia de servidor automáticamente. Solo
+                exponemos infraestructura en error o en modo diagnóstico. */}
+            {showServerSelector && servers.length > 1 && (
               <div className="relative">
                 <button
                   type="button"
@@ -2168,6 +2206,18 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           </button>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {hasEnded && !playbackError && props.onNextEpisode && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-6 text-center z-20 pointer-events-none">
+                      <button
+                        type="button"
+                        onClick={props.onNextEpisode}
+                        className="pointer-events-auto flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xl hover:bg-emerald-500 transition"
+                      >
+                        Siguiente episodio <ChevronRight size={14} />
+                      </button>
                     </div>
                   )}
 
@@ -2481,17 +2531,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     {activeMenu === 'quality' && (
                       <div className="absolute bottom-10 right-0 w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
                         {/* ACCESO RÁPIDO: cambio de servidor desde la tuerquita de configuración */}
-                        <button
-                          type="button"
-                          onClick={() => setActiveMenu('servers')}
-                          className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
-                        >
-                          <span className="flex items-center gap-1.5 font-semibold">
-                            <Server size={12} />
-                            Cambiar servidor
-                          </span>
-                          <ChevronRight size={12} />
-                        </button>
+                        {showServerSelector && servers.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveMenu('servers')}
+                            className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
+                          >
+                            <span className="flex items-center gap-1.5 font-semibold">
+                              <Server size={12} />
+                              Cambiar servidor
+                            </span>
+                            <ChevronRight size={12} />
+                          </button>
+                        )}
                         <span className="block px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase">
                           Calidad de Video
                         </span>

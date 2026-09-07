@@ -18,6 +18,7 @@ export interface Show {
   tmdb_id?: number | null;
   anilist_id?: string | null;
   mal_id?: number | null;
+  kitsu_id?: string | null;
   original_title?: string;
   japanese_title?: string;
   english_title?: string;

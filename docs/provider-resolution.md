@@ -41,6 +41,21 @@ The gateway ranks an explicit language preference first, then host health and
 provider priority. Two consecutive non-auth failures open a host cooldown;
 401/403 responses remain token-scoped and do not blacklist an entire origin.
 
+TMDB remains the identity used by catalog and playback requests. Anime records
+may additionally carry the numeric AniList and MAL identifiers plus the Kitsu
+resource id. Metadata enrichment queries AniList first, then Kitsu and Jikan;
+the resolved identifiers are retained for deduplication and for provider APIs.
+
+The optional `kitsu_id` column is additive. Environments using the Prisma schema
+must run `npx prisma db push` (or their normal schema deployment step) before
+enabling writes that persist the new mapping; this is a schema sync only and
+does not reset catalog data.
+
+Proxy sessions support both `master.m3u8` and `master.mpd`. DASH `BaseURL` and
+segment templates remain opaque to the browser while `$Number$`, `$Time$` and
+other placeholders are expanded by dash.js before the internal resource relay,
+so signed upstream URLs stay server-side and can be renewed on a 401/403.
+
 The latest public probes are stored in:
 
 - `docs/reports/provider-host-probe-2026-09-07.json`

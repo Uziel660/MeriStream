@@ -304,6 +304,13 @@ export function getHostHealth(url: string): HostHealthSnapshot {
   };
 }
 
+/** Returns a stable snapshot for every host seen by probes or playback. */
+export function listHostHealth(): HostHealthSnapshot[] {
+  return [...hostRecords.keys()]
+    .map((host) => getHostHealth(host))
+    .sort((a, b) => a.host.localeCompare(b.host));
+}
+
 async function readPrefix(response: Response, maxBytes = 16 * 1024): Promise<string> {
   if (!response.body) {
     if (typeof response.text === "function") return (await response.text()).slice(0, maxBytes);
@@ -346,12 +353,19 @@ function isPlayableHlsManifest(prefix: string): boolean {
   return /#EXTINF\s*:|#EXT-X-(?:STREAM-INF|TARGETDURATION|MEDIA|PLAYLIST-TYPE|MAP|KEY)\s*:|#EXT-X-ENDLIST(?:\s|$)/i.test(prefix);
 }
 
+function isPlayableDashManifest(prefix: string): boolean {
+  const trimmed = prefix.trimStart();
+  if (!/<MPD\b/i.test(trimmed)) return false;
+  return /<Period\b|<AdaptationSet\b|<SegmentTemplate\b|<BaseURL\b/i.test(trimmed);
+}
+
 async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResult> {
   const startedAt = Date.now();
   const { headers, profile } = buildProxyHeaders(url, opts.playerReferer);
   const timeoutMs = adaptiveTimeout(url, opts, profile.connectTimeoutMs);
   const fetchImpl = opts.fetch ?? globalThis.fetch;
   const isHls = /\.m3u8(?:\?|$)/i.test(url);
+  const isDash = /\.mpd(?:\?|$)/i.test(url);
   const isMp4 = /\.mp4(?:\?|$)/i.test(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -359,7 +373,7 @@ async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResu
   let authStatusSeen: HealthReason | undefined;
 
   try {
-    if (isHls) {
+    if (isHls || isDash) {
       const response = await fetchImpl(url, { method: "GET", signal: controller.signal, redirect: "follow", headers });
       if (!isSuccessfulStatus(response.status)) {
         if (response.status === 401 || response.status === 403) authStatusSeen = reasonForStatus(response.status);
@@ -367,12 +381,13 @@ async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResu
         return resultForFailure(url, response.status, reasonForStatus(response.status), undefined, elapsed());
       }
       const prefix = await readPrefix(response);
-      if (!isPlayableHlsManifest(prefix)) {
+      const playable = isHls ? isPlayableHlsManifest(prefix) : isPlayableDashManifest(prefix);
+      if (!playable) {
         return resultForFailure(
           url,
           response.status,
           "invalid_manifest",
-          "HLS manifest missing playlist directives",
+          `${isHls ? "HLS" : "DASH"} manifest missing playlist directives`,
           elapsed(),
         );
       }

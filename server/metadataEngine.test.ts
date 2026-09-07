@@ -531,5 +531,40 @@ describe("enrichUniversalMetadata (integración con mocks)", () => {
     expect(googleAttempts).toBeGreaterThanOrEqual(2);
     expect(meta.description).toBe("Tetsuo Tanba guía a los espíritus inquietos hacia la otra vida.");
     expect(meta.content_type).toBe("anime");
+    expect(meta.anilist_id).toBe(208352);
+  });
+
+  it("conserva el identificador Kitsu cuando AniList y MAL no responden", async () => {
+    const calls: string[] = [];
+    stubFetch((url) => {
+      if (url.includes("api.themoviedb.org")) return { json: { results: [] } };
+      if (url.includes("graphql.anilist.co")) return { status: 503, json: {} };
+      if (url.includes("kitsu.io/api/edge/anime")) {
+        return {
+          json: {
+            data: [{
+              id: "kitsu-42",
+              attributes: {
+                canonicalTitle: "Serie Kitsu",
+                titles: { ja_jp: "キツツ", en: "Kitsu Series" },
+                synopsis: "Una sinopsis suficientemente larga escrita en español para esta prueba.",
+                posterImage: { large: "https://media.kitsu.io/poster.jpg" },
+                coverImage: { large: "https://media.kitsu.io/cover.jpg" },
+                averageRating: "82.5",
+                startDate: "2024-01-01",
+                status: "finished",
+              },
+            }],
+          },
+        };
+      }
+      return { status: 503, json: {} };
+    }, calls);
+
+    const meta = await enrichUniversalMetadata("Serie Kitsu", "anime");
+
+    expect(meta.kitsu_id).toBe("kitsu-42");
+    expect(meta.title).toBe("Serie Kitsu");
+    expect(calls.some((url) => url.includes("kitsu.io/api/edge/anime"))).toBe(true);
   });
 });

@@ -1179,6 +1179,19 @@ export function App() {
           initialTime={playingStreamData.initialTime}
           isLoading={playingStreamData.isLoading}
           loadError={playingStreamData.loadError}
+          onNextEpisode={() => {
+            const currentShow = shows.find((show) => show.id === playingStreamData.showId);
+            const episodes = [...(currentShow?.episodes || [])]
+              .filter((episode) => Number.isFinite(Number(episode.episode_number)))
+              .sort((a, b) => Number(a.episode_number) - Number(b.episode_number));
+            const currentIndex = episodes.findIndex((episode) => episode.id === playingStreamData.episodeId);
+            const nextEpisode = currentIndex >= 0 ? episodes[currentIndex + 1] : undefined;
+            if (nextEpisode && currentShow) {
+              void handleSelectEpisode(nextEpisode, currentShow.title);
+            } else {
+              setPlayingStreamData(null);
+            }
+          }}
           onProgressUpdate={(currentTime, duration) => {
             if (duration > 0 && currentTime > 0) {
               const progressPercent = Math.round((currentTime / duration) * 100);

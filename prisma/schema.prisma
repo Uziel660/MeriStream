@@ -12,6 +12,7 @@ model Show {
   id                   String    @id @default(cuid())
   mal_id               Int?      @unique
   anilist_id           String?
+  kitsu_id             String?
   tmdb_id              Int?
   title                String
   original_title       String?

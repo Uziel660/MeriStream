@@ -33,7 +33,7 @@ import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/sit
 import { siteFromDomain } from "./server/siteRatingService";
 import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./server/playbackSessions";
 import { streamHealthService } from "./server/streamHealthService";
-import { reportPlaybackSignal } from "./server/scrapers/hostHealth";
+import { listHostHealth, reportPlaybackSignal } from "./server/scrapers/hostHealth";
 import { runtimeBudget } from "./server/runtimeBudget";
 import { assertSafePublicHttpUrl, UnsafeUrlError } from "./server/urlSafety";
 import {
@@ -1427,9 +1427,10 @@ async function startServer() {
         });
       }
       const session = playbackSessions.createFromResolved(originalUrl, meta);
+      const playbackManifest = /\.mpd(?:[?#]|$)/i.test(session.current.url) ? "master.mpd" : "master.m3u8";
       return res.status(201).json({
         session_id: session.id,
-        playback_url: `/api/v1/playback/${encodeURIComponent(session.id)}/master.m3u8`,
+        playback_url: `/api/v1/playback/${encodeURIComponent(session.id)}/${playbackManifest}`,
         expires_at: session.current.expires_at,
         refresh_after: session.current.refresh_after,
         generation: session.current.generation,
@@ -1445,7 +1446,11 @@ async function startServer() {
   });
 
   app.get("/api/v1/playback/:sessionId/master.m3u8", playbackSessionHandlers.masterManifest);
+  // DASH sessions share the same opaque resource store. The wildcard keeps
+  // `media`/`initialization` templates usable after dash.js expands them.
+  app.get("/api/v1/playback/:sessionId/master.mpd", playbackSessionHandlers.masterManifest);
   app.get("/api/v1/playback/:sessionId/resource/:resourceId", playbackSessionHandlers.resource);
+  app.get(/^\/api\/v1\/playback\/([^/]+)\/resource\/([^/]+)\/(.*)$/, playbackSessionHandlers.resource);
 
   // Snapshot inmediato: nunca espera las sondas. Los datos se actualizan en
   // segundo plano con stale-while-revalidate para no sumar latencia al play.
@@ -2853,6 +2858,7 @@ async function startServer() {
     res.json({
       logFiles: getLogFilePaths(),
       hosts: getHostStats(),
+      hostHealth: listHostHealth(),
       playerHealth: getProviderHealthStats(),
     });
   });

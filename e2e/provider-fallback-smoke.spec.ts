@@ -40,12 +40,28 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
     (response) => /\/api\/v1\/play\//.test(response.url()),
     { timeout: 45_000 },
   );
+  const zokoResolveWait = page.waitForResponse(
+    (response) => /\/api\/v1\/(?:catalog\/episode-servers|resolve-embed)$/.test(response.url()),
+    { timeout: 60_000 },
+  );
+  const zokoManifestWait = page.waitForResponse(
+    (response) => /(?:\/api\/v1\/playback\/[^/]+\/master\.m3u8|\.m3u8(?:\?|$))/i.test(response.url()),
+    { timeout: 120_000 },
+  );
   await episode.click();
 
-  const playResponse = await playWait;
+  const [playResponse, zokoResolveResponse, zokoManifestResponse] = await Promise.all([
+    playWait,
+    zokoResolveWait,
+    zokoManifestWait,
+  ]);
   expect(playResponse.status()).toBe(200);
   const playPayload = await playResponse.json();
+  expect(playPayload.ranked_streams?.[0]?.source_site).toBe('zokoanime');
   expect(playPayload.ranked_streams?.some((stream: any) => stream.source_site === 'tioanime')).toBe(true);
+  expect(zokoResolveResponse.status()).toBe(200);
+  expect(zokoManifestResponse.status()).toBe(200);
+  expect(await zokoManifestResponse.text()).toContain('#EXTM3U');
 
   const player = page.getByRole('dialog').last();
   const switchButton = player.locator('button[title="Cambiar o Inspeccionar Servidor de Streaming"]');

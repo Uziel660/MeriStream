@@ -42,6 +42,8 @@ jobs:
         run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
       - name: Bootstrap smoke test
         run: npm run bootstrap -- --dry-run --movies=0 --series=0 --anime=0 --skip-episodes
+      - name: Ingest all smoke test
+        run: npm run ingest:all -- --dry
       - name: Provider V2 typecheck
         run: npx tsc -p tsconfig.provider-v2.json --noEmit
       - name: Full project typecheck

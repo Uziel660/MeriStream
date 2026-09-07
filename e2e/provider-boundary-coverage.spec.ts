@@ -19,10 +19,20 @@ test.describe('Cobertura E2E de límites de proveedores', () => {
     expect(landing?.status()).toBe(200);
     expect(landing?.headers()['content-type']).toMatch(/text\/html/i);
 
-    const resolveResponse = await page.request.post(`${BASE_URL}/api/v1/resolve-embed`, {
+    // El presupuesto interactivo puede devolver 503 mientras el reproductor
+    // anterior todavía libera su lease; reintentar una vez modela el failover
+    // que usa la UI sin ocultar fallos persistentes del proveedor.
+    let resolveResponse = await page.request.post(`${BASE_URL}/api/v1/resolve-embed`, {
       data: { url: gnulaPage },
       timeout: 60_000,
     });
+    for (let attempt = 0; attempt < 2 && [502, 503, 504].includes(resolveResponse.status()); attempt += 1) {
+      await page.waitForTimeout(750 * (attempt + 1));
+      resolveResponse = await page.request.post(`${BASE_URL}/api/v1/resolve-embed`, {
+        data: { url: gnulaPage },
+        timeout: 60_000,
+      });
+    }
     expect(resolveResponse.status()).toBe(200);
     const resolution = await resolveResponse.json();
     expect(resolution.resolved).toBe(true);

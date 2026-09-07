@@ -36,7 +36,8 @@ El payload de Zoko también expuso un VTT `English`; el endpoint
 `/resolve-embed` conserva ahora esa pista y la interfaz la muestra en el menú
 de subtítulos. No se observó una pista española en la muestra comprobada.
 
-La auditoría de 300 enlaces históricos asociados a proveedores retirados no
-encontró URLs legacy en los detalles públicos. Además, la ruta compatible
+La matriz completa de navegador terminó con 13/13 casos correctos. La auditoría
+de 300 enlaces históricos asociados a proveedores retirados no encontró URLs
+legacy en los detalles públicos. Además, la ruta compatible
 `/api/v1/shows` ahora aplica el mismo filtro que el catálogo `lite` salvo que
 un consumidor administrativo pida explícitamente `include_legacy=true`.

@@ -11,6 +11,20 @@ function pack(value: unknown): string {
 describe("GnulaAdapter player endpoint", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("treats the public home as a catalog route", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(`
+      <html><head><title>Gnula</title></head><body>
+        <a class="gnrd-card" href="https://ww3.gnulahd.nu/ver/coyote-vs-acme/" title="Coyote vs. Acme">
+          <span class="gnrd-card-title">Coyote vs. Acme</span>
+          <img src="https://image.example/coyote.jpg">
+        </a>
+      </body></html>`, { status: 200 })));
+
+    const result = await new GnulaAdapter().analyze("https://ww3.gnulahd.nu/", "auto");
+    expect(result.page_type).toBe("catalog");
+    expect(result.catalog_items.map((item) => item.title)).toContain("Coyote vs. Acme");
+  });
+
   it("desempaqueta y devuelve los iframes reales de la ficha", async () => {
     const pageUrl = "https://ww3.gnulahd.nu/ver/batman-knightfall-part-1-knightfall/";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

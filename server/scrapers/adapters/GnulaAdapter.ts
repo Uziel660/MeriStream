@@ -40,6 +40,19 @@ function isGnulaCatalogUrl(value: string | undefined | null): boolean {
   }
 }
 
+function isGnulaCatalogRoute(value: string | undefined | null): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    if (!/(^|\.)gnulahd\.nu$/i.test(parsed.hostname)) return false;
+    return parsed.pathname === "/"
+      || /^\/ver\/(?:peliculas|series|anime)(?:\/|$)/i.test(parsed.pathname)
+      || /^\/ver\/page\/\d+\/?$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isGnulaDetailUrl(value: string | undefined | null): boolean {
   if (!value) return false;
   try {
@@ -217,7 +230,7 @@ export class GnulaAdapter extends GenericAdapter {
       // Las fichas también incluyen tarjetas relacionadas `.gnrd-card`; no
       // son un catálogo. Solo las rutas índice /ver/peliculas|series|anime
       // (o una solicitud explícita de catálogo) pueden entrar aquí.
-      if ((isGnulaCatalogUrl(input) && items.length > 0) || explicitType === "catalog") {
+      if ((isGnulaCatalogRoute(input) && items.length > 0) || explicitType === "catalog") {
         const title = $("meta[property='og:title']").attr("content") || "Catálogo GNULA";
         const description = $("meta[name='description']").attr("content") || `Catálogo GNULA: ${items.length} fichas.`;
         return { page_type: "catalog", content_type: "movie", title, description, poster_url: items[0]?.image_url || null, banner_url: null, rating: 0, year: 0, status: "Catálogo", genres: ["Películas", "Series", "Anime"], source_domain: url.hostname, episodes: [], catalog_items: items };

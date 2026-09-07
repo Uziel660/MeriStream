@@ -14,7 +14,7 @@ import {
   filterMainPathLinks,
   playbackKindForCategory,
 } from "./showEpisodePolicy";
-import { PROVIDER_POLICIES, isProviderAllowedInMainPath } from "./providers/providerPolicy";
+import { PROVIDER_POLICIES, isProviderAllowedInMainPath, normalizeProviderId } from "./providers/providerPolicy";
 import {
   enqueueWrite,
   enqueueShowCreate,
@@ -327,6 +327,7 @@ export async function syncEpisodeSources(
     const kind = classifySourceKind(rawUrl);
     const linkType = src.link_type || (kind === "embed" ? "embed" : kind === "page" ? "page" : "direct");
     const site = src.source_site || defaultSite || "unknown";
+    const defaultRendition = defaultRenditionForSource(site, rawUrl);
 
     const existing = await prisma.sourceLink.findFirst({
       where: {
@@ -364,8 +365,8 @@ export async function syncEpisodeSources(
           url: rawUrl,
           link_type: linkType,
           language: src.language ?? null,
-          audio_language: src.audio_language ?? null,
-          subtitle_language: src.subtitle_language ?? null,
+          audio_language: src.audio_language ?? defaultRendition.audio_language ?? null,
+          subtitle_language: src.subtitle_language ?? defaultRendition.subtitle_language ?? null,
           subtitles: src.subtitles ?? undefined,
           host: src.host ?? hostOf(rawUrl),
           priority_tier: getStreamTier(rawUrl),
@@ -388,8 +389,10 @@ export async function syncEpisodeSources(
       // huecos conserva el estado de salud/verified y evita duplicar enlaces.
       const evidence: Record<string, unknown> = {};
       if (src.language && existing.language !== src.language) evidence.language = src.language;
-      if (src.audio_language && existing.audio_language !== src.audio_language) evidence.audio_language = src.audio_language;
-      if (src.subtitle_language && existing.subtitle_language !== src.subtitle_language) evidence.subtitle_language = src.subtitle_language;
+      const audioLanguage = src.audio_language || defaultRendition.audio_language;
+      const subtitleLanguage = src.subtitle_language || defaultRendition.subtitle_language;
+      if (audioLanguage && existing.audio_language !== audioLanguage) evidence.audio_language = audioLanguage;
+      if (subtitleLanguage && existing.subtitle_language !== subtitleLanguage) evidence.subtitle_language = subtitleLanguage;
       if (src.subtitles !== undefined && existing.subtitles == null) evidence.subtitles = src.subtitles;
       if (!existing.canonical_locator && (kind === "page" || kind === "embed")) evidence.canonical_locator = rawUrl;
       if (!existing.host) evidence.host = src.host ?? hostOf(rawUrl);
@@ -1137,6 +1140,20 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
       filterMainPathLinks([{ url: episode.url }], kind).length > 0
     );
   });
+}
+
+function defaultRenditionForSource(sourceSite: string, url: string): Pick<SourceLinkInput, "audio_language" | "subtitle_language"> {
+  const provider = normalizeProviderId(sourceSite);
+  if (provider === "cinecalidad" || provider === "gnula" || provider === "latanime") {
+    return { audio_language: "es" };
+  }
+  if (provider === "zokoanime") {
+    const isDub = /\/dub(?:[/?#]|$)/i.test(url);
+    // `/sub` is Japanese audio; the subtitle language comes from the
+    // provider payload (often English) or OpenSubtitles when configured.
+    return isDub ? { audio_language: "en" } : { audio_language: "ja" };
+  }
+  return {};
 }
 
 export async function getShowsFromDbLite(

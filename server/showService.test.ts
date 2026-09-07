@@ -347,6 +347,27 @@ describe("showService - Behavioral and Deduplication Tests", () => {
     });
   });
 
+  it("asigna la preferencia de audio del camino principal al importar una fuente", async () => {
+    await syncEpisodeSources(
+      "mi-rendition",
+      1,
+      1,
+      [
+        { url: "https://www.cinecalidad.am/ver-pelicula/demo/", source_site: "cinecalidad" },
+        { url: "https://zokoanime.video/stream/mal/21/1/sub", source_site: "zokoanime", link_type: "sub" },
+        { url: "https://zokoanime.video/stream/mal/21/1/dub", source_site: "zokoanime", link_type: "dub" },
+      ],
+      "cinecalidad",
+    );
+    await drainWriteBuffer();
+
+    expect(dbSourceLinks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_site: "cinecalidad", audio_language: "es" }),
+      expect.objectContaining({ source_site: "zokoanime", link_type: "sub", audio_language: "ja" }),
+      expect.objectContaining({ source_site: "zokoanime", link_type: "dub", audio_language: "en" }),
+    ]));
+  });
+
   // 4. detected_streams de una película llegan a SourceLink
   it("detected_streams de una película llegan a SourceLink", async () => {
     const res = await saveShowWithDeduplication({

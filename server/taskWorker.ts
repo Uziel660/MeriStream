@@ -22,15 +22,21 @@ import { enqueueWrite } from "./writeBuffer";
 import { canonicalCatalogUrl, catalogPageFingerprint, dedupeCatalogItems, isRepeatedCatalogPage } from "./catalogIntegrity";
 import { normalizeExtractedEpisodes } from "./catalogFusion";
 import { buildCatalogPageUrl } from "./catalogPagination";
+import { normalizeProviderId } from "./providers/providerPolicy";
 
-function siteOf(url: string | undefined): string {
+export function sourceSiteFromUrl(url: string | undefined): string {
   try {
+    const normalized = normalizeProviderId(url || "");
+    if (normalized && normalized !== "unknown") return normalized;
     const host = new URL(url || "").hostname.replace(/^www\./, "") || "unknown";
-    // Return first label only: "lamovie.org" → "lamovie"
     return host.split(".")[0] || host;
   } catch {
     return "unknown";
   }
+}
+
+function siteOf(url: string | undefined): string {
+  return sourceSiteFromUrl(url);
 }
 
 export interface CrawlJob {

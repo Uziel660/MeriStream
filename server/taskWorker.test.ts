@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { taskWorker } from "./taskWorker";
+import { sourceSiteFromUrl, taskWorker } from "./taskWorker";
+
+describe("task worker source identity", () => {
+  it("normalizes provider subdomains to the curated provider id", () => {
+    expect(sourceSiteFromUrl("https://ww3.gnulahd.nu/ver/coyote-vs-acme/")).toBe("gnula");
+    expect(sourceSiteFromUrl("https://www.cinecalidad.am/ver-pelicula/demo/")).toBe("cinecalidad");
+    expect(sourceSiteFromUrl("https://latanime.org/ver/demo-episodio-1")).toBe("latanime");
+  });
+});
 
 describe("BackgroundCrawlerWorker", () => {
   it("creates, retrieves, and pauses a crawl job without SQLite serialization error", async () => {

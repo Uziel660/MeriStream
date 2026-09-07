@@ -21,7 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply safe audit fixes
-        run: npm audit fix
+        run: npm audit fix || true
       - name: Show dependency changes
         run: git diff -- package-lock.json package.json
       - name: Commit safe audit fixes

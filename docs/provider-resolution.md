@@ -34,7 +34,7 @@ as health failures so the provider can cool down or fail over.
 
 | Content | Primary | Secondary/fallback |
 | --- | --- | --- |
-| Movies and series, ES-LATAM | Cinecalidad (`vimeos` common resolver) | GnulaHD (page embeds; direct host unconfirmed) |
+| Movies and series, ES-LATAM | Cinecalidad (`vimeos` common resolver) | GnulaHD (`bysevepoin` locator → rotating SprintCDN HLS) |
 | Anime, ES-LATAM | LatAnime (`sprintcdn` HLS) | — |
 | Anime, JA + ES subtitles | ZokoAnime (`aniwatchtv.uk` HLS) | TioAnime legacy fallback |
 | English movies, series and anime | Direct API clients and configured Stremio addons | VidSrc/VidSrc mirrors only when their API returns native media |
@@ -46,6 +46,13 @@ admitted only as the ZokoAnime anime recovery fallback.
 The gateway ranks an explicit language preference first, then host health and
 provider priority. Two consecutive non-auth failures open a host cooldown;
 401/403 responses remain token-scoped and do not blacklist an entire origin.
+
+Subtitle tracks from provider manifests are preserved through JIT resolution and
+rendered by the native `<track>` element. OpenSubtitles is an optional,
+credential-gated supplement at `GET /api/v1/subtitles`; with no
+`OPENSUBTITLES_API_KEY` configured it returns an empty result and never calls
+the external download endpoint. Audio tracks are exposed from HLS and DASH
+manifests through their native track selectors.
 
 TMDB remains the identity used by catalog and playback requests. Anime records
 may additionally carry the numeric AniList and MAL identifiers plus the Kitsu

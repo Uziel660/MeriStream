@@ -308,6 +308,11 @@ export async function syncEpisodeSources(
   sources: SourceLinkInput[],
   defaultSite: string
 ): Promise<number> {
+  // Toda escritura a MediaEpisode pasa por aquí en la importación normal.
+  // Mantener la defensa en el borde evita que un adaptador que publique
+  // "episodio 0" vuelva a crear claves inválidas durante una carrera.
+  const safeSeason = positiveCatalogNumber(season, 1);
+  const safeEpisodeNumber = positiveCatalogNumber(episodeNumber, 1);
   const cleanSources = (sources || []).filter(
     (s) => s && s.url && typeof s.url === "string" && s.url.trim() && !isInvalidCatalogSource(s.url.trim())
   );
@@ -326,11 +331,11 @@ export async function syncEpisodeSources(
     where: {
       media_item_id_season_number_episode_number: {
         media_item_id: mediaItemId,
-        season_number: season,
-        episode_number: episodeNumber,
+        season_number: safeSeason,
+        episode_number: safeEpisodeNumber,
       },
     },
-    create: { media_item_id: mediaItemId, season_number: season, episode_number: episodeNumber },
+    create: { media_item_id: mediaItemId, season_number: safeSeason, episode_number: safeEpisodeNumber },
   });
 
   for (const src of persistentSources) {
@@ -346,8 +351,8 @@ export async function syncEpisodeSources(
         source_site: site,
         media_episode: {
           media_item_id: mediaItemId,
-          season_number: season,
-          episode_number: episodeNumber,
+          season_number: safeSeason,
+          episode_number: safeEpisodeNumber,
         },
       },
       select: {
@@ -368,8 +373,8 @@ export async function syncEpisodeSources(
         kind: "sourceLink.create",
         episodeRef: {
           media_item_id: mediaItemId,
-          season_number: season,
-          episode_number: episodeNumber,
+          season_number: safeSeason,
+          episode_number: safeEpisodeNumber,
         },
         data: {
           source_site: site,

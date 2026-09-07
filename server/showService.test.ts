@@ -281,6 +281,23 @@ describe("showService - Behavioral and Deduplication Tests", () => {
     expect(dbSourceLinks[0].media_episode_id).not.toBe(dbSourceLinks[1].media_episode_id);
   });
 
+  it("normaliza temporada y episodio cero antes de escribir MediaEpisode", async () => {
+    await syncEpisodeSources(
+      "mi_invalid_number",
+      0,
+      0,
+      [{ url: "https://stream.provider.com/episode-zero.mp4", source_site: "latanime" }],
+      "latanime",
+    );
+
+    await drainWriteBuffer();
+
+    expect(dbMediaEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ media_item_id: "mi_invalid_number", season_number: 1, episode_number: 1 }),
+    ]));
+    expect(dbMediaEpisodes.some((episode) => episode.season_number < 1 || episode.episode_number < 1)).toBe(false);
+  });
+
   // 2. Mismo episodio + sitio + URL es idempotente
   it("mismo episodio + sitio + URL es idempotente", async () => {
     const mediaItemId = "mi_idempotent";

@@ -36,7 +36,7 @@ as health failures so the provider can cool down or fail over.
 | --- | --- | --- |
 | Movies and series, ES-LATAM | Cinecalidad (`vimeos` common resolver) | GnulaHD (`bysevepoin` locator → rotating SprintCDN HLS) |
 | Anime, ES-LATAM | LatAnime (`sprintcdn` HLS) | — |
-| Anime, JA + ES subtitles | ZokoAnime (`aniwatchtv.uk` HLS) | TioAnime legacy fallback |
+| Anime, JA + subtitles | ZokoAnime (`aniwatchtv.uk` HLS) | TioAnime legacy fallback |
 | English movies, series and anime | Direct API clients and configured Stremio addons | VidSrc/VidSrc mirrors only when their API returns native media |
 
 AnimeAV1, AnimeFLV, JKAnime, LaMovie, HiAnimes, VerAnimes, Doramasflix,
@@ -60,7 +60,8 @@ players cannot switch audio in-video; Zoko's `/sub` and `/dub` locators are
 separate releases rather than two tracks in one manifest. The persisted
 `audio_language` and `subtitle_language` fields describe the selected release
 and do not promise a track selector when the upstream manifest has only one
-rendition.
+rendition. The sampled Zoko payload exposed one English VTT track; a Spanish
+subtitle track was not confirmed from that public response.
 
 TMDB remains the identity used by catalog and playback requests. Anime records
 may additionally carry the numeric AniList and MAL identifiers plus the Kitsu

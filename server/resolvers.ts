@@ -401,6 +401,9 @@ export class EmbedResolvers {
       }
       const { expiresAt } = parseStreamExpiry(rawUrl);
       const hasExplicitExpiry = expiresAt !== undefined;
+      const providerHeaders = provider === "Vimeos"
+        ? { ...VIMEOS_REQUIRED_HEADERS }
+        : undefined;
       if (hasExplicitExpiry) {
         const explicitlyExpired = expiresAt <= Date.now();
         return {
@@ -413,6 +416,7 @@ export class EmbedResolvers {
           delivery_mode: !explicitlyExpired ? "direct_trial" : "embed",
           is_proxyable: !explicitlyExpired,
           is_refreshable: false,
+          ...(!explicitlyExpired && providerHeaders ? { requiredHeaders: providerHeaders } : {}),
           ...(explicitlyExpired
             ? {
                 failure_reason: "expired_without_locator" as const,
@@ -434,6 +438,7 @@ export class EmbedResolvers {
         delivery_mode: "direct_trial",
         is_proxyable: true,
         is_refreshable: !hasOpaqueSignature,
+        ...(providerHeaders ? { requiredHeaders: providerHeaders } : {}),
         ...(!hasOpaqueSignature ? { canonical_locator: rawUrl } : {}),
       };
     }

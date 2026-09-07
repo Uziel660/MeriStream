@@ -423,7 +423,15 @@ export async function resolvePlatformPage(
     requiredHeaders = { Referer: "https://yourupload.com/", ...(requiredHeaders || {}) };
   }
 
-  const isProxyable = isDirect;
+  // Un embed que no se pudo convertir a media nativa no es reproducible por
+  // MeriStream: nunca lo anuncies como éxito porque el frontend no debe abrir
+  // iframes externos. El coordinador lo tratará como candidato fallido y podrá
+  // continuar con la siguiente fuente del proveedor.
+  if (!isDirect) {
+    return buildUnresolvedResponse(cleanUrl, provider);
+  }
+
+  const isProxyable = true;
   const timing = createResolutionTiming({
     originalUrl: cleanUrl,
     upstreamUrl: resolvedStreamUrl,

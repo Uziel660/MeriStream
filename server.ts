@@ -2230,7 +2230,11 @@ async function startServer() {
       // Intentar desofuscar de inmediato los mejores embeds a stream nativo directo (.m3u8/.mp4)
       const upgradedMap = new Map<string, { url: string; requiredHeaders?: Record<string, string>; subtitles?: any[] }>();
       for (const cand of rankedBase.slice(0, 3)) {
-        if (!isDirectMedia(cand.url)) {
+        // Las URLs directas de Vimeos también necesitan su perfil de cabeceras:
+        // el CDN acepta el GET del backend, pero rechaza el navegador sin pasar
+        // por la sesión proxy. Releer su metadata aquí conserva ese requisito.
+        const needsDirectHostMetadata = /vimeos\.[a-z]+|p\d+\.vimeos\.zip/i.test(cand.url);
+        if (!isDirectMedia(cand.url) || needsDirectHostMetadata) {
           try {
             const subMeta = await Promise.race([
               EmbedResolvers.resolveWithMeta(cand.url),

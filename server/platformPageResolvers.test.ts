@@ -205,6 +205,25 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
   });
 
   describe("página no resoluble -> unresolved, nunca éxito falso", () => {
+    it("does not expose an unresolved Vimeos embed as a playable page result", async () => {
+      const canonicalUrl = "https://www.cinecalidad.am/ver-pelicula/vimeos-only/";
+      const embedUrl = "https://vimeos.net/embed-dead-token.html";
+      const mockExtractor = vi.fn().mockResolvedValue({
+        stream_url: embedUrl,
+        all_available_streams: [embedUrl],
+      });
+
+      const res = await resolveCinecalidadPage(canonicalUrl, {
+        streamExtractor: mockExtractor,
+      });
+
+      expect(res.resolved).toBe(false);
+      expect(res.type).toBe("embed");
+      expect(res.url).toBe(canonicalUrl);
+      expect(res.is_proxyable).toBe(false);
+      expect(res.failure_reason).toBe("unresolved");
+    });
+
     it("returns unresolved if extraction returns no streams", async () => {
       const canonicalUrl = "https://lamovie.org/peliculas/broken-page/";
       const mockExtractor = vi.fn().mockResolvedValue({

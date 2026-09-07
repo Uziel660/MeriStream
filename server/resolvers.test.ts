@@ -80,6 +80,10 @@ describe("EmbedResolvers with Status & Meta", () => {
     expect(meta.resolved).toBe(true);
     expect(meta.is_proxyable).toBe(true);
     expect(meta.is_refreshable).toBe(false);
+    expect(meta.requiredHeaders).toMatchObject({
+      "User-Agent": expect.stringContaining("Chrome/124"),
+      "Accept-Encoding": "identity",
+    });
     expect(meta.canonical_locator).toBeUndefined();
   });
 

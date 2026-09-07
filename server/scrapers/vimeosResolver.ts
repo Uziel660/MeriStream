@@ -1,4 +1,3 @@
-import { request } from "undici";
 import { unpackPackedScript, extractMediaUrlsFromCode } from "./utils/jsUnpacker";
 import { EmbedResolvers } from "../resolvers";
 import { buildProxyHeaders } from "../hostProfiles";
@@ -134,19 +133,21 @@ export class VimeosResolver {
    */
   private static async validateStreamUrl(streamUrl: string): Promise<boolean> {
     const isMp4 = /\.mp4(\?|$)/i.test(streamUrl);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
     try {
       const { headers } = buildProxyHeaders(streamUrl, "https://vimeos.net/");
-      const res = await request(streamUrl, {
+      const res = await fetch(streamUrl, {
         method: "GET",
         headers: isMp4 ? { ...headers, Range: "bytes=0-1023" } : headers,
-        headersTimeout: 7000,
-        bodyTimeout: 7000,
+        signal: controller.signal,
       });
-      res.body.on("error", () => {});
-      res.body.destroy();
-      return isMp4 ? res.statusCode === 206 : res.statusCode === 200;
+      await res.body?.cancel().catch(() => undefined);
+      return isMp4 ? res.status === 206 : res.status === 200;
     } catch {
       return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

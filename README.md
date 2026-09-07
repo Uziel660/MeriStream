@@ -47,12 +47,41 @@ Luego:
 ```bash
 npx prisma generate
 npx prisma db push
+npm run bootstrap
 npm run dev
 ```
+
+`npm run bootstrap` está pensado para una BD vacía. Por defecto crea un catálogo inicial canónico con TMDB:
+
+- 250 películas;
+- 100 series;
+- 100 anime;
+- temporadas/episodios de TV/anime;
+- `SiteRating` inicial desde la policy de providers.
+
+No inventa `SourceLink`: las fuentes de video solo se guardan cuando los providers/workers realmente las descubren.
+
+Puedes cambiar el tamaño:
+
+```bash
+npm run bootstrap -- --movies=500 --series=300 --anime=300
+```
+
+Opciones útiles:
+
+```text
+--dry-run          valida sin escribir catálogo
+--skip-episodes    crea MediaItem sin esqueletos de episodios
+--delay-ms=150     ajusta pausa entre requests TMDB
+--reset            vacía SOLO MediaItem/MediaEpisode si no existen SourceLink
+```
+
+El bootstrap es idempotente por `tmdb_id + kind`: puedes volver a ejecutarlo para ampliar/actualizar el catálogo sin duplicar obras.
 
 Scripts principales:
 
 ```bash
+npm run bootstrap
 npm run dev
 npm run build
 npm test

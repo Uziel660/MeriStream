@@ -5,6 +5,37 @@ const BASE_URL = 'http://127.0.0.1:3010';
 test('Cinecalidad expone audio español e inglés en el player interno', async ({ page }) => {
   test.setTimeout(150_000);
 
+  // La clave de OpenSubtitles no está configurada en este entorno. Simulamos
+  // únicamente la respuesta pública que consumiría la aplicación para cubrir
+  // el flujo real del usuario: API → <track> → menú → pista activa. El vídeo y
+  // su manifiesto siguen siendo los de Cinecalidad y no se mockean.
+  let subtitleApiCalls = 0;
+  await page.route('**/api/v1/subtitles**', async (route) => {
+    subtitleApiCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        tracks: [{
+          id: 'e2e-es',
+          label: 'Español (prueba)',
+          language: 'es',
+          url: 'https://subtitles.test/es.vtt',
+          is_default: false,
+        }],
+      }),
+    });
+  });
+  await page.route('https://subtitles.test/es.vtt', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/vtt',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: 'WEBVTT\\n\\n00:00:00.000 --> 00:00:05.000\\nPrueba de subtítulos en español\\n',
+    });
+  });
+
   const manifests: string[] = [];
   page.on('response', async (response) => {
     if (!/(?:\/api\/v1\/playback\/[^/]+\/master\.m3u8|\.m3u8(?:\?|$))/i.test(response.url()) || !response.ok()) return;
@@ -42,6 +73,7 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
 
   const player = page.getByRole('dialog').last();
   await expect(player).toBeVisible();
+  await expect.poll(() => subtitleApiCalls, { timeout: 15_000 }).toBeGreaterThan(0);
   await expect(page.locator('iframe')).toHaveCount(0);
   const video = player.locator('video').first();
   await expect(video).toBeVisible();
@@ -62,4 +94,15 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   await expect(player).toContainText('Español');
   await expect(player).toContainText('English');
   await expect(player).toContainText(/Fuentes por idioma/i);
+
+  const captionsButton = player.getByTitle('Subtítulos');
+  await expect(captionsButton).toBeVisible();
+  await captionsButton.click();
+  await expect(player).toContainText('Español (prueba)');
+  await player.getByRole('button', { name: 'Español (prueba)' }).click();
+  await expect.poll(
+    () => player.locator('video').evaluate((element) =>
+      Array.from(element.textTracks).some((track) => track.mode === 'showing')),
+    { timeout: 10_000 },
+  ).toBeTruthy();
 });

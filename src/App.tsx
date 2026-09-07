@@ -184,6 +184,10 @@ export function App() {
             const mapped: Show[] = list.map((s: any) => ({
               id: s.id || `show-${Math.random()}`,
               title: s.title || 'Sin Título',
+              tmdb_id: s.tmdb_id ?? null,
+              anilist_id: s.anilist_id ?? null,
+              mal_id: s.mal_id ?? null,
+              kind: s.kind || s.category || undefined,
               original_title: s.original_title || null,
               english_title: s.english_title || null,
               japanese_title: s.japanese_title || null,
@@ -304,6 +308,13 @@ export function App() {
           const safeShows: Show[] = list.map((s: any) => ({
             id: s.id || `show-${Math.random()}`,
             title: s.title || 'Sin Título',
+            tmdb_id: s.tmdb_id ?? null,
+            anilist_id: s.anilist_id ?? null,
+            mal_id: s.mal_id ?? null,
+            kind: s.kind || s.category || undefined,
+            original_title: s.original_title || null,
+            english_title: s.english_title || null,
+            japanese_title: s.japanese_title || null,
             description: s.description || s.synopsis || '',
             synopsis: s.description || s.synopsis || '',
             poster_url: s.poster_url || '',
@@ -401,7 +412,11 @@ export function App() {
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
     const showId = episode.show_id || selectedShowId || 'unknown';
-    const currentShow = shows.find((s) => s.id === showId);
+    // La tarjeta de búsqueda puede proceder del lote server-side y no estar
+    // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
+    // subtítulos (OpenSubtitles) igual que una tarjeta del catálogo principal.
+    const currentShow = shows.find((s) => s.id === showId)
+      || serverSearchResults.find((s) => s.id === showId);
     const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
     const initialTime = existingProgress?.currentTime || 0;
 
@@ -1199,6 +1214,7 @@ export function App() {
           streamUrl={playingStreamData.streamUrl}
           all_streams={playingStreamData.all_streams}
           ranked_streams={playingStreamData.ranked_streams}
+          subtitleTracks={playingStreamData.subtitleTracks}
           initialTime={playingStreamData.initialTime}
           isLoading={playingStreamData.isLoading}
           loadError={playingStreamData.loadError}

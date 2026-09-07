@@ -7,6 +7,7 @@ export interface Episode {
   show_id?: string;
   title: string;
   episode_number: number;
+  season_number?: number;
   source_url?: string;
   created_at?: string;
 }
@@ -14,6 +15,9 @@ export interface Episode {
 export interface Show {
   id: string;
   title: string;
+  tmdb_id?: number | null;
+  anilist_id?: string | null;
+  mal_id?: number | null;
   original_title?: string;
   japanese_title?: string;
   english_title?: string;

@@ -19,6 +19,7 @@ import {
   saveShowWithDeduplication,
   getShowsFromDb,
   getShowsFromDbLite,
+  filterShowsToMainPath,
   getShowByIdFromDb,
   deleteShowFromDb,
   clearAllShowsFromDb,
@@ -1266,7 +1267,27 @@ async function startServer() {
         res.json(result);
       } else {
         const showsList = await getShowsFromDb(search, category);
-        res.json(showsList);
+        // The non-lite endpoint is kept for older clients, but it is still a
+        // public catalog route.  Legacy Show/Episode rows must not bypass the
+        // main-path policy simply because the caller omitted `lite=true`.
+        if (req.query.include_legacy === "true") {
+          res.json(showsList);
+          return;
+        }
+        const playableShows = await filterShowsToMainPath(showsList as any[]);
+        const publicShows = playableShows.map((show: any) => {
+          const playbackKind = playbackKindForCategory(show.category);
+          const episodes = Array.isArray(show.episodes)
+            ? show.episodes.filter((episode: any) =>
+                filterMainPathLinks(
+                  episode.source_url ? [{ url: episode.source_url }] : [],
+                  playbackKind,
+                ).length > 0,
+              )
+            : [];
+          return { ...show, episodes };
+        });
+        res.json(publicShows);
       }
     } catch (e: any) {
       res.status(500).json({ error: `Error leyendo catÃ¡logo: ${e.message}` });

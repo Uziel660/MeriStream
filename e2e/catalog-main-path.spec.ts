@@ -33,3 +33,15 @@ test('el detalle elige el espejo activo cuando hay una ficha legacy con el mismo
     .toBe(detail.episodes.length);
   expect(detail.episodes[0].source_url).toMatch(/gnulahd\.nu/i);
 });
+
+test('la ruta legacy no-lite tampoco expone episodios de proveedores retirados', async ({ page }) => {
+  const response = await page.request.get(`${BASE_URL}/api/v1/shows?search=Project%20ARMS`);
+  expect(response.status()).toBe(200);
+  const shows = await response.json();
+  expect(Array.isArray(shows)).toBeTruthy();
+  for (const show of shows) {
+    for (const episode of show.episodes || []) {
+      expect(String(episode.source_url || '')).not.toMatch(/animeflv|animeav1|veranimes|tioanime|tioplus|lamovie|hianimes|doramasflix|tubepelis|wwv/i);
+    }
+  }
+});

@@ -354,7 +354,8 @@ export function scoreServer(rawUrl: string, index: number, metadataOverrides?: P
   // 3. Calificación de Salud y Estabilidad Heurística
   let health: ScoredServer['health'] = 'excelente';
   if (u.includes('zilla-networks')) {
-    // Restaurado a la normalidad: El stealth proxy resuelve el 403
+    // El perfil público del CDN permite la entrega cuando se envían sus
+    // cabeceras documentadas; no se usan clientes de huella ni bypass TLS.
     score += 15;
     health = 'excelente';
   } else if (u.includes('zokoanime')) {

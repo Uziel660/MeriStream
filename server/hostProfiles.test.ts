@@ -34,6 +34,15 @@ describe("hostProfiles", () => {
     expect(headers["Referer"]).toBe("https://jkanime.net/");
   });
 
+  it("usa el cliente HTTP estándar para hosts sin perfil explícito", () => {
+    const target = "https://public-cdn.example/video/master.m3u8";
+    const profile = resolveHostProfile(target);
+
+    expect(profile.client).toBe("undici");
+    expect(buildProxyHeaders(target, "https://meristream.local/").headers["User-Agent"])
+      .toBe(profile.userAgent);
+  });
+
   it("aplica el referer fijo de ZokoAnime a su CDN", () => {
     const target = "https://hls2.aniwatchtv.uk/v/test/master.m3u8";
     const profile = resolveHostProfile(target);

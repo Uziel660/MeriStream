@@ -24,6 +24,12 @@ marked unavailable and advances the provider failover chain; it is never opened
 as an external player. MPD playback is handled by the lazy `dash.js` client and
 manifests that require origin headers use the internal proxy session.
 
+All provider and CDN requests use the standard server HTTP client with normal
+TLS verification. MeriStream does not use browser-fingerprint evasion, TLS
+verification bypasses, CAPTCHA handling, DRM decryption, paywall bypasses or
+authentication workarounds. Anti-bot and access-control responses are recorded
+as health failures so the provider can cool down or fail over.
+
 ## Curated sources
 
 | Content | Primary | Secondary/fallback |

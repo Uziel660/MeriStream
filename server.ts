@@ -43,7 +43,6 @@ import {
 } from "./server/deliveryPlanner";
 import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
 import { isInvalidCatalogSource, sanitizeCatalogLandingPages } from "./server/catalogIntegrity";
-import { ImpitHttpClient, Browser } from "@crawlee/impit-client";
 import { pipeline } from "node:stream/promises";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
@@ -82,13 +81,6 @@ import {
   adminSession,
   requireAdminForControlPlane,
 } from "./server/adminAuth";
-
-// Stealth HTTP Client para evadir WAFs (JA3/JA4 Fingerprinting)
-const stealthClient = new ImpitHttpClient({
-  browser: Browser.Chrome,
-  http3: false,
-  ignoreTlsErrors: true
-});
 
 const deliveryPlanner = new DeliveryPlanner();
 const resolutionCoordinator = new ResolutionCoordinator(
@@ -1626,7 +1618,6 @@ async function startServer() {
         typeof referer === "string" ? referer : undefined,
         typeof req.headers.range === "string" ? req.headers.range : undefined
       );
-      const isGoodstream = activeProfile.client === "undici";
       // Timeout de conexiÃ³n (TCP+TLS) opcional del perfil (p.ej. MP4Upload ~35s de
       // handshake). En undici el timer de headersTimeout arranca antes de completar
       // el connect, asÃ­ que debe elevarse junto al connectTimeout o corta igual.
@@ -1661,47 +1652,18 @@ async function startServer() {
         let lastHlsError: any;
         for (let attempt = 1; attempt <= MAX_NETWORK_RETRIES; attempt++) {
           try {
-            if (isGoodstream) {
-              const upstream = await request(targetUrl, {
-                method: 'GET',
-                headers: reqHeaders,
-                headersTimeout: 15000,
-                bodyTimeout: 30000,
-                ...profileConnectOpts,
-              });
-              upstreamStatus = upstream.statusCode;
-              responseHeaders = upstream.headers;
-              const chunks: Buffer[] = [];
-              for await (const ch of upstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
-              rawBody = Buffer.concat(chunks);
-            } else {
-              try {
-                const response = await stealthClient.sendRequest({
-                  url: targetUrl,
-                  method: 'GET',
-                  headers: reqHeaders,
-                  responseType: 'buffer'
-                } as any);
-                upstreamStatus = response.statusCode ?? 0;
-                responseHeaders = response.headers || {};
-                rawBody = response.body;
-              } catch (stealthErr: any) {
-                // Fallback resiliente a undici si impit falla con Remote protocol error
-                console.warn(`[proxy/stream] stealthClient falló (${stealthErr.message}), intentando con undici...`);
-                const fallbackUpstream = await request(targetUrl, {
-                  method: 'GET',
-                  headers: reqHeaders,
-                  headersTimeout: 15000,
-                  bodyTimeout: 30000,
-                  ...profileConnectOpts,
-                });
-                upstreamStatus = fallbackUpstream.statusCode;
-                responseHeaders = fallbackUpstream.headers;
-                const chunks: Buffer[] = [];
-                for await (const ch of fallbackUpstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
-                rawBody = Buffer.concat(chunks);
-              }
-            }
+            const upstream = await request(targetUrl, {
+              method: 'GET',
+              headers: reqHeaders,
+              headersTimeout: 15000,
+              bodyTimeout: 30000,
+              ...profileConnectOpts,
+            });
+            upstreamStatus = upstream.statusCode;
+            responseHeaders = upstream.headers;
+            const chunks: Buffer[] = [];
+            for await (const ch of upstream.body) chunks.push(Buffer.isBuffer(ch) ? ch : Buffer.from(ch));
+            rawBody = Buffer.concat(chunks);
             lastHlsError = null;
             break;
           } catch (hlsErr: any) {
@@ -1736,7 +1698,7 @@ async function startServer() {
         // â”€â”€ UPSTREAM ERROR PROPAGATION â”€â”€
         if (upstreamStatus < 200 || upstreamStatus >= 400) {
           console.warn(`[proxy/stream] upstream ${upstreamStatus} for ${maskSignedTokens(targetUrl).slice(0, 120)}`);
-          logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, error: `HTTP ${upstreamStatus}`, referer, client: isGoodstream ? "undici" : "stealth" });
+          logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, error: `HTTP ${upstreamStatus}`, referer, client: "undici" });
           res.status(upstreamStatus);
           if (getHeader('content-type')) res.setHeader('Content-Type', getHeader('content-type'));
           if (bodyBuffer.length > 0) res.setHeader('Content-Length', bodyBuffer.length);
@@ -1763,7 +1725,7 @@ async function startServer() {
             res.setHeader('Content-Type', 'video/mp4');
           }
           res.setHeader('Content-Length', bodyBuffer.length);
-          logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, referer, client: isGoodstream ? "undici" : "stealth" });
+          logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, referer, client: "undici" });
           return res.end(bodyBuffer);
         }
 
@@ -1802,7 +1764,7 @@ async function startServer() {
 
         const rewrittenBuffer = Buffer.from(rewritten, 'utf8');
         res.setHeader('Content-Length', rewrittenBuffer.length);
-        logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, referer, client: isGoodstream ? "undici" : "stealth" });
+        logProxyRequest({ targetUrl, upstreamStatus, durationMs: Date.now() - _proxyStartMs, bytesReceived: bodyBuffer.length, mediaTitle, provider: explicitProvider, referer, client: "undici" });
         return res.end(rewrittenBuffer);
       } else {
         // MP4/manual range proxy. Each internal chunk must contain exactly the requested

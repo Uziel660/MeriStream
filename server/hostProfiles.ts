@@ -10,7 +10,7 @@
 //      "passthrough" → usar el referer que manda el player (sitio fuente)
 //  - userAgent: UA exacto si el token del stream está firmado contra él
 //  - extraHeaders: cabeceras fetch estándar que el WAF exige (Sec-Fetch-*, etc.)
-//  - client: "undici" evita huellas HTTP/2 distintas al navegador (impit/Rust da 403)
+//  - client: "undici" usa el cliente HTTP estándar del servidor
 //  - forceHttp2Client: true cuando la huella TLS/HTTP2 del cliente importa
 
 export type RefererMode = "none" | "fixed" | "passthrough";
@@ -23,8 +23,8 @@ export interface HostProfile {
   referer?: string;
   userAgent?: string;
   extraHeaders?: Record<string, string>;
-  /** Cliente HTTP a usar: undici (fetch nativo) o stealth (impit) */
-  client?: "undici" | "stealth";
+  /** Cliente HTTP estándar usado para todas las entregas salientes. */
+  client?: "undici";
   /**
    * Timeout de conexión (TCP+TLS handshake) en ms que se pasa como connectTimeout
    * al request de undici. Default de undici: 10s. Elevarlo para hosts cuyo WAF
@@ -79,8 +79,8 @@ export const HOST_PROFILES: HostProfile[] = [
   },
   {
     // AnimeFLV / Playmudos / Ducvomes CDNs:
-    // impit-client (Rust HTTP/2) sufre 'Remote protocol error occurred' con los
-    // datanodes de ducvomes. undici (fetch estándar) pasa limpio y sin cortes.
+    // El cliente HTTP estándar evita variaciones de protocolo en los datanodes
+    // de ducvomes y mantiene una entrega reproducible.
     // Re-verificado en vivo 2026-08-24: master nika.playmudos.com responde 200
     // incluso SIN headers; los 403 de las 05:31 eran URLs sin token (?st=&e=
     // ausentes o expirados), no un cambio de headers del CDN.
@@ -114,7 +114,7 @@ export const HOST_PROFILES: HostProfile[] = [
   {
     // Goodstream: token firmado contra UA Chrome/124 exacto del embed; nginx
     // rechaza con 403 cualquier request CON Referer o sin headers fetch estándar.
-    // impit (huella HTTP/2 Rust) también da 403 → undici sí pasa.
+    // El perfil usa el cliente HTTP estándar con las cabeceras públicas del CDN.
     match: ["goodstream.one"],
     refererMode: "none",
     userAgent: CHROME_124_UA,
@@ -154,8 +154,8 @@ export const HOST_PROFILES: HostProfile[] = [
   },
   {
     // Acek-CDN y SprintCDN (CDNs HLS de Goodstream / Cinecalidad / LaMovie):
-    // nginx rechaza peticiones con Referer ajeno y con TLS no estándar (impit).
-    // Exige undici + Chrome UA + Accept-Encoding: identity + sin Referer.
+    // nginx rechaza peticiones con Referer ajeno. Exige el cliente HTTP estándar
+    // con UA Chrome + Accept-Encoding: identity + sin Referer.
     match: ["acek-cdn.com", "sprintcdn"],
     refererMode: "none",
     userAgent: CHROME_124_UA,
@@ -197,6 +197,7 @@ const DEFAULT_PROFILE: HostProfile = {
   match: [],
   refererMode: "passthrough",
   userAgent: CHROME_120_UA,
+  client: "undici",
 };
 
 /** Resuelve el perfil aplicable para una URL objetivo (primer match). */

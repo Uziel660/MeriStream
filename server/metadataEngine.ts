@@ -584,7 +584,7 @@ async function fetchTMDBMetadata(
         };
         const candidateScore = (candidate: any): number => {
           const names = [candidate?.title, candidate?.name, candidate?.original_title, candidate?.original_name]
-            .filter((value): value is string => typeof value === "string" && value.trim());
+            .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
           let score = 0;
           for (const rawName of names) {
             const name = normalizeTitleKey(rawName);
@@ -682,7 +682,7 @@ async function fetchTMDBMetadata(
                 genres: [],
                 content_type: kind || (bestResult.media_type === "tv" ? "series" : "movie"),
                 tmdb_id: Number(bestResult.id),
-                __tmdb_match_score: rankedCandidates.find(({ candidate }) => candidate === bestResult)?.score || 0,
+                __tmdb_match_score: rankedCandidates.find((entry: { candidate: any; score: number }) => entry.candidate === bestResult)?.score || 0,
                 __tmdb_year_exact: Boolean(yearHint && Number.parseInt(String(bestResult.release_date || bestResult.first_air_date || "").slice(0, 4), 10) === yearHint),
                 __tmdb_language: language,
                 __tmdb_media_type: bestResult.media_type,
@@ -727,7 +727,7 @@ async function fetchTMDBMetadata(
             let genres: string[] = [];
             const genreMap = await fetchTMDBGenreMap(isTV ? "tv" : "movie");
             if (genreMap.size > 0 && Array.isArray(bestResult.genre_ids)) {
-              genres = bestResult.genre_ids.map((gid: number) => genreMap.get(gid)).filter((g): g is string => Boolean(g));
+              genres = bestResult.genre_ids.map((gid: number) => genreMap.get(gid)).filter((g: string | undefined): g is string => Boolean(g));
             }
             if (genres.length === 0) {
               genres = [isTV ? "Serie de TV" : "Película"];
@@ -893,7 +893,7 @@ function isSuspiciousAnimeMatch(meta: EnrichedMetadata): boolean {
  * Rellena la descripción de un resultado TMDB débil (overview vacío) usando
  * fuentes secundarias, sin perder la identidad TMDB (título/póster/año/ids).
  */
-async function fillWeakDescription(meta: EnrichedMetadata, kindHint: string, query: string): Promise<EnrichedMetadata> {
+async function fillWeakDescription(meta: EnrichedMetadata, kindHint: string | undefined, query: string): Promise<EnrichedMetadata> {
   if (isSubstantiveDescription(meta.description)) return meta;
   const sources: Array<{ desc?: string; genres?: string[] }> = [];
   if (kindHint === "anime" || kindHint === "series" || !kindHint) {
@@ -1105,9 +1105,9 @@ async function fetchAnimeMetadata(query: string, identityOnly = false): Promise<
     clearTimeout(timer);
 
     if (res.ok) {
-      const json: unknown = await res.json();
-      if (json?.data && json.data.length > 0) {
-        const attr = json.data[0].attributes || {};
+      const json = await res.json() as { data?: Array<{ attributes?: Record<string, any> }> };
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        const attr = json.data[0]?.attributes || {};
         const poster = attr.posterImage?.large || attr.posterImage?.original || attr.posterImage?.medium;
         const cover = attr.coverImage?.large || attr.coverImage?.original || poster;
 

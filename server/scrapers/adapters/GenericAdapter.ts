@@ -6,8 +6,8 @@ import { PageClassifier } from "../../pageClassifier";
 import { MediaValidator } from "../../validator";
 
 export class GenericAdapter extends BaseScraperAdapter {
-  readonly id = "generic";
-  readonly name = "Universal Semantic Scraper (Fallback)";
+  readonly id: string = "generic";
+  readonly name: string = "Universal Semantic Scraper (Fallback)";
   readonly supportedDomains = ["* (Universal Fallback)"];
 
   canHandle(_url: string): boolean {
@@ -114,7 +114,7 @@ export class GenericAdapter extends BaseScraperAdapter {
         ".row > div", ".post", ".hentry", ".ht_grid_1_4", ".type-post", ".browse-item", ".catalog-card"
       ];
 
-      let cards = $([]);
+      let cards = $("__meristream_no_match__");
       for (const selector of cardSelectors) {
         const found = $(selector);
         if (found.length >= 3) {
@@ -202,7 +202,7 @@ export class GenericAdapter extends BaseScraperAdapter {
 
       let finalEpisodes = extractedEpisodes;
       if (finalEpisodes.length === 0) {
-        if (detectedKind === "movie" || detectedKind === "open_archive") {
+        if (detectedKind === "movie") {
           finalEpisodes = [{ number: 1, title: "Película Completa", url: detectedStreams[0] || urlOrQuery }];
         } else if (detectedStreams.length > 0) {
           finalEpisodes = detectedStreams.map((st, idx) => ({ number: idx + 1, title: `Episodio ${idx + 1}`, url: st }));
@@ -236,19 +236,11 @@ export class GenericAdapter extends BaseScraperAdapter {
     }
   }
 
-  private resolveRelativeUrl(url: string | null | undefined, baseUrl: string): string | null {
-    if (!url) return null;
+  protected override resolveRelativeUrl(url: string, baseUrl: string): string {
+    if (!url) return "";
     if (url.startsWith("http")) return url;
     if (url.startsWith("//")) return `https:${url}`;
-    if (url.startsWith("/")) {
-      try {
-        const u = new URL(baseUrl);
-        return `${u.origin}${url}`;
-      } catch {
-        return null;
-      }
-    }
-    return url;
+    try { return new URL(url, baseUrl).toString(); } catch { return url; }
   }
 
   private async handleSearchTerm(query: string): Promise<UniversalAnalysisResult> {
@@ -283,7 +275,7 @@ export class GenericAdapter extends BaseScraperAdapter {
     };
   }
 
-  private extractShowUrlFromAnchors($: cheerio.CheerioAPI, anchors: cheerio.Cheerio<cheerio.Element>, urlOrQuery: string, domain: string): string | null {
+  private extractShowUrlFromAnchors($: cheerio.CheerioAPI, anchors: cheerio.Cheerio<any>, urlOrQuery: string, domain: string): string | null {
     let showUrl: string | null = null;
     anchors.each((_, a) => {
       const href = ($(a).attr("href") || "").trim();
@@ -318,7 +310,7 @@ export class GenericAdapter extends BaseScraperAdapter {
     return showUrl;
   }
 
-  private extractCardImgUrl($: cheerio.CheerioAPI, card: cheerio.Element, urlOrQuery: string): string | null {
+  private extractCardImgUrl($: cheerio.CheerioAPI, card: any, urlOrQuery: string): string | null {
     const img = $(card).find("img").first();
     if (img.length === 0) return null;
     const imgSrc = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("data-original") || img.attr("srcset") || img.attr("src") || "";
@@ -340,7 +332,7 @@ export class GenericAdapter extends BaseScraperAdapter {
     }
   }
 
-  private extractCatalogCardTitle($: cheerio.CheerioAPI, card: cheerio.Element, anchors: cheerio.Cheerio<cheerio.Element>, showUrl: string): string {
+  private extractCatalogCardTitle($: cheerio.CheerioAPI, card: any, anchors: cheerio.Cheerio<any>, showUrl: string): string {
     const heading = $(card).find("h1, h2, h3, h4, h5, strong, .title, .entry-title").first();
     if (heading.length > 0 && heading.text().trim().length > 1) {
       return heading.text().trim();

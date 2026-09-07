@@ -224,32 +224,13 @@ export class GnulaAdapter extends GenericAdapter {
       }
     }
 
-    if (explicitType === "catalog") {
-      // La rama de catálogo anterior ya retornó arriba. Si una plantilla
-      // futura no tiene tarjetas, no interpretar la ficha como reproductor.
-      return {
-        page_type: "catalog",
-        content_type: "movie",
-        title: "Catálogo GNULA",
-        description: "Catálogo GNULA.",
-        poster_url: null,
-        banner_url: null,
-        rating: 0,
-        year: 0,
-        status: "Catálogo",
-        genres: ["Películas", "Series", "Anime"],
-        source_domain: url.hostname,
-        episodes: [],
-        catalog_items: [],
-      };
-    }
 
     // Para fichas GNULA, la metadata de la propia página es la fuente de
     // verdad. El enriquecimiento externo solo aporta TMDB/póster cuando el
     // título coincide; nunca puede sustituir el título ni la categoría de la
     // ficha. Esto evita falsos matches (p.ej. "Trying" → otro programa).
     let detailHtml = "";
-    try { detailHtml = await this.fetchHtml(input, 12000); } catch {}
+    try { detailHtml = (await this.fetchHtml(input, 12000)) || ""; } catch {}
     const detail$ = detailHtml ? cheerio.load(detailHtml) : null;
     const listedEpisodes = detail$ ? this.detailEpisodes(detail$, input) : [];
     const twitterDescription = detail$?.("meta[name='twitter:description']").attr("content") || "";

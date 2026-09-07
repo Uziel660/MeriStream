@@ -174,7 +174,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       ".browse-item"
     ];
 
-    let cards = $([]);
+    let cards = $("__meristream_no_match__");
     for (const selector of cardSelectors) {
       const found = $(selector);
       if (found.length >= 3) {
@@ -919,7 +919,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     return extractedEpisodes;
   }
 
-  private extractAnimeflvCard($: cheerio.CheerioAPI, card: cheerio.Element, baseUrl: string): ExtractedCatalogItem | null {
+  private extractAnimeflvCard($: cheerio.CheerioAPI, card: any, baseUrl: string): ExtractedCatalogItem | null {
     const animeAnchor = $(card).find("a.thumbnail-link, a[href*='/anime/'], h2.entry-title a, h3 a, h2 a, a[href]").first();
     if (animeAnchor.length === 0) return null;
 
@@ -985,19 +985,11 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     };
   }
 
-  private resolveRelativeUrl(url: string | null | undefined, baseUrl: string): string | null {
-    if (!url) return null;
+  protected override resolveRelativeUrl(url: string, baseUrl: string): string {
+    if (!url) return "";
     if (url.startsWith("http")) return url;
     if (url.startsWith("//")) return `https:${url}`;
-    if (url.startsWith("/")) {
-      try {
-        const u = new URL(baseUrl);
-        return `${u.origin}${url}`;
-      } catch {
-        return `https://animeflv.net${url}`;
-      }
-    }
-    return url;
+    try { return new URL(url, baseUrl).toString(); } catch { return url; }
   }
 
   private async fallbackSearch(query: string): Promise<UniversalAnalysisResult> {

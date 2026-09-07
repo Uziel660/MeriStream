@@ -143,7 +143,7 @@ export class TioPlusAdapter extends BaseScraperAdapter {
       if (!title || title.length < 2) return;
 
       const typeClass = ($card.find(".typeItem").attr("class") || "").toLowerCase();
-      const kind = this.kindFromTypeItem(typeClass) || this.kindFromUrl(fullUrl);
+      const kind = this.kindFromTypeItem(typeClass) || this.kindFromUrl(fullUrl) || undefined;
 
       const yearMatch = title.match(/\((\d{4})\)\s*$/);
       const year = yearMatch ? parseInt(yearMatch[1], 10) : null;

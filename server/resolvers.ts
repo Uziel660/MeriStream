@@ -116,6 +116,7 @@ export function isSupportedServer(url: string): boolean {
 
 const FETCH_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const VIMEOS_EMBED_TIMEOUT_MS = 8_000;
 
 export interface VimeosResolution {
   /** URL maestra .m3u8 lista para HLS; "" si no se pudo resolver */
@@ -536,18 +537,6 @@ export class EmbedResolvers {
     let finalUrl = resolvedUrl;
     let finalHeaders: Record<string, string> | undefined;
 
-    // Si la resolución interna no produjo stream directo (quedó como embed), intentar con yt-dlp
-    if (!isDirect && !isPlatformPageUrl(rawUrl)) {
-      try {
-        const ytdlpMeta = await resolveWithYtDlp(rawUrl);
-        if (ytdlpMeta && ytdlpMeta.resolved && ytdlpMeta.url && !this.isPlaceholderUrl(ytdlpMeta.url)) {
-          finalUrl = ytdlpMeta.url;
-          isDirect = true;
-          if (ytdlpMeta.requiredHeaders) finalHeaders = ytdlpMeta.requiredHeaders;
-        }
-      } catch {}
-    }
-
     const resolvedExpiry = isDirect ? parseStreamExpiry(finalUrl).expiresAt : undefined;
     if (isDirect && resolvedExpiry !== undefined && resolvedExpiry <= Date.now()) {
       return {
@@ -622,17 +611,11 @@ export class EmbedResolvers {
       return rawUrl;
     }
 
-    // 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado; fallback a yt-dlp
-    // si falla (nunca devolver /d/{id}_h: es una página HTML de descarga no jugable)
+    // 2. VIMEOS.NET: master.m3u8 directo vía desempaquetado/GET validado.
+    // Nunca devolver /d/{id}_h: es una página HTML de descarga no jugable.
     if (VimeosResolver.isVimeosUrl(rawUrl)) {
       const streams = await VimeosResolver.resolveVimeos(rawUrl);
       if (streams.length > 0 && !this.isPlaceholderUrl(streams[0])) return streams[0];
-      try {
-        const ytdlp = await resolveWithYtDlp(rawUrl);
-        if (ytdlp && ytdlp.resolved && ytdlp.url && !this.isPlaceholderUrl(ytdlp.url)) {
-          return ytdlp.url;
-        }
-      } catch {}
       return rawUrl;
     }
 

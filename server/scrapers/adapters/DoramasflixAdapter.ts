@@ -624,10 +624,9 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    */
   private async isDirectReachable(url: string): Promise<boolean> {
     if (!this.isDirectMediaUrl(url)) return false;
-    let controller: AbortController | null = null;
+    const controller = new AbortController();
     let timer: NodeJS.Timeout | null = null;
     try {
-      controller = new AbortController();
       timer = setTimeout(() => controller.abort(), 3500);
       let res = await fetch(url, {
         method: "HEAD",
@@ -654,7 +653,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     }
   }
 
-  private resolveRelativeUrl(relative: string, base: string): string {
+  protected override resolveRelativeUrl(relative: string, base: string): string {
     try {
       return new URL(relative, base).href;
     } catch {

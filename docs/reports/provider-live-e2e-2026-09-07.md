@@ -32,6 +32,10 @@ manifiesto interno responde `200 #EXTM3U` y que el vídeo avanza sin iframe.
 La misma prueba seleccionó TioAnime manualmente y confirmó el fallback HLS por
 el reproductor interno.
 
+El payload de Zoko también expuso un VTT `English`; el endpoint
+`/resolve-embed` conserva ahora esa pista y la interfaz la muestra en el menú
+de subtítulos. No se observó una pista española en la muestra comprobada.
+
 La auditoría de 300 enlaces históricos asociados a proveedores retirados no
 encontró URLs legacy en los detalles públicos. Además, la ruta compatible
 `/api/v1/shows` ahora aplica el mismo filtro que el catálogo `lite` salvo que

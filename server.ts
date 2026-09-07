@@ -1596,6 +1596,16 @@ async function startServer() {
     }
 
     try {
+      // Zoko's stable locator carries the subtitle list in the player payload.
+      // Resolve that locator itself before the generic page extractor turns it
+      // into a CDN URL (the CDN URL no longer has subtitle metadata).
+      if (/zokoanime\.video\/stream\//i.test(rawUrl)) {
+        const zokoMeta = await EmbedResolvers.resolveWithMeta(rawUrl);
+        if (zokoMeta.resolved && zokoMeta.url) {
+          return res.json(buildResolveDeliveryResponse(zokoMeta, "zokoanime", deliveryPlanner));
+        }
+      }
+
       // Si la URL es una página web de episodio (animeflv, jkanime, etc.), extraer streams reales primero
       if (classifySourceKind(rawUrl) === "page" || isCanonicalLocator(rawUrl)) {
         try {
@@ -2239,7 +2249,7 @@ async function startServer() {
       // CDN. Recuperar su metadata aquí evita que el JIT lo adjunte sin
       // cabeceras y termine en un 403 aunque la URL sea correcta.
       let hianimesMeta: Awaited<ReturnType<typeof EmbedResolvers.resolveWithMeta>> | null = null;
-      if (/hianimes\.se\/watch\/|megaplay\.buzz\/stream\//i.test(url)) {
+      if (/hianimes\.se\/watch\/|megaplay\.buzz\/stream\/|zokoanime\.video\/stream\//i.test(url)) {
         try {
           const meta = await EmbedResolvers.resolveWithMeta(url);
           if (meta.resolved && meta.url) hianimesMeta = meta;
@@ -2254,11 +2264,16 @@ async function startServer() {
         // Las URLs directas de Vimeos también necesitan su perfil de cabeceras:
         // el CDN acepta el GET del backend, pero rechaza el navegador sin pasar
         // por la sesión proxy. Releer su metadata aquí conserva ese requisito.
-        const needsDirectHostMetadata = /vimeos\.[a-z]+|p\d+\.vimeos\.zip/i.test(cand.url);
+        const needsDirectHostMetadata = /vimeos\.[a-z]+|p\d+\.vimeos\.zip/i.test(cand.url) ||
+          /zokoanime\.video\/stream\//i.test(url);
         if (!isDirectMedia(cand.url) || needsDirectHostMetadata) {
           try {
+            // Zoko's subtitles live on the stable `/stream/...` locator, not
+            // on the extracted CDN URL. Other hosts can be inspected from
+            // the candidate itself.
+            const metadataLocator = /zokoanime\.video\/stream\//i.test(url) ? url : cand.url;
             const subMeta = await Promise.race([
-              EmbedResolvers.resolveWithMeta(cand.url),
+              EmbedResolvers.resolveWithMeta(metadataLocator),
               new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout (3s)")), 3000)),
             ]);
             if (subMeta.resolved && subMeta.url && (subMeta.type === "direct" || isDirectMedia(subMeta.url))) {

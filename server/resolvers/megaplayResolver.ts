@@ -9,7 +9,7 @@ const MEGAPLAY_FETCH_HEADERS = {
 } as const;
 
 export const MEGAPLAY_REQUIRED_HEADERS = {
-  Referer: "https://megaplay.buzz/",
+  Referer: MEGAPLAY_REFERER,
 } as const;
 
 export interface MegaplayResolution {

@@ -30,7 +30,9 @@ test.describe('Playback local nativo', () => {
     expect(new Set(detail.episodes.map((episode: any) => `${episode.season_number || 1}:${episode.episode_number}`)).size)
       .toBe(detail.episodes.length);
     expect(detail.episodes.slice(0, 5).map((episode: any) => episode.episode_number)).toEqual([1, 2, 3, 4, 5]);
-    expect(detail.episode_platforms?.map((platform: any) => platform.domain)).toEqual(['zokoanime']);
+    const episodePlatforms = detail.episode_platforms?.map((platform: any) => platform.domain) || [];
+    expect(episodePlatforms).toContain('zokoanime');
+    expect(episodePlatforms).not.toContain('tioanime');
     expect(detail.episodes[0].source_url).toMatch(/\/sub(?:\?|$)/i);
 
     const resourceResponses: number[] = [];

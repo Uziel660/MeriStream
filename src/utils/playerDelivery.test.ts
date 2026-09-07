@@ -329,6 +329,27 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
       .toEqual(['page', 'embed']);
   });
 
+  it('mantiene al final una página canónica marcada como refreshable hasta resolverla', () => {
+    const refreshablePage = makeServer({
+      id: 'latanime-page',
+      url: 'https://latanime.org/ver/show-1',
+      isEmbed: false,
+      streamType: 'direct',
+      notPlayable: false,
+      canonical_locator: 'https://latanime.org/ver/show-1',
+      is_refreshable: true,
+    });
+    const primaryEmbed = makeServer({
+      id: 'zoko-page',
+      url: 'https://zokoanime.video/stream/mal/21/1/sub',
+      isEmbed: true,
+      streamType: 'embed',
+    });
+
+    expect(prioritizeDirectCandidates([primaryEmbed, refreshablePage]).map((s) => s.id))
+      .toEqual(['zoko-page', 'latanime-page']);
+  });
+
   it('canonicalUrlOf garantiza que la solicitud proxy use canonical_locator preferentemente', () => {
     const serverWithLocator = makeServer({
       url: 'https://cdn-edge.net/hls/master.m3u8?st=signed123',

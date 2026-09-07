@@ -786,7 +786,7 @@ export function App() {
             </div>
           </div>
         )}
-        {shows.length > 0 ? (
+        {(shows.length > 0 || serverSearchResults.length > 0) ? (
           <>
             {/* HERO BANNER PRINCIPAL (70% VH, KEN BURNS, PILL BUTTONS) */}
             {featuredShow && !searchQuery && activeFilter === 'all' && (

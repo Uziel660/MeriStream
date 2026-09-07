@@ -128,6 +128,11 @@ export function isRealPlayableEmbed(server: ScoredServer | null | undefined): bo
 export function prioritizeDirectCandidates(servers: ScoredServer[]): ScoredServer[] {
   const playbackRank = (server: ScoredServer): number => {
     if (server.notPlayable || isExpiredWithoutLocator(server)) return 2;
+    // A canonical provider page may be marked as a refreshable "direct" so it
+    // can be re-resolved JIT. It is still a locator until its URL becomes a
+    // native HLS/DASH/MP4 resource and must not jump ahead of the provider's
+    // primary embed candidate.
+    if (isUnresolvedCanonical(server.url)) return 2;
     return server.isEmbed ? 2 : 0;
   };
 

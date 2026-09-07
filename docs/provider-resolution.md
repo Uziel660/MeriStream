@@ -52,7 +52,15 @@ rendered by the native `<track>` element. OpenSubtitles is an optional,
 credential-gated supplement at `GET /api/v1/subtitles`; with no
 `OPENSUBTITLES_API_KEY` configured it returns an empty result and never calls
 the external download endpoint. Audio tracks are exposed from HLS and DASH
-manifests through their native track selectors.
+manifests through their native track selectors. The live probe on 2026-09-07
+confirmed that a Cinecalidad Vimeos master contains Spanish as the default
+audio rendition and English as an alternate rendition. The sampled GnulaHD,
+LatAnime and ZokoAnime manifests each contained one audio rendition, so those
+players cannot switch audio in-video; Zoko's `/sub` and `/dub` locators are
+separate releases rather than two tracks in one manifest. The persisted
+`audio_language` and `subtitle_language` fields describe the selected release
+and do not promise a track selector when the upstream manifest has only one
+rendition.
 
 TMDB remains the identity used by catalog and playback requests. Anime records
 may additionally carry the numeric AniList and MAL identifiers plus the Kitsu

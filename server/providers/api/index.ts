@@ -1,4 +1,5 @@
 import type { DirectStreamProvider, ProviderRequest } from "./types";
+import { VidSrcClient } from "./vidsrcClient";
 import { FlixQuestClient } from "./flixquestClient";
 import { NuvioClient } from "./nuvioClient";
 import { AnimeSdkClient } from "./animeSdkClient";
@@ -6,6 +7,7 @@ import { StreamProviderClient } from "./streamProviderClient";
 import { StremioDirectClient } from "./stremioDirectClient";
 
 const providers: DirectStreamProvider[] = [
+  new VidSrcClient(),
   new FlixQuestClient(),
   new NuvioClient(),
   new AnimeSdkClient(),

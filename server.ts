@@ -1261,7 +1261,7 @@ async function startServer() {
       let canonicalItem: any = null;
       if (norm || (show as any).tmdb_id != null) {
         const canonicalKinds = playbackKind === "movie" ? ["movie"] : [playbackKind, "series", "anime"];
-        canonicalItem = await prisma.mediaItem.findFirst({
+        const canonicalCandidates = await prisma.mediaItem.findMany({
           where: {
             AND: [
               { kind: { in: canonicalKinds } },
@@ -1274,7 +1274,6 @@ async function startServer() {
               },
             ],
           },
-          orderBy: { created_at: "asc" },
           include: {
             episodes: {
               orderBy: [{ season_number: "asc" }, { episode_number: "asc" }],
@@ -1282,6 +1281,27 @@ async function startServer() {
             },
           },
         });
+        // Several historical imports can share a localized/base title. Pick
+        // the TMDB match that actually has a main-path source before falling
+        // back to the oldest metadata-only mirror; otherwise a legacy-only
+        // twin can hide the active Gnula/Cinecalidad/Zoko links in the ficha.
+        canonicalItem = [...canonicalCandidates]
+          .map((item: any) => {
+            const activeLinks = item.episodes.reduce(
+              (count: number, episode: any) => count + filterMainPathLinks(episode.links || [], playbackKind).length,
+              0,
+            );
+            const tmdbMatch = (show as any).tmdb_id != null && item.tmdb_id === (show as any).tmdb_id ? 1 : 0;
+            const exactTitle = item.normalized_title === norm ? 1 : 0;
+            return { item, activeLinks, tmdbMatch, exactTitle };
+          })
+          .sort((a, b) =>
+            b.tmdbMatch - a.tmdbMatch ||
+            (b.activeLinks > 0 ? 1 : 0) - (a.activeLinks > 0 ? 1 : 0) ||
+            b.activeLinks - a.activeLinks ||
+            b.exactTitle - a.exactTitle ||
+            new Date(a.item.created_at).getTime() - new Date(b.item.created_at).getTime()
+          )[0]?.item || null;
         media_item_id = canonicalItem?.id ?? null;
       }
       const legacyEpisodes = (show as any).episodes || [];

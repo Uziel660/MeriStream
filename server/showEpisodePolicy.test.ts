@@ -67,4 +67,26 @@ describe("show episode main-path presentation", () => {
     const display = buildDisplayEpisodes([], canonical, "anime", "show-1");
     expect(countDisplayPlatforms(canonical, display, "anime")).toEqual([{ domain: "zokoanime", episodes: 1 }]);
   });
+
+  it("falls back to displayed legacy rows when the selected canonical twin has no active links", () => {
+    const canonical = [
+      {
+        id: "metadata-only-twin",
+        season_number: 1,
+        episode_number: 1,
+        links: [{ url: "https://doramasflix.io/capitulos/show-1x1", source_site: "doramasflix" }],
+      },
+    ];
+    const display = [
+      {
+        id: "legacy-1",
+        title: "Episodio 1",
+        episode_number: 1,
+        season_number: 1,
+        source_url: "https://ww3.gnulahd.nu/show-1x01/",
+      },
+    ];
+
+    expect(countDisplayPlatforms(canonical, display, "series")).toEqual([{ domain: "gnula", episodes: 1 }]);
+  });
 });

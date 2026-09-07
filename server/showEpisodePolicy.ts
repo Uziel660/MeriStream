@@ -173,8 +173,9 @@ export function countDisplayPlatforms(
   kind: MainPathKind,
 ): Array<{ domain: string; episodes: number }> {
   const counts = new Map<string, number>();
-  if (episodes && episodes.length > 0) {
-    for (const episode of episodes) {
+  const canonicalLinks = (episodes || []).flatMap((episode) => filterMainPathLinks(episode.links, kind));
+  if (canonicalLinks.length > 0) {
+    for (const episode of episodes || []) {
       const links = filterMainPathLinks(episode.links, kind);
       const providers = new Set(links.map((link) => providerOf(link)));
       for (const provider of providers) counts.set(provider, (counts.get(provider) || 0) + 1);

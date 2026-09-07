@@ -1,0 +1,22 @@
+name: Temporary VidSrc Resolver Verification
+
+on:
+  push:
+    branches: [feat/provider-v2-es-multilang]
+
+jobs:
+  verify-vidsrc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: VidSrc unit tests
+        run: npx vitest run server/providers/api/vidsrcClient.test.ts
+      - name: Bundle VidSrc client
+        run: npx esbuild server/providers/api/vidsrcClient.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/vidsrc-client.mjs

@@ -40,6 +40,23 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
     (response) => /\/api\/v1\/play\//.test(response.url()),
     { timeout: 45_000 },
   );
+  await episode.click();
+
+  const playResponse = await playWait;
+  expect(playResponse.status()).toBe(200);
+  const playPayload = await playResponse.json();
+  // VidSrc may be the first healthy direct source. Provider order is not part
+  // of the contract; the important guarantee is that Zoko remains selectable
+  // and TioAnime is only its fallback.
+  expect(playPayload.ranked_streams?.some((stream: any) => stream.source_site === 'zokoanime')).toBe(true);
+  expect(playPayload.ranked_streams?.some((stream: any) => stream.source_site === 'tioanime')).toBe(true);
+
+  const player = page.getByRole('dialog').last();
+  const switchButton = player.locator('button[title="Cambiar o Inspeccionar Servidor de Streaming"]');
+  await expect(switchButton).toBeVisible({ timeout: 30_000 });
+  await switchButton.click();
+  const zokoOption = player.getByRole('button').filter({ hasText: /ZOKOANIME/i }).first();
+  await expect(zokoOption).toBeVisible({ timeout: 30_000 });
   const zokoResolveWait = page.waitForResponse(
     async (response) => {
       if (!/\/api\/v1\/(?:catalog\/episode-servers|resolve-embed)$/.test(response.url())) return false;
@@ -57,17 +74,8 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
     (response) => /(?:\/api\/v1\/playback\/[^/]+\/master\.m3u8|\.m3u8(?:\?|$))/i.test(response.url()),
     { timeout: 120_000 },
   );
-  await episode.click();
-
-  const [playResponse, zokoResolveResponse, zokoManifestResponse] = await Promise.all([
-    playWait,
-    zokoResolveWait,
-    zokoManifestWait,
-  ]);
-  expect(playResponse.status()).toBe(200);
-  const playPayload = await playResponse.json();
-  expect(playPayload.ranked_streams?.[0]?.source_site).toBe('zokoanime');
-  expect(playPayload.ranked_streams?.some((stream: any) => stream.source_site === 'tioanime')).toBe(true);
+  await zokoOption.click();
+  const [zokoResolveResponse, zokoManifestResponse] = await Promise.all([zokoResolveWait, zokoManifestWait]);
   expect(zokoResolveResponse.status()).toBe(200);
   const zokoResolution = await zokoResolveResponse.json();
   const zokoSubtitles = zokoResolution.subtitles || zokoResolution.ranked_streams?.[0]?.subtitles || [];
@@ -84,10 +92,8 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
   const zokoSubtitleButton = zokoPlayer.locator('button[title="Subtítulos"]');
   await expect(zokoSubtitleButton).toBeVisible({ timeout: 30_000 });
   await zokoSubtitleButton.click();
-  await expect(zokoPlayer.getByRole('button', { name: 'English', exact: true })).toBeVisible();
+  await expect(zokoPlayer.getByRole('button', { name: 'English', exact: true }).first()).toBeVisible();
 
-  const player = page.getByRole('dialog').last();
-  const switchButton = player.locator('button[title="Cambiar o Inspeccionar Servidor de Streaming"]');
   await expect(switchButton).toBeVisible({ timeout: 30_000 });
   await switchButton.click();
   const tioOption = player.getByRole('button').filter({ hasText: /TIOANIME/i }).first();

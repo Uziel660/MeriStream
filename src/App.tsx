@@ -17,7 +17,7 @@ import { useAuth } from './contexts/AuthContext';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
-import { normalizeText } from './utils/searchUtils';
+import { normalizeText, searchShows } from './utils/searchUtils';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
@@ -808,7 +808,11 @@ export function App() {
         const o = normalizeText(s.original_title || '');
         return t.includes(qNorm) || e.includes(qNorm) || o.includes(qNorm);
       });
-      result = [...serverSearchResults, ...localMatches];
+      // Public TMDB search can return a related movie before the exact local
+      // anime/series title (for example, a franchise film before SPY x FAMILY).
+      // Apply the same title relevance scoring to the merged list so an exact
+      // match always opens first and does not look like a duplicate mismatch.
+      result = searchShows([...serverSearchResults, ...localMatches], searchQuery);
     } else {
       // Filtro por categoría únicamente cuando no hay búsqueda activa
       if (activeFilter !== 'all') {

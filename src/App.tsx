@@ -532,9 +532,13 @@ export function App() {
   const fetchFreshCatalog = async (isBackground = false, page = 1, append = false) => {
     try {
       const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${page}`);
+      // TMDB is the canonical public catalog. If it is temporarily
+      // unavailable, keep the local safety net bounded to the same small
+      // bootstrap batch instead of loading the entire database into the
+      // browser.
       const res = publicRes.ok
         ? publicRes
-        : await fetch('/api/v1/shows?lite=true&limit=25000');
+        : await fetch(`/api/v1/shows?lite=true&limit=${PUBLIC_CATALOG_BATCH_SIZE}`);
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.shows || [];
@@ -663,7 +667,13 @@ export function App() {
         const cached = localStorage.getItem(CATALOG_CACHE_KEY);
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+          const cachedKinds = new Set(
+            Array.isArray(data)
+              ? data.map((show: Show) => String(show.category || show.kind || '').toLowerCase())
+              : [],
+          );
+          const cacheHasAllFamilies = PUBLIC_CATALOG_KINDS.every((kind) => cachedKinds.has(kind));
+          if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0 && cacheHasAllFamilies) {
             setShows(data);
             setPublicCatalogPage(1);
             setHasMorePublicCatalog(true);

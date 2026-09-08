@@ -1538,9 +1538,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const scheduleStallFailover = () => {
       if (video.paused || video.currentTime <= 0.5 || stallFailoverTimerRef.current) return;
+      const stalledAtTime = video.currentTime;
       stallFailoverTimerRef.current = setTimeout(() => {
         stallFailoverTimerRef.current = null;
-        if (listenerAttemptId !== attemptIdRef.current || video.paused || video.readyState >= 3) return;
+        // Waiting is normal during a slow segment. Only move providers when the
+        // playhead has not advanced at all during the grace window and the
+        // element is still genuinely starved; a transient buffer gap must not
+        // restart the whole source cascade.
+        if (
+          listenerAttemptId !== attemptIdRef.current ||
+          video.paused ||
+          video.readyState >= 3 ||
+          video.currentTime > stalledAtTime + 0.25
+        ) return;
         api.reportPlayerEvent({
           eventType: "black_screen_stalled",
           provider: activeServer.provider || "Servidor",
@@ -1556,7 +1566,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           setDeliveryState('error');
           setPlaybackError(MSG_NO_SERVERS);
         }
-      }, 12000);
+      }, 20000);
     };
 
     const onPlaying = () => {

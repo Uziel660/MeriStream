@@ -17,8 +17,12 @@ export type DeliveryState =
   | 'awaiting_manual_choice'
   | 'error';
 
-export const DIRECT_WATCHDOG_MS = 5000;
-export const DIRECT_BLACK_SCREEN_MS = 6500;
+// CDN manifests and the first media segment can take several seconds to cross
+// the internal proxy. Short watchdogs caused a healthy primary to be abandoned
+// while it was still loading, producing the rapid fallback cascade seen in the
+// browser. Keep failover as a real error recovery path, not a race with startup.
+export const DIRECT_WATCHDOG_MS = 12000;
+export const DIRECT_BLACK_SCREEN_MS = 15000;
 export const EMBED_WATCHDOG_MS = 8000;
 export const EMBED_FAILOVER_TIMEOUT_MS = 20000;
 export const MAX_PROBE_CANDIDATES = 4;

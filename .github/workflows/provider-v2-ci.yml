@@ -2,11 +2,17 @@ name: Provider V2 CI
 
 on:
   pull_request:
-    branches: [lastversion]
+    branches: [main, lastversion]
   push:
     branches:
+      - main
       - feat/provider-v2-es-multilang
       - integrate/immersive-ui-provider-v2
+  workflow_dispatch:
+
+concurrency:
+  group: provider-v2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:

@@ -47,6 +47,18 @@ async function main() {
     'CREATE INDEX IF NOT EXISTS idx_show_title_trgm ON "Show" USING GIN (title gin_trgm_ops)'
   );
   await pg.$executeRawUnsafe(
+    'CREATE INDEX IF NOT EXISTS idx_show_title_lower_trgm ON "Show" USING GIN (lower(title) gin_trgm_ops)'
+  );
+  await pg.$executeRawUnsafe(
+    'CREATE INDEX IF NOT EXISTS idx_show_english_title_lower_trgm ON "Show" USING GIN (lower("english_title") gin_trgm_ops)'
+  );
+  await pg.$executeRawUnsafe(
+    'CREATE INDEX IF NOT EXISTS idx_show_japanese_title_lower_trgm ON "Show" USING GIN (lower("japanese_title") gin_trgm_ops)'
+  );
+  await pg.$executeRawUnsafe(
+    'CREATE INDEX IF NOT EXISTS idx_show_original_title_lower_trgm ON "Show" USING GIN (lower("original_title") gin_trgm_ops)'
+  );
+  await pg.$executeRawUnsafe(
     'CREATE INDEX IF NOT EXISTS idx_show_genres_trgm ON "Show" USING GIN (genres gin_trgm_ops)'
   );
   console.log("   ✅ Índices trigram creados");

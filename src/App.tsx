@@ -6,12 +6,9 @@ import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
 import { CatalogFilters, type SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
-import { MediaDetailsModal } from './components/MediaDetailsModal';
-import { HLSPlayerModal } from './components/HLSPlayerModal';
-import { AdminPanel } from './components/AdminPanel';
-import { ContinueWatching, type WatchProgress } from './components/ContinueWatching';
+import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
+import type { WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
-import { AuthModal } from './components/AuthModal';
 import { ExploreCatalogView } from './components/ExploreCatalogView';
 import { useAuth } from './contexts/AuthContext';
 import { thumbBackdropUrl } from './utils/imageSizes';
@@ -83,6 +80,7 @@ function mapCatalogShow(s: any): Show {
     anilist_id: s.anilist_id ?? null,
     mal_id: s.mal_id ?? null,
     kitsu_id: s.kitsu_id ?? null,
+    title_aliases: Array.isArray(s.title_aliases) ? s.title_aliases.filter((value: unknown): value is string => typeof value === 'string') : [],
     kind: s.kind || s.category || undefined,
     original_title: s.original_title || null,
     english_title: s.english_title || null,
@@ -409,6 +407,7 @@ export function App() {
       setServerSearchResults([]);
       return;
     }
+    const controller = new AbortController();
     let isCancelled = false;
     const fetchServerSearch = async () => {
       try {
@@ -417,8 +416,8 @@ export function App() {
         // parallel; using TMDB alone hides playable local matches whenever a
         // search result happens to exist there.
         const [publicRes, localRes] = await Promise.all([
-          fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`),
-          fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`),
+          fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
+          fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
         ]);
         if (isCancelled) return;
 
@@ -444,12 +443,19 @@ export function App() {
           if (!merged.has(key)) merged.set(key, show);
         }
         setServerSearchResults([...merged.values()]);
-      } catch (e) {
-        console.warn('Error en búsqueda server-side:', e);
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') console.warn('Error en búsqueda server-side:', e);
       }
     };
-    fetchServerSearch();
-    return () => { isCancelled = true; };
+    // The header already debounces keystrokes; this short second delay avoids
+    // issuing a pair of network requests while a user is still composing a
+    // word on a slow device or mobile keyboard.
+    const timer = window.setTimeout(fetchServerSearch, 140);
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   // LIMPIEZA DE HUÉRFANOS EN "SEGUIR VIENDO" (#2/R2): tras re-scrapes, las
@@ -1608,6 +1614,7 @@ export function App() {
         <HLSPlayerModal
           isOpen={Boolean(playingStreamData)}
           onClose={() => setPlayingStreamData(null)}
+          userId={user?.id}
           title={playingStreamData.title}
           streamUrl={playingStreamData.streamUrl}
           all_streams={playingStreamData.all_streams}

@@ -20,6 +20,8 @@ export interface Show {
   anilist_id?: string | null;
   mal_id?: number | null;
   kitsu_id?: string | null;
+  /** Canonical and translated titles supplied by public catalogs. */
+  title_aliases?: string[];
   original_title?: string;
   japanese_title?: string;
   english_title?: string;

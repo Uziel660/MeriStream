@@ -42,8 +42,11 @@ Anime detail enrichment queries AniList without a key. When AniList is
 unavailable, the public route queries Kitsu and its mapping endpoint to obtain
 `anilist_id`, `mal_id`, `kitsu_id`, and title aliases. The provider gateway uses
 the MAL ID to create ZokoAnime's public `/stream/mal/...` locator dynamically;
-VidSrc uses the TMDB TV ID directly. No bulk anime import is required for
-either path.
+VidSrc uses the TMDB TV ID directly. A resumable identity repair tool
+(`tools/repair-anime-identities.ts`) can persist only exact TMDB/MAL Wikidata
+edges or high-confidence title matches; run it dry first and apply in bounded
+batches. Unmatched works remain available through TMDB/VidSrc and are never
+assigned a guessed MAL ID.
 
 TMDB responses are cached in memory for five minutes and are fetched on demand;
 the entire TMDB catalog is not copied into PostgreSQL. A database backup should
@@ -83,6 +86,15 @@ admitted only as the ZokoAnime anime recovery fallback.
 The gateway ranks an explicit language preference first, then host health and
 provider priority. Two consecutive non-auth failures open a host cooldown;
 401/403 responses remain token-scoped and do not blacklist an entire origin.
+
+The search path combines TMDB and PostgreSQL results, keeps local provider
+links when a TMDB identity is shared, and supports accent-insensitive,
+multilingual and typo-tolerant queries. Full-text and substring matches remain
+the fast path; a bounded `pg_trgm` similarity fallback runs only when a query
+has no literal title hit. The player and subtitle menus group mirrors by
+language with a capped scroll area. Per-user preferences (priority languages,
+default quality, subtitle position/size and reduced motion) are stored in a
+namespaced local record and applied without changing playback contracts.
 
 Subtitle tracks from provider manifests are preserved through JIT resolution and
 rendered by the native `<track>` element. OpenSubtitles is an optional,

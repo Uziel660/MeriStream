@@ -35,6 +35,7 @@ import {
   type ScoredServer,
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
+import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
 import {
   applyResolution,
   buildAttachmentKey,
@@ -87,6 +88,7 @@ interface HLSPlayerModalProps {
   initialTime?: number;
   onProgressUpdate?: (currentTime: number, duration: number) => void;
   onNextEpisode?: () => void;
+  userId?: string | null;
   [key: string]: any;
 }
 
@@ -94,6 +96,36 @@ interface AudioOption {
   id: number;
   name: string;
   lang?: string;
+}
+
+function normalizedLanguageKey(value: unknown): string {
+  const raw = String(value || '').trim().toLowerCase().replace('_', '-');
+  if (!raw) return 'und';
+  if (raw === 'es-419' || raw === 'es-la' || raw === 'lat' || raw === 'latino') return 'es-419';
+  if (raw.startsWith('es')) return 'es';
+  if (raw.startsWith('en')) return 'en';
+  if (raw.startsWith('ja') || raw === 'dub') return raw === 'dub' ? 'dub' : 'ja';
+  if (raw.startsWith('pt')) return 'pt';
+  if (raw.startsWith('fr')) return 'fr';
+  return raw;
+}
+
+function languageDisplayName(value: unknown): string {
+  const key = normalizedLanguageKey(value);
+  const labels: Record<string, string> = {
+    'es-419': 'Español latino', es: 'Español', en: 'Inglés', ja: 'Japonés',
+    pt: 'Portugués', fr: 'Francés', dub: 'Doblado', und: 'Idioma alternativo',
+  };
+  return labels[key] || String(value || 'Idioma alternativo').toUpperCase();
+}
+
+function renditionDisplayName(key: string, items: Array<{ server: ScoredServer; index: number }>): string {
+  const first = items[0]?.server;
+  const audio = String(first?.audio_language || '').trim();
+  const subtitle = String(first?.subtitle_language || '').trim();
+  if (audio) return `Audio ${audio.toUpperCase()}`;
+  if (subtitle) return `Subtítulos ${subtitle.toUpperCase()}`;
+  return languageDisplayName(key);
 }
 
 function formatTime(seconds: number): string {
@@ -214,6 +246,25 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | 'off'>('off');
   const [activeSubtitleCues, setActiveSubtitleCues] = useState<ParsedSubtitleCue[]>([]);
+  const [expandedAudioLanguages, setExpandedAudioLanguages] = useState<Record<string, boolean>>({});
+  const [expandedSubtitleLanguages, setExpandedSubtitleLanguages] = useState<Record<string, boolean>>({});
+  const [preferencesRevision, setPreferencesRevision] = useState(0);
+  const preferenceScope = props.userId || 'guest';
+  const appPreferences = getAppPreferences(preferenceScope);
+
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string }>).detail;
+      if (!detail?.userId || detail.userId === preferenceScope) setPreferencesRevision((value) => value + 1);
+    };
+    window.addEventListener(APP_PREFERENCES_EVENT, sync);
+    return () => window.removeEventListener(APP_PREFERENCES_EVENT, sync);
+  }, [preferenceScope]);
+
+  // `preferencesRevision` is intentionally read here: it makes an open player
+  // react immediately after the settings dialog saves, while keeping the
+  // preferences themselves in a tiny per-user localStorage record.
+  void preferencesRevision;
 
   const subtitleTracks: SubtitleTrack[] = (() => {
     const byUrl = new Map<string, SubtitleTrack>();
@@ -294,23 +345,80 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       track.mode = selectedLabel && !customCuesLoaded && track.label === selectedLabel ? 'showing' : 'disabled';
     });
   }, [activeSubtitleId, activeSubtitleCues.length, subtitleSignature, videoNode]);
+  const activeServer = servers[activeServerIndex] || null;
   const renditionServers = servers
     .map((server, index) => ({ server, index }))
     .filter(({ server }) => Boolean(server.link_type || server.language || server.audio_language || server.subtitle_language));
 
-  const renditionLabel = (server: ScoredServer): string => {
-    const linkType = (server.link_type || '').toLowerCase();
-    const rendition = (server.language || '').toLowerCase();
-    const audio = server.audio_language?.toUpperCase();
-    const subtitle = server.subtitle_language?.toUpperCase();
-    if (rendition === 'dub' || linkType === 'dub' || audio === 'ES' || audio === 'EN') {
-      return `Audio ${audio || 'Doblado'}`;
+  // Agrupar antes de pintar evita que una docena de mirrors del mismo idioma
+  // convierta la barra de controles en un panel interminable. El primer
+  // candidato conserva el orden/ranking del backend; los demás quedan
+  // disponibles bajo demanda.
+  const renditionGroups = (() => {
+    const groups = new Map<string, Array<{ server: ScoredServer; index: number }>>();
+    for (const entry of renditionServers) {
+      const key = normalizedLanguageKey(entry.server.audio_language || entry.server.subtitle_language || entry.server.language);
+      const list = groups.get(key) || [];
+      list.push(entry);
+      groups.set(key, list);
     }
-    if (rendition === 'sub' || linkType === 'sub' || subtitle) {
-      return `Subtítulos ${subtitle || 'Originales'}`;
+    const preferred = appPreferences.preferredLanguages.map((language) => normalizedLanguageKey(language));
+    return [...groups.entries()]
+      .map(([key, items]) => ({ key, items }))
+      .sort((left, right) => {
+        const leftRank = preferred.indexOf(left.key);
+        const rightRank = preferred.indexOf(right.key);
+        return (leftRank < 0 ? 99 : leftRank) - (rightRank < 0 ? 99 : rightRank);
+      });
+  })();
+
+  const subtitleGroups = (() => {
+    const groups = new Map<string, SubtitleTrack[]>();
+    for (const track of subtitleTracks) {
+      const key = normalizedLanguageKey(track.language || track.label);
+      const list = groups.get(key) || [];
+      list.push(track);
+      groups.set(key, list);
     }
-    return server.language?.toUpperCase() || 'Idioma alternativo';
-  };
+    const preferred = appPreferences.preferredSubtitleLanguages.map((language) => normalizedLanguageKey(language));
+    return [...groups.entries()]
+      .map(([key, items]) => ({ key, items }))
+      .sort((left, right) => {
+        const leftRank = preferred.indexOf(left.key);
+        const rightRank = preferred.indexOf(right.key);
+        return (leftRank < 0 ? 99 : leftRank) - (rightRank < 0 ? 99 : rightRank);
+      });
+  })();
+
+  const qualityPreferenceKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (qualityLevels.length === 0) return;
+    const key = `${preferenceScope}:${activeServer?.id || 'none'}`;
+    if (qualityPreferenceKeyRef.current === key) return;
+    qualityPreferenceKeyRef.current = key;
+    if (appPreferences.defaultQuality === 'auto') return;
+    const targetHeight = Number.parseInt(appPreferences.defaultQuality, 10);
+    if (!Number.isFinite(targetHeight)) return;
+    const eligible = qualityLevels.filter((level) => Number(level.height || 0) > 0 && Number(level.height) <= targetHeight);
+    const preferred = eligible.sort((left, right) => Number(right.height || 0) - Number(left.height || 0))[0]
+      || qualityLevels.find((level) => Number(level.height || 0) === targetHeight);
+    if (!preferred) return;
+    if (hlsRef.current) hlsRef.current.currentLevel = preferred.index;
+    if (dashRef.current) {
+      dashRef.current.setAutoSwitchQualityFor?.('video', false);
+      dashRef.current.setQualityFor?.('video', preferred.index);
+    }
+    setActiveQuality(preferred.index);
+    setCurrentResolutionLabel(preferred.label);
+  }, [qualityLevels, preferenceScope, activeServer?.id, appPreferences.defaultQuality]);
+
+  useEffect(() => {
+    if (activeSubtitleId !== 'off' || subtitleTracks.length === 0) return;
+    const preferred = appPreferences.preferredSubtitleLanguages
+      .map((language) => normalizedLanguageKey(language));
+    const track = subtitleTracks.find((candidate) => preferred.includes(normalizedLanguageKey(candidate.language || candidate.label)));
+    if (track) setActiveSubtitleId(track.id);
+  }, [subtitleSignature, activeSubtitleId, appPreferences.preferredSubtitleLanguages.join(',')]);
 
   const rawTitle: string =
     props.title || media?.title || props.item?.title || props.result?.title || '';
@@ -547,8 +655,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     // se omite para que este efecto solo corra al cambiar la fuente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media?.id, directSource, props.streamUrl, props.src, props.isLoading, props.loadError]);
-
-  const activeServer = servers[activeServerIndex] || null;
 
   // RE-RESOLVE JUST-IN-TIME (defecto #11): los HLS firmados guardados en BD
   // expiran antes del play (403 al abrir horas/minutos después) y las páginas
@@ -1007,11 +1113,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const setupHls = (playUrl: string) => {
       const isHlsUrl = playUrl.includes('.m3u8') || playUrl.includes('/m3u8/');
       if (isHlsUrl && Hls.isSupported()) {
+        const deviceMemory = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8);
+        const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4 || deviceMemory <= 4;
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          backBufferLength: 60,
-          maxBufferLength: 30, // Front buffer moderado
+          // Mantener menos segmentos en memoria en equipos modestos reduce
+          // presión de RAM sin sacrificar el margen suficiente para evitar
+          // microcortes. HLS.js seguirá ampliando el buffer si la red lo pide.
+          backBufferLength: constrainedDevice ? 20 : 45,
+          maxBufferLength: constrainedDevice ? 18 : 30,
           startLevel: -1,
           capLevelToPlayerSize: true,
           xhrSetup: (xhr, requestUrl) => {
@@ -1920,6 +2031,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
+  const subtitlePositionClass = appPreferences.subtitlePosition === 'top'
+    ? 'top-20'
+    : appPreferences.subtitlePosition === 'center'
+    ? 'top-1/2 -translate-y-1/2'
+    : 'bottom-20';
+  const subtitleScaleClass = appPreferences.subtitleScale === 'large'
+    ? 'text-lg sm:text-xl'
+    : appPreferences.subtitleScale === 'small'
+    ? 'text-sm sm:text-base'
+    : 'text-base sm:text-lg';
 
   // REINTENTO REAL: reinicia el estado del servidor activo y fuerza el
   // pipeline completo (re-resolve JIT si aplica → attachSource). Antes el
@@ -2254,7 +2375,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     ref={videoCallbackRef}
                     className="h-full w-full object-contain"
                     playsInline
-                    preload="auto"
+                    preload="metadata"
                   >
                     {subtitleTracks.map((track) => (
                       <track
@@ -2268,8 +2389,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   </video>
 
                   {visibleSubtitleText && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-20 z-20 flex justify-center px-6 text-center">
-                      <div className="max-w-4xl rounded bg-black/70 px-3 py-1 text-base font-medium leading-relaxed text-white shadow-lg sm:text-lg">
+                    <div className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center px-6 text-center ${subtitlePositionClass}`}>
+                      <div className={`max-w-4xl rounded bg-black/70 px-3 py-1 font-medium leading-relaxed text-white shadow-lg ${subtitleScaleClass}`}>
                         {visibleSubtitleText.split(/\r?\n/).map((line, index) => (
                           <div key={`${index}-${line}`}>{line}</div>
                         ))}
@@ -2477,48 +2598,91 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         <Languages size={17} />
                       </button>
                       {activeMenu === 'audio' && (
-                        <div className="absolute bottom-10 right-0 w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                        <div className="absolute bottom-10 right-0 w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
                           <span className="block px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase">
                             Idioma de Audio
                           </span>
-                          {audioTracks.map((track) => (
-                            <button
-                              key={track.id}
-                              type="button"
-                              onClick={() => selectAudioTrack(track.id)}
-                              className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
-                                activeAudioTrack === track.id
-                                  ? 'text-emerald-400 font-semibold bg-zinc-800'
-                                  : 'text-zinc-200 hover:bg-zinc-800/60'
-                              }`}
-                            >
-                              <span>{track.name}</span>
-                              {activeAudioTrack === track.id && <Check size={12} />}
-                            </button>
-                          ))}
+                          {(() => {
+                            const groups = new Map<string, AudioOption[]>();
+                            for (const track of audioTracks) {
+                              const key = normalizedLanguageKey(track.lang || track.name);
+                              const list = groups.get(key) || [];
+                              list.push(track);
+                              groups.set(key, list);
+                            }
+                            return [...groups.entries()].map(([key, tracks]) => {
+                              const expanded = Boolean(expandedAudioLanguages[key]);
+                              const visible = expanded ? tracks : tracks.slice(0, 1);
+                              return (
+                                <div key={`audio-group-${key}`} className="mb-1 last:mb-0">
+                                  {visible.map((track) => (
+                                    <button
+                                      key={track.id}
+                                      type="button"
+                                      onClick={() => selectAudioTrack(track.id)}
+                                      className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
+                                        activeAudioTrack === track.id
+                                          ? 'text-emerald-400 font-semibold bg-zinc-800'
+                                          : 'text-zinc-200 hover:bg-zinc-800/60'
+                                      }`}
+                                    >
+                                      <span className="truncate">{tracks.length > 1 ? `${languageDisplayName(key)} · ${track.name}` : track.name}</span>
+                                      {activeAudioTrack === track.id && <Check size={12} />}
+                                    </button>
+                                  ))}
+                                  {tracks.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedAudioLanguages((state) => ({ ...state, [key]: !expanded }))}
+                                      className="w-full px-2.5 py-1 text-left text-[10px] text-zinc-400 hover:text-zinc-200"
+                                    >
+                                      {expanded ? 'Ocultar opciones' : `Ver ${tracks.length - 1} opción${tracks.length > 2 ? 'es' : ''} más`}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
                           {renditionServers.length > 0 && (
                             <>
                               <span className="mt-1 block border-t border-zinc-800 px-2.5 pt-2 text-[10px] font-bold text-zinc-400 uppercase">
                                 Fuentes por idioma
                               </span>
-                              {renditionServers.map(({ server, index }) => (
-                                <button
-                                  key={`rendition-${server.id}`}
-                                  type="button"
-                                  onClick={() => {
-                                    handleServerChange(index);
-                                    setActiveMenu('none');
-                                  }}
-                                  className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
-                                    activeServerIndex === index
-                                      ? 'text-emerald-400 font-semibold bg-zinc-800'
-                                      : 'text-zinc-200 hover:bg-zinc-800/60'
-                                  }`}
-                                >
-                                  <span className="truncate">{renditionLabel(server)} · {server.provider}</span>
-                                  {activeServerIndex === index && <Check size={12} />}
-                                </button>
-                              ))}
+                              {renditionGroups.map(({ key, items }) => {
+                                const expanded = Boolean(expandedAudioLanguages[`source:${key}`]);
+                                const visible = expanded ? items : items.slice(0, 1);
+                                return (
+                                  <div key={`rendition-group-${key}`} className="mb-1 last:mb-0">
+                                    {visible.map(({ server, index }) => (
+                                      <button
+                                        key={`rendition-${server.id}`}
+                                        type="button"
+                                        onClick={() => {
+                                          handleServerChange(index);
+                                          setActiveMenu('none');
+                                        }}
+                                        className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
+                                          activeServerIndex === index
+                                            ? 'text-emerald-400 font-semibold bg-zinc-800'
+                                            : 'text-zinc-200 hover:bg-zinc-800/60'
+                                        }`}
+                                      >
+                                        <span className="truncate">{renditionDisplayName(key, items)} · {server.provider}</span>
+                                        {activeServerIndex === index && <Check size={12} />}
+                                      </button>
+                                    ))}
+                                    {items.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedAudioLanguages((state) => ({ ...state, [`source:${key}`]: !expanded }))}
+                                        className="w-full px-2.5 py-1 text-left text-[10px] text-zinc-400 hover:text-zinc-200"
+                                      >
+                                        {expanded ? 'Ocultar opciones' : `Ver ${items.length - 1} servidor${items.length > 2 ? 'es' : ''} más`}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </>
                           )}
                         </div>
@@ -2544,7 +2708,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         <Captions size={17} />
                       </button>
                       {activeMenu === 'subtitles' && (
-                        <div className="absolute bottom-10 right-0 w-40 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                        <div className="absolute bottom-10 right-0 w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
                           <button
                             type="button"
                             onClick={() => selectSubtitle('off')}
@@ -2557,21 +2721,38 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                             <span>Desactivados</span>
                             {activeSubtitleId === 'off' && <Check size={12} />}
                           </button>
-                          {subtitleTracks.map((sub: SubtitleTrack) => (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              onClick={() => selectSubtitle(sub)}
-                              className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
-                                activeSubtitleId === sub.id
-                                  ? 'text-emerald-400 font-semibold bg-zinc-800'
-                                  : 'text-zinc-200 hover:bg-zinc-800/60'
-                              }`}
-                            >
-                              <span>{sub.label}</span>
-                              {activeSubtitleId === sub.id && <Check size={12} />}
-                            </button>
-                          ))}
+                          {subtitleGroups.map(({ key, items }) => {
+                            const expanded = Boolean(expandedSubtitleLanguages[key]);
+                            const visible = expanded ? items : items.slice(0, 1);
+                            return (
+                              <div key={`subtitle-group-${key}`} className="mb-1 last:mb-0">
+                                {visible.map((sub: SubtitleTrack) => (
+                                  <button
+                                    key={sub.id}
+                                    type="button"
+                                    onClick={() => selectSubtitle(sub)}
+                                    className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition ${
+                                      activeSubtitleId === sub.id
+                                        ? 'text-emerald-400 font-semibold bg-zinc-800'
+                                        : 'text-zinc-200 hover:bg-zinc-800/60'
+                                    }`}
+                                  >
+                                    <span className="truncate">{items.length > 1 ? `${languageDisplayName(key)} · ${sub.label}` : sub.label}</span>
+                                    {activeSubtitleId === sub.id && <Check size={12} />}
+                                  </button>
+                                ))}
+                                {items.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedSubtitleLanguages((state) => ({ ...state, [key]: !expanded }))}
+                                    className="w-full px-2.5 py-1 text-left text-[10px] text-zinc-400 hover:text-zinc-200"
+                                  >
+                                    {expanded ? 'Ocultar opciones' : `Ver ${items.length - 1} pista${items.length > 2 ? 's' : ''} más`}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

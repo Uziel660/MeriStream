@@ -32,6 +32,7 @@ const prisma = new PrismaClient();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let aniListUnavailable = false;
 const wikidataCache = new Map<number, { malId: number | null; anilistId: string | null } | null>();
+const malWikidataCache = new Map<number, { malId: number | null; anilistId: string | null } | null>();
 
 function args() {
   const argv = process.argv.slice(2);
@@ -57,6 +58,10 @@ function clean(value: unknown): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\b(?:season|temporada|part|cour|cour\s+\d+|s\s*\d+)\s*\d*\b/gi, " ")
     .replace(/\b(?:tv|movie|film|ova|ona|special|recap)\b/gi, " ")
+    // A year belongs to the matching guard below, not to the title token set;
+    // this lets "Ranma1/2" match the catalog title "Ranma 1/2 (2024)" while
+    // still rejecting a sequel whose year differs materially.
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
     .replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -108,6 +113,36 @@ async function fetchWikidataIdentity(tmdbId: number): Promise<{ malId: number | 
     return result.malId || result.anilistId ? result : null;
   } catch {
     wikidataCache.set(tmdbId, null);
+    return null;
+  }
+}
+
+async function fetchWikidataByMal(malId: number): Promise<{ malId: number | null; anilistId: string | null } | null> {
+  if (!Number.isInteger(malId) || malId <= 0) return null;
+  if (malWikidataCache.has(malId)) return malWikidataCache.get(malId) || null;
+  try {
+    const query = `SELECT ?tmdb ?anilist WHERE { ?item wdt:P4086 "${malId}". OPTIONAL { ?item wdt:P4983 ?tmdb. } OPTIONAL { ?item wdt:P8729 ?anilist. } } LIMIT 1`;
+    const url = new URL("https://query.wikidata.org/sparql");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("query", query);
+    const response = await fetch(url, {
+      headers: { accept: "application/sparql-results+json", "user-agent": "MeriStream/1.0 (identity repair)" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      malWikidataCache.set(malId, null);
+      return null;
+    }
+    const binding = ((await response.json() as any)?.results?.bindings || [])[0];
+    const anilist = String(binding?.anilist?.value || "");
+    const result = {
+      malId,
+      anilistId: /^\d+$/.test(anilist) ? anilist : null,
+    };
+    malWikidataCache.set(malId, result.anilistId ? result : null);
+    return result.anilistId ? result : null;
+  } catch {
+    malWikidataCache.set(malId, null);
     return null;
   }
 }
@@ -176,32 +211,72 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
 }
 
 async function resolve(row: any): Promise<Result> {
+  // Existing MAL IDs are trusted and must never be replaced by a fuzzy title
+  // match. They can still be enriched safely through the exact MAL→AniList
+  // edge in Wikidata, which fixes the common "MAL present, AniList missing"
+  // case without touching playback identity.
+  if (row.mal_id && !row.anilist_id) {
+    const byMal = await fetchWikidataByMal(Number(row.mal_id));
+    if (byMal?.anilistId) {
+      if (args().apply) {
+        await prisma.show.update({ where: { id: row.id }, data: { anilist_id: byMal.anilistId } });
+      }
+      return {
+        showId: row.id,
+        title: row.title,
+        anilistId: byMal.anilistId,
+        malId: Number(row.mal_id),
+        score: 1,
+        status: "updated",
+        reason: "exact_mal_wikidata",
+      };
+    }
+  }
   // A TMDB→Wikidata edge is an exact cross-reference. Prefer it over any
   // title search so localized legacy rows can be repaired without guessing a
   // franchise or sequel from a fuzzy result.
   const wikidata = await fetchWikidataIdentity(Number(row.tmdb_id));
   if (wikidata?.malId) {
+    const enrichedAniList = wikidata.anilistId || (!row.anilist_id
+      ? (await fetchWikidataByMal(wikidata.malId))?.anilistId || null
+      : null);
     if (row.mal_id && row.mal_id !== wikidata.malId) {
-      return { showId: row.id, title: row.title, status: "conflict", reason: `existing_mal:${row.mal_id}` };
+      // Keep the existing MAL value, but an exact TMDB→AniList edge is still
+      // safe to persist when the row is missing AniList.
+      if (args().apply && !row.anilist_id && enrichedAniList) {
+        await prisma.show.update({ where: { id: row.id }, data: { anilist_id: enrichedAniList } });
+      }
+      return {
+        showId: row.id,
+        title: row.title,
+        ...(enrichedAniList ? { anilistId: enrichedAniList } : {}),
+        status: "conflict",
+        reason: `existing_mal:${row.mal_id}`,
+      };
     }
     const result: Result = {
       showId: row.id,
       title: row.title,
       matchedTitle: row.title,
       malId: wikidata.malId,
-      ...(wikidata.anilistId ? { anilistId: wikidata.anilistId } : {}),
+      ...(enrichedAniList ? { anilistId: enrichedAniList } : {}),
       score: 1,
       status: "updated",
       reason: "exact_tmdb_wikidata",
     };
     if (args().apply) {
-      await prisma.show.update({
-        where: { id: row.id },
-        data: {
-          mal_id: wikidata.malId,
-          ...(row.anilist_id || !wikidata.anilistId ? {} : { anilist_id: wikidata.anilistId }),
-        },
-      });
+      try {
+        await prisma.show.update({
+          where: { id: row.id },
+          data: {
+            mal_id: wikidata.malId,
+            ...(row.anilist_id || !enrichedAniList ? {} : { anilist_id: enrichedAniList }),
+          },
+        });
+      } catch (error: any) {
+        if (error?.code === "P2002") return { ...result, status: "conflict", reason: "mal_id_already_used" };
+        throw error;
+      }
     }
     return result;
   }

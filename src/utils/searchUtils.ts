@@ -20,8 +20,17 @@ export function normalizeTextStrict(text: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
+    // Keep non-Latin scripts intact so Japanese, Korean and Chinese titles
+    // remain searchable after punctuation/spacing is removed.
+    .replace(/[^\p{L}\p{N}]/gu, '')
     .trim();
+}
+
+function searchTokens(text: string): string[] {
+  return normalizeText(text)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 2);
 }
 
 /**
@@ -76,8 +85,47 @@ function fuzzyMatch(queryNorm: string, targetNorm: string): number {
     return Math.round(15 + ratio * 10); // 15-25
   }
 
+  // Para consultas de varias palabras, comparar cada token por separado. Esto
+  // corrige errores como "one pecie" → "One Piece" sin exigir que la cadena
+  // completa tenga la misma longitud ni penalizar artículos compartidos.
+  const queryTokens = searchTokens(queryNorm);
+  const words = searchTokens(targetNorm);
+  if (queryTokens.length > 1 && words.length > 0) {
+    let matched = 0;
+    let scoreSum = 0;
+    for (const token of queryTokens) {
+      const maxTokenDist = token.length <= 4 ? 1 : Math.min(2, Math.floor(token.length * 0.3));
+      let bestToken = 0;
+      for (const word of words) {
+        if (word === token) {
+          bestToken = Math.max(bestToken, 1);
+          continue;
+        }
+        if (word.includes(token) || token.includes(word)) {
+          // A short substring inside a much longer word is weaker than a
+          // complete token match ("one" in "lioness" must lose to "one").
+          bestToken = Math.max(bestToken, Math.min(token.length, word.length) / Math.max(token.length, word.length));
+          continue;
+        }
+        if (Math.abs(word.length - token.length) > 2) continue;
+        const distance = levenshtein(token, word);
+        if (distance <= maxTokenDist) {
+          const ratio = 1 - distance / Math.max(token.length, word.length);
+          bestToken = Math.max(bestToken, ratio);
+        }
+      }
+      if (bestToken > 0) {
+        matched += 1;
+        scoreSum += bestToken;
+      }
+    }
+    const coverage = matched / queryTokens.length;
+    if (coverage >= (queryTokens.length > 2 ? 0.66 : 1)) {
+      return Math.round(13 + coverage * 8 + (scoreSum / queryTokens.length) * 4);
+    }
+  }
+
   // Intentar fuzzy contra palabras individuales del título
-  const words = targetNorm.split(/\s+/);
   let bestWordScore = 0;
   for (const word of words) {
     if (Math.abs(word.length - queryNorm.length) > 2) continue;
@@ -127,6 +175,9 @@ export function scoreShow(s: Show, queryNormalized: string): number {
     const ts = normalizeTextStrict(s.title);
     if (t === queryNormalized) return 100;
     if (ts === qStrict) best = Math.max(best, 95);
+    // Permite escribir un título junto ("onepiece") aunque la ficha lo
+    // guarde separado ("One Piece").
+    if (qStrict.length >= 4 && ts.includes(qStrict)) best = Math.max(best, 86);
     if (best >= 95) return best;
     if (t.startsWith(queryNormalized)) best = Math.max(best, 60);
     else if (ts.startsWith(qStrict)) best = Math.max(best, 58);
@@ -142,6 +193,7 @@ export function scoreShow(s: Show, queryNormalized: string): number {
     const es = normalizeTextStrict(s.english_title);
     if (e === queryNormalized) best = Math.max(best, 90);
     else if (es === qStrict) best = Math.max(best, 85);
+    else if (qStrict.length >= 4 && es.includes(qStrict)) best = Math.max(best, 82);
     if (best >= 90) return best;
     if (e.startsWith(queryNormalized)) best = Math.max(best, 50);
     else if (es.startsWith(qStrict)) best = Math.max(best, 48);
@@ -174,6 +226,21 @@ export function scoreShow(s: Show, queryNormalized: string): number {
     if (best === 0) best = Math.max(best, fuzzyMatch(queryNormalized, o));
   }
 
+  // El catálogo público puede aportar títulos alternativos en varios idiomas
+  // sin que tengamos que duplicar fichas locales. Trátalos con la misma
+  // prioridad que el título original antes de caer en géneros.
+  if (Array.isArray(s.title_aliases)) {
+    for (const alias of s.title_aliases) {
+      const a = normalizeText(alias);
+      const as = normalizeTextStrict(alias);
+      if (a === queryNormalized) best = Math.max(best, 92);
+      else if (as === qStrict) best = Math.max(best, 88);
+      else if (qStrict.length >= 4 && as.includes(qStrict)) best = Math.max(best, 80);
+      if (best < 35 && a.includes(queryNormalized)) best = Math.max(best, 34);
+      if (best < 25) best = Math.max(best, fuzzyMatch(queryNormalized, a));
+    }
+  }
+
   // --- GENRES (solo si no hubo match en ningún título) ---
   if (best === 0) {
     const genres = Array.isArray(s.genres) ? s.genres.join(' ') : String(s.genres || '');
@@ -195,6 +262,6 @@ export function searchShows(shows: Show[], rawQuery: string): Show[] {
     .map((s) => ({ show: s, score: scoreShow(s, q) }))
     .filter((x) => x.score > 0);
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.score - a.score || a.show.title.localeCompare(b.show.title));
   return scored.map((x) => x.show);
 }

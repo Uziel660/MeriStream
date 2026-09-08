@@ -95,6 +95,16 @@ test('la ficha local usa el título localizado de TMDB sin perder sus episodios'
   await expect(details).toContainText('Reproducir película');
 });
 
+test('la búsqueda tolera un error de escritura y mantiene los títulos en otros idiomas', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await search.fill('one pecie');
+  await expect(page.locator('button.media-card').filter({ hasText: 'One Piece' }).first()).toBeVisible({ timeout: 30_000 });
+});
+
 test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas', async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

@@ -985,7 +985,15 @@ export function expandSearchVariants(query: string): string[] {
     "6": "vi", "7": "vii", "8": "viii", "9": "ix", "10": "x"
   };
 
-  const variants = new Set<string>([query.toLowerCase()]);
+  // Keep the original spelling for PostgreSQL full-text search, but also add
+  // an accent-free form.  The latter lets a query such as "muerte en familia"
+  // match a stored title with "Muerte en família" without requiring the
+  // unaccent extension (which is not present in every local deployment).
+  const stripDiacritics = (value: string) => value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const variants = new Set<string>([query.toLowerCase(), stripDiacritics(query)]);
 
   for (const [arabic, roman] of Object.entries(arabicToRoman)) {
     const reg = new RegExp(`\\b${arabic}\\b`, "gi");
@@ -1002,6 +1010,33 @@ export function expandSearchVariants(query: string): string[] {
   }
 
   return Array.from(variants);
+}
+
+function searchTitleFieldsSql(): string[] {
+  // `translate` is deliberately kept in the fallback expression instead of
+  // normalising every row on every request.  Prefix search only runs when the
+  // indexed/full-text path produces no hit, so ordinary catalog requests stay
+  // on the fast GIN/LIKE path.
+  const accentMap = "'áéíóúüñÁÉÍÓÚÜÑ'";
+  const plainMap = "'aeiouunAEIOUUN'";
+  return ["title", "english_title", "japanese_title", "original_title"].map((column) =>
+    `translate(lower(coalesce(\"${column}\", '')), ${accentMap}, ${plainMap})`
+  );
+}
+
+function fuzzySearchPrefixes(query: string): string[] {
+  const normalized = query
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  return [...new Set(normalized.split(/\s+/)
+    .filter((token) => token.length >= 3)
+    // Three characters are enough to correct a single typo while keeping a
+    // prefix query selective.  Longer words use four/five characters to avoid
+    // pulling the whole catalog into the fuzzy pass.
+    .map((token) => token.slice(0, token.length >= 6 ? 5 : 3)))];
 }
 
 export async function getShowsFromDb(search?: string, category?: string) {
@@ -1222,12 +1257,21 @@ export async function getShowsFromDbLite(
     const countParams: any[] = [tsQuery];
 
     const likeConditions: string[] = [];
+    const titleFields = searchTitleFieldsSql();
     for (const v of variants) {
       showsParams.push(`%${v}%`);
       countParams.push(`%${v}%`);
       const paramIdx = showsParams.length;
+      const fieldConditions = [
+        `LOWER(title) LIKE $${paramIdx}`,
+        `LOWER("english_title") LIKE $${paramIdx}`,
+        `LOWER("japanese_title") LIKE $${paramIdx}`,
+        `LOWER("original_title") LIKE $${paramIdx}`,
+        `LOWER(genres) LIKE $${paramIdx}`,
+        ...titleFields.map((field) => `${field} LIKE $${paramIdx}`),
+      ];
       likeConditions.push(
-        `(LOWER(title) LIKE $${paramIdx} OR LOWER("english_title") LIKE $${paramIdx} OR LOWER("japanese_title") LIKE $${paramIdx} OR LOWER(genres) LIKE $${paramIdx})`
+        `(${fieldConditions.join(" OR ")})`
       );
     }
     const orLikeSql = likeConditions.join(" OR ");
@@ -1293,7 +1337,80 @@ export async function getShowsFromDbLite(
       return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
     }
 
-    const allShows = await prisma.$queryRawUnsafe(showsQuery, ...showsParams);
+    let allShows = await prisma.$queryRawUnsafe(showsQuery, ...showsParams) as any[];
+
+    // A typo cannot be recovered by full-text/substring matching alone
+    // ("one pecie" has no exact `pecie` substring).  If the indexed path has
+    // no hit, run one bounded prefix pass.  Every significant query token must
+    // occur as a short prefix somewhere in the title fields, which keeps this
+    // selective for multi-word titles while still correcting one-character
+    // mistakes.  The pass is intentionally capped and only reaches the main
+    // path filter for those candidates, so normal searches keep their fast
+    // path and memory profile.
+    const hasLiteralTitleHit = allShows.some((show) => {
+      const title = String(show.title || '').toLowerCase();
+      const english = String(show.english_title || '').toLowerCase();
+      const original = String(show.original_title || '').toLowerCase();
+      return title.includes(s.toLowerCase()) || english.includes(s.toLowerCase()) || original.includes(s.toLowerCase());
+    });
+    if ((!hasLiteralTitleHit || allShows.length === 0) && s.length >= 3) {
+      const prefixes = fuzzySearchPrefixes(s);
+      if (prefixes.length > 0) {
+        let fuzzyShows: any[] = [];
+        try {
+          // pg_trgm is installed by the existing database setup script. Rank
+          // the complete title fields together so a typo in one word does not
+          // lose an otherwise exact multilingual title. The catch below keeps
+          // older deployments functional when the optional extension is not
+          // available yet.
+          const similarityFields = ["title", "english_title", "japanese_title", "original_title"]
+            .map((column) => `similarity(lower(coalesce(\"${column}\", '')), lower($1))`);
+          const similarityScore = `GREATEST(${similarityFields.join(', ')})`;
+          const trigramCategory = category ? `AND LOWER(category) LIKE $2` : '';
+          fuzzyShows = await prisma.$queryRawUnsafe(`
+            SELECT
+              "id", "title", "original_title", "japanese_title", "english_title",
+              "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
+              "poster_path", "backdrop_path", "category", "rating", "year",
+              "status", "genres", "created_at", ${similarityScore} AS rank
+            FROM "Show"
+            WHERE ${similarityScore} >= 0.22
+            ${trigramCategory}
+            ORDER BY rank DESC, "created_at" DESC
+            LIMIT 500
+          `, s, ...(category ? [`%${category.toLowerCase()}%`] : [])) as any[];
+        } catch {
+          const fuzzyParams: any[] = [];
+          const prefixClauses = prefixes.map((prefix) => {
+            // Two-character prefixes are the compatibility fallback for
+            // transpositions such as "pecie" → "piece". Requiring every
+            // token keeps the result bounded even without pg_trgm.
+            const shortPrefix = prefix.slice(0, 2);
+            fuzzyParams.push(`%${shortPrefix}%`);
+            const idx = fuzzyParams.length;
+            return `(${titleFields.map((field) => `${field} LIKE $${idx}`).join(" OR ")})`;
+          });
+          if (category) fuzzyParams.push(`%${category.toLowerCase()}%`);
+          const categorySql = category ? `AND LOWER(category) LIKE $${fuzzyParams.length}` : "";
+          fuzzyShows = await prisma.$queryRawUnsafe(`
+            SELECT
+              "id", "title", "original_title", "japanese_title", "english_title",
+              "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
+              "poster_path", "backdrop_path", "category", "rating", "year",
+              "status", "genres", "created_at", 0 AS rank
+            FROM "Show"
+            WHERE ${prefixClauses.join(" AND ")}
+            ${categorySql}
+            ORDER BY "created_at" DESC
+            LIMIT 500
+          `, ...fuzzyParams) as any[];
+        }
+        // Preserve exact/full-text hits and add the bounded fuzzy candidates;
+        // deduplication below keeps one row per canonical identity.
+        allShows = [...allShows, ...fuzzyShows];
+      }
+    }
+
     const playableShows = await filterShowsToMainPath(allShows as any[]);
     // Defense in depth: historical legacy Show rows may contain the same work
     // more than once. Canonical identity is applied before pagination so both

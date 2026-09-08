@@ -20,6 +20,7 @@
     "deploy": "python tools/deploy_fast.py",
     "fast-start": "npm run ingest:all -- --fast",
     "repair:tmdb": "npx tsx tools/repair-tmdb-identities.ts",
+    "repair:anime-identities": "npx tsx tools/repair-anime-identities.ts",
     "repair:catalog-links": "npx tsx tools/cleanup-landing-pages-from-episodes.ts",
     "reconcile:tmdb": "npx tsx tools/reconcile-tmdb-seasons.ts",
     "backfill:canonical": "npx tsx tools/backfill-canonical-locators.ts",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft } from 'lucide-react';
+import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { PreferencesPanel } from './PreferencesPanel';
 
 export interface FilterItem {
   id: string;
@@ -40,6 +41,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const [query, setQuery] = useState(searchQuery || '');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [atTop, setAtTop] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
@@ -151,8 +153,11 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                     <span className="account-name">{user.username}</span><ChevronDown size={15} />
                   </button>
                   {isUserMenuOpen && (
-                    <div id="account-menu" className="account-menu">
+                      <div id="account-menu" className="account-menu">
                       <strong>{user.username}</strong><p>Tu cuenta MeriStream</p>
+                      <button type="button" className="flex w-full items-center gap-2 rounded-lg border border-zinc-700/70 bg-zinc-900/70 px-3 py-2 text-left text-xs text-zinc-200 transition hover:border-amber-400/50 hover:bg-zinc-800" onClick={() => { setPreferencesOpen(true); setIsUserMenuOpen(false); }}>
+                        <SlidersHorizontal size={15} className="text-amber-400" />Preferencias de reproducción
+                      </button>
                       <span className="account-color-label">Color de perfil</span>
                       <div className="account-colors">{Object.keys(AVATAR_BG_MAP).map(colorKey => (
                         <button key={colorKey} type="button" onClick={() => updateAvatar(colorKey)} aria-label={`Color de perfil: ${colorKey}`} aria-pressed={user.avatar === colorKey} className="avatar-choice"><span className={AVATAR_BG_MAP[colorKey].split(' ')[0]} /></button>
@@ -181,6 +186,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
           ))}</nav>
         </div>
       </div>
+      {preferencesOpen && <PreferencesPanel userId={user?.id} onClose={() => setPreferencesOpen(false)} />}
     </header>
   );
 };

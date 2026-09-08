@@ -56,7 +56,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
   - respaldo local ante 502 de TMDB limitado a `limit=60`: correcto.
   - búsqueda de usuario con el typo `one pecie` → tarjeta `One Piece`: correcta.
   - flujo de usuario TMDB “La isla del minotauro” → ficha de 10 episodios → player interno: `Yashmak-yonder (VIDSRC)`, un elemento `<video>`, cero iframes.
-  - matriz conjunta de audio, exposición y playback Cinecalidad/LatAnime/Gnula/TioAnime: 6/6 correctas.
+  - límites de proveedores, VidSrc sin iframe, WebVTT interno y exposición LatAnime/Zoko: 5/5 correctas.
 - Pruebas reales de red: catálogo, resolución, manifiestos, segmentos y subtítulos internos WebVTT.
 
 ## Límites conocidos

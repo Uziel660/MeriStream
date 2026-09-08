@@ -66,6 +66,43 @@ function mapInternalSubtitleTrack(raw: any, id: string): any | null {
   };
 }
 
+function mapCatalogShow(s: any): Show {
+  return {
+    id: s.id || `show-${Math.random()}`,
+    title: s.title || 'Sin Título',
+    tmdb_id: s.tmdb_id ?? null,
+    imdb_id: s.imdb_id ?? null,
+    anilist_id: s.anilist_id ?? null,
+    mal_id: s.mal_id ?? null,
+    kitsu_id: s.kitsu_id ?? null,
+    kind: s.kind || s.category || undefined,
+    original_title: s.original_title || null,
+    english_title: s.english_title || null,
+    japanese_title: s.japanese_title || null,
+    description: s.description || s.synopsis || '',
+    synopsis: s.description || s.synopsis || '',
+    poster_url: s.poster_url || '',
+    banner_url: s.banner_url || s.poster_url || '',
+    backdrop_url: s.backdrop_url || s.banner_url || '',
+    poster_path: s.poster_path ?? null,
+    backdrop_path: s.backdrop_path ?? null,
+    category: s.category || 'movie',
+    rating: Number(s.rating || 0),
+    year: s.year ?? null,
+    genres: Array.isArray(s.genres)
+      ? s.genres
+      : String(s.genres || '').split(',').map((g: string) => g.trim()).filter(Boolean),
+    episode_count: s.episode_count || s._count?.episodes || 0,
+    is_trending: Boolean(s.is_trending),
+    sources: {
+      master_m3u8: s.sources?.master_m3u8 || '',
+      fallback_mp4: null,
+      qualities: [],
+      subtitles: [],
+    },
+  } as Show;
+}
+
 export function App() {
   const { user, isAuthenticated } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
@@ -351,43 +388,15 @@ export function App() {
     let isCancelled = false;
     const fetchServerSearch = async () => {
       try {
-        const res = await fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`);
+        const publicRes = await fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`);
+        const res = publicRes.ok
+          ? publicRes
+          : await fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`);
         if (res.ok && !isCancelled) {
           const data = await res.json();
           const list = Array.isArray(data) ? data : data.shows || [];
           if (Array.isArray(list)) {
-            const mapped: Show[] = list.map((s: any) => ({
-              id: s.id || `show-${Math.random()}`,
-              title: s.title || 'Sin Título',
-              tmdb_id: s.tmdb_id ?? null,
-              anilist_id: s.anilist_id ?? null,
-              mal_id: s.mal_id ?? null,
-              kind: s.kind || s.category || undefined,
-              original_title: s.original_title || null,
-              english_title: s.english_title || null,
-              japanese_title: s.japanese_title || null,
-              normalized_title: s.normalized_title || null,
-              description: s.description || s.synopsis || '',
-              synopsis: s.description || s.synopsis || '',
-              poster_url: s.poster_url || '',
-              banner_url: s.banner_url || s.poster_url || '',
-              backdrop_url: s.backdrop_url || s.banner_url || '',
-              poster_path: s.poster_path ?? null,
-              backdrop_path: s.backdrop_path ?? null,
-              category: s.category || 'movie',
-              rating: s.rating || 8.2,
-              year: s.year || 2024,
-              genres: Array.isArray(s.genres)
-                ? s.genres
-                : String(s.genres || '').split(',').map((g: string) => g.trim()).filter(Boolean),
-              episode_count: s._count?.episodes || 0,
-              sources: {
-                master_m3u8: `/api/v1/media/${s.id}/stream`,
-                fallback_mp4: null,
-                qualities: [],
-                subtitles: [],
-              },
-            }) as Show);
+            const mapped: Show[] = list.map(mapCatalogShow);
             setServerSearchResults(mapped);
           }
         }
@@ -456,6 +465,9 @@ export function App() {
       // Fase 2 (async): validar episodeId contra la BD vía /api/v1/play (404 → huérfano)
       await Promise.all(
         phase1Valid.map(async (it) => {
+          // TMDB-backed virtual episodes are resolved by the provider gateway;
+          // they intentionally have no legacy `/api/v1/play` row to validate.
+          if (/^tmdb-(movie|series|anime)-\d+-s\d+-e\d+$/.test(String(it.episodeId || ''))) return;
           try {
             const res = await fetch(`/api/v1/play/${encodeURIComponent(it.episodeId)}`, {
               method: 'GET',
@@ -475,40 +487,15 @@ export function App() {
   // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
   const fetchFreshCatalog = async (isBackground = false) => {
     try {
-      const res = await fetch('/api/v1/shows?lite=true&limit=25000');
+      const publicRes = await fetch('/api/v1/catalog/public?kind=all&mode=trending&limit=60');
+      const res = publicRes.ok
+        ? publicRes
+        : await fetch('/api/v1/shows?lite=true&limit=25000');
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.shows || [];
         if (Array.isArray(list)) {
-          const safeShows: Show[] = list.map((s: any) => ({
-            id: s.id || `show-${Math.random()}`,
-            title: s.title || 'Sin Título',
-            tmdb_id: s.tmdb_id ?? null,
-            anilist_id: s.anilist_id ?? null,
-            mal_id: s.mal_id ?? null,
-            kind: s.kind || s.category || undefined,
-            original_title: s.original_title || null,
-            english_title: s.english_title || null,
-            japanese_title: s.japanese_title || null,
-            description: s.description || s.synopsis || '',
-            synopsis: s.description || s.synopsis || '',
-            poster_url: s.poster_url || '',
-            banner_url: s.banner_url || s.poster_url || '',
-            backdrop_url: s.backdrop_url || s.banner_url || '',
-            poster_path: s.poster_path ?? null,
-            backdrop_path: s.backdrop_path ?? null,
-            category: s.category || 'movie',
-            rating: s.rating || 8.2,
-            year: s.year || 2024,
-            genres: s.genres || ['Multimedia'],
-            episode_count: s._count?.episodes || 0,
-            sources: {
-              master_m3u8: `/api/v1/media/${s.id}/stream`,
-              fallback_mp4: null,
-              qualities: [],
-              subtitles: [],
-            },
-          }) as Show);
+          const safeShows: Show[] = list.map(mapCatalogShow);
 
           // Only re-render if catalog actually changed (avoids SmartImage reset)
           if (isBackground) {

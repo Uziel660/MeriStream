@@ -705,7 +705,10 @@ export async function resolveVidSrcEmbed(
 
 export class VidSrcClient implements DirectStreamProvider {
   readonly id = "vidsrc";
-  readonly kinds = ["movie", "series"] as const;
+  // Anime titles are TMDB TV works from the gateway's point of view. Keeping
+  // this in the direct provider means a public TMDB anime card can resolve
+  // without importing a local scraper row first.
+  readonly kinds = ["movie", "series", "anime"] as const;
 
   private readonly origins: string[];
   private readonly fetcher: FetchLike;

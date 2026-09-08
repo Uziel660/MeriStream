@@ -13,6 +13,15 @@ import type { ShowDetail, Episode } from '../types';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { WatchProgress } from './ContinueWatching';
 
+function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anime'; tmdbId: number } | null {
+  const match = /^tmdb-(movie|series|anime)-(\d+)$/.exec(String(value || ''));
+  if (!match) return null;
+  const tmdbId = Number(match[2]);
+  return Number.isInteger(tmdbId) && tmdbId > 0
+    ? { kind: match[1] as 'movie' | 'series' | 'anime', tmdbId }
+    : null;
+}
+
 interface MediaDetailsModalProps {
   showId: string | null;
   isOpen?: boolean;
@@ -43,7 +52,12 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setError(null);
     setEpisodeSearch('');
 
-    fetch(`/api/v1/shows/${showId}`)
+    const publicIdentity = parsePublicCatalogId(showId);
+    const detailUrl = publicIdentity
+      ? `/api/v1/catalog/public/${publicIdentity.kind}/${publicIdentity.tmdbId}`
+      : `/api/v1/shows/${showId}`;
+
+    fetch(detailUrl)
       .then((res) => {
         if (!res.ok) throw new Error('No se pudo cargar la información del título.');
         return res.json();

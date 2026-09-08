@@ -95,6 +95,7 @@ import { providerGatewayRouter } from "./server/providerGatewayRouter";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
+import { getPublicCatalog, getPublicCatalogDetail } from "./server/publicCatalog";
 import {
   adminLogin,
   adminLogout,
@@ -1298,6 +1299,39 @@ async function startServer() {
   // Direct TMDB/AniList provider gateway: public JIT playback data, no iframe providers.
   app.use(providerGatewayRouter());
   app.use(subtitleRouter(subtitleGateway));
+
+  // Public catalog identity is TMDB-first and deliberately independent from
+  // imported provider rows. A card can therefore be browsed immediately while
+  // Cinecalidad/Gnula/LatAnime/Zoko availability is resolved later by ID.
+  app.get("/api/v1/catalog/public", async (req: Request, res: Response) => {
+    try {
+      const result = await getPublicCatalog({
+        kind: req.query.kind,
+        query: req.query.query || req.query.search,
+        page: req.query.page ? Number(req.query.page) : 1,
+        limit: req.query.limit ? Number(req.query.limit) : 40,
+        mode: typeof req.query.mode === "string" ? req.query.mode : "trending",
+      });
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+      res.setHeader("X-Catalog-Source", result.source);
+      return res.json(result);
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || "TMDB catalog unavailable" });
+    }
+  });
+
+  app.get("/api/v1/catalog/public/:kind/:tmdbId", async (req: Request, res: Response) => {
+    try {
+      const detail = await getPublicCatalogDetail(req.params.kind, req.params.tmdbId);
+      if (!detail) return res.status(400).json({ error: "kind/tmdbId inválidos" });
+      res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=300");
+      res.setHeader("X-Catalog-Source", "tmdb");
+      return res.json(detail);
+    } catch (error: any) {
+      const status = String(error?.message || "").includes("TMDB HTTP 404") ? 404 : 502;
+      return res.status(status).json({ error: error?.message || "TMDB title unavailable" });
+    }
+  });
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.

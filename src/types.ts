@@ -16,6 +16,7 @@ export interface Show {
   id: string;
   title: string;
   tmdb_id?: number | null;
+  imdb_id?: string | null;
   anilist_id?: string | null;
   mal_id?: number | null;
   kitsu_id?: string | null;

@@ -138,6 +138,27 @@ video.m3u8`, 200, "application/vnd.apple.mpegurl");
     expect(sources[0]?.url).not.toMatch(/\/embed\//);
   });
 
+  it("treats a TMDB anime work as a TV route", async () => {
+    const seen: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.includes("/embed/tv/21/1/1")) {
+        return mockResponse('<iframe src="https://cloudnestra.com/player/anime"></iframe>');
+      }
+      if (url === "https://cloudnestra.com/player/anime") {
+        return mockResponse("<script>var source = { file: 'https://cdn.example/anime/master.m3u8' };</script>");
+      }
+      return mockResponse("not found", 404);
+    });
+
+    const client = new VidSrcClient(["https://vidsrc.ir"], fetcher as unknown as typeof fetch);
+    const sources = await client.resolve({ tmdbId: 21, kind: "anime", season: 1, episode: 1 });
+
+    expect(seen.some((url) => url.includes("/embed/tv/21/1/1"))).toBe(true);
+    expect(sources[0]?.url).toBe("https://cdn.example/anime/master.m3u8");
+  });
+
   it("resolves the modern data-api -> player -> stream API chain", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

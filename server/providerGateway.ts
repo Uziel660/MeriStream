@@ -17,6 +17,7 @@ import type {
 } from "./providers/api";
 import { inferStreamType } from "./providers/api/types";
 import { hasSignedQuery } from "./resolutionMetadata";
+import { getPublicCatalogDetail } from "./publicCatalog";
 
 export type GatewayKind = DirectMediaKind;
 
@@ -99,6 +100,10 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
         })
       : Promise.resolve(null),
   ]);
+  let publicAnime: Awaited<ReturnType<typeof getPublicCatalogDetail>> = null;
+  if (req.kind === "anime" && !legacy?.mal_id && !legacy?.anilist_id) {
+    publicAnime = await getPublicCatalogDetail("anime", req.tmdbId).catch(() => null);
+  }
   return {
     tmdbId: req.tmdbId,
     kind: req.kind,
@@ -106,10 +111,10 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
     episode: req.episode || 1,
     preferredAudio: req.preferredAudio,
     preferredSubtitles: req.preferredSubtitles,
-    title: canonical?.title || legacy?.title || null,
-    year: canonical?.year || legacy?.year || null,
-    anilistId: legacy?.anilist_id || null,
-    malId: legacy?.mal_id || null,
+    title: canonical?.title || legacy?.title || publicAnime?.title || null,
+    year: canonical?.year || legacy?.year || publicAnime?.year || null,
+    anilistId: legacy?.anilist_id || publicAnime?.anilist_id || null,
+    malId: legacy?.mal_id || publicAnime?.mal_id || null,
     kitsuId: legacy?.kitsu_id || null,
   };
 }
@@ -145,7 +150,43 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     select: { id: true },
   });
   const mediaItemIds = Array.from(new Set(mediaItems.map((media) => media.id)));
-  if (mediaItemIds.length === 0) return { direct: [], fallbackCandidates: [] };
+  const fallbackCandidates: GatewayFallbackCandidate[] = [];
+
+  // Zoko has no dependable catalog API. Once the public TMDB detail has been
+  // crosswalked to MAL, its canonical public locator is enough to resolve the
+  // stream on demand without importing a duplicate anime card into the DB.
+  if (req.kind === "anime" && context.malId) {
+    const episode = req.episode || 1;
+    const subLocator = `https://zokoanime.video/stream/mal/${context.malId}/${episode}/sub`;
+    const dubLocator = `https://zokoanime.video/stream/mal/${context.malId}/${episode}/dub`;
+    fallbackCandidates.push(
+      {
+        provider: "zokoanime",
+        providerGroup: "spanish-local",
+        url: subLocator,
+        canonicalLocator: subLocator,
+        type: "embed",
+        audioLanguage: "ja",
+        subtitleLanguage: null,
+        subtitles: [],
+        score: 120,
+        sourceStatus: "identity-locator",
+      },
+      {
+        provider: "zokoanime",
+        providerGroup: "spanish-local",
+        url: dubLocator,
+        canonicalLocator: dubLocator,
+        type: "embed",
+        audioLanguage: "en",
+        subtitleLanguage: null,
+        subtitles: [],
+        score: 105,
+        sourceStatus: "identity-locator",
+      },
+    );
+  }
+  if (mediaItemIds.length === 0) return { direct: [], fallbackCandidates };
 
   const episodes = await prisma.mediaEpisode.findMany({
     where: {
@@ -155,10 +196,9 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     },
     include: { links: true },
   });
-  if (episodes.length === 0) return { direct: [], fallbackCandidates: [] };
+  if (episodes.length === 0) return { direct: [], fallbackCandidates };
 
   const direct: GatewaySource[] = [];
-  const fallbackCandidates: GatewayFallbackCandidate[] = [];
   const seen = new Set<string>();
   for (const episode of episodes) for (const link of episode.links) {
     const provider = normalizeProviderId(link.source_site);

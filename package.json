@@ -21,6 +21,7 @@
     "fast-start": "npm run ingest:all -- --fast",
     "repair:tmdb": "npx tsx tools/repair-tmdb-identities.ts",
     "repair:tmdb:safe": "npx tsx tools/repair-tmdb-identities-safe.ts",
+    "repair:source-languages": "npx tsx tools/repair-source-languages.ts",
     "repair:anime-identities": "npx tsx tools/repair-anime-identities.ts",
     "repair:catalog-links": "npx tsx tools/cleanup-landing-pages-from-episodes.ts",
     "reconcile:tmdb": "npx tsx tools/reconcile-tmdb-seasons.ts",

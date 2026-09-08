@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import { prisma } from "./db";
 import { optionalAuth, AuthRequest } from "./auth";
 import { filterShowsToMainPath } from "./showService";
+import { repairTmdbPosters } from "./publicCatalog";
 
 const recommendationsRouter = Router();
 
@@ -161,9 +162,13 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       ...topRatedGenreShows,
       ...discoveryShows,
     ];
-    const playableRecommended = await filterShowsToMainPath(recommendedCandidates as any[]);
+    const repairedRecommended = await repairTmdbPosters(recommendedCandidates as any[]);
+    const repairedById = new Map(repairedRecommended.map((show: any) => [show.id, show]));
+    const playableRecommended = await filterShowsToMainPath(repairedRecommended as any[]);
     const playableRecommendedIds = new Set(playableRecommended.map((show) => show.id));
-    const visible = (items: any[]) => items.filter((show) => playableRecommendedIds.has(show.id));
+    const visible = (items: any[]) => items
+      .filter((show) => playableRecommendedIds.has(show.id))
+      .map((show) => repairedById.get(show.id) || show);
     const visiblePersonalized = visible(personalizedShows);
     const visibleBecauseWatched = visible(becauseYouWatchedShows);
     const visibleTopRated = visible(topRatedGenreShows);
@@ -264,9 +269,13 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
     ]);
 
     const allCandidates = [...topHeroPicks, ...popularAnime, ...topMoviesSeries, ...trendingAll];
-    const playable = await filterShowsToMainPath(allCandidates as any[]);
+    const repairedCandidates = await repairTmdbPosters(allCandidates as any[]);
+    const repairedById = new Map(repairedCandidates.map((show: any) => [show.id, show]));
+    const playable = await filterShowsToMainPath(repairedCandidates as any[]);
     const playableIds = new Set(playable.map((show) => show.id));
-    const visible = (items: any[]) => items.filter((show) => playableIds.has(show.id));
+    const visible = (items: any[]) => items
+      .filter((show) => playableIds.has(show.id))
+      .map((show) => repairedById.get(show.id) || show);
     const visibleHeroPicks = visible(topHeroPicks);
     const visibleAnime = visible(popularAnime);
     const visibleMovies = visible(topMoviesSeries);

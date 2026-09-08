@@ -133,6 +133,13 @@ function imageUrl(path: string | null | undefined, size: "w500" | "w780" = "w500
   return path ? `${IMAGE_BASE}/${size}${path}` : "";
 }
 
+function isSuspiciousPosterUrl(url: unknown): boolean {
+  // TMDB occasionally returns a tiny transparent/logo PNG in poster_path
+  // (for example, a 177x21 title wordmark). It is a valid CDN URL but it is
+  // not a usable vertical poster for a card.
+  return /\.(?:png|svg)(?:[?#]|$)/i.test(String(url || ""));
+}
+
 function yearFrom(item: TmdbItem): number | null {
   const value = item.release_date || item.first_air_date || "";
   const match = /^(\d{4})/.exec(value);
@@ -238,6 +245,73 @@ async function fetchWikidataIdentity(tmdbId: number): Promise<AnimeIdentity | nu
   } catch {
     return null;
   }
+}
+
+type PosterRepairTarget = {
+  tmdb_id?: number | null;
+  kind?: PublicCatalogKind | string | null;
+  category?: PublicCatalogKind | string | null;
+  poster_url?: string | null;
+  poster_path?: string | null;
+};
+
+/** Fetches only the canonical TMDB artwork for a title whose list result
+ * contains a logo/wordmark instead of a poster. The API key stays server-side. */
+export async function getPublicCatalogVisual(kindValue: unknown, tmdbIdValue: unknown): Promise<{
+  poster_url: string;
+  poster_path: string | null;
+} | null> {
+  const kind = parseKind(kindValue);
+  const tmdbId = Number.parseInt(String(tmdbIdValue || ""), 10);
+  if (kind === "all" || !Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+
+  const request = async (path: string) => tmdbFetch<TmdbDetail>(path, {
+    language: "es-419",
+  });
+  let detail: TmdbDetail;
+  try {
+    detail = await request(kind === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`);
+  } catch {
+    if (kind !== "anime") return null;
+    try {
+      detail = await request(`/movie/${tmdbId}`);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!detail.poster_path || isSuspiciousPosterUrl(detail.poster_path)) return null;
+  return {
+    poster_url: imageUrl(detail.poster_path),
+    poster_path: detail.poster_path,
+  };
+}
+
+/** Repairs suspicious TMDB artwork with bounded concurrency so a catalog
+ * page never opens dozens of detail requests at once. */
+export async function repairTmdbPosters<T extends PosterRepairTarget>(shows: T[]): Promise<T[]> {
+  const candidates = shows.filter((show) =>
+    Number.isInteger(Number(show.tmdb_id)) &&
+    Number(show.tmdb_id) > 0 &&
+    isSuspiciousPosterUrl(show.poster_url),
+  );
+  if (candidates.length === 0) return shows;
+
+  const repaired = new Map<number, { poster_url: string; poster_path: string | null }>();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < candidates.length) {
+      const candidate = candidates[cursor++];
+      const visual = await getPublicCatalogVisual(candidate.kind || candidate.category, candidate.tmdb_id);
+      if (visual) repaired.set(Number(candidate.tmdb_id), visual);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(5, candidates.length) }, () => worker()));
+
+  return shows.map((show) => {
+    const visual = repaired.get(Number(show.tmdb_id));
+    return visual ? { ...show, ...visual } : show;
+  });
 }
 
 async function fetchAnimeIdentity(tmdbId: number, title: string, originalTitle?: string | null): Promise<AnimeIdentity> {
@@ -456,7 +530,7 @@ export async function getPublicCatalog(options: {
     pages: await Promise.all(Array.from({ length: pagesNeeded }, (_unused, offset) =>
       fetchList(entry, query, page + offset, mode))),
   })));
-  const shows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
+  const mappedShows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
     const results = response.results || [];
     const filtered = entryKind === "anime"
       ? results.filter(isAnimeItem)
@@ -476,6 +550,7 @@ export async function getPublicCatalog(options: {
       return mapTmdbItem(item, outputKind, !query && mode === "trending");
     });
   }));
+  const shows = await repairTmdbPosters(mappedShows);
   const uniqueMap = new Map<string, PublicCatalogShow>();
   for (const show of shows) {
     const namespace = show.kind === "movie" ? "movie" : "tv";

@@ -75,6 +75,10 @@ export function isLowQualityImage(url?: string | null): boolean {
     u.includes("no_poster") ||
     u.includes("nopic") ||
     u.includes("no-cover") ||
+    // Some imports contain a TMDB title wordmark as a PNG (for example a
+    // 177x21 transparent logo). Prefer the canonical poster_path during the
+    // normal metadata backfill instead of persisting that art as a poster.
+    (u.includes("image.tmdb.org/t/p/") && /\.(?:png|svg)(?:[?#]|$)/i.test(u)) ||
     u.includes("blank.png") ||
     u.includes("dummyimage") ||
     u.includes("veranimes.net") ||

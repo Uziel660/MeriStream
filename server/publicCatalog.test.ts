@@ -105,6 +105,35 @@ describe("TMDB public catalog", () => {
     expect(result.shows.map((show) => show.tmdb_id)).toEqual([1, 11, 21, 2, 12, 22]);
   });
 
+  it("replaces a TMDB title-art PNG with the canonical detail poster", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/trending/tv/week")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 1,
+          total_pages: 1,
+          results: [{ id: 300529, name: "Te irás al infierno", poster_path: "/title-art.png", first_air_date: "2026-01-01" }],
+        }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/tv/300529")) {
+        return new Response(JSON.stringify({
+          id: 300529,
+          name: "Te irás al infierno",
+          poster_path: "/canonical-poster.jpg",
+          backdrop_path: "/backdrop.jpg",
+          first_air_date: "2026-01-01",
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "series", limit: 1 });
+    expect(result.shows[0]?.poster_path).toBe("/canonical-poster.jpg");
+    expect(result.shows[0]?.poster_url).toContain("/w500/canonical-poster.jpg");
+  });
+
   it("creates virtual episodes that point back to the canonical TMDB id", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

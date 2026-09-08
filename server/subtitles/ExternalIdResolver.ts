@@ -142,26 +142,36 @@ export function normalizePreferredLanguages(values?: string[]): string[] {
   const raw = values?.length ? values : ["es-419", "es", "en"];
   const normalized = raw
     .map((value) => normalizeLanguageTag(value))
-    .filter((value): value is string => Boolean(value));
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, all) => all.indexOf(value) === index);
 
-  // `es` is historically what the frontend sent for "Spanish", while newer
-  // providers correctly distinguish Latin America as `es-419`. Treat both as
-  // a compatible family so improving provider metadata can never make a valid
-  // subtitle disappear. In MeriStream's Spanish-first default, Latin Spanish
-  // is preferred unless the caller explicitly requested `es-419`/`es` order.
-  const expanded: string[] = [];
-  for (const language of normalized) {
-    if (language === "es") {
-      if (!expanded.includes("es-419")) expanded.push("es-419");
-      if (!expanded.includes("es")) expanded.push("es");
-      continue;
-    }
-    if (language === "es-419") {
-      if (!expanded.includes("es-419")) expanded.push("es-419");
-      if (!expanded.includes("es")) expanded.push("es");
-      continue;
-    }
-    if (!expanded.includes(language)) expanded.push(language);
+  // Preserve an explicit regional order such as Latino → Castellano → generic
+  // Spanish. Compatibility expansion is only needed when an old client sends
+  // one Spanish bucket and therefore did not express a regional preference.
+  const spanishVariants = normalized.filter((language) => language === "es" || language === "es-419" || language === "es-ES");
+  if (spanishVariants.length > 1) return normalized;
+
+  if (spanishVariants[0] === "es") {
+    const index = normalized.indexOf("es");
+    return [
+      ...normalized.slice(0, index),
+      "es-419",
+      "es-ES",
+      "es",
+      ...normalized.slice(index + 1),
+    ].filter((value, valueIndex, all) => all.indexOf(value) === valueIndex);
   }
-  return expanded;
+  if (spanishVariants[0] === "es-419") {
+    const index = normalized.indexOf("es-419");
+    return [
+      ...normalized.slice(0, index),
+      "es-419",
+      "es",
+      ...normalized.slice(index + 1),
+    ].filter((value, valueIndex, all) => all.indexOf(value) === valueIndex);
+  }
+
+  // An explicit Castellano-only request stays Castellano-only; falling back to
+  // Latino would contradict the user's regional preference.
+  return normalized;
 }

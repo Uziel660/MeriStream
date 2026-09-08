@@ -44,6 +44,22 @@ test('la portada renderiza tarjetas del catálogo público como un usuario', asy
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
 
+test('el respaldo local queda acotado si TMDB está temporalmente fuera de servicio', async ({ page }) => {
+  test.setTimeout(90_000);
+  let fallbackUrl = '';
+  await page.route('**/api/v1/catalog/public**', async (route) => {
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'TMDB unavailable' }) });
+  });
+  await page.route('**/api/v1/shows**', async (route) => {
+    fallbackUrl = route.request().url();
+    await route.continue();
+  });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => fallbackUrl, { timeout: 30_000 }).not.toBe('');
+  expect(new URL(fallbackUrl).searchParams.get('limit')).toBe('60');
+  expect(fallbackUrl).not.toContain('25000');
+});
+
 test('la búsqueda conserva la ficha local y descarta el PNG de título de TMDB', async ({ page }) => {
   test.setTimeout(60_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

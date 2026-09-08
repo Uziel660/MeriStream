@@ -1,4 +1,4 @@
-import { prisma, normalizeTitle, normalizeBaseTitle } from "./db";
+import { prisma, normalizeTitle } from "./db";
 import {
   getProviderPriority,
   isProviderAllowedInMainPath,
@@ -171,15 +171,21 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
 }> {
   const context = await mediaContext(req);
   const normalized = context.title ? normalizeTitle(context.title) : "";
-  const baseNormalized = context.title ? normalizeBaseTitle(context.title) : "";
-  const identityOr: Array<Record<string, unknown>> = [{ tmdb_id: req.tmdbId }];
-  if (normalized) identityOr.push({ normalized_title: normalized });
-  if (baseNormalized && baseNormalized !== normalized) identityOr.push({ base_normalized_title: baseNormalized });
-
-  const mediaItems = await prisma.mediaItem.findMany({
-    where: { kind: req.kind, OR: identityOr } as any,
+  // TMDB is the canonical identity. A title match is only a recovery path for
+  // legacy rows that were imported before IDs were available. Never combine an
+  // exact-ID row with title/base-title rows: doing so can attach an old alias
+  // (for example "Overflow latino") to the canonical work and make a resolver
+  // play the wrong episode.
+  let mediaItems = await prisma.mediaItem.findMany({
+    where: { kind: req.kind, tmdb_id: req.tmdbId },
     select: { id: true },
   });
+  if (mediaItems.length === 0 && normalized) {
+    mediaItems = await prisma.mediaItem.findMany({
+      where: { kind: req.kind, tmdb_id: null, normalized_title: normalized },
+      select: { id: true },
+    });
+  }
   const mediaItemIds = Array.from(new Set(mediaItems.map((media) => media.id)));
   const fallbackCandidates: GatewayFallbackCandidate[] = [];
 

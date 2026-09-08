@@ -423,8 +423,12 @@ export function App() {
         const merged = new Map<string, Show>();
         for (const show of [...localShows, ...publicShows]) {
           const category = String(show.category || show.kind || 'media').toLowerCase();
+          const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
           const key = show.tmdb_id
-            ? `tmdb:${category}:${show.tmdb_id}`
+            // TMDB uses one namespace for all TV/anime entries. Keeping the
+            // namespace (instead of the display category) prevents an anime
+            // returned as both `series` and `anime` from becoming two cards.
+            ? `tmdb:${namespace}:${show.tmdb_id}`
             : `id:${show.id}`;
           if (!merged.has(key)) merged.set(key, show);
         }

@@ -28,8 +28,20 @@ const META_CACHE_TTL_MS = 10 * 60 * 1000;
  */
 const ETOOMANY_RETRY_DELAYS_MS = [2000, 4000];
 
+function errorCode(err: unknown): number | string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "number" || typeof code === "string" ? code : undefined;
+}
+
+function errorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err ?? "");
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" ? message : String(err);
+}
+
 function isEtooMany(err: unknown): boolean {
-  return err?.code === -6 || /ETOOMANY|too many concurrent/i.test(String((err as any)?.message ?? ""));
+  return Number(errorCode(err)) === -6 || /ETOOMANY|too many concurrent/i.test(errorMessage(err));
 }
 
 interface CachedMeta {
@@ -214,7 +226,7 @@ export async function handleMegaStream(req: Request, res: Response): Promise<voi
       }) as Readable;
 
     // El error -6 puede salir al abrir la descarga; reintentar con backoff.
-    let stream: Readable;
+    let stream: Readable | null = null;
     try {
       stream = openStream();
     } catch (err) {
@@ -230,6 +242,7 @@ export async function handleMegaStream(req: Request, res: Response): Promise<voi
       }
       if (!stream) throw err;
     }
+    if (!stream) throw new Error("MEGA: no se pudo abrir el stream tras reintentos");
 
     await Promise.race([
       pipeline(stream, res),

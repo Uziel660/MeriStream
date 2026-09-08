@@ -1985,8 +1985,22 @@ async function startServer() {
             );
             for (const cand of candidates) {
               const resolvedMeta = await resolutionCoordinator.resolve(cand);
-              if (resolvedMeta.resolved && resolvedMeta.type === "direct"
-                && await respondWithValidated(resolvedMeta, "regex_fast")) return;
+              if (resolvedMeta.resolved && resolvedMeta.type === "direct") {
+                // The page is the renewable locator the player owns. Keep the
+                // lease under that page instead of authorizing the transient
+                // Vimeos/SprintCDN URL returned by the extractor. Without this
+                // alias, the player sends the resolution_id with the page and
+                // the session endpoint must resolve the page a second time;
+                // a rotating token can then produce a false 422/fallback even
+                // though the first probe was valid.
+                const pageBoundMeta = resolutionCoordinator.rememberResolved({
+                  ...resolvedMeta,
+                  original_url: rawUrl,
+                  canonical_locator: rawUrl,
+                  is_refreshable: true,
+                }, rawUrl);
+                if (await respondWithValidated(pageBoundMeta, "regex_fast")) return;
+              }
             }
           } catch {}
           if (pageAttempt < 2) await new Promise((resolve) => setTimeout(resolve, 220));

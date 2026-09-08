@@ -203,6 +203,29 @@ describe("ResolutionCoordinator", () => {
     expect(coordinator.getByResolutionId(remembered.resolution_id!, remembered.url)).toBeUndefined();
   });
 
+  it("autoriza una página después de extraer su URL firmada temporal", () => {
+    const pageLocator = "https://www.cinecalidad.am/ver-pelicula/rotating-token/";
+    const signedLocator = "https://s9.vimeos.net/hls/rotating/master.m3u8?t=opaque";
+    const coordinator = new ResolutionCoordinator(async () => {
+      throw new Error("no debe volver a resolver");
+    }, { now: () => NOW });
+
+    const remembered = coordinator.rememberResolved({
+      url: signedLocator,
+      original_url: signedLocator,
+      canonical_locator: signedLocator,
+      resolved: true,
+      type: "direct",
+      provider: "Vimeos",
+      is_proxyable: true,
+      is_refreshable: true,
+    }, pageLocator);
+
+    expect(remembered.original_url).toBe(pageLocator);
+    expect(remembered.canonical_locator).toBe(signedLocator);
+    expect(coordinator.getByResolutionId(remembered.resolution_id!, pageLocator)?.url).toBe(signedLocator);
+  });
+
   it("deduplicates concurrent resolution and reuses fresh metadata by original locator", async () => {
     let calls = 0;
     let release!: () => void;

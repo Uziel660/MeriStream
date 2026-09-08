@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { resolveByTmdb, type GatewayKind } from "./providerGateway";
 import { resolveTmdbIdentityCandidate } from "./identity/tmdbIdentityResolver";
+import { normalizePreferredLanguages } from "./subtitles/ExternalIdResolver";
 
 function parseKind(raw: unknown): GatewayKind | null {
   const value = String(raw || "").toLowerCase();
@@ -30,6 +31,15 @@ function cleanAliases(raw: unknown): string[] {
     if (aliases.length >= 8) break;
   }
   return aliases;
+}
+
+function preferenceList(raw: unknown): string[] | undefined {
+  const values = Array.isArray(raw)
+    ? raw.map((value) => String(value || "").trim()).filter(Boolean)
+    : typeof raw === "string"
+      ? raw.split(",").map((value) => value.trim()).filter(Boolean)
+      : [];
+  return values.length > 0 ? normalizePreferredLanguages(values) : undefined;
 }
 
 export function providerGatewayRouter(): Router {
@@ -73,8 +83,8 @@ export function providerGatewayRouter(): Router {
         tmdbId: identity.tmdbId,
         season: intValue(req.body?.season, 1),
         episode: intValue(req.body?.episode, 1),
-        preferredAudio: Array.isArray(req.body?.preferredAudio) ? req.body.preferredAudio : undefined,
-        preferredSubtitles: Array.isArray(req.body?.preferredSubtitles) ? req.body.preferredSubtitles : undefined,
+        preferredAudio: preferenceList(req.body?.preferredAudio),
+        preferredSubtitles: preferenceList(req.body?.preferredSubtitles),
         // Identity recovery is deliberately read-only. Persisting source links
         // remains an explicit caller choice on canonical TMDB requests.
         persist: false,
@@ -113,8 +123,8 @@ export function providerGatewayRouter(): Router {
         tmdbId,
         season: intValue(req.query.season, 1),
         episode: intValue(req.query.episode, 1),
-        preferredAudio: typeof req.query.audio === "string" ? req.query.audio.split(",").filter(Boolean) : undefined,
-        preferredSubtitles: typeof req.query.subtitles === "string" ? req.query.subtitles.split(",").filter(Boolean) : undefined,
+        preferredAudio: preferenceList(req.query.audio),
+        preferredSubtitles: preferenceList(req.query.subtitles),
         persist: req.query.persist === "1" || req.query.persist === "true",
       });
       res.setHeader("Cache-Control", "private, max-age=15");
@@ -136,8 +146,8 @@ export function providerGatewayRouter(): Router {
         tmdbId,
         season: intValue(req.body?.season, 1),
         episode: intValue(req.body?.episode, 1),
-        preferredAudio: Array.isArray(req.body?.preferredAudio) ? req.body.preferredAudio : undefined,
-        preferredSubtitles: Array.isArray(req.body?.preferredSubtitles) ? req.body.preferredSubtitles : undefined,
+        preferredAudio: preferenceList(req.body?.preferredAudio),
+        preferredSubtitles: preferenceList(req.body?.preferredSubtitles),
         persist: Boolean(req.body?.persist),
       }));
     } catch (error: any) {

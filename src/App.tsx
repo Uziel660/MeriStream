@@ -1243,20 +1243,6 @@ export function App() {
                           </button>
                         </div>
                       )}
-                      {(['movie', 'series', 'anime'] as const).includes(activeFilter as any) && hasMorePublicCatalogByKind[activeFilter as PublicCatalogKind] && (
-                        <div className="flex justify-center pt-3">
-                          <button
-                            type="button"
-                            onClick={() => loadMorePublicCatalogKind(activeFilter as PublicCatalogKind)}
-                            disabled={isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]}
-                            className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
-                          >
-                            {isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]
-                              ? 'Cargando desde TMDB…'
-                              : `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activeFilter as PublicCatalogKind]}`}
-                          </button>
-                        </div>
-                      )}
                     </>
                   )}
                 </section>
@@ -1386,6 +1372,20 @@ export function App() {
                             className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
                           >
                             Cargar más ({filteredShows.length - gridPageSize} restantes)
+                          </button>
+                        </div>
+                      )}
+                      {(['movie', 'series', 'anime'] as const).includes(activeFilter as any) && hasMorePublicCatalogByKind[activeFilter as PublicCatalogKind] && (
+                        <div className="flex justify-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => loadMorePublicCatalogKind(activeFilter as PublicCatalogKind)}
+                            disabled={isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]}
+                            className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
+                          >
+                            {isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]
+                              ? 'Cargando desde TMDB…'
+                              : `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activeFilter as PublicCatalogKind]}`}
                           </button>
                         </div>
                       )}

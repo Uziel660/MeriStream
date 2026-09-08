@@ -1,0 +1,209 @@
+/* MeriStream Player 2026
+ * Presentation-only layer. The HLS/DASH/JIT contracts and source-selection
+ * pipeline remain owned by HLSPlayerModal.tsx.
+ */
+
+:root {
+  --ms-player-accent: #fbbf24;
+  --ms-player-accent-soft: rgba(251, 191, 36, 0.18);
+  --ms-player-surface: rgba(10, 10, 12, 0.82);
+  --ms-player-border: rgba(255, 255, 255, 0.11);
+}
+
+[data-player-topbar],
+[data-player-controls] {
+  -webkit-tap-highlight-color: transparent;
+  contain: layout paint;
+}
+
+[data-player-topbar] {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.5) 52%, transparent 100%) !important;
+}
+
+[data-player-controls] {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.94) 0%, rgba(0, 0, 0, 0.62) 56%, transparent 100%) !important;
+}
+
+[data-player-topbar] button,
+[data-player-controls] button {
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-player-topbar] button:focus-visible,
+[data-player-controls] button:focus-visible,
+[data-player-controls] input:focus-visible {
+  outline: 2px solid var(--ms-player-accent);
+  outline-offset: 3px;
+}
+
+[data-player-controls] input[type='range'] {
+  touch-action: pan-x;
+}
+
+/* Keep the interactive hit target generous while the visible timeline stays
+ * thin. This is especially important on 320-430px phones. */
+[data-player-controls] > div:first-child {
+  min-height: 1rem;
+  margin-bottom: 0.7rem !important;
+}
+
+[data-player-controls] > div:first-child .bg-emerald-500 {
+  background-color: var(--ms-player-accent) !important;
+  box-shadow: 0 0 0.7rem rgba(251, 191, 36, 0.22) !important;
+}
+
+/* Menus use a bounded surface instead of growing past the viewport. Existing
+ * menu max-heights remain the source of truth; these rules add safer edges. */
+[data-player-topbar] [class*='absolute'][class*='bg-zinc-900'],
+[data-player-controls] [class*='absolute'][class*='bg-zinc-900'] {
+  border-color: var(--ms-player-border) !important;
+  background: var(--ms-player-surface) !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  overscroll-behavior: contain;
+}
+
+[data-player-topbar] [class*='absolute'][class*='bg-zinc-900']::-webkit-scrollbar,
+[data-player-controls] [class*='absolute'][class*='bg-zinc-900']::-webkit-scrollbar {
+  width: 0.38rem;
+}
+
+[data-player-topbar] [class*='absolute'][class*='bg-zinc-900']::-webkit-scrollbar-thumb,
+[data-player-controls] [class*='absolute'][class*='bg-zinc-900']::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Desktop controls should feel like a player, not a toolbar full of boxes. */
+@media (hover: hover) and (pointer: fine) {
+  [data-player-topbar] button,
+  [data-player-controls] button {
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+  }
+
+  [data-player-topbar] button:hover,
+  [data-player-controls] button:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Mobile: preserve every core control but tighten spacing enough that the
+ * timeline and action row never leave the viewport. */
+@media (max-width: 639px) {
+  [data-player-topbar] {
+    padding-inline: 0.75rem !important;
+    padding-block-end: 0.75rem !important;
+  }
+
+  [data-player-topbar] > div:first-child {
+    max-width: calc(100% - 3.25rem) !important;
+  }
+
+  [data-player-controls] {
+    padding-inline: 0.75rem !important;
+    padding-top: 2rem !important;
+  }
+
+  [data-player-controls] > div:last-child {
+    gap: 0.35rem !important;
+  }
+
+  [data-player-controls] > div:last-child > div {
+    gap: 0.25rem !important;
+    min-width: 0;
+  }
+
+  [data-player-controls] button {
+    min-width: 2.15rem;
+    min-height: 2.15rem;
+    padding: 0.4rem !important;
+  }
+
+  [data-player-controls] button[class*='font-mono'] {
+    min-width: 2.35rem;
+    padding-inline: 0.3rem !important;
+    font-size: 0.65rem !important;
+  }
+
+  [data-player-controls] span[class*='font-mono'] {
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.65rem !important;
+  }
+
+  [data-player-topbar] [class*='absolute'][class*='bg-zinc-900'],
+  [data-player-controls] [class*='absolute'][class*='bg-zinc-900'] {
+    max-width: calc(100vw - 1.5rem) !important;
+    max-height: min(56vh, 24rem) !important;
+  }
+}
+
+@media (max-width: 359px) {
+  [data-player-controls] {
+    padding-inline: 0.55rem !important;
+  }
+
+  [data-player-controls] button {
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+
+  [data-player-controls] span[class*='font-mono'] {
+    max-width: 6.1rem;
+    font-size: 0.61rem !important;
+  }
+}
+
+/* Low-end mode: retain image/video quality while removing expensive UI work.
+ * This intentionally targets only decoration, never the media pipeline. */
+html[data-ms-performance='low'] [data-player-topbar],
+html[data-ms-performance='low'] [data-player-controls],
+html[data-ms-performance='balanced'] [data-player-topbar],
+html[data-ms-performance='balanced'] [data-player-controls] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-ms-performance='low'] [data-player-topbar] *,
+html[data-ms-performance='low'] [data-player-controls] * {
+  box-shadow: none !important;
+}
+
+html[data-ms-performance='low'] [data-player-topbar] [class*='backdrop-blur'],
+html[data-ms-performance='low'] [data-player-controls] [class*='backdrop-blur'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-ms-performance='low'] [data-player-topbar],
+html[data-ms-performance='low'] [data-player-controls],
+html[data-ms-reduce-motion='true'] [data-player-topbar],
+html[data-ms-reduce-motion='true'] [data-player-controls] {
+  transition-duration: 90ms !important;
+}
+
+html[data-ms-performance='low'] [data-player-topbar] *,
+html[data-ms-performance='low'] [data-player-controls] *,
+html[data-ms-reduce-motion='true'] [data-player-topbar] *,
+html[data-ms-reduce-motion='true'] [data-player-controls] * {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-player-topbar] *,
+  [data-player-controls] * {
+    scroll-behavior: auto !important;
+  }
+}

@@ -44,7 +44,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 
 ## Validación ejecutada
 
-- `npm test -- --run --reporter=dot`: 83 archivos, 742 pruebas; 733 pasaron y 9 fallaron por respuestas upstream de Cinecalidad/LaMovie durante esta ejecución (522, búsqueda vacía, poster ausente y streams upstream). Las pruebas unitarias nuevas de búsqueda pasaron 3/3. Las comprobaciones finales de catálogo público y reproducción por navegador se repitieron después de los cambios de interfaz.
+- `npm test -- --run --reporter=dot`: 83 archivos, 745 pruebas, todas pasaron en la ejecución final. Las comprobaciones de red dependen de disponibilidad puntual de los upstreams; la matriz de navegador documenta los casos que se dejan fuera cuando un host devuelve HTML, 429 o 502.
 - `npx tsc --noEmit --pretty false`: correcto.
 - `npm run build`: correcto; Vite y bundle de servidor generados.
 - `npm run lint`: correcto (TypeScript).

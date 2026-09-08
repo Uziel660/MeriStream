@@ -30,8 +30,10 @@ export interface PlaybackSubtitleResult {
 }
 
 export interface PlaybackRequestBundle {
-  /** Provider gateway/recovery + legacy DB fallback. Never waits for external subtitles. */
+  /** Critical playback path. External subtitles never participate in it. */
   core: Promise<PlaybackCoreResult>;
+  /** Provider/recovery request, exposed for optional late enrichment. */
+  provider: Promise<PlaybackProviderResult>;
   /** Independent/later subtitle lookup. A failure resolves to data=null and never rejects playback. */
   subtitles: Promise<PlaybackSubtitleResult>;
 }
@@ -128,11 +130,20 @@ function subtitleQuery(
   return `/api/v1/subtitles?${query.toString()}`;
 }
 
+function hasLegacyPlayback(data: any): boolean {
+  if (typeof data?.stream_url === 'string' && data.stream_url.trim()) return true;
+  if (Array.isArray(data?.ranked_streams) && data.ranked_streams.some((item: any) => String(item?.url || '').trim())) return true;
+  if (Array.isArray(data?.all_available_streams) && data.all_available_streams.some((url: unknown) => String(url || '').trim())) return true;
+  return false;
+}
+
 /**
- * Starts all playback requests with subtitles deliberately outside the critical
- * path. Known-TMDB cards can begin gateway and subtitle work in parallel. A
- * legacy card first needs the confidence-gated title recovery response; only a
- * HIGH match exposes an effective TMDB id and unlocks external subtitle search.
+ * Starts playback requests with subtitles deliberately outside the critical
+ * path. Canonical TMDB cards resolve gateway + legacy exactly as before, but
+ * never wait for external subtitles. Legacy cards are even more conservative:
+ * a healthy DB stream wins immediately and title recovery stays in background;
+ * only when the local path cannot play do we wait for the confidence-gated
+ * recovery gateway.
  */
 export function createPlaybackRequests(input: PlaybackBootstrapInput): PlaybackRequestBundle {
   const fetchImpl: FetchLike = input.fetchImpl || fetch.bind(globalThis);
@@ -179,10 +190,26 @@ export function createPlaybackRequests(input: PlaybackBootstrapInput): PlaybackR
       legacyData: await safeJson(response),
     }));
 
-  const core = Promise.all([provider, legacy]).then(([providerResult, legacyResult]) => ({
-    ...providerResult,
-    ...legacyResult,
-  }));
+  const core: Promise<PlaybackCoreResult> = tmdbId > 0
+    ? Promise.all([provider, legacy]).then(([providerResult, legacyResult]) => ({
+        ...providerResult,
+        ...legacyResult,
+      }))
+    : legacy.then(async (legacyResult) => {
+        // Do not make a known-good imported source wait for a TMDB search and
+        // a fresh provider cascade. Recovery still continues independently and
+        // can later unlock external subtitles through `subtitles` below.
+        if (hasLegacyPlayback(legacyResult.legacyData)) {
+          return {
+            gatewayData: null,
+            effectiveTmdbId: 0,
+            recoveredIdentity: false,
+            ...legacyResult,
+          };
+        }
+        const providerResult = await provider;
+        return { ...providerResult, ...legacyResult };
+      });
 
   // For canonical TMDB cards the subtitle request starts immediately and does
   // not wait for the gateway. Legacy cards chain only to identity recovery,
@@ -200,5 +227,5 @@ export function createPlaybackRequests(input: PlaybackBootstrapInput): PlaybackR
     return { effectiveTmdbId, data: await safeJson(response) };
   });
 
-  return { core, subtitles };
+  return { core, provider, subtitles };
 }

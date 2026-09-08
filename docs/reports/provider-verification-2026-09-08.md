@@ -53,6 +53,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
   - guardia de identidad TMDB para Overflow: correcto.
   - paginación del catálogo unificado y reparación visual de la cartelera: correctas.
   - paginación independiente por categoría desde la vista Explorar: correcta (Series solicita TMDB página 4 sin mover Películas ni Anime).
+  - respaldo local ante 502 de TMDB limitado a `limit=60`: correcto.
   - flujo de usuario TMDB “La isla del minotauro” → ficha de 10 episodios → player interno: `Yashmak-yonder (VIDSRC)`, un elemento `<video>`, cero iframes.
   - matriz conjunta de audio, exposición y playback Cinecalidad/LatAnime/Gnula/TioAnime: 6/6 correctas.
 - Pruebas reales de red: catálogo, resolución, manifiestos, segmentos y subtítulos internos WebVTT.

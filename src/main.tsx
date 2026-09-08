@@ -10,6 +10,7 @@ import './styles/streaming-2026.css';
 import './styles/overlays-2026.css';
 import './styles/immersive-stremio.css';
 import './styles/polish-round.css';
+import './styles/player-2026.css';
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin y se carga bajo
 // demanda; la entrada pública conserva el bundle de providers y reproducción.

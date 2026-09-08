@@ -24,6 +24,7 @@ describe("DoramasflixAdapter catalog pagination", () => {
     const first = await adapter.analyze("https://doramasflix.io/doramas?page=1", "catalog");
     const second = await adapter.analyze("https://doramasflix.io/doramas?page=2", "catalog");
 
+    expect(first.source_domain).toBe("doramasflix.io");
     expect(first.catalog_items[0]).toMatchObject({ title: "Dorama 1", url: "https://doramasflix.io/doramas/dorama-1", kind: "series" });
     expect(second.catalog_items[0]).toMatchObject({ title: "Dorama 2", url: "https://doramasflix.io/doramas/dorama-2", kind: "series" });
     expect(fetchMock).toHaveBeenCalledTimes(2);

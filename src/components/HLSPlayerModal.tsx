@@ -36,6 +36,7 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
+import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
   buildAttachmentKey,
@@ -99,32 +100,19 @@ interface AudioOption {
 }
 
 function normalizedLanguageKey(value: unknown): string {
-  const raw = String(value || '').trim().toLowerCase().replace('_', '-');
-  if (!raw) return 'und';
-  if (raw === 'es-419' || raw === 'es-la' || raw === 'lat' || raw === 'latino') return 'es-419';
-  if (raw.startsWith('es')) return 'es';
-  if (raw.startsWith('en')) return 'en';
-  if (raw.startsWith('ja') || raw === 'dub') return raw === 'dub' ? 'dub' : 'ja';
-  if (raw.startsWith('pt')) return 'pt';
-  if (raw.startsWith('fr')) return 'fr';
-  return raw;
+  return normalizePlayerLanguage(value);
 }
 
 function languageDisplayName(value: unknown): string {
-  const key = normalizedLanguageKey(value);
-  const labels: Record<string, string> = {
-    'es-419': 'Español latino', es: 'Español', en: 'Inglés', ja: 'Japonés',
-    pt: 'Portugués', fr: 'Francés', dub: 'Doblado', und: 'Idioma alternativo',
-  };
-  return labels[key] || String(value || 'Idioma alternativo').toUpperCase();
+  return playerLanguageLabel(value);
 }
 
 function renditionDisplayName(key: string, items: Array<{ server: ScoredServer; index: number }>): string {
   const first = items[0]?.server;
   const audio = String(first?.audio_language || '').trim();
   const subtitle = String(first?.subtitle_language || '').trim();
-  if (audio) return `Audio ${audio.toUpperCase()}`;
-  if (subtitle) return `Subtítulos ${subtitle.toUpperCase()}`;
+  if (audio) return `Audio ${languageDisplayName(audio)}`;
+  if (subtitle) return `Subtítulos ${languageDisplayName(subtitle)}`;
   return languageDisplayName(key);
 }
 

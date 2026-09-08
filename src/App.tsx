@@ -17,6 +17,7 @@ import { api } from './api/client';
 import { normalizeText, normalizeTextStrict, searchShows } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
+import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
@@ -830,13 +831,14 @@ export function App() {
     const showId = episode.show_id || selectedShowId || 'unknown';
     // La tarjeta de búsqueda puede proceder del lote server-side y no estar
     // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
-    // subtítulos (OpenSubtitles) igual que una tarjeta del catálogo principal.
+    // subtítulos igual que una tarjeta del catálogo principal.
     const currentShow = shows.find((s) => s.id === showId)
       || serverSearchResults.find((s) => s.id === showId);
     const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
     const initialTime = existingProgress?.currentTime || 0;
 
-    // 1. Abrir el reproductor al instante para feedback visual inmediato
+    // Abrir el reproductor inmediatamente. El bootstrap de fuentes y la
+    // búsqueda externa de subtítulos continúan en paralelo.
     setPlayingStreamData({
       title: `${showTitle} - ${safeEpisodeTitle(episode)}`,
       streamUrl: '',
@@ -851,49 +853,61 @@ export function App() {
       isLoading: true,
     });
 
-    // Sanear título para nunca mostrar "undefined" en el player (#2)
     const resolvedTitle = safeEpisodeTitle(episode);
 
     try {
-      const tmdbId = Number((currentShow as any)?.tmdb_id || 0);
       const rawCategory = String((currentShow as any)?.kind || currentShow?.category || '').toLowerCase();
-      const gatewayKind = rawCategory.includes('anime')
+      const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
+      const gatewayKind = rawCategory.includes('anime') || sourceHint.startsWith('tmdb://anime/')
         ? 'anime'
-        : (rawCategory.includes('movie') || rawCategory.includes('pel'))
+        : (rawCategory.includes('movie') || rawCategory.includes('pel') || sourceHint.startsWith('tmdb://movie/'))
           ? 'movie'
           : 'series';
-      const seasonNumber = Number((episode as any).season_number || 1);
-      const gatewayUrl = tmdbId > 0
-        ? `/api/v1/providers/${gatewayKind}/${tmdbId}?season=${seasonNumber}&episode=${episode.episode_number}&audio=es,en,ja&subtitles=es,en`
-        : null;
 
-      const gatewayPromise = gatewayUrl
-        ? fetch(gatewayUrl).then(async (response) => response.ok ? response.json() : null).catch(() => null)
-        : Promise.resolve(null);
-      const legacyPromise = fetch(`/api/v1/play/${episode.id}`).catch(() => null);
-      const subtitleQuery = new URLSearchParams({
-        tmdb_id: String(tmdbId),
+      const playbackShow: Show = currentShow || {
+        id: showId,
+        title: showTitle,
+        category: gatewayKind,
         kind: gatewayKind,
-        languages: 'es,en',
+      };
+      const preferences = getAppPreferences(user?.id);
+      const playbackRequests = createPlaybackRequests({
+        show: playbackShow,
+        episode,
+        kind: gatewayKind,
+        preferredAudio: preferences.preferredLanguages,
+        preferredSubtitles: preferences.preferredSubtitleLanguages,
       });
-      // Las películas no tienen temporada ni episodio. Enviarlos hace que
-      // OpenSubtitles interprete la búsqueda como una serie y devuelva cero.
-      if (gatewayKind !== 'movie') {
-        subtitleQuery.set('season', String(seasonNumber));
-        subtitleQuery.set('episode', String(episode.episode_number));
-      }
-      const subtitlePromise = tmdbId > 0
-        ? fetch(`/api/v1/subtitles?${subtitleQuery.toString()}`)
-            .then(async (response) => response.ok ? response.json() : null)
-            .catch(() => null)
-        : Promise.resolve(null);
-      const [gatewayData, legacyResponse, subtitleData] = await Promise.all([gatewayPromise, legacyPromise, subtitlePromise]);
 
-      // Un gateway puede devolver muchos mirrors del mismo proveedor (VidSrc
-      // suele entregar una docena). Conservarlos todos hace que un host caído
-      // dispare una cascada de sesiones y consuma el presupuesto del backend
-      // antes de llegar a Cinecalidad/Gnula. Dejamos tres por proveedor para
-      // mantener mirrors reales sin convertir un fallo en una tormenta.
+      // OpenSubtitles y equivalentes no forman parte de la ruta crítica. Si
+      // llegan después de iniciar el video se anexan al player sin reiniciarlo.
+      void playbackRequests.subtitles
+        .then(({ data: subtitleData }) => {
+          const externalSubtitles = Array.isArray(subtitleData?.tracks)
+            ? subtitleData.tracks
+                .map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || `opensubtitles-${index}`)))
+                .filter(Boolean)
+            : [];
+          if (externalSubtitles.length === 0) return;
+
+          setPlayingStreamData((prev: any) => {
+            if (!prev || prev.episodeId !== episode.id) return prev;
+            const byUrl = new Map<string, any>();
+            for (const track of Array.isArray(prev.subtitleTracks) ? prev.subtitleTracks : []) {
+              if (track?.url) byUrl.set(track.url, track);
+            }
+            for (const track of externalSubtitles) {
+              if (track?.url && !byUrl.has(track.url)) byUrl.set(track.url, track);
+            }
+            return { ...prev, subtitleTracks: [...byUrl.values()] };
+          });
+        })
+        .catch(() => undefined);
+
+      const { gatewayData, legacyData, legacyStatus } = await playbackRequests.core;
+
+      // Un gateway puede devolver muchos mirrors del mismo proveedor. Limitar
+      // a tres mantiene failover real sin convertir un host caído en tormenta.
       const gatewaySourceCount = new Map<string, number>();
       const gatewaySources = Array.isArray(gatewayData?.sources)
         ? gatewayData.sources.filter((source: any) => {
@@ -935,11 +949,8 @@ export function App() {
           })
         : [];
 
-      // El gateway mantiene los locators de plataforma separados de los
-      // directos reproducibles. Son fuentes válidas para el reproductor porque
-      // HLSPlayerModal las resuelve JIT mediante el adaptador especializado;
-      // omitirlas aquí dejaba visible únicamente LatAnime aunque ZokoAnime
-      // estuviera registrado para el mismo episodio.
+      // Los locators canónicos siguen disponibles como fallback porque el
+      // HLSPlayerModal los resuelve JIT mediante el adaptador especializado.
       const gatewayFallbacks = Array.isArray(gatewayData?.fallbackCandidates)
         ? gatewayData.fallbackCandidates.map((source: any, index: number) => {
             let host: string | null = null;
@@ -970,15 +981,6 @@ export function App() {
           })
         : [];
 
-      let legacyData: any = null;
-      if (legacyResponse?.ok) legacyData = await legacyResponse.json();
-
-      const externalSubtitles = Array.isArray(subtitleData?.tracks)
-        ? subtitleData.tracks
-            .map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || `opensubtitles-${index}`)))
-            .filter(Boolean)
-        : [];
-
       const mergedRanked: any[] = [];
       const seenUrls = new Set<string>();
       for (const candidate of [
@@ -995,14 +997,12 @@ export function App() {
       const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
 
       if (!primaryStream) {
-        // Public TMDB cards use virtual episode ids and intentionally have no
-        // row in the legacy `/play/:episodeId` table. A 404 there means
-        // "there is no imported legacy source", not that the public work was
-        // deleted. Keep the player open so it can explain that every checked
-        // provider is currently unavailable. Only purge real local progress.
+        // Las fichas públicas TMDB usan episodios virtuales y no deben borrarse
+        // por un 404 de la tabla legacy. Las filas locales sí conservan la
+        // limpieza de huérfanos histórica.
         const isPublicVirtualEpisode = /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(String(episode.id || ''))
           || /^tmdb-(?:movie|series|anime)-\d+$/i.test(String(currentShow?.id || ''));
-        if (legacyResponse?.status === 404 && !isPublicVirtualEpisode) {
+        if (legacyStatus === 404 && !isPublicVirtualEpisode) {
           removeContinueWatchingItem(episode.id);
           setPlayingStreamData((prev: any) =>
             prev?.episodeId === episode.id ? null : prev
@@ -1023,7 +1023,6 @@ export function App() {
           streamUrl: primaryStream,
           all_streams: mergedStreams.length > 0 ? mergedStreams : [primaryStream],
           ranked_streams: mergedRanked,
-          subtitleTracks: externalSubtitles,
           isLoading: false,
         };
       });

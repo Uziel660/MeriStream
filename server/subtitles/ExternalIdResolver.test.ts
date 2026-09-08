@@ -68,15 +68,20 @@ describe('ExternalIdResolver', () => {
 });
 
 describe('normalizePreferredLanguages', () => {
-  it('keeps Latin Spanish discoverable when legacy clients request generic Spanish', () => {
-    expect(normalizePreferredLanguages(['es', 'en'])).toEqual(['es-419', 'es', 'en']);
+  it('keeps regional Spanish discoverable when legacy clients request generic Spanish', () => {
+    expect(normalizePreferredLanguages(['es', 'en'])).toEqual(['es-419', 'es-ES', 'es', 'en']);
   });
 
-  it('keeps both Spanish variants without duplicates', () => {
-    expect(normalizePreferredLanguages(['es-419', 'es', 'en'])).toEqual(['es-419', 'es', 'en']);
+  it('preserves an explicit Latino → Castellano → generic order', () => {
+    expect(normalizePreferredLanguages(['es-419', 'es-ES', 'es', 'en']))
+      .toEqual(['es-419', 'es-ES', 'es', 'en']);
   });
 
-  it('retains the Spanish-first default', () => {
+  it('does not broaden a Castellano-only request to Latino', () => {
+    expect(normalizePreferredLanguages(['es-ES', 'en'])).toEqual(['es-ES', 'en']);
+  });
+
+  it('keeps the historical Spanish-first default compatible', () => {
     expect(normalizePreferredLanguages()).toEqual(['es-419', 'es', 'en']);
   });
 });

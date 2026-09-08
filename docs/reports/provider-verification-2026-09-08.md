@@ -25,6 +25,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 - Gnula usa su endpoint público de player para descubrir servidores en tiempo de reproducción.
 - La cartelera pública TMDB pagina las solicitudes y la respuesta unificada de 60 intercala 20 películas, 20 series y 20 animes; las fichas siguen siendo virtuales y se resuelven por sus IDs canónicos.
 - TMDB puede devolver una imagen PNG de logotipo como `poster_path` (el caso observado de “Te irás al infierno” medía 177×21). El catálogo y las recomendaciones ahora consultan el detalle canónico para sustituir ese arte por el póster vertical; el backfill local también marca esos PNG para reparación.
+- En la pasada local se repararon 523 de 530 filas con arte PNG TMDB y `poster_path` vacío. Siete títulos no tienen póster vertical en el detalle TMDB y quedan protegidos por el placeholder/arte alternativo, sin fabricar una imagen.
 - La búsqueda consulta TMDB y PostgreSQL en paralelo y conserva la ficha local cuando ambas fuentes comparten TMDB, de modo que una coincidencia pública no oculta los providers reproducibles.
 - El reparador de identidades usa cruces TMDB→Wikidata exactos antes de búsquedas difusas. En la última muestra se aplicaron cinco coincidencias verificadas; los casos dudosos no se modificaron.
 - Subtítulos: OpenSubtitles v3, TVSubtitles, YIFY y SubtitleCat convergen a candidatos internos, deduplicación, ranking, proxy y WebVTT. Las URLs externas no se entregan al frontend.
@@ -43,6 +44,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 - `npm test -- --reporter=dot`: 81 archivos, 737 pruebas.
 - `npx tsc --noEmit --pretty false`: correcto.
 - `npm run build`: correcto; Vite y bundle de servidor generados.
+- `npm run lint`: correcto (TypeScript).
 - Playwright Chromium:
   - exposición LatAnime/Zoko: correcto;
   - fallback TioAnime y reproducción en player interno: correcto;

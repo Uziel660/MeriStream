@@ -15,6 +15,14 @@ export interface TmdbImagePaths {
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 const TMDB_URL_RE = /https?:\/\/image\.tmdb\.org\/t\/p\/(?:original|w\d+)(\/[^?#]+)([?#].*)?$/i;
+const TITLE_ART_RE = /\.(?:png|svg)(?:[?#]|$)/i;
+
+function usablePosterCandidate(url: string | null): string | null {
+  if (!url) return null;
+  // A few catalog imports contain a transparent title/logo image rather than
+  // a poster. Do not let that asset win the card fallback chain.
+  return TITLE_ART_RE.test(url) ? null : url;
+}
 
 export function sizedImageUrl(url: string | null | undefined, size: TmdbImageSize): string | null {
   if (!url || typeof url !== 'string') return null;
@@ -43,7 +51,7 @@ function responsiveTmdbSrcSet(
   fallbackUrl: string | null | undefined,
   candidates: ResponsiveCandidate[],
 ): string | undefined {
-  if (path?.trim().startsWith('/')) {
+  if (path?.trim().startsWith('/') && !TITLE_ART_RE.test(path)) {
     return candidates
       .map(({ size, width }) => `${tmdbImageUrl(path, size)} ${width}w`)
       .join(', ');
@@ -102,16 +110,18 @@ export function bentoBackdropSrcSet(m: ImageSourceMedia): string | undefined {
  */
 export function cardPosterUrl(m: ImageSourceMedia): string | null {
   return (
-    tmdbImageUrl(m.poster_path, 'w342') ||
-    sizedImageUrl(m.poster_url, 'w342') ||
-    sizedImageUrl(m.banner_url, 'w342') ||
-    sizedImageUrl(m.backdrop_url, 'w342') ||
+    usablePosterCandidate(tmdbImageUrl(m.poster_path, 'w342')) ||
+    usablePosterCandidate(sizedImageUrl(m.poster_url, 'w342')) ||
+    usablePosterCandidate(sizedImageUrl(m.banner_url, 'w342')) ||
+    usablePosterCandidate(sizedImageUrl(m.backdrop_url, 'w342')) ||
     null
   );
 }
 
 export function cardPosterSrcSet(m: ImageSourceMedia): string | undefined {
-  const fallback = m.poster_url || m.banner_url || m.backdrop_url;
+  const fallback = [m.poster_url, m.banner_url, m.backdrop_url]
+    .map((value) => String(value || '').trim())
+    .find((value) => value && !TITLE_ART_RE.test(value));
   return responsiveTmdbSrcSet(m.poster_path, fallback, [
     { size: 'w185', width: 185 },
     { size: 'w342', width: 342 },

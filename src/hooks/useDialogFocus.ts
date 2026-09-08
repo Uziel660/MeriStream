@@ -6,25 +6,39 @@ export function useDialogFocus(isOpen: boolean) {
   useEffect(() => {
     const dialog = ref.current;
     if (!isOpen || !dialog) return;
+
+    // Capture the trigger before moving focus into the dialog. Consumers that
+    // need a specific initial field can mark it with data-dialog-autofocus.
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+
     const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
       'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]'
     )).filter(element => element.getClientRects().length > 0);
-    (focusable()[0] || dialog).focus({ preventScroll: true });
+
+    const preferred = dialog.querySelector<HTMLElement>('[data-dialog-autofocus]');
+    (preferred || focusable()[0] || dialog).focus({ preventScroll: true });
+
     const trap = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return;
       const elements = focusable();
       const first = elements[0];
       const last = elements[elements.length - 1];
-      if (!first) { event.preventDefault(); dialog.focus(); return; }
+      if (!first) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
       if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
-        event.preventDefault(); last.focus();
+        event.preventDefault();
+        last.focus();
       } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
-        event.preventDefault(); first.focus();
+        event.preventDefault();
+        first.focus();
       }
     };
+
     dialog.addEventListener('keydown', trap);
     return () => {
       dialog.removeEventListener('keydown', trap);

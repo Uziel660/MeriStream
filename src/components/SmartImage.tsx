@@ -27,6 +27,7 @@ export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
         src={src}
         alt={alt}
         loading={rest.loading ?? 'lazy'}
+        decoding={rest.decoding ?? 'async'}
         onError={(e) => {
           setFailed(true);
           onError?.(e);

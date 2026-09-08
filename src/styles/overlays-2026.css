@@ -1,0 +1,129 @@
+/* MeriStream 2026 — overlays, dialogs and playback polish */
+
+/* Details becomes a cinematic sheet on desktop and a full-screen view on phones. */
+.details-overlay {
+  padding: clamp(.65rem, 2vw, 1.5rem);
+  align-items: center !important;
+  justify-content: center !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(3, 5, 8, .86) !important;
+  backdrop-filter: blur(14px) saturate(115%) !important;
+}
+.details-panel {
+  width: min(100%, 64rem) !important;
+  max-width: 64rem !important;
+  height: min(92dvh, 58rem) !important;
+  max-height: 92dvh;
+  border: 1px solid var(--ms-border-strong) !important;
+  border-radius: var(--ms-radius-xl) !important;
+  overflow: hidden;
+  background: rgba(10, 13, 18, .985) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+.details-scroll {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.18) transparent;
+}
+.details-body { background: linear-gradient(180deg, rgba(255,255,255,.015), transparent 18rem); }
+.details-play {
+  min-height: 46px !important;
+  border-radius: 999px !important;
+  background: var(--ms-accent) !important;
+  color: var(--ms-accent-ink) !important;
+  box-shadow: none !important;
+  font-weight: 800 !important;
+}
+.details-play:hover { background: var(--ms-accent-strong) !important; }
+.details-category {
+  border-color: var(--ms-border-strong) !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.07) !important;
+  color: #e4e9ef !important;
+}
+.details-glow { opacity: .18 !important; filter: blur(50px) !important; }
+.episode-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 62px;
+  border-color: var(--ms-border) !important;
+  background: rgba(255,255,255,.025) !important;
+  transition: background-color 150ms var(--ms-ease), border-color 150ms var(--ms-ease), transform 150ms var(--ms-ease) !important;
+}
+.episode-card:hover { border-color: var(--ms-border-strong) !important; background: rgba(255,255,255,.05) !important; }
+.episode-play { min-width: 44px !important; min-height: 44px !important; color: var(--ms-accent) !important; }
+
+/* Authentication remains compact, readable and password-manager friendly. */
+.auth-overlay {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)) !important;
+  background: rgba(3,5,8,.86) !important;
+  backdrop-filter: blur(14px) !important;
+}
+.auth-panel {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto !important;
+  border: 1px solid var(--ms-border-strong) !important;
+  border-radius: var(--ms-radius-xl) !important;
+  background: var(--ms-bg-elevated) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+.auth-panel > .pointer-events-none { opacity: .18; }
+.auth-panel :where(input, select, textarea) {
+  min-height: 46px;
+  border-color: var(--ms-border-strong) !important;
+  border-radius: .8rem !important;
+  background: #0a0d13 !important;
+  color: var(--ms-text) !important;
+}
+.auth-panel :where(input, select, textarea):focus {
+  border-color: rgba(244,179,63,.55) !important;
+  box-shadow: 0 0 0 3px rgba(244,179,63,.08) !important;
+}
+.auth-panel label { color: #cfd5df; }
+
+/* Player: keep effects cheap. Video and HLS always win over decoration. */
+[data-player-topbar] {
+  padding-top: max(1rem, env(safe-area-inset-top)) !important;
+  padding-left: max(1rem, env(safe-area-inset-left)) !important;
+  padding-right: max(1rem, env(safe-area-inset-right)) !important;
+  will-change: opacity;
+}
+[data-player-topbar] button { min-width: 44px; min-height: 44px; }
+.plyr { --plyr-color-main: var(--ms-accent); }
+.plyr__control--overlaid { background: var(--ms-accent) !important; color: var(--ms-accent-ink) !important; }
+.plyr__progress input[type=range], .plyr__volume input[type=range] { color: var(--ms-accent) !important; }
+
+/* Admin is intentionally productivity-first: readable surfaces, not cinematic effects. */
+body:has([data-admin-root]), body:has(.admin-shell) { background: #090c11; }
+[data-admin-root], .admin-shell { color: var(--ms-text); }
+[data-admin-root] :where(input,select,textarea), .admin-shell :where(input,select,textarea) {
+  border-color: var(--ms-border) !important;
+  background: #0e1218 !important;
+}
+[data-admin-root] :where(table,thead,tbody,tr,td,th), .admin-shell :where(table,thead,tbody,tr,td,th) { border-color: var(--ms-border) !important; }
+
+@media (max-width: 640px) {
+  .details-overlay { padding: 0 !important; align-items: stretch !important; }
+  .details-panel {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+  .details-scroll { padding-bottom: env(safe-area-inset-bottom); }
+  .auth-panel { border-radius: 1.15rem !important; }
+}
+
+@media (pointer: coarse) {
+  .episode-play, .details-panel button, .auth-panel button { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-player-topbar], .details-panel, .auth-panel, .episode-card { will-change: auto; }
+  .details-glow { display: none !important; }
+}

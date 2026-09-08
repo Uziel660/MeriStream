@@ -1,0 +1,416 @@
+/* MeriStream — immersive streaming direction
+   Inspired by the spatial hierarchy of modern TV/streaming apps without copying Stremio. */
+
+:root {
+  --ms-immersive-bg: #07080d;
+  --ms-immersive-panel: rgba(12, 14, 22, .72);
+  --ms-immersive-line: rgba(255, 255, 255, .09);
+  --ms-immersive-muted: #aab1bf;
+}
+
+body {
+  background:
+    radial-gradient(circle at 78% -8%, rgba(87, 73, 185, .12), transparent 32rem),
+    radial-gradient(circle at 18% 18%, rgba(244, 179, 63, .055), transparent 25rem),
+    var(--ms-immersive-bg);
+}
+
+/* Header floats over the featured artwork at the top, then becomes a surface on scroll. */
+.site-header {
+  border-bottom-color: rgba(255,255,255,.05) !important;
+  background: linear-gradient(180deg, rgba(7,8,13,.92), rgba(7,8,13,.76)) !important;
+  box-shadow: none !important;
+}
+.site-header.is-at-top {
+  background: linear-gradient(180deg, rgba(7,8,13,.86) 0%, rgba(7,8,13,.44) 60%, transparent 100%) !important;
+  border-bottom-color: transparent !important;
+  backdrop-filter: none !important;
+}
+.header-inner { max-width: 100% !important; }
+.header-search {
+  background: rgba(9,11,18,.58) !important;
+  border-color: rgba(255,255,255,.10) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.025);
+}
+.header-search:focus-within {
+  background: rgba(10,12,20,.88) !important;
+  border-color: rgba(244,179,63,.42) !important;
+}
+.nav-item,
+.genre-shortcut { color: #aab1bf !important; }
+.nav-item.is-active { background: rgba(244,179,63,.14) !important; color: white !important; }
+
+/* Full-bleed featured artwork. The negative margin lets it live behind the transparent header. */
+.feature {
+  max-width: none !important;
+  width: 100% !important;
+  min-height: clamp(34rem, 82vh, 60rem) !important;
+  margin: -5.7rem 0 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  background: #080910 !important;
+}
+.feature-art {
+  inset: 0 !important;
+  width: 100% !important;
+  border-radius: 0 !important;
+  background: #080910 !important;
+}
+.feature-image {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center 24% !important;
+  filter: saturate(.98) contrast(1.035) brightness(.92) !important;
+  transform: scale(1.015) !important;
+}
+.feature-placeholder {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+  background:
+    radial-gradient(circle at 72% 30%, rgba(65,76,112,.32), transparent 28rem),
+    linear-gradient(135deg, #111522, #080910 64%) !important;
+}
+.feature-shade {
+  background:
+    linear-gradient(90deg, rgba(7,8,13,.98) 0%, rgba(7,8,13,.91) 16%, rgba(7,8,13,.64) 35%, rgba(7,8,13,.19) 64%, rgba(7,8,13,.08) 100%),
+    linear-gradient(0deg, #07080d 0%, rgba(7,8,13,.9) 8%, rgba(7,8,13,.38) 28%, transparent 56%),
+    linear-gradient(180deg, rgba(7,8,13,.34) 0%, transparent 26%) !important;
+}
+.feature::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 9rem;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--ms-immersive-bg));
+}
+.feature-caption { display: none !important; }
+.feature-content {
+  width: min(100%, 96rem) !important;
+  max-width: none !important;
+  min-height: inherit !important;
+  margin: 0 auto !important;
+  padding: clamp(11rem, 25vh, 17rem) clamp(1.15rem, 5vw, 5.5rem) clamp(7.5rem, 13vh, 10rem) !important;
+  justify-content: flex-end !important;
+}
+.feature-content > * { max-width: min(44rem, 72vw); }
+.feature .eyebrow {
+  color: rgba(255,255,255,.78) !important;
+  text-shadow: 0 2px 18px rgba(0,0,0,.72);
+}
+.feature-meta {
+  margin-top: .5rem !important;
+  margin-bottom: .75rem !important;
+  gap: .5rem !important;
+}
+.feature-meta > span:not(.rating) {
+  border: 1px solid rgba(255,255,255,.12) !important;
+  background: rgba(8,9,14,.40) !important;
+  backdrop-filter: blur(10px);
+}
+.feature h1 {
+  max-width: 12ch !important;
+  margin: 0 !important;
+  font-size: clamp(3.25rem, 7.5vw, 7rem) !important;
+  line-height: .88 !important;
+  letter-spacing: -.06em !important;
+  text-shadow: 0 4px 34px rgba(0,0,0,.58) !important;
+}
+.feature-genres {
+  margin-top: 1rem !important;
+  color: rgba(255,255,255,.84) !important;
+  text-shadow: 0 2px 16px rgba(0,0,0,.7);
+}
+.feature-synopsis {
+  max-width: 39rem !important;
+  margin-top: 1rem !important;
+  color: #c7ccd5 !important;
+  font-size: clamp(.88rem, 1.05vw, 1rem) !important;
+  line-height: 1.6 !important;
+  text-shadow: 0 2px 18px rgba(0,0,0,.78);
+}
+.feature-actions { margin-top: 1.45rem !important; }
+.button-primary,
+.button-secondary {
+  min-height: 46px !important;
+  padding: .72rem 1.15rem !important;
+  border-radius: .8rem !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.18);
+}
+.button-secondary {
+  background: rgba(16,18,26,.58) !important;
+  border-color: rgba(255,255,255,.14) !important;
+  backdrop-filter: blur(14px) saturate(125%);
+}
+
+/* Home content floats slightly into the featured artwork for a continuous app-like canvas. */
+.catalog-content {
+  position: relative !important;
+  z-index: 4 !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: -4.75rem auto 0 !important;
+  padding: 0 clamp(.9rem, 3.4vw, 3.5rem) 5rem !important;
+  background: linear-gradient(180deg, transparent 0, var(--ms-immersive-bg) 5.5rem, var(--ms-immersive-bg) 100%) !important;
+}
+.catalog-content > * + * { margin-top: clamp(2rem, 4vw, 3.25rem) !important; }
+
+/* Rails: denser, poster-first, very little chrome. */
+.media-row,
+.continue-section {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.section-heading { margin-bottom: .85rem !important; align-items: center !important; }
+.section-heading h3 {
+  font-size: clamp(1.1rem, 1.55vw, 1.45rem) !important;
+  letter-spacing: -.035em !important;
+}
+.section-heading p { color: #8f97a6 !important; }
+.row-count { opacity: .55; }
+.row-navigation .icon-button {
+  background: rgba(11,13,20,.58) !important;
+  border-color: rgba(255,255,255,.08) !important;
+  backdrop-filter: blur(10px);
+}
+.poster-rail {
+  gap: clamp(.75rem, 1.25vw, 1.15rem) !important;
+  padding: .45rem .15rem 1.1rem !important;
+  margin: -.45rem -.15rem -1.1rem !important;
+  scroll-padding-inline: .15rem;
+}
+.poster-slot {
+  flex: 0 0 clamp(8.65rem, 13.2vw, 11.65rem) !important;
+  min-width: 0 !important;
+}
+.media-card {
+  border-radius: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+.media-poster {
+  border-radius: .82rem !important;
+  border: 1px solid rgba(255,255,255,.065) !important;
+  background: #11131b !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15) !important;
+  transform: translateZ(0);
+  transition: transform .22s cubic-bezier(.2,.7,.2,1), border-color .22s ease, box-shadow .22s ease !important;
+}
+.media-card:hover .media-poster,
+.media-card:focus-visible .media-poster {
+  transform: translateY(-5px) scale(1.025) !important;
+  border-color: rgba(255,255,255,.17) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.34) !important;
+}
+.media-poster-image {
+  border-radius: inherit !important;
+  transform: none !important;
+  transition: filter .2s ease !important;
+}
+.media-card:hover .media-poster-image { filter: brightness(.88) saturate(1.04); }
+.media-kind {
+  position: absolute !important;
+  left: .6rem !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: .6rem !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: .28rem .48rem !important;
+  border-radius: .4rem !important;
+  background: rgba(7,8,13,.74) !important;
+  color: rgba(255,255,255,.84) !important;
+  font-size: .56rem !important;
+  line-height: 1 !important;
+  letter-spacing: .055em !important;
+  backdrop-filter: blur(8px);
+}
+.media-card-open {
+  right: .55rem !important;
+  top: .55rem !important;
+  bottom: auto !important;
+  width: 2rem !important;
+  height: 2rem !important;
+  border-radius: 999px !important;
+  background: rgba(9,10,16,.78) !important;
+  color: white !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  backdrop-filter: blur(10px);
+}
+.media-card-title {
+  margin-top: .72rem !important;
+  color: #f0f2f6 !important;
+  font-size: .84rem !important;
+  font-weight: 720 !important;
+  line-height: 1.35 !important;
+  -webkit-line-clamp: 1 !important;
+}
+.media-card:hover .media-card-title { color: white !important; }
+.media-card-meta {
+  margin-top: .3rem !important;
+  color: #858d9d !important;
+  font-size: .66rem !important;
+}
+
+/* Existing editorial/spotlight blocks should blend into the canvas instead of looking like cards in cards. */
+.spotlight-section {
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+.spotlight-main {
+  border-radius: 1rem !important;
+  border: 1px solid rgba(255,255,255,.07) !important;
+  overflow: hidden !important;
+}
+
+/* Details: true full-screen cinematic canvas, backdrop first. */
+.details-overlay {
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  background: #07080d !important;
+  backdrop-filter: none !important;
+}
+.details-panel {
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #07080d !important;
+  box-shadow: none !important;
+}
+.details-scroll { background: #07080d !important; }
+.details-hero {
+  height: clamp(30rem, 69vh, 46rem) !important;
+  min-height: 30rem !important;
+  background: #090a10 !important;
+}
+.details-hero > img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center 22% !important;
+}
+.details-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(7,8,13,.93) 0%, rgba(7,8,13,.57) 32%, rgba(7,8,13,.12) 68%),
+    linear-gradient(0deg, #07080d 0%, rgba(7,8,13,.72) 18%, transparent 50%);
+}
+.details-hero > .absolute.bottom-5 {
+  z-index: 4 !important;
+  left: clamp(1.25rem, 5vw, 5rem) !important;
+  right: clamp(1.25rem, 5vw, 5rem) !important;
+  bottom: clamp(2.5rem, 8vh, 5.5rem) !important;
+  max-width: 46rem;
+}
+.details-hero h2 {
+  font-size: clamp(2.75rem, 6.5vw, 6.2rem) !important;
+  line-height: .92 !important;
+  letter-spacing: -.055em !important;
+  text-shadow: 0 4px 34px rgba(0,0,0,.66) !important;
+}
+.details-panel > button[aria-label="Cerrar detalles"] {
+  left: max(1rem, env(safe-area-inset-left)) !important;
+  right: auto !important;
+  top: max(1rem, env(safe-area-inset-top)) !important;
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  border-radius: 999px !important;
+  background: rgba(9,10,16,.56) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: white !important;
+  backdrop-filter: blur(12px);
+}
+.details-body {
+  position: relative !important;
+  z-index: 5 !important;
+  width: min(100%, 74rem) !important;
+  margin: -2.5rem auto 0 !important;
+  padding: 2.5rem clamp(1.25rem, 4vw, 3.5rem) 6rem !important;
+  background: linear-gradient(180deg, rgba(7,8,13,.74), #07080d 7rem) !important;
+}
+.details-play {
+  border-radius: .78rem !important;
+  min-height: 48px !important;
+}
+.episode-card {
+  border-color: rgba(255,255,255,.07) !important;
+  background: rgba(255,255,255,.025) !important;
+  border-radius: .85rem !important;
+}
+
+@media (max-width: 900px) {
+  .feature { min-height: 72vh !important; margin-top: -5.2rem !important; }
+  .feature-content {
+    padding: 10rem 1.25rem 7rem !important;
+  }
+  .feature-content > * { max-width: min(38rem, 94vw); }
+  .feature h1 { font-size: clamp(3rem, 12vw, 5.25rem) !important; }
+  .feature-synopsis { -webkit-line-clamp: 2 !important; }
+  .catalog-content { margin-top: -3.25rem !important; padding-inline: 1rem !important; }
+  .poster-slot { flex-basis: clamp(8.25rem, 25vw, 10.5rem) !important; }
+  .details-hero { height: 60vh !important; min-height: 26rem !important; }
+}
+
+@media (max-width: 640px) {
+  .site-header.is-at-top { background: linear-gradient(180deg, rgba(7,8,13,.92), rgba(7,8,13,.52), transparent) !important; }
+  .feature {
+    min-height: 68svh !important;
+    margin-top: -4.8rem !important;
+  }
+  .feature-image { object-position: 58% 20% !important; }
+  .feature-shade {
+    background:
+      linear-gradient(90deg, rgba(7,8,13,.74), rgba(7,8,13,.24) 72%),
+      linear-gradient(0deg, #07080d 0%, rgba(7,8,13,.88) 18%, rgba(7,8,13,.28) 54%, transparent 78%) !important;
+  }
+  .feature-content {
+    justify-content: flex-end !important;
+    padding: 9rem 1rem 5.5rem !important;
+  }
+  .feature .eyebrow { display: none !important; }
+  .feature h1 { max-width: 10ch !important; font-size: clamp(2.75rem, 15vw, 4.25rem) !important; }
+  .feature-meta { margin-bottom: .55rem !important; }
+  .feature-synopsis { display: none !important; }
+  .feature-actions { margin-top: 1rem !important; }
+  .button-primary,.button-secondary { min-height: 44px !important; padding: .65rem .95rem !important; }
+  .catalog-content { margin-top: -2.5rem !important; padding-inline: .8rem !important; }
+  .row-count { display: none !important; }
+  .row-navigation .icon-button { display: none !important; }
+  .poster-slot { flex-basis: clamp(7.5rem, 37vw, 9.3rem) !important; }
+  .media-card-title { font-size: .78rem !important; }
+  .media-kind { font-size: .52rem !important; }
+  .details-hero { height: 58svh !important; min-height: 24rem !important; }
+  .details-hero > .absolute.bottom-5 { left: 1.1rem !important; right: 1.1rem !important; bottom: 2rem !important; }
+  .details-hero h2 { font-size: clamp(2.5rem, 13vw, 4rem) !important; }
+  .details-body { margin-top: -1.5rem !important; padding: 2rem 1rem 5rem !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-poster,
+  .media-card-open,
+  .feature-image { transition: none !important; transform: none !important; }
+}

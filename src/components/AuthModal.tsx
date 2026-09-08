@@ -25,12 +25,27 @@ export const AuthModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const dialogRef = useDialogFocus(isAuthModalOpen);
+
   useEffect(() => {
     if (!isAuthModalOpen) return;
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeAuthModal(); };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [isAuthModalOpen, closeAuthModal]);
+
+  // AuthModal permanece montado aunque esté cerrado. Limpiar los campos evita
+  // reabrir el diálogo con una contraseña o un error de una sesión anterior.
+  useEffect(() => {
+    if (isAuthModalOpen) return;
+    setMode("login");
+    setUsername("");
+    setPassword("");
+    setSelectedAvatar("amber");
+    setShowPassword(false);
+    setError(null);
+    setSuccessMsg(null);
+    setIsSubmitting(false);
+  }, [isAuthModalOpen]);
 
   if (!isAuthModalOpen) return null;
 
@@ -77,11 +92,9 @@ export const AuthModal: React.FC = () => {
       }}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1} className="auth-panel relative w-full max-w-md overflow-hidden rounded-2xl bg-zinc-950/95 border border-zinc-800/80 shadow-2xl shadow-amber-500/10 p-6 sm:p-8">
-        {/* Glow de fondo */}
         <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-amber-500/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-indigo-500/15 blur-3xl" />
 
-        {/* Botón cerrar */}
         <button
           type="button"
           onClick={closeAuthModal}
@@ -91,7 +104,6 @@ export const AuthModal: React.FC = () => {
           <X size={18} />
         </button>
 
-        {/* Encabezado */}
         <div className="text-center mb-6">
           <h2 id="auth-title" className="text-2xl font-bold text-white tracking-tight font-display">
             {mode === "login" ? "Bienvenido a MeriStream" : "Únete a MeriStream"}
@@ -103,14 +115,15 @@ export const AuthModal: React.FC = () => {
           </p>
         </div>
 
-        {/* Selector de Pestañas (Login / Registro) */}
         <div className="flex p-1 mb-6 rounded-xl bg-zinc-900/80 border border-zinc-800">
           <button
             type="button"
             onClick={() => {
               setMode("login");
               setError(null);
+              setSuccessMsg(null);
             }}
+            aria-pressed={mode === "login"}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
               mode === "login"
                 ? "bg-amber-500 text-black shadow-md"
@@ -125,7 +138,9 @@ export const AuthModal: React.FC = () => {
             onClick={() => {
               setMode("register");
               setError(null);
+              setSuccessMsg(null);
             }}
+            aria-pressed={mode === "register"}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
               mode === "register"
                 ? "bg-amber-500 text-black shadow-md"
@@ -137,22 +152,20 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Mensajes de Alerta / Éxito */}
         {error && (
-          <div className="mb-4 flex items-center gap-2.5 p-3 text-xs text-red-400 bg-red-950/40 border border-red-800/60 rounded-xl">
+          <div role="alert" className="mb-4 flex items-center gap-2.5 p-3 text-xs text-red-400 bg-red-950/40 border border-red-800/60 rounded-xl">
             <AlertCircle size={16} className="shrink-0 text-red-400" />
             <span>{error}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-4 flex items-center gap-2.5 p-3 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 rounded-xl">
+          <div role="status" aria-live="polite" className="mb-4 flex items-center gap-2.5 p-3 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 rounded-xl">
             <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
             <span>{successMsg}</span>
           </div>
         )}
 
-        {/* Formulario */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="auth-username" className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-1.5">
@@ -170,7 +183,7 @@ export const AuthModal: React.FC = () => {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="ej. animefan99"
                 required
-                autoFocus
+                data-dialog-autofocus
                 className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/90 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors"
               />
             </div>
@@ -198,6 +211,7 @@ export const AuthModal: React.FC = () => {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                aria-pressed={showPassword}
                 className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300"
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -205,13 +219,12 @@ export const AuthModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Selector de Avatar (Solo en Registro) */}
           {mode === "register" && (
             <div>
-              <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+              <span className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
                 Color de Perfil
-              </label>
-              <div className="auth-avatar-options flex items-center gap-3">
+              </span>
+              <div className="auth-avatar-options flex items-center gap-3" role="group" aria-label="Color de perfil">
                 {AVATAR_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
@@ -237,7 +250,7 @@ export const AuthModal: React.FC = () => {
             className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
             {isSubmitting ? (
-              <span className="inline-block h-4 w-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+              <><span className="inline-block h-4 w-4 border-2 border-black border-t-transparent rounded-full animate-spin" aria-hidden="true" /><span>Procesando…</span></>
             ) : mode === "login" ? (
               <>
                 <LogIn size={16} /> Iniciar Sesión
@@ -250,7 +263,6 @@ export const AuthModal: React.FC = () => {
           </button>
         </form>
 
-        {/* Footer simple */}
         <div className="mt-6 pt-4 border-t border-zinc-900 text-center">
           <p className="text-[11px] text-zinc-500">
             Tus datos de visualización se sincronizan de forma segura y privada.

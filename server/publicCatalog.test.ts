@@ -355,6 +355,32 @@ describe("TMDB public catalog", () => {
     expect(detail?.kitsu_id).toBeNull();
   });
 
+  it("completes a partial Wikidata anime identity through AniList", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/tv/12345")) {
+        return new Response(JSON.stringify({ id: 12345, name: "Example Anime", original_name: "Example Anime", first_air_date: "2024-01-01", seasons: [] }), { status: 200 });
+      }
+      if (url.includes("query.wikidata.org")) {
+        return new Response(JSON.stringify({ results: { bindings: [{ anilist: { value: "113417" } }] } }), { status: 200 });
+      }
+      if (url.includes("graphql.anilist.co")) {
+        return new Response(JSON.stringify({ data: { Media: {
+          id: 113417,
+          idMal: 40746,
+          title: { romaji: "Example Anime", english: "Example Anime", native: "例" },
+          synonyms: [],
+        } } }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const detail = await getPublicCatalogDetail("anime", 12345);
+    expect(detail?.mal_id).toBe(40746);
+    expect(detail?.anilist_id).toBe("113417");
+  });
+
   it("resolves an anime film through TMDB movie details and keeps a virtual episode", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

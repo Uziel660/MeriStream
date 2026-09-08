@@ -132,7 +132,10 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
       : Promise.resolve(null),
   ]);
   let publicAnime: Awaited<ReturnType<typeof getPublicCatalogDetail>> = null;
-  if (req.kind === "anime" && !legacy?.mal_id && !legacy?.anilist_id) {
+  // A legacy row can have only one external id. Fetch the public TMDB
+  // crosswalk whenever either MAL or AniList is missing so Zoko's MAL
+  // locator is still advertised after the missing side is recovered.
+  if (req.kind === "anime" && (!legacy?.mal_id || !legacy?.anilist_id)) {
     publicAnime = await getPublicCatalogDetail("anime", req.tmdbId).catch(() => null);
   }
   return {

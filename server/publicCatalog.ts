@@ -328,6 +328,60 @@ async function fetchWikidataIdentity(tmdbId: number): Promise<AnimeIdentity | nu
   }
 }
 
+/**
+ * Completes a partial Wikidata cross-reference through AniList. Wikidata may
+ * contain only one of MAL/AniList; querying by the known numeric id lets
+ * AniList return the paired id without guessing from a localized title.
+ */
+async function fetchAniListIdentityById(identity: Pick<AnimeIdentity, "anilistId" | "malId">): Promise<AnimeIdentity | null> {
+  const anilistId = identity.anilistId && /^\d+$/.test(String(identity.anilistId))
+    ? Number(identity.anilistId)
+    : undefined;
+  const malId = Number.isInteger(identity.malId) && Number(identity.malId) > 0
+    ? Number(identity.malId)
+    : undefined;
+  if (anilistId === undefined && malId === undefined) return null;
+
+  const variables: Record<string, number> = {};
+  if (anilistId !== undefined) variables.id = anilistId;
+  else if (malId !== undefined) variables.idMal = malId;
+  try {
+    const response = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "MeriStream/1.0" },
+      body: JSON.stringify({
+        query: `query ($id: Int, $idMal: Int) { Media(id: $id, idMal: $idMal, type: ANIME) { id idMal title { romaji english native } synonyms } }`,
+        variables,
+      }),
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) return null;
+    const media = (await response.json() as any)?.data?.Media;
+    if (!media) return null;
+    const aliases = [media.title?.romaji, media.title?.english, media.title?.native, ...(Array.isArray(media.synonyms) ? media.synonyms : [])]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim());
+    return {
+      anilistId: media.id != null ? String(media.id) : null,
+      malId: Number.isInteger(media.idMal) ? Number(media.idMal) : null,
+      kitsuId: null,
+      aliases: [...new Set(aliases)],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mergeAnimeIdentity(primary: AnimeIdentity, secondary: AnimeIdentity | null): AnimeIdentity {
+  if (!secondary) return primary;
+  return {
+    anilistId: primary.anilistId || secondary.anilistId,
+    malId: primary.malId || secondary.malId,
+    kitsuId: primary.kitsuId || secondary.kitsuId,
+    aliases: [...new Set([...(primary.aliases || []), ...(secondary.aliases || [])])],
+  };
+}
+
 function applySpanishTranslation(detail: TmdbDetail): TmdbDetail {
   const translations = Array.isArray(detail.translations?.translations)
     ? detail.translations.translations
@@ -441,7 +495,12 @@ async function fetchAnimeIdentity(tmdbId: number, title: string, originalTitle?:
   // Prefer an exact TMDB cross-reference when available. This avoids fuzzy
   // title search attaching a franchise or a synopsis-only Kitsu result.
   const wikidata = await fetchWikidataIdentity(tmdbId);
-  if (wikidata) return wikidata;
+  if (wikidata) {
+    const complete = wikidata.malId && wikidata.anilistId
+      ? wikidata
+      : mergeAnimeIdentity(wikidata, await fetchAniListIdentityById(wikidata));
+    if (complete.malId || complete.anilistId) return complete;
+  }
   const cacheKey = `anilist:${search.toLowerCase()}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.value as AnimeIdentity;

@@ -24,6 +24,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 - Los relays Mega pasan una sonda de metadata y primeros 2 KiB antes de entrar al selector; un 502/429 queda como candidato fallido y no dispara una cascada falsa en el player.
 - Gnula usa su endpoint público de player para descubrir servidores en tiempo de reproducción.
 - La cartelera pública TMDB pagina las solicitudes y la respuesta unificada de 60 intercala 20 películas, 20 series y 20 animes; las fichas siguen siendo virtuales y se resuelven por sus IDs canónicos.
+- TMDB puede devolver una imagen PNG de logotipo como `poster_path` (el caso observado de “Te irás al infierno” medía 177×21). El catálogo y las recomendaciones ahora consultan el detalle canónico para sustituir ese arte por el póster vertical; el backfill local también marca esos PNG para reparación.
 - El reparador de identidades usa cruces TMDB→Wikidata exactos antes de búsquedas difusas. En la última muestra se aplicaron cinco coincidencias verificadas; los casos dudosos no se modificaron.
 - Subtítulos: OpenSubtitles v3, TVSubtitles, YIFY y SubtitleCat convergen a candidatos internos, deduplicación, ranking, proxy y WebVTT. Las URLs externas no se entregan al frontend.
 - Zoko informa `subtitle_mode=burned_in` cuando el endpoint `/sub` no trae pista externa; el player muestra “Subtítulos incrustados”. Los subtítulos quemados en píxeles no se pueden cambiar ni traducir desde el navegador.
@@ -38,13 +39,14 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 
 ## Validación ejecutada
 
-- `npm test -- --reporter=dot`: 81 archivos, 734 pruebas.
+- `npm test -- --reporter=dot`: 81 archivos, 737 pruebas.
 - `npx tsc --noEmit --pretty false`: correcto.
 - `npm run build`: correcto; Vite y bundle de servidor generados.
 - Playwright Chromium:
   - exposición LatAnime/Zoko: correcto;
   - fallback TioAnime y reproducción en player interno: correcto;
   - guardia de identidad TMDB para Overflow: correcto.
+  - paginación del catálogo unificado y reparación visual de la cartelera: correctas.
 - Pruebas reales de red: catálogo, resolución, manifiestos, segmentos y subtítulos internos WebVTT.
 
 ## Límites conocidos

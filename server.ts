@@ -2884,23 +2884,26 @@ async function startServer() {
         return res.status(404).json({ detail: "Obra canónica no encontrada." });
       }
 
-      // Reunir twins creados por importaciones de distintas plataformas. El
-      // editor suele conservar un solo media_item_id, pero la cascada debe
-      // incluir todos sus SourceLinks equivalentes.
-      const title = selectedItem.title || selectedItem.normalized_title;
-      const normalized = selectedItem.normalized_title || normalizeTitle(title);
-      const baseNormalized = selectedItem.base_normalized_title || normalizeBaseTitle(title);
-      const identityOr: Array<Record<string, unknown>> = [];
-      if (selectedItem.tmdb_id != null) identityOr.push({ tmdb_id: selectedItem.tmdb_id });
-      if (normalized) identityOr.push({ normalized_title: normalized });
-      if (baseNormalized) identityOr.push({ base_normalized_title: baseNormalized });
-      const equivalentItems = await prisma.mediaItem.findMany({
-        where: {
-          kind: selectedItem.kind,
-          OR: identityOr,
-        } as any,
-        select: { id: true },
-      });
+      // TMDB identity is authoritative. Title/base-title twins are only safe
+      // for legacy rows without an ID; mixing them with an exact-ID row can
+      // attach a different imported episode (for example an old localized
+      // alias) to the selected work.
+      let equivalentItems = selectedItem.tmdb_id != null
+        ? await prisma.mediaItem.findMany({
+            where: { kind: selectedItem.kind, tmdb_id: selectedItem.tmdb_id },
+            select: { id: true },
+          })
+        : [];
+      if (equivalentItems.length === 0) {
+        const title = selectedItem.title || selectedItem.normalized_title;
+        const normalized = selectedItem.normalized_title || normalizeTitle(title);
+        equivalentItems = normalized
+          ? await prisma.mediaItem.findMany({
+              where: { kind: selectedItem.kind, tmdb_id: null, normalized_title: normalized },
+              select: { id: true },
+            })
+          : [];
+      }
       const mediaItemIds = Array.from(new Set([mediaItemId, ...equivalentItems.map((item) => item.id)]));
       const links = await prisma.sourceLink.findMany({
         where: { media_episode: { media_item_id: { in: mediaItemIds }, season_number: season } },

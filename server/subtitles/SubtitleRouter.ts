@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { SubtitleGateway } from "./SubtitleGateway";
 import type { SubtitleKind, SubtitleSearchRequest } from "./types";
+import { getPublicCatalogDetail } from "../publicCatalog";
 
 function positiveInt(value: unknown): number | undefined {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -30,7 +31,24 @@ export function subtitleRouter(gateway: SubtitleGateway): Router {
   const handleSearch = async (req: Request, res: Response, kind: SubtitleKind, tmdbId: number) => {
     if (!tmdbId) return res.status(400).json({ error: "tmdb_id inválido", subtitles: [], tracks: [] });
     try {
-      const result = await gateway.search(searchRequest(kind, tmdbId, req));
+      const request = searchRequest(kind, tmdbId, req);
+      // Scraper subtitle sites often index the original/English title even
+      // when TMDB displays the Spanish localization. Supply all canonical
+      // aliases so the fallback provider can match the same work safely.
+      if (!request.title || !request.titleAliases?.length) {
+        const detail = await getPublicCatalogDetail(kind, tmdbId).catch(() => null);
+        if (detail) {
+          request.title = request.title || detail.title;
+          request.titleAliases = [...new Set([
+            ...(request.titleAliases || []),
+            detail.original_title,
+            detail.english_title,
+            detail.japanese_title,
+          ].filter((value): value is string => Boolean(value)))];
+          request.year = request.year || detail.year || undefined;
+        }
+      }
+      const result = await gateway.search(request);
       res.setHeader("Cache-Control", "private, max-age=300");
       return res.json(result);
     } catch (error: any) {

@@ -206,10 +206,48 @@ export function mapTmdbItem(item: TmdbItem, kind: PublicCatalogKind, isTrending 
   };
 }
 
-async function fetchAnimeIdentity(title: string, originalTitle?: string | null): Promise<AnimeIdentity> {
+async function fetchWikidataIdentity(tmdbId: number): Promise<AnimeIdentity | null> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+  const cacheKey = `wikidata-tmdb:${tmdbId}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.value as AnimeIdentity;
+  try {
+    const query = `SELECT ?mal ?anilist WHERE { ?item wdt:P4983 "${tmdbId}". OPTIONAL { ?item wdt:P4086 ?mal. } OPTIONAL { ?item wdt:P8729 ?anilist. } } LIMIT 1`;
+    const url = new URL("https://query.wikidata.org/sparql");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("query", query);
+    const response = await fetch(url, {
+      headers: { Accept: "application/sparql-results+json", "User-Agent": "MeriStream/1.0 (identity resolver)" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as any;
+    const binding = payload?.results?.bindings?.[0];
+    if (!binding) return null;
+    const mal = String(binding.mal?.value || "").trim();
+    const anilist = String(binding.anilist?.value || "").trim();
+    const value: AnimeIdentity = {
+      malId: /^\d+$/.test(mal) ? Number(mal) : null,
+      anilistId: /^\d+$/.test(anilist) ? anilist : null,
+      kitsuId: null,
+      aliases: [],
+    };
+    if (!value.malId && !value.anilistId) return null;
+    cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value });
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAnimeIdentity(tmdbId: number, title: string, originalTitle?: string | null): Promise<AnimeIdentity> {
   const search = String(title || originalTitle || "").trim();
   const empty: AnimeIdentity = { anilistId: null, malId: null, kitsuId: null, aliases: [] };
   if (!search) return empty;
+  // Prefer an exact TMDB cross-reference when available. This avoids fuzzy
+  // title search attaching a franchise or a synopsis-only Kitsu result.
+  const wikidata = await fetchWikidataIdentity(tmdbId);
+  if (wikidata) return wikidata;
   const cacheKey = `anilist:${search.toLowerCase()}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.value as AnimeIdentity;
@@ -247,16 +285,41 @@ async function fetchAnimeIdentity(title: string, originalTitle?: string | null):
   try {
     const searchUrl = new URL("https://kitsu.io/api/edge/anime");
     searchUrl.searchParams.set("filter[text]", search);
-    searchUrl.searchParams.set("page[limit]", "1");
+    // Kitsu's full-text search also matches synopsis text. Ask for several
+    // candidates and select only a title-level match; taking the first row can
+    // map an unrelated show (e.g. a Panty & Stocking synopsis mentioning
+    // "overflow") to the requested TMDB anime.
+    searchUrl.searchParams.set("page[limit]", "20");
     const response = await fetch(searchUrl, {
       headers: { Accept: "application/vnd.api+json", "User-Agent": "MeriStream/1.0" },
       signal: AbortSignal.timeout(6_000),
     });
     if (!response.ok) return empty;
     const payload = await response.json() as any;
-    const anime = payload?.data?.[0];
-    if (!anime) return empty;
-    const mappingsResponse = await fetch(`https://kitsu.io/api/edge/anime/${encodeURIComponent(String(anime.id))}/mappings`, {
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    const normalizedSearch = search.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/g, " ").trim();
+    const titleTokens = (value: string) => new Set(value.split(/\s+/).filter((token) => token.length > 1));
+    const scoreRow = (row: any): number => {
+      const attributes = row?.attributes || {};
+      const values = [attributes.canonicalTitle, attributes.titles?.canonical, ...Object.values(attributes.titles || {}), attributes.slug]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/g, " ").trim());
+      let best = 0;
+      for (const value of values) {
+        if (value === normalizedSearch) best = Math.max(best, 1);
+        const left = titleTokens(normalizedSearch);
+        const right = titleTokens(value);
+        const common = [...left].filter((token) => right.has(token)).length;
+        if (left.size && right.size) best = Math.max(best, common / Math.max(left.size, right.size));
+      }
+      return best;
+    };
+    const anime = rows
+      .map((row: any) => ({ row, score: scoreRow(row) }))
+      .sort((left: any, right: any) => right.score - left.score)[0];
+    if (!anime || anime.score < 0.8) return empty;
+    const animeRow = anime.row;
+    const mappingsResponse = await fetch(`https://kitsu.io/api/edge/anime/${encodeURIComponent(String(animeRow.id))}/mappings`, {
       headers: { Accept: "application/vnd.api+json", "User-Agent": "MeriStream/1.0" },
       signal: AbortSignal.timeout(6_000),
     });
@@ -264,14 +327,14 @@ async function fetchAnimeIdentity(title: string, originalTitle?: string | null):
     const mappings = Array.isArray(mappingsPayload?.data) ? mappingsPayload.data : [];
     const mal = mappings.find((entry: any) => entry?.attributes?.externalSite === "myanimelist/anime")?.attributes?.externalId;
     const anilist = mappings.find((entry: any) => entry?.attributes?.externalSite === "anilist/anime")?.attributes?.externalId;
-    const attributes = anime.attributes || {};
+    const attributes = animeRow.attributes || {};
     const aliases = [attributes.canonicalTitle, attributes.titles?.en, attributes.titles?.en_jp, attributes.titles?.ja_jp]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .map((value) => value.trim());
     const value: AnimeIdentity = {
       anilistId: anilist ? String(anilist) : null,
       malId: mal && /^\d+$/.test(String(mal)) ? Number(mal) : null,
-      kitsuId: String(anime.id),
+      kitsuId: String(animeRow.id),
       aliases: [...new Set(aliases)],
     };
     cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value });
@@ -422,7 +485,7 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
   const show = mapTmdbItem(detail, kind);
   show.imdb_id = detail.external_ids?.imdb_id || null;
   if (kind === "anime") {
-    const identity = await fetchAnimeIdentity(show.title, show.original_title);
+    const identity = await fetchAnimeIdentity(show.tmdb_id, show.title, show.original_title);
     show.anilist_id = identity.anilistId;
     show.mal_id = identity.malId;
     show.kitsu_id = identity.kitsuId;

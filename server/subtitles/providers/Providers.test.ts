@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenSubtitlesProvider } from "./OpenSubtitlesProvider";
 import { TvSubtitlesProvider } from "./TvSubtitlesProvider";
 import { YifySubtitlesProvider } from "./YifySubtitlesProvider";
+import { SubtitleCatProvider } from "./SubtitleCatProvider";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -30,5 +31,22 @@ describe("subtitle providers", () => {
     }));
     const result = await new TvSubtitlesProvider().search({ tmdbId: 1, kind: "series", imdbId: "tt1234567", title: "Game of Thrones", season: 1, episode: 1, preferredLanguages: ["en"] });
     expect(result[0]).toMatchObject({ provider: "tvsubtitles", language: "en", sourceUrl: "https://www.tvsubtitles.net/files/Game-en.zip" });
+  });
+
+  it("matches SubtitleCat by title and maps direct language files", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("index.php?search=")) {
+        return new Response(`<a href="subs/1422/The%20Matrix%20%281999%29.html">The Matrix (1999)</a>`, { status: 200 });
+      }
+      if (url.includes("/subs/1422/")) {
+        return new Response(`<a href="/subs/1422/The%20Matrix%20%281999%29-es-419.srt">Download</a><a href="/subs/1422/The%20Matrix%20%281999%29-en.srt">Download</a>`, { status: 200 });
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+    const result = await new SubtitleCatProvider(1_000).search({ tmdbId: 603, kind: "movie", title: "The Matrix", year: 1999, preferredLanguages: ["es-419", "en"] });
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: "subtitlecat", language: "es-419", sourceUrl: "https://subtitlecat.com/subs/1422/The%20Matrix%20%281999%29-es-419.srt", format: "srt" }),
+      expect.objectContaining({ provider: "subtitlecat", language: "en" }),
+    ]));
   });
 });

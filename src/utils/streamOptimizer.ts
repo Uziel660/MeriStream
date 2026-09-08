@@ -69,6 +69,7 @@ export interface ScoredServer {
   language?: string;
   audio_language?: string;
   subtitle_language?: string;
+  subtitle_mode?: 'external' | 'burned_in' | 'unknown';
   subtitles?: Array<{ id?: string; label?: string; language?: string; url?: string; src?: string; is_default?: boolean }>;
 }
 
@@ -423,6 +424,7 @@ export function scoredServerFromRanked(ranked: ExtendedRankedStream | RankedStre
     language: ext.language,
     audio_language: ext.audio_language,
     subtitle_language: ext.subtitle_language,
+    subtitle_mode: ext.subtitle_mode,
     subtitles: ext.subtitles,
     original_url: ext.original_url || ranked.url,
   });
@@ -611,6 +613,7 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
       language: m.language ?? s.language,
       audio_language: m.audio_language ?? s.audio_language,
       subtitle_language: m.subtitle_language ?? s.subtitle_language,
+      subtitle_mode: m.subtitle_mode ?? s.subtitle_mode,
       subtitles: m.subtitles ?? s.subtitles,
       ...(isExpired ? { notPlayable: true, score: -1000 } : {}),
       ...(isRaw

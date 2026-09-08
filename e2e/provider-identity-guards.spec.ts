@@ -8,7 +8,7 @@ test('TMDB identity prevents legacy duplicate links from leaking into Overflow',
   const detail = await detailResponse.json();
   expect(detail.tmdb_id).toBe(95897);
   expect(detail.title).toBe('Overflow');
-  expect(detail.mal_id).toBe(8795);
+  expect(detail.mal_id).toBe(40746);
 
   const gatewayResponse = await page.request.get(
     `${BASE_URL}/api/v1/providers/anime/95897?season=1&episode=1&subtitles=es,en`,
@@ -21,8 +21,13 @@ test('TMDB identity prevents legacy duplicate links from leaking into Overflow',
   const zoko = sources.filter((source: any) => source.provider === 'zokoanime');
   expect(zoko.map((source: any) => source.canonicalLocator || source.url)).toEqual(
     expect.arrayContaining([
-      'https://zokoanime.video/stream/mal/8795/1/sub',
-      'https://zokoanime.video/stream/mal/8795/1/dub',
+      'https://zokoanime.video/stream/mal/40746/1/sub',
+      'https://zokoanime.video/stream/mal/40746/1/dub',
     ]),
   );
+
+  const cascadeResponse = await page.request.get(`${BASE_URL}/api/v1/play-multi/cmtqj6jwe25b8butggh2297ae?season=1`);
+  expect(cascadeResponse.ok()).toBeTruthy();
+  const cascade = await cascadeResponse.json();
+  expect(cascade.media_item_ids).toEqual(['cmtqj6jwe25b8butggh2297ae']);
 });

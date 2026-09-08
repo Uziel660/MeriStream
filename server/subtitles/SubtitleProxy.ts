@@ -15,6 +15,7 @@ const ALLOWED_HOSTS: Record<string, string[]> = {
   "opensubtitles-v3": ["opensubtitles-v3.strem.io", "opensubtitles.stremio.homes", "opensubtitles.strem.io", "subs5.strem.io", "dl.opensubtitles.org"],
   yify: ["www.yifysubtitles.ch", "yifysubtitles.ch", "yts-subs.com", "www.yts-subs.com"],
   tvsubtitles: ["www.tvsubtitles.net", "tvsubtitles.net"],
+  subtitlecat: ["subtitlecat.com", "www.subtitlecat.com"],
   // Zoko publishes sidecar VTT files from the same Aniwatch CDN family as
   // its HLS manifest. Keep this narrow allowlist; arbitrary subtitle hosts
   // are still rejected by the proxy.

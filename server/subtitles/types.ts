@@ -8,6 +8,7 @@ export interface SubtitleSearchRequest {
   imdbId?: string | null;
   preferredLanguages?: string[];
   title?: string | null;
+  titleAliases?: string[];
   year?: number | null;
 }
 

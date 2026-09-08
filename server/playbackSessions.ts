@@ -403,6 +403,25 @@ function isDashManifest(response: Response, url: string): boolean {
   return /dash\+xml/i.test(response.headers.get("content-type") || "") || /\.mpd(?:\?|$)/i.test(url);
 }
 
+/**
+ * A few upstream CDNs return HLS transport segments with `text/html` even
+ * though the body is a valid MPEG-TS/fMP4 segment. Passing that MIME through
+ * makes native players reject an otherwise healthy stream. Correct only the
+ * well-known media suffixes; genuine HTML error pages remain untouched and
+ * still fail normally at the player.
+ */
+export function relayContentType(response: Response, url: string): string | null {
+  const original = response.headers.get("content-type");
+  if (!original || !/text\/html/i.test(original)) return original;
+  let pathname = "";
+  try { pathname = new URL(url).pathname.toLowerCase(); } catch { pathname = url.toLowerCase().split(/[?#]/, 1)[0]; }
+  if (/\.(?:ts|m2ts)$/.test(pathname)) return "video/mp2t";
+  if (/\.m4s$/.test(pathname)) return "video/iso.segment";
+  if (/\.(?:aac|m4a)$/.test(pathname)) return "audio/aac";
+  if (/\.(?:mp4|webm)$/.test(pathname)) return pathname.endsWith(".webm") ? "video/webm" : "video/mp4";
+  return original;
+}
+
 async function readManifestLimited(response: Response, maxBytes = 2 * 1024 * 1024): Promise<string> {
   const advertised = Number(response.headers.get("content-length"));
   if (Number.isFinite(advertised) && advertised > maxBytes) {
@@ -491,7 +510,9 @@ export function createPlaybackSessionHandlers(
       }
       status = upstream.status;
       for (const header of ["content-type", "content-length", "content-range", "accept-ranges"]) {
-        const value = upstream.headers.get(header);
+        const value = header === "content-type"
+          ? relayContentType(upstream, upstream.url || url)
+          : upstream.headers.get(header);
         if (value) res.setHeader(header, value);
       }
       if (isManifest(upstream, upstream.url || url)) {

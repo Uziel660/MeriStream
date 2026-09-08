@@ -51,4 +51,16 @@ describe("SubtitleGateway", () => {
       expect(result.tracks.every((track) => /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt$/i.test(track.url))).toBe(true);
     }
   });
+
+  it("rejects dotted episode markers from a different episode", async () => {
+    const gateway = new SubtitleGateway([
+      provider("subtitlecat", [
+        { id: "wrong", provider: "subtitlecat", language: "en", label: "Game.Of.Thrones.S01.E04", release: "Game.Of.Thrones.S01.E04", sourceUrl: "https://subtitlecat.com/subs/wrong-en.srt" },
+        { id: "right", provider: "subtitlecat", language: "en", label: "Game.Of.Thrones.S01.E01", release: "Game.Of.Thrones.S01.E01", sourceUrl: "https://subtitlecat.com/subs/right-en.srt" },
+      ], 0, ["series"]),
+    ], { idResolver: { resolve: async () => "tt0944947", clear: () => {} } as any });
+    const result = await gateway.search({ tmdbId: 1399, kind: "series", season: 1, episode: 1, preferredLanguages: ["en"] });
+    expect(result.tracks).toHaveLength(1);
+    expect(result.tracks[0].id).toBe("right");
+  });
 });

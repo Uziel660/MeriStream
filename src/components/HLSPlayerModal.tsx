@@ -238,6 +238,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return [...byUrl.values()];
   })();
   const subtitleSignature = subtitleTracks.map((track) => `${track.id}:${track.url}`).join('|');
+  const hasBurnedInSubtitles = servers[activeServerIndex]?.subtitle_mode === 'burned_in';
   const subtitleSourceUrl = (track: SubtitleTrack): string => {
     const parsedUrl = new URL(track.url, window.location.href);
     if (parsedUrl.origin === window.location.origin) return parsedUrl.toString();
@@ -2444,6 +2445,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                 {/* LADO DERECHO: AUDIO, SUBTÍTULOS, VELOCIDAD, CALIDAD, PIP, FULLSCREEN */}
                 <div className="flex items-center gap-2 sm:gap-3">
+                  {hasBurnedInSubtitles && subtitleTracks.length === 0 && (
+                    <span
+                      className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300"
+                      title="Este video trae los subtítulos incrustados por el proveedor"
+                    >
+                      Subtítulos incrustados
+                    </span>
+                  )}
                   {/* MENÚ DE IDIOMA / PISTAS DE AUDIO */}
                   {(audioTracks.length > 0 || renditionServers.length > 0) && (
                     <div className="relative">

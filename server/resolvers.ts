@@ -1280,7 +1280,44 @@ async function isVidSrcManifestUsable(
       },
     });
     if (response.status !== 200) return false;
-    return (await response.text()).includes("#EXTM3U");
+    const manifest = await response.text();
+    if (!manifest.includes("#EXTM3U")) return false;
+
+    // A VidSrc mirror can return a healthy master/child playlist while its
+    // first media resource is already an image/HTML placeholder. Probe one
+    // segment before accepting the mirror so the player does not announce a
+    // false direct source and immediately cascade through every fallback.
+    const mediaLine = (text: string): string | undefined => text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith("#"));
+    const child = mediaLine(manifest);
+    if (!child) return true;
+    const childUrl = new URL(child, response.url || hlsUrl).toString();
+    const childResponse = await fetch(childUrl, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { Accept: "*/*", ...(requiredHeaders || {}) },
+    });
+    if (childResponse.status !== 200) return false;
+    const childText = await childResponse.text();
+    const segment = mediaLine(childText);
+    if (!segment) return true;
+    const segmentResponse = await fetch(new URL(segment, childResponse.url || childUrl), {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { Accept: "*/*", Range: "bytes=0-1023", ...(requiredHeaders || {}) },
+    });
+    if (segmentResponse.status < 200 || segmentResponse.status >= 300) return false;
+    const bytes = new Uint8Array(await segmentResponse.arrayBuffer()).subarray(0, 16);
+    if (bytes.length === 0) return false;
+    // Reject common poster/error bodies while allowing MPEG-TS, fMP4, AAC and
+    // providers that mislabel valid bytes as text/html.
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const isPng = png.every((value, index) => bytes[index] === value);
+    const textPrefix = new TextDecoder().decode(bytes).trimStart().toLowerCase();
+    return !jpeg && !isPng && !textPrefix.startsWith("<html") && !textPrefix.startsWith("<!doctype");
   } catch {
     return false;
   } finally {

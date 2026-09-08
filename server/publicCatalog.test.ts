@@ -99,6 +99,28 @@ describe("TMDB public catalog", () => {
     expect(detail?.kitsu_id).toBe("42323");
   });
 
+  it("uses the exact TMDB cross-reference instead of a synopsis-only Kitsu hit", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/tv/95897")) {
+        return new Response(JSON.stringify({ id: 95897, name: "Overflow", original_name: "おーばーふろぉ", first_air_date: "2020-01-06", seasons: [] }), { status: 200 });
+      }
+      if (url.includes("query.wikidata.org")) {
+        return new Response(JSON.stringify({ results: { bindings: [{ mal: { value: "40746" }, anilist: { value: "113417" } }] } }), { status: 200 });
+      }
+      if (url.includes("kitsu.io")) {
+        return new Response(JSON.stringify({ data: [{ id: "5497", attributes: { titles: { en: "Panty & Stocking with Garterbelt" } } }] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const detail = await getPublicCatalogDetail("anime", 95897);
+    expect(detail?.mal_id).toBe(40746);
+    expect(detail?.anilist_id).toBe("113417");
+    expect(detail?.kitsu_id).toBeNull();
+  });
+
   it("resolves an anime film through TMDB movie details and keeps a virtual episode", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

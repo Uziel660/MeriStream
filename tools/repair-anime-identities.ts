@@ -113,7 +113,7 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
   let bestScore = 0;
   for (const row of rows) {
     const attributes = row?.attributes || {};
-    const titles = [attributes.titles?.canonical, ...Object.values(attributes.titles || {}), attributes.slug]
+    const titles = [attributes.canonicalTitle, attributes.titles?.canonical, ...Object.values(attributes.titles || {}), attributes.slug]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const score = Math.max(...titles.map((title) => similarity(query, title)), 0);
     if (score > bestScore) {

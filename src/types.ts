@@ -91,6 +91,8 @@ export interface RankedStream {
   language?: string;
   audio_language?: string;
   subtitle_language?: string;
+  /** Indicates whether subtitles are external tracks or burned into the video. */
+  subtitle_mode?: 'external' | 'burned_in' | 'unknown';
   subtitles?: SubtitleTrack[];
 }
 

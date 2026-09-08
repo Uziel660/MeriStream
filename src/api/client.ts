@@ -235,6 +235,7 @@ export interface PlaybackResolution {
     src?: string;
     is_default?: boolean;
   }>;
+  subtitle_mode?: 'external' | 'burned_in' | 'unknown';
   failure_reason?:
     | "expired_without_locator"
     | "unresolved"

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./playbackSessions";
+import { PlaybackSessionStore, createPlaybackSessionHandlers, relayContentType } from "./playbackSessions";
 import type { ResolvedStreamMeta } from "./resolvers";
 
 function meta(original: string, url: string, refreshAfter: number, generation = "g1"): ResolvedStreamMeta {
@@ -14,6 +14,12 @@ function meta(original: string, url: string, refreshAfter: number, generation = 
 
 describe("PlaybackSessionStore", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("normalizes a mislabeled MPEG-TS segment without masking HTML errors", () => {
+    const response = new Response("binary", { headers: { "content-type": "text/html; charset=UTF-8" } });
+    expect(relayContentType(response, "https://cdn.example/hls/seg-1.ts")).toBe("video/mp2t");
+    expect(relayContentType(response, "https://cdn.example/error/page")).toMatch(/text\/html/i);
+  });
 
   it("creates a session from existing resolution metadata without resolving twice", async () => {
     let calls = 0;

@@ -518,7 +518,15 @@ export async function resolveGnulaPage(
   locator: string,
   options?: PlatformPageResolveOptions
 ): Promise<PlatformPlaybackResolution> {
-  return resolvePlatformPage(locator, options);
+  // GNULA does not render its real servers in the initial HTML.  The page
+  // exposes a public WordPress player endpoint after the user presses play;
+  // use the same adapter here so JIT playback sees those servers too instead
+  // of treating the canonical episode page as an unresolved embed.
+  const streamExtractor = options?.streamExtractor ?? (async (url: string) => {
+    const { GnulaAdapter } = await import("./scrapers/adapters/GnulaAdapter");
+    return new GnulaAdapter().extractStream(url);
+  });
+  return resolvePlatformPage(locator, { ...options, streamExtractor });
 }
 
 /** Resolutor específico para tioanime.com */

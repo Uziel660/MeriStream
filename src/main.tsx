@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { HiddenGenresProvider } from './hooks/useHiddenGenres';
 import './index.css';
 import './styles/streaming-2026.css';
+import './styles/overlays-2026.css';
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin (con login).
 // Se carga bajo demanda para que el bundle inicial público no incluya la UI administrativa.

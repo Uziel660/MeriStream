@@ -23,8 +23,8 @@ export interface AppPreferences {
 }
 
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
-  preferredLanguages: ['es-419', 'es', 'en', 'ja'],
-  preferredSubtitleLanguages: ['es-419', 'es', 'en'],
+  preferredLanguages: ['es-419', 'es-ES', 'es', 'en', 'ja'],
+  preferredSubtitleLanguages: ['es-419', 'es-ES', 'es', 'en'],
   defaultQuality: 'auto',
   subtitlePosition: 'bottom',
   subtitleScale: 'normal',

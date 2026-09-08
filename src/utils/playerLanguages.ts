@@ -1,5 +1,6 @@
 export type PlayerLanguageCode =
   | 'es-419'
+  | 'es-ES'
   | 'es'
   | 'en'
   | 'ja'
@@ -41,7 +42,8 @@ export function normalizePlayerLanguage(value: unknown): PlayerLanguageCode {
     /(?:espanol|spanish).*lat(?:ino|am|in america)/.test(raw)
   ) return 'es-419';
 
-  if (/^(?:es|spa|spanish|espanol|castellano|es-es|es-mx)$/.test(raw)) return 'es';
+  if (/^(?:castellano|es-es|spanish-spain|spanish spain|espanol-espana|espanol espana)$/.test(raw)) return 'es-ES';
+  if (/^(?:es|spa|spanish|espanol)$/.test(raw)) return 'es';
   if (/^(?:en|eng|english|en-us|en-gb)$/.test(raw)) return 'en';
   if (/^(?:ja|jp|jpn|japanese|japones|ja-jp)$/.test(raw)) return 'ja';
   if (/^(?:ko|kor|korean|coreano|ko-kr)$/.test(raw)) return 'ko';
@@ -66,6 +68,7 @@ export function normalizePlayerLanguage(value: unknown): PlayerLanguageCode {
 
 const PLAYER_LANGUAGE_LABELS: Record<string, string> = {
   'es-419': 'Español latino',
+  'es-ES': 'Castellano',
   es: 'Español',
   en: 'Inglés',
   ja: 'Japonés',

@@ -41,7 +41,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 
 ## Validación ejecutada
 
-- `npm test -- --reporter=dot`: 81 archivos, 737 pruebas.
+- `npm test -- --reporter=dot`: 82 archivos, 739 pruebas.
 - `npx tsc --noEmit --pretty false`: correcto.
 - `npm run build`: correcto; Vite y bundle de servidor generados.
 - `npm run lint`: correcto (TypeScript).

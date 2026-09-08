@@ -69,6 +69,49 @@ describe('createPlaybackRequests', () => {
     });
   });
 
+  it('opens a healthy legacy stream without waiting for slow title recovery', async () => {
+    const legacyShow: Show = {
+      id: 'legacy-fast',
+      title: 'Legacy title',
+      tmdb_id: null,
+      category: 'series',
+      kind: 'series',
+      year: 2020,
+    };
+    let finishRecovery!: (value: Response) => void;
+    const pendingRecovery = new Promise<Response>((resolve) => { finishRecovery = resolve; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/v1/providers/resolve-title') return pendingRecovery;
+      if (url === '/api/v1/play/episode%2F1') {
+        return response({ stream_url: 'https://legacy.example/ready-now.m3u8' });
+      }
+      if (url.startsWith('/api/v1/subtitles?')) return response({ tracks: [] });
+      throw new Error(`unexpected request ${url}`);
+    });
+
+    const bundle = createPlaybackRequests({ show: legacyShow, episode, kind: 'series', fetchImpl: fetchMock });
+    const core = await bundle.core;
+    expect(core).toMatchObject({
+      gatewayData: null,
+      effectiveTmdbId: 0,
+      recoveredIdentity: false,
+      legacyData: { stream_url: 'https://legacy.example/ready-now.m3u8' },
+    });
+
+    let providerSettled = false;
+    void bundle.provider.then(() => { providerSettled = true; });
+    await Promise.resolve();
+    expect(providerSettled).toBe(false);
+
+    finishRecovery(response({
+      resolved: true,
+      identity: { tmdbId: 12345, confidence: 'high' },
+      gateway: { sources: [] },
+    }));
+    await expect(bundle.subtitles).resolves.toMatchObject({ effectiveTmdbId: 12345 });
+  });
+
   it('uses HIGH-confidence title recovery once and then unlocks subtitles with the recovered TMDB id', async () => {
     const legacyShow: Show = {
       id: 'legacy-1',

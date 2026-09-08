@@ -162,7 +162,17 @@ function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
   return {
     ...existing,
     title: incoming.title || existing.title,
-    title_aliases: Array.from(new Set([...(existing.title_aliases || []), ...(incoming.title_aliases || [])])),
+    // Keep the local/provider title as a searchable alias before replacing
+    // the display label with TMDB's canonical translation. This preserves
+    // searches such as "Shiguang Dailiren" when TMDB displays "Link Click".
+    title_aliases: Array.from(new Set([
+      ...(existing.title_aliases || []),
+      existing.title,
+      existing.original_title || '',
+      existing.english_title || '',
+      existing.japanese_title || '',
+      ...(incoming.title_aliases || []),
+    ].filter(Boolean))),
     original_title: incoming.original_title || existing.original_title,
     english_title: incoming.english_title || existing.english_title,
     japanese_title: incoming.japanese_title || existing.japanese_title,

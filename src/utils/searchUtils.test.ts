@@ -29,6 +29,15 @@ describe('searchUtils', () => {
     expect(results[0].title).toBe('La isla del minotauro');
   });
 
+  it('encuentra una ficha cuyo título visible fue localizado por TMDB', () => {
+    const results = searchShows([
+      show('Link Click', { title_aliases: ['Shiguang Dailiren', '时光代理人'] }),
+      show('Otra historia'),
+    ], 'Shiguang Dailiren');
+
+    expect(results[0].title).toBe('Link Click');
+  });
+
   it('no destruye títulos japoneses al compactar la búsqueda', () => {
     expect(normalizeTextStrict('進撃の巨人')).toBe('進撃の巨人');
   });

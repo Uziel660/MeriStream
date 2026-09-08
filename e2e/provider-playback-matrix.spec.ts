@@ -9,6 +9,7 @@ async function playCatalogTitle(
   expectedProvider: string,
   expectedEpisodeSource: RegExp | null,
   seasonButtonText?: string,
+  uiTitle = expectedTitle,
 ) {
   if (process.env.DEBUG_E2E) {
     page.on('request', (request) => {
@@ -40,7 +41,11 @@ async function playCatalogTitle(
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill(searchTerm);
-  const card = page.locator('button.media-card').filter({ hasText: expectedTitle }).first();
+  // TMDB may display a localized/English canonical label while the provider
+  // catalog uses a romanized alias (for example Shiguang Dailiren → Link
+  // Click). The search still uses the alias; select the visible canonical
+  // card explicitly when it differs from the provider title.
+  const card = page.locator('button.media-card').filter({ hasText: uiTitle }).first();
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.click();
 
@@ -64,7 +69,14 @@ async function playCatalogTitle(
     { timeout: 45_000 },
   );
   const resolveWait = page.waitForResponse(
-    (response) => /\/api\/v1\/(?:resolve-embed|catalog\/episode-servers|playback\/sessions)$/.test(response.url()),
+    (response) => {
+      if (!/\/api\/v1\/(?:resolve-embed|catalog\/episode-servers|playback\/sessions)$/.test(response.url())) return false;
+      // A provider can legitimately return 4xx for its first stale locator
+      // while the controlled fallback is still resolving. Observe the
+      // successful terminal resolution instead of treating that intermediate
+      // response as the whole playback attempt.
+      return response.status() === 200 || response.status() === 201;
+    },
     { timeout: 60_000 },
   );
   // A source may be playable directly (Cinecalidad Vimeos/SprintCDN) or need
@@ -111,7 +123,7 @@ test.describe('Matriz E2E de proveedores activos', () => {
 
   test('LatAnime entrega reproducción nativa de un anime latino', async ({ page }) => {
     test.setTimeout(180_000);
-    await playCatalogTitle(page, 'Shiguang Dailiren', 'Shiguang Dailiren', 'latanime', /latanime\.org/i, 'Temporada 3');
+    await playCatalogTitle(page, 'Shiguang Dailiren', 'Shiguang Dailiren', 'latanime', /latanime\.org/i, 'Temporada 3', 'Link Click');
   });
 
   test('GnulaHD entrega reproducción nativa después de probar sus locators Byse', async ({ page }) => {

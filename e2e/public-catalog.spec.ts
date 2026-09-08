@@ -186,6 +186,17 @@ test('la búsqueda tolera un error de escritura y mantiene los títulos en otros
   await expect(page.locator('button.media-card').filter({ hasText: 'One Piece' }).first()).toBeVisible({ timeout: 30_000 });
 });
 
+test('la búsqueda conserva un alias romanizado aunque TMDB muestre otro título', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
+  await page.getByRole('searchbox').fill('Shiguang Dailiren');
+  // The provider import uses the romanized title while the canonical TMDB
+  // card is displayed as Link Click; both must resolve to the same TMDB id.
+  await expect(page.locator('button.media-card').filter({ hasText: 'Link Click' }).first()).toBeVisible({ timeout: 45_000 });
+});
+
 test('la búsqueda del usuario consulta TMDB con el texto completo', async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

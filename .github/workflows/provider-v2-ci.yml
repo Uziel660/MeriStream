@@ -4,7 +4,9 @@ on:
   pull_request:
     branches: [lastversion]
   push:
-    branches: [feat/provider-v2-es-multilang]
+    branches:
+      - feat/provider-v2-es-multilang
+      - integrate/immersive-ui-provider-v2
 
 jobs:
   verify:

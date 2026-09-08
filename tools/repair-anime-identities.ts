@@ -275,7 +275,16 @@ async function resolve(row: any): Promise<Result> {
           },
         });
       } catch (error: any) {
-        if (error?.code === "P2002") return { ...result, status: "conflict", reason: "mal_id_already_used" };
+        if (error?.code === "P2002") {
+          // A duplicate MAL can be a second imported row for the same work.
+          // Keep the unique MAL untouched, but retain the independent AniList
+          // cross-reference when it is still missing on this row.
+          if (!row.anilist_id && enrichedAniList) {
+            await prisma.show.update({ where: { id: row.id }, data: { anilist_id: enrichedAniList } });
+            return { ...result, status: "updated", reason: "anilist_only_mal_conflict" };
+          }
+          return { ...result, status: "conflict", reason: "mal_id_already_used" };
+        }
         throw error;
       }
     }
@@ -334,7 +343,13 @@ async function resolve(row: any): Promise<Result> {
         },
       });
     } catch (error: any) {
-      if (error?.code === "P2002") return { ...result, status: "conflict", reason: "mal_id_already_used" };
+      if (error?.code === "P2002") {
+        if (!row.anilist_id && anilistId) {
+          await prisma.show.update({ where: { id: row.id }, data: { anilist_id: anilistId } });
+          return { ...result, status: "updated", reason: "anilist_only_mal_conflict" };
+        }
+        return { ...result, status: "conflict", reason: "mal_id_already_used" };
+      }
       throw error;
     }
   }

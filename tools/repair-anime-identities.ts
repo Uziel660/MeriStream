@@ -30,6 +30,7 @@ type Result = {
 
 const prisma = new PrismaClient();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+let aniListUnavailable = false;
 
 function args() {
   const argv = process.argv.slice(2);
@@ -80,6 +81,7 @@ function candidateTitles(candidate: AnimeCandidate): string[] {
 }
 
 async function searchAniList(query: string): Promise<AnimeCandidate | null> {
+  if (aniListUnavailable) return null;
   const response = await fetch("https://graphql.anilist.co", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json", "user-agent": "MeriStream/1.0" },
@@ -87,9 +89,15 @@ async function searchAniList(query: string): Promise<AnimeCandidate | null> {
       query: `query ($search: String) { Media(search: $search, type: ANIME) { id idMal title { romaji english native } synonyms startDate { year } } }`,
       variables: { search: query },
     }),
-    signal: AbortSignal.timeout(8_000),
+    signal: AbortSignal.timeout(2_500),
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // AniList currently answers with a service-level 403. Avoid retrying the
+    // same unavailable endpoint for every alias in a batch; Kitsu remains the
+    // no-key fallback.
+    aniListUnavailable = true;
+    return null;
+  }
   return ((await response.json() as any)?.data?.Media || null) as AnimeCandidate | null;
 }
 
@@ -97,7 +105,7 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
   const searchUrl = new URL("https://kitsu.io/api/edge/anime");
   searchUrl.searchParams.set("filter[text]", query);
   searchUrl.searchParams.set("page[limit]", "5");
-  const response = await fetch(searchUrl, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(8_000) });
+  const response = await fetch(searchUrl, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(4_000) });
   if (!response.ok) return null;
   const payload = await response.json() as any;
   const rows = Array.isArray(payload?.data) ? payload.data : [];
@@ -122,7 +130,7 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
     }
   }
   if (!best?.kitsuId) return null;
-  const mappingsResponse = await fetch(`https://kitsu.io/api/edge/anime/${encodeURIComponent(best.kitsuId)}/mappings`, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(8_000) });
+  const mappingsResponse = await fetch(`https://kitsu.io/api/edge/anime/${encodeURIComponent(best.kitsuId)}/mappings`, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(4_000) });
   if (mappingsResponse.ok) {
     const mappings = (await mappingsResponse.json() as any)?.data;
     if (Array.isArray(mappings)) {

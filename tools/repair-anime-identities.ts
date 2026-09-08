@@ -31,6 +31,7 @@ type Result = {
 const prisma = new PrismaClient();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let aniListUnavailable = false;
+const wikidataCache = new Map<number, { malId: number | null; anilistId: string | null } | null>();
 
 function args() {
   const argv = process.argv.slice(2);
@@ -78,6 +79,37 @@ function candidateTitles(candidate: AnimeCandidate): string[] {
   return [candidate.title?.romaji, candidate.title?.english, candidate.title?.native, candidate.title?.en_us, ...(candidate.synonyms || [])]
     .map((value) => String(value || "").trim())
     .filter((value, index, values) => value && values.findIndex((item) => clean(item) === clean(value)) === index);
+}
+
+async function fetchWikidataIdentity(tmdbId: number): Promise<{ malId: number | null; anilistId: string | null } | null> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+  if (wikidataCache.has(tmdbId)) return wikidataCache.get(tmdbId) || null;
+  try {
+    const query = `SELECT ?mal ?anilist WHERE { ?item wdt:P4983 "${tmdbId}". OPTIONAL { ?item wdt:P4086 ?mal. } OPTIONAL { ?item wdt:P8729 ?anilist. } } LIMIT 1`;
+    const url = new URL("https://query.wikidata.org/sparql");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("query", query);
+    const response = await fetch(url, {
+      headers: { accept: "application/sparql-results+json", "user-agent": "MeriStream/1.0 (identity repair)" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      wikidataCache.set(tmdbId, null);
+      return null;
+    }
+    const binding = ((await response.json() as any)?.results?.bindings || [])[0];
+    const mal = String(binding?.mal?.value || "");
+    const anilist = String(binding?.anilist?.value || "");
+    const result = {
+      malId: /^\d+$/.test(mal) ? Number(mal) : null,
+      anilistId: /^\d+$/.test(anilist) ? anilist : null,
+    };
+    wikidataCache.set(tmdbId, result);
+    return result.malId || result.anilistId ? result : null;
+  } catch {
+    wikidataCache.set(tmdbId, null);
+    return null;
+  }
 }
 
 async function searchAniList(query: string): Promise<AnimeCandidate | null> {
@@ -144,6 +176,35 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
 }
 
 async function resolve(row: any): Promise<Result> {
+  // A TMDB→Wikidata edge is an exact cross-reference. Prefer it over any
+  // title search so localized legacy rows can be repaired without guessing a
+  // franchise or sequel from a fuzzy result.
+  const wikidata = await fetchWikidataIdentity(Number(row.tmdb_id));
+  if (wikidata?.malId) {
+    if (row.mal_id && row.mal_id !== wikidata.malId) {
+      return { showId: row.id, title: row.title, status: "conflict", reason: `existing_mal:${row.mal_id}` };
+    }
+    const result: Result = {
+      showId: row.id,
+      title: row.title,
+      matchedTitle: row.title,
+      malId: wikidata.malId,
+      ...(wikidata.anilistId ? { anilistId: wikidata.anilistId } : {}),
+      score: 1,
+      status: "updated",
+      reason: "exact_tmdb_wikidata",
+    };
+    if (args().apply) {
+      await prisma.show.update({
+        where: { id: row.id },
+        data: {
+          mal_id: wikidata.malId,
+          ...(row.anilist_id || !wikidata.anilistId ? {} : { anilist_id: wikidata.anilistId }),
+        },
+      });
+    }
+    return result;
+  }
   const aliases = [row.title, row.english_title, row.original_title, row.japanese_title]
     .map((value) => String(value || "").trim())
     .filter((value, index, values) => value && values.findIndex((item) => clean(item) === clean(value)) === index)
@@ -210,7 +271,7 @@ async function main() {
     where: { category: "anime", OR: [{ mal_id: null }, { anilist_id: null }] },
     orderBy: { id: "asc" },
     take: options.limit,
-    select: { id: true, title: true, original_title: true, english_title: true, japanese_title: true, year: true, mal_id: true, anilist_id: true },
+    select: { id: true, title: true, original_title: true, english_title: true, japanese_title: true, year: true, tmdb_id: true, mal_id: true, anilist_id: true },
   });
   const results: Result[] = [];
   let cursor = 0;

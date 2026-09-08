@@ -436,11 +436,22 @@ export function normalizeLanguageTag(value: string | null | undefined): string |
     "es-la", "es-latam", "es-419", "spanish-latam", "español latino", "espanol latino",
   ].includes(raw)) return "es-419";
 
-  if (["es", "español", "espanol", "castellano", "spanish", "spa"].includes(raw)) return "es";
+  if ([
+    "es-es", "castellano", "español españa", "espanol espana",
+    "spanish-spain", "spanish spain", "spanish (spain)",
+  ].includes(raw)) return "es-ES";
+
+  if (["es", "español", "espanol", "spanish", "spa"].includes(raw)) return "es";
   if (["ja", "japonés", "japones", "japanese", "jp", "jpn"].includes(raw)) return "ja";
   if (["en", "english", "eng"].includes(raw)) return "en";
   if (["ko", "korean", "kor", "coreano"].includes(raw)) return "ko";
 
+  // Preserve common BCP-47 casing for known regional/script variants instead
+  // of leaking the lower-cased internal key to UI/ranking comparisons.
+  if (raw === "pt-br") return "pt-BR";
+  if (raw === "pt-pt") return "pt-PT";
+  if (raw === "zh-hans") return "zh-Hans";
+  if (raw === "zh-hant") return "zh-Hant";
   return raw;
 }
 
@@ -453,7 +464,7 @@ export interface RenditionDescriptor {
 }
 
 function isSpanish(lang: string): boolean {
-  return lang === "es" || lang === "es-419" || lang.startsWith("es-");
+  return lang === "es" || lang === "es-419" || lang === "es-ES" || lang.toLowerCase().startsWith("es-");
 }
 
 function isEnglish(lang: string): boolean {

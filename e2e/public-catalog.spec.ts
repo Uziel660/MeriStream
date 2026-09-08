@@ -44,6 +44,25 @@ test('la portada renderiza tarjetas del catálogo público como un usuario', asy
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
 
+test('la búsqueda conserva la ficha local y descarta el PNG de título de TMDB', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await search.fill('Te irás al infierno');
+
+  const matches = page.locator('button.media-card').filter({ hasText: 'Te irás al infierno' });
+  await expect(matches).toHaveCount(1, { timeout: 30_000 });
+  const image = matches.locator('img').first();
+  await image.scrollIntoViewIfNeeded();
+  await expect(image).toHaveAttribute('src', /\.jpg(?:\?|$)/i);
+  await expect.poll(() => image.evaluate((element) => element.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+  const dimensions = await image.evaluate((element) => ({ width: element.naturalWidth, height: element.naturalHeight }));
+  expect(dimensions.width).toBeGreaterThan(0);
+  expect(dimensions.height / dimensions.width).toBeGreaterThan(1);
+});
+
 test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas', async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

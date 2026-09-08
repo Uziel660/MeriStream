@@ -109,6 +109,14 @@ function mapCatalogShow(s: any): Show {
   } as Show;
 }
 
+function catalogIdentityKey(show: Partial<Show>): string {
+  const category = String(show.category || show.kind || 'media').toLowerCase();
+  const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
+  return show.tmdb_id
+    ? `tmdb:${namespace}:${show.tmdb_id}`
+    : `id:${show.id || ''}`;
+}
+
 export function App() {
   const { user, isAuthenticated } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
@@ -422,14 +430,10 @@ export function App() {
         // the provider-aware id and source metadata needed by playback.
         const merged = new Map<string, Show>();
         for (const show of [...localShows, ...publicShows]) {
-          const category = String(show.category || show.kind || 'media').toLowerCase();
-          const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
-          const key = show.tmdb_id
-            // TMDB uses one namespace for all TV/anime entries. Keeping the
-            // namespace (instead of the display category) prevents an anime
-            // returned as both `series` and `anime` from becoming two cards.
-            ? `tmdb:${namespace}:${show.tmdb_id}`
-            : `id:${show.id}`;
+          // TMDB uses one namespace for all TV/anime entries. Keeping the
+          // namespace (instead of the display category) prevents an anime
+          // returned as both `series` and `anime` from becoming two cards.
+          const key = catalogIdentityKey(show);
           if (!merged.has(key)) merged.set(key, show);
         }
         setServerSearchResults([...merged.values()]);
@@ -884,7 +888,14 @@ export function App() {
       // anime/series title (for example, a franchise film before SPY x FAMILY).
       // Apply the same title relevance scoring to the merged list so an exact
       // match always opens first and does not look like a duplicate mismatch.
-      result = searchShows([...serverSearchResults, ...localMatches], searchQuery);
+      const scored = searchShows([...serverSearchResults, ...localMatches], searchQuery);
+      const seen = new Set<string>();
+      result = scored.filter((show) => {
+        const key = catalogIdentityKey(show);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     } else {
       // Filtro por categoría únicamente cuando no hay búsqueda activa
       if (activeFilter !== 'all') {

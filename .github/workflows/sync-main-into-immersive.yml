@@ -42,13 +42,29 @@ jobs:
           cache: npm
       - name: Fetch main
         run: git fetch origin main
-      - name: Merge main preserving newer immersive conflict hunks
+      - name: Merge main and preserve superseding immersive frontend
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git merge --no-ff --no-commit -X ours origin/main
-          git status --short
+
+          # These nine files were independently changed on main after the
+          # branch point and then superseded by later immersive work. Restore
+          # the already-tested branch versions exactly; the merge still records
+          # main as a parent and imports files main uniquely added.
+          git checkout HEAD -- \
+            src/components/CatalogFilters.tsx \
+            src/components/ExploreCatalogView.tsx \
+            src/components/HeroBanner.tsx \
+            src/components/MediaCard.tsx \
+            src/components/UnifiedHeader.tsx \
+            src/main.tsx \
+            src/styles/overlays-2026.css \
+            src/styles/streaming-2026.css \
+            src/utils/imageSizes.ts
+
           test -f .github/workflows/frontend-quality.yml
+          git status --short
       - name: Install dependencies
         run: npm ci
       - name: Prepare test database

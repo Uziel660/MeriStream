@@ -356,6 +356,9 @@ test.describe('Adapters expanded - validación secuencial LIVE_SCRAPER_E2E', () 
     const detail = await adapter.analyze(item.url);
     console.log(`[Doramasflix] detail episodes: ${detail.episodes?.length} title: ${detail.title}`);
     expect(detail.episodes?.length, '[Doramasflix] detalle debe exponer episodios').toBeGreaterThan(0);
+    console.log(`[Doramasflix] identity tmdb=${detail.tmdb_id ?? 'none'} imdb=${detail.imdb_id ?? 'none'} original=${detail.original_title ?? 'none'}`);
+    expect(detail.tmdb_id, '[Doramasflix] la ficha debe cruzarse con TMDB para habilitar VidSrc').toBeGreaterThan(0);
+    expect(detail.imdb_id, '[Doramasflix] la ficha debe conservar el IMDb externo de TMDB').toMatch(/^tt\d+$/i);
 
     const ep1 = detail.episodes.find((e: any) => e.number === 1) || detail.episodes[0];
     const episodeUrl = ep1.url;

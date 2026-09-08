@@ -3,6 +3,8 @@ import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
+import { enrichUniversalMetadata, type EnrichedMetadata } from "../../metadataEngine";
+import { ExternalIdResolver } from "../../subtitles/ExternalIdResolver";
 
 const BASE_URL = "https://doramasflix.io";
 const GRAPHQL_URL = "https://user-api.fluxcedene.net/graphql";
@@ -11,6 +13,7 @@ const CATALOG_PAGE_SIZE = 24;
 // Nuevo Next-Action vigente (descubierto live 2026-08-29 via Playwright intercept: getEpisodeLinks)
 const NEXT_ACTION_ID = "406bdec544eeb53cbefa09322cbda67963eb850496";
 const NEXT_ACTION_FALLBACK = "40c3671ad750012fd1bcbcb050c7894f427d37a8b1";
+const externalIdResolver = new ExternalIdResolver();
 
 export class DoramasflixAdapter extends BaseScraperAdapter {
   readonly id = "doramasflix";
@@ -18,8 +21,14 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
   readonly supportedDomains = ["doramasflix.io", "doramasflix.co", "doramasflix.net", "doramasflix.in", "doramasflix.com"];
 
   canHandle(url: string): boolean {
-    const lower = url.toLowerCase();
-    return this.supportedDomains.some((domain) => lower.includes(domain));
+    try {
+      const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+      return this.supportedDomains.some((domain) =>
+        hostname === domain || hostname.endsWith(`.${domain}`),
+      );
+    } catch {
+      return false;
+    }
   }
 
   public async analyze(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
@@ -249,42 +258,207 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     }
 
     const $ = cheerio.load(html);
-    const title = $("h1").first().text().trim() || $("meta[property='og:title']").attr("content") || $("title").text().trim();
-    const description = $("meta[property='og:description']").attr("content") || $(".synopsis, .overview, p").first().text().trim();
-    const poster_url = $("meta[property='og:image']").attr("content") || $(".poster img, img[src*='tmdb']").attr("src") || null;
+    const jsonLd = this.extractJsonLdMetadata($);
+    const title = $("h1").first().text().trim() || jsonLd.title || $("meta[property='og:title']").attr("content") || $("title").text().trim();
+    const description = $("meta[property='og:description']").attr("content") || jsonLd.description || $(".synopsis, .overview, p").first().text().trim();
+    const poster_url = $("meta[property='og:image']").attr("content") || jsonLd.image || $(".poster img, img[src*='tmdb']").attr("src") || null;
 
     const episodes: ExtractedEpisode[] = [];
     const seenEp = new Set<string>();
 
+    // El payload público de React Flight conserva la secuencia canónica de
+    // episodios publicados y sus temporadas, mientras que el HTML puede
+    // omitir algunos enlaces. Úsalo como fuente primaria y deja los anchors
+    // como complemento para despliegues antiguos, sin inventar episodios aún
+    // no publicados.
+    for (const item of this.extractInitialEpisodes(html)) {
+      const episodeUrl = item.url ? this.resolveRelativeUrl(item.url, BASE_URL) : "";
+      if (!episodeUrl || seenEp.has(episodeUrl)) continue;
+      seenEp.add(episodeUrl);
+      episodes.push({
+        number: item.number,
+        ...(item.season ? { season: item.season } : {}),
+        title: item.title || `Capítulo ${item.number}`,
+        url: episodeUrl,
+      });
+    }
+
     $("a[href*='/capitulos/']").each((idx, el) => {
       const href = $(el).attr("href");
-      if (!href || seenEp.has(href)) return;
-      seenEp.add(href);
+      if (!href) return;
+      const episodeUrl = this.resolveRelativeUrl(href, BASE_URL);
+      if (seenEp.has(episodeUrl)) return;
+      seenEp.add(episodeUrl);
 
-      const epTitle = $(el).text().trim() || `Capítulo ${idx + 1}`;
+      const label = `${$(el).text().trim()} ${href}`;
+      const seasonMatch = label.match(/(?:^|[^a-z])(?:s|t|temporada[- _]?)\s*0*(\d{1,2})/i);
+      const episodeMatch = label.match(/(?:^|[^a-z])(?:e|ep(?:isodio)?|cap(?:itulo)?)[- ._]*0*(\d{1,4})/i)
+        || href.match(/(?:-|\b)(\d{1,2})x(\d{1,4})(?:\b|-|$)/i);
+      const parsedSeason = episodeMatch?.[2] ? Number.parseInt(episodeMatch[1], 10) : seasonMatch?.[1] ? Number.parseInt(seasonMatch[1], 10) : undefined;
+      const parsedNumber = episodeMatch?.[2] ? Number.parseInt(episodeMatch[2], 10) : episodeMatch?.[1] ? Number.parseInt(episodeMatch[1], 10) : idx + 1;
+      const epTitle = $(el).text().trim() || `Capítulo ${parsedNumber}`;
       episodes.push({
-        number: idx + 1,
+        number: Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : idx + 1,
+        ...(parsedSeason && Number.isFinite(parsedSeason) ? { season: parsedSeason } : {}),
         title: epTitle,
-        url: this.resolveRelativeUrl(href, BASE_URL),
+        url: episodeUrl,
       });
     });
 
     const isMovie = url.includes("/pelicula/") || url.includes("/peliculas/") || episodes.length === 0;
 
+    // Doramasflix publica el nombre localizado y un alternateName (normalmente
+    // el título nativo). Probamos ambos contra TMDB para no perder la identidad
+    // por buscar únicamente el alias romanizado mostrado en el encabezado.
+    const metadata = await this.enrichDetailMetadata(
+      [title, ...(jsonLd.aliases || []), this.titleFromUrl(url)],
+      isMovie ? "movie" : "series",
+    );
+    const imdbId = metadata?.tmdb_id
+      ? await externalIdResolver.resolve({ tmdbId: Number(metadata.tmdb_id), kind: isMovie ? "movie" : "series" })
+      : null;
+
     return {
       page_type: "detail",
       content_type: isMovie ? "movie" : "series",
       title,
-      description,
+      original_title: metadata?.original_title || jsonLd.originalTitle || null,
+      english_title: metadata?.english_title || null,
+      tmdb_id: metadata?.tmdb_id ?? null,
+      imdb_id: imdbId,
+      mal_id: metadata?.mal_id ?? null,
+      anilist_id: metadata?.anilist_id ?? null,
+      kitsu_id: metadata?.kitsu_id ?? null,
+      description: description || metadata?.description || "",
       poster_url: poster_url ? this.resolveRelativeUrl(poster_url, BASE_URL) : null,
-      banner_url: null,
-      rating: 0,
-      year: 0,
-      status: "ongoing",
-      genres: ["Dorama"],
+      banner_url: metadata?.banner_url || jsonLd.image || null,
+      rating: metadata?.rating || jsonLd.rating || 0,
+      year: metadata?.year || jsonLd.year || 0,
+      status: metadata?.status || "ongoing",
+      genres: metadata?.genres?.length ? metadata.genres : (jsonLd.genres?.length ? jsonLd.genres : ["Dorama"]),
       episodes,
       catalog_items: [],
     };
+  }
+
+  /** Extrae el JSON-LD público de la ficha sin depender de la forma de React Flight. */
+  private extractJsonLdMetadata($: cheerio.CheerioAPI): {
+    title?: string;
+    originalTitle?: string;
+    aliases: string[];
+    description?: string;
+    image?: string;
+    year?: number;
+    rating?: number;
+    genres: string[];
+  } {
+    const result: {
+      title?: string;
+      originalTitle?: string;
+      aliases: string[];
+      description?: string;
+      image?: string;
+      year?: number;
+      rating?: number;
+      genres: string[];
+    } = { aliases: [], genres: [] };
+    $("script[type='application/ld+json']").each((_, el) => {
+      if (result.title) return;
+      try {
+        const parsed = JSON.parse($(el).text()) as Record<string, unknown>;
+        const type = String(parsed["@type"] || "").toLowerCase();
+        if (!/(tvseries|movie|tvepisode)/.test(type)) return;
+        if (typeof parsed.name === "string") result.title = parsed.name.trim();
+        if (typeof parsed.alternateName === "string") {
+          result.originalTitle = parsed.alternateName.trim();
+          result.aliases.push(result.originalTitle);
+        } else if (Array.isArray(parsed.alternateName)) {
+          result.aliases.push(...parsed.alternateName.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean));
+          result.originalTitle = result.aliases[0];
+        }
+        if (typeof parsed.description === "string") result.description = parsed.description.trim();
+        if (typeof parsed.image === "string") result.image = parsed.image;
+        const date = String(parsed.datePublished || parsed.releaseDate || "");
+        const year = Number.parseInt(date.slice(0, 4), 10);
+        if (Number.isFinite(year) && year > 1800) result.year = year;
+        if (Array.isArray(parsed.genre)) result.genres.push(...parsed.genre.filter((v): v is string => typeof v === "string"));
+        const aggregate = parsed.aggregateRating as Record<string, unknown> | undefined;
+        const rating = Number(aggregate?.ratingValue);
+        if (Number.isFinite(rating)) result.rating = rating;
+      } catch {
+        // Algunos despliegues incluyen varios bloques o JSON-LD parcial; se continúa.
+      }
+    });
+    return result;
+  }
+
+  private async enrichDetailMetadata(candidates: string[], kind: "movie" | "series"): Promise<EnrichedMetadata | null> {
+    const unique = [...new Set(candidates.map((value) => String(value || "").replace(/\s+/g, " ").trim()).filter((value) => value.length >= 2))].slice(0, 4);
+    let fallback: EnrichedMetadata | null = null;
+    for (const candidate of unique) {
+      try {
+        const metadata = await enrichUniversalMetadata(candidate, kind);
+        if (!fallback) fallback = metadata;
+        if (metadata.tmdb_id || metadata.mal_id || metadata.anilist_id || metadata.kitsu_id) return metadata;
+      } catch {
+        // La ficha sigue siendo utilizable aunque el proveedor de metadata esté temporalmente caído.
+      }
+    }
+    return fallback;
+  }
+
+  private extractInitialEpisodes(html: string): Array<{ number: number; season?: number; title?: string; url?: string }> {
+    const normalized = html.replace(/\\u0022/g, '"').replace(/\\"/g, '"');
+    const keyIndex = normalized.indexOf("initialEpisodes");
+    if (keyIndex < 0) return [];
+    const start = normalized.indexOf("[", keyIndex);
+    if (start < 0) return [];
+    const end = this.findJsonArrayEnd(normalized, start);
+    if (end <= start) return [];
+    try {
+      const parsed = JSON.parse(normalized.slice(start, end)) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as Record<string, unknown>;
+        const number = Number(item.episode_number ?? item.number);
+        const season = Number(item.season_number ?? item.season);
+        const href = typeof item.href === "string" ? item.href : typeof item.slug === "string" ? `/capitulos/${item.slug}` : undefined;
+        if (!Number.isFinite(number) || number <= 0 || !href) return [];
+        return [{
+          number: Math.trunc(number),
+          ...(Number.isFinite(season) && season > 0 ? { season: Math.trunc(season) } : {}),
+          title: typeof item.title === "string" ? item.title.trim() : undefined,
+          url: href,
+        }];
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  private findJsonArrayEnd(text: string, start: number): number {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === "[") {
+        depth += 1;
+      } else if (char === "]") {
+        depth -= 1;
+        if (depth === 0) return index + 1;
+      }
+    }
+    return -1;
   }
 
   /**

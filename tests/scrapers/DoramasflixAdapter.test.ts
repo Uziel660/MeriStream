@@ -3,6 +3,7 @@ import { DoramasflixAdapter } from "../../server/scrapers/adapters/DoramasflixAd
 import { ScraperManager } from "../../server/scrapers/ScraperManager";
 import { EmbedResolvers } from "../../server/resolvers";
 import { MediaValidator } from "../../server/validator";
+import * as cheerio from "cheerio";
 
 describe("DoramasflixAdapter", () => {
   const adapter = new DoramasflixAdapter();
@@ -12,6 +13,19 @@ describe("DoramasflixAdapter", () => {
     expect(adapter.canHandle("https://doramasflix.co/peliculas")).toBe(true);
     expect(adapter.canHandle("https://doramasflix.net/variedades")).toBe(true);
     expect(adapter.canHandle("https://otro-sitio.com")).toBe(false);
+    expect(adapter.canHandle("https://doramasflix.io.evil.example/doramas")).toBe(false);
+  });
+
+  it("lee episodios y la identidad nativa desde JSON-LD/React Flight", () => {
+    const source = `<script type="application/ld+json">{"@type":"TVSeries","name":"Título romanizado","alternateName":"ชื่อไทย","description":"Descripción","image":"https://img.test/poster.jpg","datePublished":"2026-01-01","genre":["Drama"]}</script>
+      <script>initialEpisodes":[{"id":"6a9f5303d5181060190ba7bf","slug":"titulo-1x1","episode_number":1,"season_number":1,"title":"ชื่อไทย 1x1","href":"/capitulos/titulo-1x1"},{"id":"6a9f5303d5181060190ba7c8","slug":"titulo-1x2","episode_number":2,"season_number":1,"title":"ชื่อไทย 1x2","href":"/capitulos/titulo-1x2"}]</script>`;
+    const parsed = (adapter as any).extractInitialEpisodes(source);
+    expect(parsed).toEqual([
+      { number: 1, season: 1, title: "ชื่อไทย 1x1", url: "/capitulos/titulo-1x1" },
+      { number: 2, season: 1, title: "ชื่อไทย 1x2", url: "/capitulos/titulo-1x2" },
+    ]);
+    const ld = (adapter as any).extractJsonLdMetadata(cheerio.load(source));
+    expect(ld).toMatchObject({ title: "Título romanizado", originalTitle: "ชื่อไทย", year: 2026, genres: ["Drama"] });
   });
 
   it("se registra correctamente en ScraperManager", () => {

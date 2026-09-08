@@ -104,6 +104,13 @@ type TmdbDetail = TmdbItem & {
     tvdb_id?: number | null;
     wikidata_id?: string | null;
   };
+  translations?: {
+    translations?: Array<{
+      iso_639_1?: string;
+      iso_3166_1?: string;
+      data?: { title?: string; name?: string; overview?: string };
+    }>;
+  };
 };
 
 type AnimeIdentity = {
@@ -245,6 +252,31 @@ async function fetchWikidataIdentity(tmdbId: number): Promise<AnimeIdentity | nu
   } catch {
     return null;
   }
+}
+
+function applySpanishTranslation(detail: TmdbDetail): TmdbDetail {
+  const translations = Array.isArray(detail.translations?.translations)
+    ? detail.translations.translations
+    : [];
+  const spanish = translations
+    .filter((entry) => entry.iso_639_1?.toLowerCase() === "es" && (entry.data?.title || entry.data?.name))
+    .sort((a, b) => {
+      const rank = (entry: typeof a): number => {
+        const locale = String(entry.iso_3166_1 || "").toUpperCase();
+        return locale === "MX" ? 0 : locale === "US" ? 1 : locale === "ES" ? 2 : 3;
+      };
+      return rank(a) - rank(b);
+    })[0];
+  if (!spanish?.data) return detail;
+  const translatedTitle = String(spanish.data.title || spanish.data.name || "").trim();
+  const translatedOverview = String(spanish.data.overview || "").trim();
+  if (!translatedTitle && !translatedOverview) return detail;
+  return {
+    ...detail,
+    ...(detail.title !== undefined ? { title: translatedTitle || detail.title } : {}),
+    ...(detail.name !== undefined ? { name: translatedTitle || detail.name } : {}),
+    ...(translatedOverview ? { overview: translatedOverview } : {}),
+  };
 }
 
 type PosterRepairTarget = {
@@ -588,7 +620,7 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
   try {
     detail = await tmdbFetch<TmdbDetail>(kind === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`, {
       language: "es-419",
-      append_to_response: "external_ids",
+      append_to_response: "external_ids,translations",
     });
   } catch (error) {
     // TMDB stores anime films under /movie while the public rail uses the
@@ -598,10 +630,11 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
     if (kind !== "anime") throw error;
     detail = await tmdbFetch<TmdbDetail>(`/movie/${tmdbId}`, {
       language: "es-419",
-      append_to_response: "external_ids",
+      append_to_response: "external_ids,translations",
     });
     isMovieDetail = true;
   }
+  detail = applySpanishTranslation(detail);
   const show = mapTmdbItem(detail, kind);
   show.imdb_id = detail.external_ids?.imdb_id || null;
   if (kind === "anime") {

@@ -162,6 +162,35 @@ describe("TMDB public catalog", () => {
     expect(result.shows[0]?.poster_url).toContain("/w500/canonical-poster.jpg");
   });
 
+  it("uses a Spanish TMDB translation when the localized detail title is unavailable", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/movie/982620")) {
+        return new Response(JSON.stringify({
+          id: 982620,
+          title: "Maneater",
+          original_title: "Maneater",
+          release_date: "2022-08-26",
+          overview: "An English overview",
+          translations: {
+            translations: [
+              { iso_639_1: "en", iso_3166_1: "US", data: { title: "Maneater" } },
+              { iso_639_1: "es", iso_3166_1: "MX", data: { title: "Terror en el océano", overview: "Una descripción en español." } },
+            ],
+          },
+          external_ids: {},
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const detail = await getPublicCatalogDetail("movie", 982620);
+    expect(detail?.title).toBe("Terror en el océano");
+    expect(detail?.description).toBe("Una descripción en español.");
+    expect(detail?.episodes[0]?.title).toBe("Terror en el océano");
+  });
+
   it("creates virtual episodes that point back to the canonical TMDB id", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

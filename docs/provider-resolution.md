@@ -12,6 +12,40 @@ TMDB identity
   -> MeriStream internal player
 ```
 
+## Public TMDB catalog
+
+The browse surface is backed by TMDB and is independent from the imported
+provider tables. This keeps a scraper import from creating duplicate cards or
+hiding a title that has not been ingested yet.
+
+Public endpoints:
+
+- `GET /api/v1/catalog/public?kind=all|movie|series|anime&limit=60` returns
+  cached TMDB cards with stable IDs such as `tmdb-movie-550` and
+  `tmdb-anime-94664`.
+- `GET /api/v1/catalog/public/:kind/:tmdbId` returns the canonical detail,
+  IMDb ID when TMDB exposes it, and virtual episodes whose locators use the
+  form `tmdb://<kind>/<tmdbId>/<season>/<episode>`.
+- `GET /api/v1/providers/:kind/:tmdbId` resolves playback just in time. The
+  frontend never needs a provider database row in order to ask for a TMDB
+  title's sources.
+
+The frontend tries the public endpoint first and falls back to
+`/api/v1/shows?lite=true` only when TMDB is unavailable. The legacy `Show` and
+`Episode` tables remain available to the admin and to gradual source imports;
+they are not the identity of a public card.
+
+Anime detail enrichment queries AniList without a key. When AniList is
+unavailable, the public route queries Kitsu and its mapping endpoint to obtain
+`anilist_id`, `mal_id`, `kitsu_id`, and title aliases. The provider gateway uses
+the MAL ID to create ZokoAnime's public `/stream/mal/...` locator dynamically;
+VidSrc uses the TMDB TV ID directly. No bulk anime import is required for
+either path.
+
+TMDB responses are cached in memory for five minutes and are fetched on demand;
+the entire TMDB catalog is not copied into PostgreSQL. A database backup should
+be taken before any optional reset or re-bootstrap of the legacy catalog.
+
 `GET /api/v1/providers/:kind/:tmdbId` returns `sources` only when a provider
 has supplied a native HLS, DASH or MP4 URL. Provider pages and iframes stay in
 `fallbackCandidates` for the explicit recovery cascade and are never promoted
@@ -65,8 +99,9 @@ subtitle track was not confirmed from that public response.
 
 TMDB remains the identity used by catalog and playback requests. Anime records
 may additionally carry the numeric AniList and MAL identifiers plus the Kitsu
-resource id. Metadata enrichment queries AniList first, then Kitsu and Jikan;
-the resolved identifiers are retained for deduplication and for provider APIs.
+resource id. The public catalog queries AniList first, then Kitsu mappings when
+AniList is unavailable; the resolved identifiers are retained for deduplication
+and provider APIs. Other legacy metadata jobs may still use Jikan separately.
 
 The optional `kitsu_id` column is additive. Environments using the Prisma schema
 must run `npx prisma db push` (or their normal schema deployment step) before

@@ -4,6 +4,7 @@ import { ScraperManager } from "../../server/scrapers/ScraperManager";
 import { EmbedResolvers } from "../../server/resolvers";
 import { MediaValidator } from "../../server/validator";
 import * as cheerio from "cheerio";
+import { vi } from "vitest";
 
 describe("DoramasflixAdapter", () => {
   const adapter = new DoramasflixAdapter();
@@ -26,6 +27,25 @@ describe("DoramasflixAdapter", () => {
     ]);
     const ld = (adapter as any).extractJsonLdMetadata(cheerio.load(source));
     expect(ld).toMatchObject({ title: "Título romanizado", originalTitle: "ชื่อไทย", year: 2026, genres: ["Drama"] });
+  });
+
+  it("usa la ruta para distinguir una película de un dorama todavía sin episodios", async () => {
+    const local = new DoramasflixAdapter();
+    const html = `<h1>Obra de prueba</h1><script type="application/ld+json">{"@type":"TVSeries","name":"Obra de prueba"}</script>`;
+    vi.spyOn(local as any, "fetchHtml").mockResolvedValue(html);
+    vi.spyOn(local as any, "enrichDetailMetadata").mockResolvedValue(null);
+    try {
+      const series = await local.analyze("https://doramasflix.io/doramas/obra-de-prueba", "detail");
+      const movie = await local.analyze("https://doramasflix.io/peliculas/obra-de-prueba", "detail");
+
+      expect(series.content_type).toBe("series");
+      expect(series.episodes).toEqual([]);
+      expect(series.detected_streams).toBeUndefined();
+      expect(movie.content_type).toBe("movie");
+      expect(movie.detected_streams).toEqual(["https://doramasflix.io/peliculas/obra-de-prueba"]);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("se registra correctamente en ScraperManager", () => {

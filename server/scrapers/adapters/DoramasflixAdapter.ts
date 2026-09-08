@@ -308,7 +308,13 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       });
     });
 
-    const isMovie = url.includes("/pelicula/") || url.includes("/peliculas/") || episodes.length === 0;
+    const pathname = (() => {
+      try { return new URL(url).pathname.toLowerCase(); } catch { return url.toLowerCase(); }
+    })();
+    // The category path is authoritative. A newly published dorama can have
+    // zero episodes for a short period; treating it as a movie would hide its
+    // series identity and attach the landing page to episode 1.
+    const isMovie = /\/pel[ií]culas?(?:\/|$)/i.test(pathname);
 
     // Doramasflix publica el nombre localizado y un alternateName (normalmente
     // el título nativo). Probamos ambos contra TMDB para no perder la identidad
@@ -340,6 +346,10 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       year: metadata?.year || jsonLd.year || 0,
       status: metadata?.status || "ongoing",
       genres: metadata?.genres?.length ? metadata.genres : (jsonLd.genres?.length ? jsonLd.genres : ["Dorama"]),
+      // Movies do not expose `initialEpisodes`; keep the canonical public page
+      // so the platform resolver can refresh its playable server JIT. Series
+      // pages with no published episode remain metadata-only.
+      ...(isMovie ? { detected_streams: [url] } : {}),
       episodes,
       catalog_items: [],
     };

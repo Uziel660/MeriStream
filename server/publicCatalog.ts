@@ -342,6 +342,10 @@ async function fetchAniListIdentityById(identity: Pick<AnimeIdentity, "anilistId
     : undefined;
   if (anilistId === undefined && malId === undefined) return null;
 
+  const cacheKey = `anilist-crosswalk:${anilistId ?? `mal-${malId}`}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.value as AnimeIdentity;
+
   const variables: Record<string, number> = {};
   if (anilistId !== undefined) variables.id = anilistId;
   else if (malId !== undefined) variables.idMal = malId;
@@ -361,12 +365,14 @@ async function fetchAniListIdentityById(identity: Pick<AnimeIdentity, "anilistId
     const aliases = [media.title?.romaji, media.title?.english, media.title?.native, ...(Array.isArray(media.synonyms) ? media.synonyms : [])]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .map((value) => value.trim());
-    return {
+    const value: AnimeIdentity = {
       anilistId: media.id != null ? String(media.id) : null,
       malId: Number.isInteger(media.idMal) ? Number(media.idMal) : null,
       kitsuId: null,
       aliases: [...new Set(aliases)],
     };
+    cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value });
+    return value;
   } catch {
     return null;
   }

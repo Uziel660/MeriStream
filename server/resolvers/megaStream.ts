@@ -81,6 +81,37 @@ export async function getMegaFileMeta(megaUrl: string): Promise<CachedMeta> {
 }
 
 /**
+ * Probe the first plaintext bytes of a public MEGA file. Metadata alone is not
+ * sufficient: MEGA may accept the file descriptor and still reject the first
+ * download with EBLOCKED/ETOOMANY/quota errors. The bounded range keeps this
+ * health check from buffering a whole movie in memory.
+ */
+export async function probeMegaFile(megaUrl: string): Promise<boolean> {
+  const parsed = parseMegaUrl(megaUrl);
+  if (!parsed || parsed.kind !== "file") return false;
+  const meta = await getMegaFileMeta(parsed.canonicalUrl);
+  const end = Math.min(meta.size - 1, 2047);
+  if (end < 0) return false;
+  const file = MegaFile.fromURL(parsed.canonicalUrl);
+  const stream = file.download({
+    start: 0,
+    end,
+    maxConnections: 1,
+    forceHttps: true,
+  }) as Readable;
+  let bytes = 0;
+  try {
+    for await (const chunk of stream) {
+      bytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk as string);
+      if (bytes > 0) break;
+    }
+  } finally {
+    stream.destroy();
+  }
+  return bytes > 0;
+}
+
+/**
  * Parsea un header Range tipo "bytes=start-end" contra el tamaño total.
  * Devuelve null si no hay header válido; lanza 416 vía retorno si es insatisfactorio.
  */

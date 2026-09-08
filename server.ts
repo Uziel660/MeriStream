@@ -75,7 +75,7 @@ import {
   resumeVerification,
   stopVerification,
 } from "./server/verificationWorker";
-import { handleMegaStream } from "./server/resolvers/megaStream";
+import { handleMegaStream, probeMegaFile } from "./server/resolvers/megaStream";
 import { getMp4SizeCacheEntry, setMp4SizeCacheEntry } from "./server/mp4SizeCache";
 import {
   logProxyRequest,
@@ -2008,8 +2008,24 @@ async function startServer() {
         && /\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(value);
       const isPlayableDirect = async (meta: ResolvedStreamMeta): Promise<boolean> => {
         if (!meta.resolved || meta.type !== "direct" || !meta.url) return false;
-        // Internal stream relays (for example Mega) are already owned by
-        // MeriStream and are validated when the relay serves the resource.
+        // Internal MEGA relays are direct URLs only after the public file has
+        // produced plaintext bytes. Metadata can succeed while the first
+        // download is blocked or rate-limited, so probe the same bounded range
+        // before allowing this candidate to win the fallback chain.
+        if (/^\/api\/v1\/stream\/mega(?:\?|$)/i.test(meta.url)) {
+          try {
+            const target = new URL(meta.url, `${req.protocol}://${req.get("host") || "127.0.0.1:3010"}`);
+            const megaUrl = target.searchParams.get("url") || "";
+            return await Promise.race([
+              probeMegaFile(megaUrl),
+              new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8000)),
+            ]);
+          } catch {
+            return false;
+          }
+        }
+        // Other internal relays are owned by MeriStream and are validated when
+        // the relay serves the resource.
         if (/^\/api\/v1\//i.test(meta.url)) return true;
         if (!isNativeExternalUrl(meta.url)) return false;
         const health = await probeStream(meta.url, { playerReferer: rawUrl });

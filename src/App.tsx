@@ -25,7 +25,9 @@ import type { Show, Episode } from './types';
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
 // Bumped after the main-path provider cutover so a browser cannot briefly
 // render cards that are now admin/legacy-only while the fresh request loads.
-const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v3';
+// Bumped after the unified TMDB rail started interleaving movie/series/anime;
+// profiles with the old movie-only payload must fetch the corrected catalog.
+const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v4';
 const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 

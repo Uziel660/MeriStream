@@ -379,6 +379,34 @@ function parseKind(value: unknown): PublicCatalogKind | "all" {
   return "all";
 }
 
+/**
+ * The unified public rail must expose every media family. TMDB returns each
+ * family in its own ranked list; concatenating those lists and slicing would
+ * fill the requested limit with movies before a series or anime can appear.
+ * Interleave the ranked buckets so the first viewport always has all three
+ * kinds while preserving each bucket's internal TMDB order.
+ */
+function interleaveCatalogShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
+  const buckets: Record<PublicCatalogKind, PublicCatalogShow[]> = {
+    movie: [],
+    series: [],
+    anime: [],
+  };
+  for (const show of shows) buckets[show.kind].push(show);
+  const ordered: PublicCatalogShow[] = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const kind of ["movie", "series", "anime"] as const) {
+      const next = buckets[kind].shift();
+      if (!next) continue;
+      ordered.push(next);
+      added = true;
+    }
+  }
+  return ordered;
+}
+
 async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string): Promise<TmdbListResponse> {
   const language = "es-419";
   if (query) {
@@ -456,12 +484,13 @@ export async function getPublicCatalog(options: {
     if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
   }
   const unique = [...uniqueMap.values()];
+  const ordered = kind === "all" ? interleaveCatalogShows(unique) : unique;
   const totals = groupedResponses.reduce((sum, group) => {
     const firstPage = group.pages[0];
     return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);
   }, 0);
   return {
-    shows: unique.slice(0, pageSize),
+    shows: ordered.slice(0, pageSize),
     total: totals,
     page,
     pageSize,

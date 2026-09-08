@@ -8,6 +8,7 @@ import {
   isValidProvider,
   isSupportedServer,
 } from "./resolvers";
+import { parseMegaUrl } from "./resolvers/megaResolver";
 
 export type PlatformPlaybackResolution = PlaybackResolution & {
   provider: string;
@@ -20,9 +21,32 @@ export interface PlatformPageResolveOptions {
     title?: string;
   }>;
   now?: () => number;
+  /** Health probe for MEGA relays; injectable so resolver tests stay offline. */
+  megaHealthCheck?: (url: string) => Promise<boolean>;
 }
 
 const defaultDeliveryPlanner = new DeliveryPlanner();
+
+/**
+ * A MEGA embed is only a locator. The internal relay is advertised as a
+ * playable direct URL only after MEGA returns file metadata. Without this
+ * probe a stale/deleted file looks healthy until the player receives a 4xx/5xx
+ * and starts an avoidable fallback cascade.
+ */
+async function defaultMegaHealthCheck(url: string): Promise<boolean> {
+  const parsed = parseMegaUrl(url);
+  if (!parsed || parsed.kind !== "file") return false;
+  try {
+    const { probeMegaFile } = await import("./resolvers/megaStream");
+    await Promise.race([
+      probeMegaFile(parsed.canonicalUrl),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MEGA metadata timeout")), 5000)),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Detecta si la URL corresponde a una página canónica de LaMovie (lamovie.org, lamovie.to, lamovie.ws).
@@ -404,6 +428,13 @@ export async function resolvePlatformPage(
       try {
         const subMeta = await EmbedResolvers.resolveWithMeta(cand.url);
         if (subMeta.resolved && subMeta.url && subMeta.type === "direct") {
+          // `resolveWithMeta` can construct the internal MEGA relay without
+          // contacting MEGA. Verify the public file first so dead links never
+          // become the preferred source and trigger a rapid false cascade.
+          if (subMeta.provider === "Mega" || /\/api\/v1\/stream\/mega(?:\?|$)/i.test(subMeta.url)) {
+            const megaHealthy = await (options.megaHealthCheck || defaultMegaHealthCheck)(cand.url);
+            if (!megaHealthy) continue;
+          }
           resolvedStreamUrl = subMeta.url;
           isDirect = true;
           if (subMeta.requiredHeaders) {

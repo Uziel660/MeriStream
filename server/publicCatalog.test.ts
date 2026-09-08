@@ -72,6 +72,39 @@ describe("TMDB public catalog", () => {
     expect(result.shows[39]?.tmdb_id).toBe(2019);
   });
 
+  it("interleaves movies, series and anime in the unified public catalog", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const page = Number(url.searchParams.get("page") || 1);
+      if (url.pathname.endsWith("/trending/movie/week")) {
+        return new Response(JSON.stringify({ page, total_results: 2, total_pages: 1, results: [
+          { id: 1, title: "Movie One", release_date: "2024-01-01" },
+          { id: 2, title: "Movie Two", release_date: "2024-01-02" },
+        ] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/trending/tv/week")) {
+        return new Response(JSON.stringify({ page, total_results: 2, total_pages: 1, results: [
+          { id: 11, name: "Series One", first_air_date: "2024-01-01", original_language: "en" },
+          { id: 12, name: "Series Two", first_air_date: "2024-01-02", original_language: "en" },
+        ] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/discover/tv")) {
+        return new Response(JSON.stringify({ page, total_results: 2, total_pages: 1, results: [
+          { id: 21, name: "Anime One", first_air_date: "2024-01-01", original_language: "ja", genre_ids: [16] },
+          { id: 22, name: "Anime Two", first_air_date: "2024-01-02", original_language: "ja", genre_ids: [16] },
+        ] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", limit: 6 });
+    expect(result.shows.map((show) => show.kind)).toEqual([
+      "movie", "series", "anime", "movie", "series", "anime",
+    ]);
+    expect(result.shows.map((show) => show.tmdb_id)).toEqual([1, 11, 21, 2, 12, 22]);
+  });
+
   it("creates virtual episodes that point back to the canonical TMDB id", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

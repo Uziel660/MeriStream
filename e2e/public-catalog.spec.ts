@@ -20,6 +20,23 @@ test('el catálogo público usa identidad TMDB y el detalle crea episodios virtu
   expect(detail.episodes[0].source_url).toBe('tmdb://movie/550/1/1');
 });
 
+test('el catálogo unificado muestra películas, series y anime desde TMDB', async ({ page }) => {
+  test.setTimeout(60_000);
+  const response = await page.request.get(`${BASE_URL}/api/v1/catalog/public?kind=all&mode=trending&limit=60`);
+  expect(response.status()).toBe(200);
+  const catalog = await response.json();
+  expect(catalog.source).toBe('tmdb');
+  expect(catalog.shows).toHaveLength(60);
+  const counts = catalog.shows.reduce((result: Record<string, number>, show: any) => {
+    result[show.kind] = (result[show.kind] || 0) + 1;
+    return result;
+  }, {});
+  expect(counts.movie).toBeGreaterThan(0);
+  expect(counts.series).toBeGreaterThan(0);
+  expect(counts.anime).toBeGreaterThan(0);
+  expect(catalog.shows.slice(0, 3).map((show: any) => show.kind)).toEqual(['movie', 'series', 'anime']);
+});
+
 test('la portada renderiza tarjetas del catálogo público como un usuario', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });

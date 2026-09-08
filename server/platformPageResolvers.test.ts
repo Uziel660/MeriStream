@@ -300,6 +300,52 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
   });
 
   describe("Multi-server selection & canonical locator preservation", () => {
+    it("does not advertise a dead MEGA relay and tries the next embed", async () => {
+      const canonicalUrl = "https://tioanime.com/ver/dead-mega/";
+      const megaEmbed = "https://mega.nz/embed/!dead!abcdefghijklmnopqrstuvwxyz1234567890";
+      const alternateEmbed = "https://vimeos.net/embed/healthy-token";
+      const resolveSpy = vi.spyOn(EmbedResolvers, "resolveWithMeta").mockImplementation(async (url) => {
+        if (url === megaEmbed) {
+          return {
+            url: "/api/v1/stream/mega?url=test",
+            original_url: url,
+            resolved: true,
+            type: "direct",
+            provider: "Mega",
+            is_proxyable: true,
+            is_refreshable: false,
+          };
+        }
+        return {
+          url: "https://cdn.example.com/healthy/master.m3u8",
+          original_url: url,
+          resolved: true,
+          type: "direct",
+          provider: "Vimeos",
+          is_proxyable: true,
+          is_refreshable: true,
+        };
+      });
+      const megaHealthCheck = vi.fn().mockResolvedValue(false);
+
+      try {
+        const res = await resolvePlatformPage(canonicalUrl, {
+          streamExtractor: async () => ({
+            stream_url: megaEmbed,
+            all_available_streams: [megaEmbed, alternateEmbed],
+          }),
+          megaHealthCheck,
+        });
+
+        expect(megaHealthCheck).toHaveBeenCalledWith(megaEmbed);
+        expect(res.resolved).toBe(true);
+        expect(res.url).toBe("https://cdn.example.com/healthy/master.m3u8");
+        expect(res.canonical_locator).toBe(canonicalUrl);
+      } finally {
+        resolveSpy.mockRestore();
+      }
+    });
+
     it("skips expired direct streams and selects valid server while preserving canonical_locator", async () => {
       const canonicalUrl = "https://lamovie.org/peliculas/multi-server/";
       const validHls = "https://cdn.example.com/valid/master.m3u8";

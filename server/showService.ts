@@ -9,6 +9,7 @@ import { getStreamTier } from "./utils/streamSorter";
 import { normalizeTitleKey, parseRawTitle, isPlausibleTitle, isSlugLikeTitle, cleanSlugToWords } from "./utils/titleNormalizer";
 import { formatAndNormalizeGenres } from "./utils/genreNormalizer";
 import { canonicalCatalogUrl, isInvalidCatalogSource } from "./catalogIntegrity";
+import { dedupeCatalogShows } from "./catalogDedup";
 import {
   buildDisplayEpisodes,
   filterMainPathLinks,
@@ -1058,9 +1059,13 @@ async function findManyInChunks<TValue, TResult>(
   }
 
   const results: TResult[] = [];
-  // Keep a small amount of concurrency so a large catalog does not exhaust
-  // the Prisma pool while still avoiding a long serial query chain.
-  const concurrency = 4;
+  // A public catalog request can invoke this helper for ids, TMDB ids, base
+  // titles and legacy episodes at the same time. Running several nested-link
+  // queries in parallel exhausts PostgreSQL's small shared-memory segment on
+  // the local deployment, leaving the portada empty even though the admin
+  // catalog is populated. Keep this bounded to one chunk at a time; the
+  // endpoint still remains cancellable and avoids the database storm.
+  const concurrency = 1;
   for (let index = 0; index < chunks.length; index += concurrency) {
     const batch = await Promise.all(chunks.slice(index, index + concurrency).map(query));
     results.push(...batch.flat());
@@ -1116,25 +1121,26 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   // Keep each IN list below PostgreSQL's prepared-statement bind-variable
   // ceiling. Most canonical rows share the legacy Show id; TMDB/title matches
   // cover rows imported before the id mirror was added.
-  const [mediaById, mediaByTmdb, mediaByBase, legacyEpisodes] = await Promise.all([
-    findManyInChunks(ids, (chunk) => prisma.mediaItem.findMany({
-      where: { id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-      select: mediaItemSelect,
-    })),
-    findManyInChunks(tmdbIds, (chunk) => prisma.mediaItem.findMany({
-      where: { tmdb_id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-      select: mediaItemSelect,
-    })),
-    findManyInChunks(baseTitles, (chunk) => prisma.mediaItem.findMany({
-      where: { base_normalized_title: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
-      select: mediaItemSelect,
-    })),
-    findManyInChunks(ids, (chunk) => prisma.episode.findMany({
-      where: { show_id: { in: chunk }, source_url: { not: "" } },
-      select: { show_id: true, source_url: true },
-      orderBy: { episode_number: "asc" },
-    })),
-  ]);
+  // Keep the four lookup families sequential as well. Each family can return
+  // thousands of nested SourceLink rows; Promise.all here multiplied the
+  // memory footprint even after chunking the IN predicates.
+  const mediaById = await findManyInChunks(ids, (chunk) => prisma.mediaItem.findMany({
+    where: { id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    select: mediaItemSelect,
+  }));
+  const mediaByTmdb = await findManyInChunks(tmdbIds, (chunk) => prisma.mediaItem.findMany({
+    where: { tmdb_id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    select: mediaItemSelect,
+  }));
+  const mediaByBase = await findManyInChunks(baseTitles, (chunk) => prisma.mediaItem.findMany({
+    where: { base_normalized_title: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    select: mediaItemSelect,
+  }));
+  const legacyEpisodes = await findManyInChunks(ids, (chunk) => prisma.episode.findMany({
+    where: { show_id: { in: chunk }, source_url: { not: "" } },
+    select: { show_id: true, source_url: true },
+    orderBy: { episode_number: "asc" },
+  }));
   const mediaItems = [...mediaById, ...mediaByTmdb, ...mediaByBase];
 
   const legacyByShow = new Map<string, Array<{ url: string }>>();
@@ -1289,8 +1295,12 @@ export async function getShowsFromDbLite(
 
     const allShows = await prisma.$queryRawUnsafe(showsQuery, ...showsParams);
     const playableShows = await filterShowsToMainPath(allShows as any[]);
-    const shows = playableShows.slice(skip, skip + pageSize);
-    const total = playableShows.length;
+    // Defense in depth: historical legacy Show rows may contain the same work
+    // more than once. Canonical identity is applied before pagination so both
+    // the cards and X-Catalog-Count represent unique works.
+    const uniqueShows = dedupeCatalogShows(playableShows);
+    const shows = uniqueShows.slice(skip, skip + pageSize);
+    const total = uniqueShows.length;
     return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
@@ -1361,8 +1371,12 @@ export async function getShowsFromDbLite(
     orderBy: { created_at: "desc" },
   });
   const playableShows = await filterShowsToMainPath(allShows as any[]);
-  const shows = playableShows.slice(skip, skip + pageSize);
-  const total = playableShows.length;
+  // Defense in depth: historical legacy Show rows may contain the same work
+  // more than once. Canonical identity is applied before pagination so both
+  // the cards and X-Catalog-Count represent unique works.
+  const uniqueShows = dedupeCatalogShows(playableShows);
+  const shows = uniqueShows.slice(skip, skip + pageSize);
+  const total = uniqueShows.length;
   return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
 }
 

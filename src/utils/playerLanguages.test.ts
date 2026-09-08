@@ -48,8 +48,8 @@ describe('playerLanguages', () => {
     ]);
   });
 
-  it('describes forced and SDH subtitles clearly', () => {
-    expect(playerSubtitleLabel({ language: 'spa', label: 'Spanish Forced' })).toBe('Español · Forzados · Spanish Forced');
+  it('describes forced and SDH subtitles clearly without duplicate provider wording', () => {
+    expect(playerSubtitleLabel({ language: 'spa', label: 'Spanish Forced' })).toBe('Español · Forzados');
     expect(playerSubtitleLabel({ language: 'en', hearingImpaired: true })).toBe('Inglés · SDH/CC');
   });
 });

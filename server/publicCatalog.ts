@@ -388,7 +388,7 @@ async function fetchList(kind: PublicCatalogKind, query: string, page: number, m
   if (kind === "movie") {
     return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/movie" : "/trending/movie/week", mode === "discover"
       ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
-      : { language });
+      : { page, language });
   }
   if (kind === "anime") {
     return tmdbFetch<TmdbListResponse>("/discover/tv", {
@@ -402,7 +402,7 @@ async function fetchList(kind: PublicCatalogKind, query: string, page: number, m
   }
   return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/tv" : "/trending/tv/week", mode === "discover"
     ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
-    : { language });
+    : { page, language });
 }
 
 export async function getPublicCatalog(options: {
@@ -418,9 +418,17 @@ export async function getPublicCatalog(options: {
   const pageSize = Math.max(1, Math.min(100, Number(options.limit || 40)));
   const mode = options.mode === "discover" ? "discover" : "trending";
   const kinds: PublicCatalogKind[] = kind === "all" ? ["movie", "series", "anime"] : [kind];
-  const responses = await Promise.all(kinds.map((entry) => fetchList(entry, query, page, mode)));
-  const shows = responses.flatMap((response, index) => {
-    const entryKind = kinds[index];
+  // TMDB currently returns 20 rows per page even when the UI asks for 40–100.
+  // Fetch just enough adjacent pages to fill the requested rail; otherwise the
+  // public catalog silently stops at the first 20 anime and makes the legacy
+  // database look more complete than the canonical TMDB catalog.
+  const pagesNeeded = Math.max(1, Math.min(5, Math.ceil(pageSize / 20)));
+  const groupedResponses = await Promise.all(kinds.map(async (entry) => ({
+    kind: entry,
+    pages: await Promise.all(Array.from({ length: pagesNeeded }, (_unused, offset) =>
+      fetchList(entry, query, page + offset, mode))),
+  })));
+  const shows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
     const results = response.results || [];
     const filtered = entryKind === "anime"
       ? results.filter(isAnimeItem)
@@ -439,7 +447,7 @@ export async function getPublicCatalog(options: {
         : entryKind;
       return mapTmdbItem(item, outputKind, !query && mode === "trending");
     });
-  });
+  }));
   const uniqueMap = new Map<string, PublicCatalogShow>();
   for (const show of shows) {
     const namespace = show.kind === "movie" ? "movie" : "tv";
@@ -448,7 +456,10 @@ export async function getPublicCatalog(options: {
     if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
   }
   const unique = [...uniqueMap.values()];
-  const totals = responses.reduce((sum, response) => sum + Number(response.total_results || response.results?.length || 0), 0);
+  const totals = groupedResponses.reduce((sum, group) => {
+    const firstPage = group.pages[0];
+    return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);
+  }, 0);
   return {
     shows: unique.slice(0, pageSize),
     total: totals,

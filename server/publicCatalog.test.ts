@@ -50,6 +50,28 @@ describe("TMDB public catalog", () => {
     expect(result.shows.map((show) => show.id)).toEqual(["tmdb-movie-550", "tmdb-series-1396"]);
   });
 
+  it("fills a requested rail across TMDB pages instead of stopping at 20 rows", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith("/discover/tv")) return new Response("not found", { status: 404 });
+      const page = Number(url.searchParams.get("page") || 1);
+      const results = Array.from({ length: 20 }, (_unused, index) => ({
+        id: page * 1000 + index,
+        name: `Anime ${page}-${index}`,
+        original_language: "ja",
+        first_air_date: "2024-01-01",
+        genre_ids: [16],
+      }));
+      return new Response(JSON.stringify({ page, total_results: 40, total_pages: 2, results }), { status: 200 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "anime", limit: 40, mode: "discover" });
+    expect(result.shows).toHaveLength(40);
+    expect(result.shows[0]?.tmdb_id).toBe(1000);
+    expect(result.shows[39]?.tmdb_id).toBe(2019);
+  });
+
   it("creates virtual episodes that point back to the canonical TMDB id", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

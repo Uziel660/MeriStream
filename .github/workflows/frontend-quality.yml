@@ -18,10 +18,11 @@ on:
       - 'package-lock.json'
       - 'vite.config.*'
       - 'tailwind.config.*'
+      - '.github/workflows/frontend-quality.yml'
   workflow_dispatch:
 
 concurrency:
-  group: frontend-quality-${{ github.ref }}
+  group: frontend-quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -50,30 +51,6 @@ jobs:
       - name: Production build
         run: npm run build
 
-  e2e-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: quality
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: List E2E suite
-        run: npm run test:e2e:list
-
-      - name: Run Chromium E2E
-        run: npm run test:e2e
-        env:
-          CI: '1'
+      # Browser validation intentionally lives in playwright.yml. Keeping it
+      # separate prevents dataset/live-provider specs from turning this
+      # deterministic frontend gate into a flaky integration test.

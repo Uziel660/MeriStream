@@ -387,7 +387,13 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       }
     }
 
-    const finalStreams = directStreams.length > 0 ? [...directStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))] : all_available_streams;
+    const liveDirectStreams = directStreams.length > 0
+      ? (await Promise.all(directStreams.map(async (stream) => (await this.isLiveMedia(stream)) ? stream : null)))
+        .filter((stream): stream is string => Boolean(stream))
+      : [];
+    const finalStreams = liveDirectStreams.length > 0
+      ? [...liveDirectStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))]
+      : all_available_streams.filter((s) => !directStreams.includes(s));
 
     // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
     const directMedia = finalStreams.filter((u) => this.isDirectMedia(u));
@@ -416,6 +422,52 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
 
   private isDirectMedia(value: string): boolean {
     return EmbedResolvers.isDirectMediaUrl(value) && /^(?:https?):\/\//i.test(value);
+  }
+
+  /**
+   * Un manifest firmado puede responder 200 aunque su primer recurso ya esté
+   * caído. Comprueba el manifest y un recurso descendiente antes de anunciarlo
+   * al coordinador para evitar cascadas de fallbacks en el reproductor.
+   */
+  private async isLiveMedia(value: string, depth = 0): Promise<boolean> {
+    if (!this.isDirectMedia(value)) return false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4_000);
+    try {
+      const response = await fetch(value, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+          Referer: `${BASE_URL}/`,
+          Accept: "*/*",
+          ...(value.includes(".mp4") ? { Range: "bytes=0-1023" } : {}),
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) return false;
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      if (value.includes(".mp4")) return contentType.includes("video/") || contentType.includes("octet-stream");
+      const body = (await response.text()).slice(0, 256_000);
+      if (!/^#EXTM3U/i.test(body) || depth >= 2) return false;
+      const next = body.split(/\r?\n/).map((line) => line.trim()).find((line) => line && !line.startsWith("#"));
+      if (!next) return false;
+      const child = new URL(next, value).toString();
+      if (this.isDirectMedia(child)) return this.isLiveMedia(child, depth + 1);
+      const segmentController = new AbortController();
+      const segmentTimer = setTimeout(() => segmentController.abort(), 4_000);
+      try {
+        const segment = await fetch(child, { redirect: "follow", headers: { Referer: value, Range: "bytes=0-1023" }, signal: segmentController.signal });
+        const segmentType = String(segment.headers.get("content-type") || "").toLowerCase();
+        await segment.body?.cancel().catch(() => undefined);
+        return segment.ok && !segmentType.includes("text/html") && !segmentType.includes("image/");
+      } finally {
+        clearTimeout(segmentTimer);
+      }
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private isPlayableCandidate(value: string): boolean {

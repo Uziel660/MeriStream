@@ -18,6 +18,8 @@ import type {
 import { inferStreamType } from "./providers/api/types";
 import { hasSignedQuery } from "./resolutionMetadata";
 import { getPublicCatalogDetail } from "./publicCatalog";
+import { subtitleGateway } from "./subtitles";
+import type { SubtitleCandidate } from "./subtitles/types";
 
 export type GatewayKind = DirectMediaKind;
 
@@ -57,18 +59,47 @@ const cache = new Map<string, {
   fallbackCandidates: GatewayFallbackCandidate[];
 }>();
 
+function subtitleProviderForUrl(rawUrl: string): string | null {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    if (host === "dl.opensubtitles.org" || host.endsWith(".opensubtitles.org")) return "opensubtitles-v3";
+    if (host === "hls1.aniwatchtv.uk" || host === "hls2.aniwatchtv.uk" || host.endsWith(".aniwatchtv.uk")) return "zokoanime";
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function normalizeSubtitleTracks(raw: unknown): GatewaySubtitle[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((entry: any) => ({
-    language: normalizeLanguageTag(entry?.language || entry?.lang),
-    label: entry?.label || entry?.name || null,
-    url: String(entry?.url || entry?.src || entry?.file || ""),
-  })).filter((entry) =>
-    // SubtitleGateway owns the only public subtitle delivery path. Direct
-    // provider/CDN URLs are removed here before the response reaches the
-    // browser; proxied tracks use the same token shape as the subtitle API.
-    /^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i.test(entry.url)
-  );
+  return raw.flatMap((entry: any) => {
+    const sourceUrl = String(entry?.url || entry?.src || entry?.file || "").trim();
+    if (!sourceUrl) return [];
+    const language = normalizeLanguageTag(entry?.language || entry?.lang) || "und";
+    const label = entry?.label || entry?.name || language;
+    // Direct provider tracks are accepted only from hosts with an adapter in
+    // SubtitleProxy. The browser receives our own VTT route in every case.
+    const provider = subtitleProviderForUrl(sourceUrl);
+    if (provider) {
+      const candidate: SubtitleCandidate = {
+        id: `direct:${provider}:${language}:${sourceUrl}`,
+        provider,
+        language,
+        label: String(label),
+        sourceUrl,
+        format: "srt",
+      };
+      const proxied = subtitleGateway.proxy.register(candidate);
+      if (!proxied) return [];
+      return [{ language, label: String(label), url: proxied }];
+    }
+    // Already-proxied tracks are safe to preserve when a database/source link
+    // has gone through the subtitle gateway earlier in the request lifecycle.
+    if (/^\/api\/v1\/subtitles\/file\/[a-f0-9]{32}\.vtt(?:\?.*)?$/i.test(sourceUrl)) {
+      return [{ language, label: String(label), url: sourceUrl }];
+    }
+    return [];
+  });
 }
 
 function scoreSource(req: GatewayRequest, source: PlayableSource): number {

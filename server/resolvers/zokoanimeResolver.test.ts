@@ -32,4 +32,10 @@ describe("zokoanimeResolver", () => {
     const invalid = await resolveZokoAnime("https://example.com/player");
     expect(invalid.url).toBe("");
   });
+
+  it("infers the track language from the label when Zoko reports every track as en", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(`<script>window.__P = "${token({ src: "https://hls2.aniwatchtv.uk/v/test/master.m3u8", subtitles: [{ src: "https://hls2.aniwatchtv.uk/v/test/es.vtt", lang: "en", label: "Español" }] })}"</script>`, { status: 200 })));
+    const result = await resolveZokoAnime("https://zokoanime.video/stream/mal/32281/1/sub");
+    expect(result.subtitles[0]?.lang).toBe("es");
+  });
 });

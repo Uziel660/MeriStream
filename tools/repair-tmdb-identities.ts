@@ -108,10 +108,12 @@ async function main(): Promise<void> {
   };
 
   try {
+    // Sin cursor podemos filtrar los faltantes y terminar rápido. Cuando el
+    // usuario pide checkpoints, conservamos la lista completa para que una
+    // actualización no desplace el índice y salte filas al reanudar.
+    const missingOnlyWhere = opts.missingOnly && !opts.cursorFile ? { tmdb_id: null } : {};
     const shows = await prisma.show.findMany({
-      // Lista estable: si se consulta solo tmdb_id:null, cada actualización
-      // desplaza el índice y puede saltarse obras al reanudar el cursor.
-      where: {},
+      where: missingOnlyWhere,
       orderBy: { id: "asc" },
       select: {
         id: true,
@@ -126,9 +128,9 @@ async function main(): Promise<void> {
       },
     });
     const mediaItems = await prisma.mediaItem.findMany({
-      // Se leen todos para poder corregir MediaItems cuyo ID quedó obsoleto
-      // después de revalidar un Show; los que ya coinciden no generan llamadas.
-      where: {},
+      // La pasada completa conserva la lectura de todos para poder
+      // heredar/revalidar identidades compartidas con Shows legacy.
+      where: missingOnlyWhere,
       orderBy: { id: "asc" },
       select: { id: true, title: true, kind: true, year: true, normalized_title: true, base_normalized_title: true, tmdb_id: true },
     });

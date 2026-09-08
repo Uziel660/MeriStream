@@ -360,10 +360,11 @@ async function upsertMedia(item: TmdbListItem, kind: MediaKind): Promise<{ creat
     ? await fetchAnimeIdentity(localizedTitle, originalTitle)
     : { anilist_id: null, mal_id: null, kitsu_id: null };
 
+  let normalizedForStorage = normalizedLocalized;
   const data = {
     title: localizedTitle,
     original_title: originalTitle,
-    normalized_title: normalizedLocalized,
+    normalized_title: normalizedForStorage,
     base_normalized_title: baseNormalizedLocalized,
     description,
     rating: Number.isFinite(ratingValue) ? ratingValue : (existing?.rating || 0),
@@ -378,21 +379,25 @@ async function upsertMedia(item: TmdbListItem, kind: MediaKind): Promise<{ creat
 
   let media;
   if (existing) {
-    media = await prisma.mediaItem.update({ where: { id: existing.id }, data });
+    try {
+      media = await prisma.mediaItem.update({ where: { id: existing.id }, data });
+    } catch (error: any) {
+      if (error?.code !== "P2002") throw error;
+      // Two TMDB records can legitimately share the same localized title and
+      // year. Keep the canonical base title for lookup but make the unique
+      // normalized key deterministic per TMDB identity.
+      normalizedForStorage = `${normalizedLocalized}-${item.id}`;
+      data.normalized_title = normalizedForStorage;
+      media = await prisma.mediaItem.update({ where: { id: existing.id }, data });
+    }
   } else {
     try {
       media = await prisma.mediaItem.create({ data });
     } catch (e: any) {
       if (e?.code === "P2002") {
-        const found = await prisma.mediaItem.findFirst({
-          where: { normalized_title: normalizedLocalized, kind, year: yearValue },
-          select: { id: true },
-        });
-        if (found) {
-          media = await prisma.mediaItem.update({ where: { id: found.id }, data });
-        } else {
-          throw e;
-        }
+        normalizedForStorage = `${normalizedLocalized}-${item.id}`;
+        data.normalized_title = normalizedForStorage;
+        media = await prisma.mediaItem.create({ data });
       } else {
         throw e;
       }

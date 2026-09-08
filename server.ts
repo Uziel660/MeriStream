@@ -92,6 +92,7 @@ import { authRouter } from "./server/auth";
 import { progressRouter } from "./server/progress";
 import { recommendationsRouter } from "./server/recommendations";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
+import { resolveByTmdb } from "./server/providerGateway";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
@@ -924,6 +925,66 @@ export async function handlePlayEpisode(req: Request, res: Response) {
   let targetShow: any = null;
 
   try {
+    // Public TMDB catalog episodes are virtual IDs (tmdb-anime-...-s1-e1),
+    // therefore they do not have a legacy Episode row yet. Resolve them through
+    // the same gateway used by the frontend so older clients calling /play do
+    // not receive a misleading 404.
+    const synthetic = String(targetId).match(/^tmdb-(movie|series|anime)-(\d+)-s(\d+)-e(\d+)$/i);
+    if (synthetic) {
+      const kind = synthetic[1].toLowerCase() as "movie" | "series" | "anime";
+      const gateway = await resolveByTmdb({
+        tmdbId: Number(synthetic[2]),
+        kind,
+        season: Number(synthetic[3]),
+        episode: Number(synthetic[4]),
+        preferredAudio: ["es", "en", "ja"],
+        preferredSubtitles: ["es", "en"],
+        persist: false,
+      });
+      const direct = gateway.sources.map((source: any, index: number) => ({
+        url: source.url,
+        type: "direct" as const,
+        tier: index,
+        provider: source.provider,
+        source_site: source.provider,
+        original_url: source.canonicalLocator || source.url,
+        canonical_locator: source.canonicalLocator || source.url,
+        audio_language: source.audioLanguage || undefined,
+        subtitle_language: source.subtitleLanguage || undefined,
+        subtitles: source.subtitles || [],
+        requiredHeaders: source.requiredHeaders,
+        delivery_mode: source.requiredHeaders ? "proxy_required" : "direct_trial",
+        is_proxyable: true,
+        is_refreshable: Boolean(source.canonicalLocator),
+      }));
+      const fallbacks = gateway.fallbackCandidates.map((source: any, index: number) => ({
+        url: source.url,
+        type: "embed" as const,
+        tier: direct.length + index,
+        provider: source.provider,
+        source_site: source.provider,
+        original_url: source.canonicalLocator || source.url,
+        canonical_locator: source.canonicalLocator || source.url,
+        audio_language: source.audioLanguage || undefined,
+        subtitle_language: source.subtitleLanguage || undefined,
+        subtitles: source.subtitles || [],
+        delivery_mode: "embed",
+        is_proxyable: false,
+        is_refreshable: true,
+      }));
+      const ranked = proxyRankedSubtitles([...direct, ...fallbacks]);
+      if (ranked.length > 0) {
+        return res.json({
+          episode_id: targetId,
+          stream_url: ranked[0].url,
+          title: `TMDB ${synthetic[2]} - S${synthetic[3]}E${synthetic[4]}`,
+          all_available_streams: ranked.map((entry: any) => entry.url),
+          ranked_streams: ranked,
+        });
+      }
+      return res.status(404).json({ detail: "No hay una fuente reproducible para este episodio TMDB.", episode_id: targetId, ranked_streams: [], all_available_streams: [] });
+    }
+
     // 1. Intentar resolver por esquema Multi-fuente v2 (MediaEpisode + SourceLink)
     const mediaEpisode = await prisma.mediaEpisode.findUnique({
       where: { id: targetId },
@@ -2666,6 +2727,7 @@ async function startServer() {
         url: string;
         requiredHeaders?: Record<string, string>;
         subtitles?: any[];
+        subtitle_mode?: "external" | "burned_in" | "unknown";
         resolution_id?: string;
         generation?: string;
         delivery_mode?: ResolvedStreamMeta["delivery_mode"];
@@ -2710,6 +2772,7 @@ async function startServer() {
                 url: directUrl,
                 requiredHeaders: remembered.requiredHeaders,
                 subtitles: remembered.subtitles,
+                subtitle_mode: remembered.subtitle_mode,
                 resolution_id: remembered.resolution_id,
                 generation: remembered.generation,
                 delivery_mode: deliveryPlanner.classify(remembered),
@@ -2737,6 +2800,7 @@ async function startServer() {
                 tier: 1,
                 requiredHeaders: upgraded.requiredHeaders,
                 subtitles: upgraded.subtitles,
+                subtitle_mode: upgraded.subtitle_mode,
                 resolution_id: upgraded.resolution_id,
                 generation: upgraded.generation,
                 delivery_mode: upgraded.delivery_mode,
@@ -2754,6 +2818,9 @@ async function startServer() {
             : {}),
           ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.subtitles
             ? { subtitles: hianimesMeta.subtitles }
+            : {}),
+          ...(hianimesMeta && hianimesMeta.url === r.url && hianimesMeta.subtitle_mode
+            ? { subtitle_mode: hianimesMeta.subtitle_mode }
             : {}),
         };
       });

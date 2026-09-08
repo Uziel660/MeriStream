@@ -240,6 +240,8 @@ export interface ResolvedStreamMeta {
   requiredHeaders?: Record<string, string>;
   /** Pistas WebVTT descubiertas junto al stream (cuando el proveedor las expone). */
   subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
+  /** Zoko distingue pistas VTT externas de texto incrustado en la imagen. */
+  subtitle_mode?: "external" | "burned_in" | "unknown";
   /** Pistas de audio declaradas por el master HLS del proveedor. */
   audio_tracks?: Array<{ id: string; label?: string | null; language?: string | null; url?: string | null; is_default?: boolean }>;
   /** true si la URL directa vigente puede entregarse mediante una sesión proxy. */
@@ -472,6 +474,7 @@ export class EmbedResolvers {
           is_proxyable: true,
           is_refreshable: true,
           requiredHeaders: { ...zoko.requiredHeaders },
+          subtitle_mode: zoko.subtitleMode,
           subtitles: zoko.subtitles.map((track, index) => ({
             id: `zoko-sub-${index}`,
             label: track.label || track.lang || `Subtítulo ${index + 1}`,
@@ -522,6 +525,7 @@ export class EmbedResolvers {
           is_proxyable: true,
           is_refreshable: true,
           ...(hianimes.requiredHeaders ? { requiredHeaders: hianimes.requiredHeaders } : {}),
+          ...(hianimes.subtitle_mode ? { subtitle_mode: hianimes.subtitle_mode } : {}),
           ...(hianimes.subtitles ? { subtitles: hianimes.subtitles } : {}),
         };
       }
@@ -780,6 +784,7 @@ export class EmbedResolvers {
   private static async resolveHianimesWatchMeta(rawUrl: string): Promise<{
     url: string;
     subtitles?: ResolvedStreamMeta["subtitles"];
+    subtitle_mode?: ResolvedStreamMeta["subtitle_mode"];
     requiredHeaders?: Record<string, string>;
   } | null> {
     const slug = hianimesSlugFromUrl(rawUrl) || "";
@@ -793,6 +798,7 @@ export class EmbedResolvers {
         return {
           url: zoko.url,
           requiredHeaders: { ...zoko.requiredHeaders },
+          subtitle_mode: zoko.subtitleMode,
           subtitles: zoko.subtitles.map((track, index) => ({
             id: `zoko-sub-${index}`,
             label: track.label || track.lang || `Subtítulo ${index + 1}`,

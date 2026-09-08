@@ -15,6 +15,7 @@ export const ZOKO_REQUIRED_HEADERS = {
 export interface ZokoResolution {
   url: string;
   subtitles: Array<{ src: string; lang?: string; label?: string; default?: boolean }>;
+  subtitleMode: "external" | "burned_in" | "unknown";
   title?: string;
   requiredHeaders: Record<string, string>;
 }
@@ -48,6 +49,18 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function inferSubtitleLanguage(rawLanguage: string | undefined, label: string | undefined): string | undefined {
+  const value = `${rawLanguage || ""} ${label || ""}`.toLowerCase();
+  if (/spanish|espanol|español|castellano/.test(value)) return "es";
+  if (/portuguese|brasil|brazil/.test(value)) return "pt";
+  if (/french|français/.test(value)) return "fr";
+  if (/italian|italiano/.test(value)) return "it";
+  if (/german|deutsch/.test(value)) return "de";
+  if (/arabic|العربية/.test(value)) return "ar";
+  if (/russian|русский/.test(value)) return "ru";
+  return rawLanguage;
+}
+
 function asSubtitles(value: unknown): ZokoResolution["subtitles"] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
@@ -55,10 +68,12 @@ function asSubtitles(value: unknown): ZokoResolution["subtitles"] {
     const item = entry as Record<string, unknown>;
     const src = asString(item.src);
     if (!src || !/^https?:\/\//i.test(src)) return [];
+    const label = asString(item.label);
+    const lang = inferSubtitleLanguage(asString(item.lang), label);
     return [{
       src,
-      lang: asString(item.lang),
-      label: asString(item.label),
+      lang,
+      label,
       default: item.default === true,
     }];
   });
@@ -77,6 +92,7 @@ export async function resolveZokoAnime(
   const fail = (): ZokoResolution => ({
     url: "",
     subtitles: [],
+    subtitleMode: "unknown",
     requiredHeaders: { ...ZOKO_REQUIRED_HEADERS },
   });
   const cleanUrl = typeof embedUrl === "string" ? embedUrl.trim() : "";
@@ -103,9 +119,13 @@ export async function resolveZokoAnime(
     if (!mediaUrl || !/^https:\/\//i.test(mediaUrl) || !/\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(mediaUrl)) {
       return fail();
     }
+    const subtitles = asSubtitles(payload?.subtitles);
     return {
       url: mediaUrl,
-      subtitles: asSubtitles(payload?.subtitles),
+      subtitles,
+      subtitleMode: subtitles.length > 0
+        ? "external"
+        : /\/sub(?:[/?]|$)/i.test(cleanUrl) ? "burned_in" : "unknown",
       title: asString(payload?.title),
       requiredHeaders: { ...ZOKO_REQUIRED_HEADERS },
     };

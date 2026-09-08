@@ -12,6 +12,24 @@ import { YifySubtitlesProvider } from "./providers/YifySubtitlesProvider";
 const SEARCH_TTL_MS = Math.max(60 * 60_000, Number(process.env.SUBTITLE_SEARCH_CACHE_TTL_MS || 4 * 60 * 60_000));
 const PROVIDER_TIMEOUT_MS = Math.max(1_000, Number(process.env.SUBTITLE_PROVIDER_TIMEOUT_MS || 8_000));
 
+function filterEpisodeCandidates(candidates: SubtitleCandidate[], request: SubtitleSearchRequest): SubtitleCandidate[] {
+  if (request.season == null || request.episode == null) return candidates;
+  const season = Math.max(1, request.season);
+  const episode = Math.max(1, request.episode);
+  const markers = [
+    new RegExp(`s0?${season}e0?${episode}(?!\\d)`, "i"),
+    new RegExp(`\\b${season}x0?${episode}(?!\\d)\\b`, "i"),
+    new RegExp(`season\\s*${season}[^0-9]{0,12}(?:episode|ep)\\s*${episode}`, "i"),
+  ];
+  return candidates.filter((candidate) => {
+    const release = `${candidate.release || ""} ${candidate.label || ""}`;
+    // An exact episode query may return a candidate without a release marker;
+    // keep those. If a marker is present, reject a different episode.
+    const anyEpisodeMarker = /(?:s\d{1,2}e\d{1,3}|\b\d{1,2}x\d{1,3}\b|season\s*\d+.*(?:episode|ep)\s*\d+)/i.test(release);
+    return !anyEpisodeMarker || markers.some((marker) => marker.test(release));
+  });
+}
+
 export class SubtitleGateway {
   readonly proxy: SubtitleProxy;
   private readonly searchCache = new SubtitleCache<SubtitleCandidate[]>(512);
@@ -35,10 +53,10 @@ export class SubtitleGateway {
     const cacheKey = this.cacheKey(request, languages);
     const cached = this.searchCache.get(cacheKey);
     const queried = cached ? { candidates: cached, failed: [] } : await this.queryProviders({ ...request, preferredLanguages: languages });
-    const candidates = queried.candidates;
+    const candidates = filterEpisodeCandidates(queried.candidates, request);
     if (!cached) this.searchCache.set(cacheKey, candidates, SEARCH_TTL_MS);
 
-    const ranked = rankSubtitleCandidates(dedupeSubtitleCandidates(candidates), languages);
+    const ranked = rankSubtitleCandidates(dedupeSubtitleCandidates(candidates), languages, 3);
     const tracks: SubtitleTrack[] = [];
     for (const candidate of ranked) {
       const url = this.proxy.register(candidate);

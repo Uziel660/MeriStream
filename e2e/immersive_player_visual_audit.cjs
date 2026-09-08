@@ -69,6 +69,9 @@ async function installMocks(page) {
   await page.route('**/api/v1/genres**', (route) => json(route, { genres: ['Drama', 'Suspenso'] }));
   await page.route(/\/api\/v1\/shows(?:\?.*)?$/, (route) => json(route, [catalogItem]));
 
+  // Use the real App playback bootstrap instead of the old VidSrc-only dev
+  // harness. This validates catalog -> details -> play -> HLSPlayerModal and
+  // therefore exercises the same subtitle sanitation used in production.
   await page.route(/\/api\/v1\/providers\/movie\/550(?:\?.*)?$/, (route) => json(route, {
     sources: [{
       provider: 'vidsrc',
@@ -77,23 +80,32 @@ async function installMocks(page) {
       streamType: 'hls',
       audioLanguage: 'es-419',
       subtitleLanguage: 'es-419',
-      audioTracks: [
-        { id: 0, name: 'Español Latino', lang: 'es-419' },
-        { id: 1, name: 'English', lang: 'en' },
-      ],
+      requiredHeaders: { Referer: 'https://vidsrc.me/' },
       subtitles: [
         { id: 'es', label: 'Español Latino', language: 'es-419', url: `/api/v1/subtitles/file/${SUB_TOKEN_ES}.vtt`, is_default: true },
         { id: 'en', label: 'English SDH', language: 'en', url: `/api/v1/subtitles/file/${SUB_TOKEN_EN}.vtt` },
       ],
     }],
+    fallbackCandidates: [],
+  }));
+
+  await page.route(/\/api\/v1\/play\/tmdb-movie-550-s1-e1(?:\?.*)?$/, (route) => json(route, { error: 'public virtual episode has no legacy row' }, 404));
+  await page.route(/\/api\/v1\/subtitles(?:\?.*)?$/, (route) => json(route, {
+    tracks: [
+      { id: 'external-es', label: 'Español Latino', language: 'es-419', url: `/api/v1/subtitles/file/${SUB_TOKEN_ES}.vtt`, is_default: true },
+      { id: 'external-en', label: 'English SDH', language: 'en', url: `/api/v1/subtitles/file/${SUB_TOKEN_EN}.vtt` },
+    ],
   }));
 
   await page.route('**/api/v1/playback/sessions', (route) => json(route, {
     session_id: 'visual-audit-session',
     playback_url: '/visual-audit/master.m3u8',
     resolved: true,
+    generation: 'visual-audit',
+    refresh_after: Date.now() + 30 * 60 * 1000,
     expires_at: Date.now() + 60 * 60 * 1000,
   }));
+  await page.route('**/api/v1/playback/sessions/visual-audit-session', (route) => json(route, { ok: true }));
 
   await page.route('**/visual-audit/master.m3u8', (route) => route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', body: masterManifest }));
   await page.route(/.*\/visual-audit\/(?:video-(?:720|1080)|audio-(?:es|en))\.m3u8$/, (route) => route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', body: mediaManifest }));
@@ -136,13 +148,26 @@ async function capturePreferences(browser, name, viewport) {
   return { errors, layout, dialogBox: box };
 }
 
+async function openPlayerThroughCatalog(page) {
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  const card = page.locator('.media-card').first();
+  await card.waitFor({ state: 'visible', timeout: 15_000 });
+  await card.click();
+
+  const details = page.getByRole('dialog').last();
+  await details.waitFor({ state: 'visible', timeout: 10_000 });
+  const playButton = details.getByRole('button', { name: /Reproducir película|Continuar película|Reproducir/i }).first();
+  await playButton.waitFor({ state: 'visible', timeout: 10_000 });
+  await playButton.click();
+}
+
 async function capturePlayer(browser, name, viewport) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
   await installMocks(page);
-  await page.goto(`${BASE_URL}/?vidsrc-local-test=1&vidsrc-kind=movie&vidsrc-tmdb=550`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await openPlayerThroughCatalog(page);
 
   const controls = page.locator('[data-player-controls]');
   await controls.waitFor({ state: 'visible', timeout: 20_000 });

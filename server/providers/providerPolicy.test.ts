@@ -46,6 +46,7 @@ describe("provider policy v2", () => {
     expect(getProviderPolicy("zokoanime.video")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("doramasflix.io")).toMatchObject({ role: "secondary", lifecycle: "maintained", fallbackProvider: "vidsrc" });
     expect(getProviderPolicy("tioanime")).toMatchObject({ role: "fallback", lifecycle: "legacy" });
+    expect(getProviderPolicy("flixquest")).toMatchObject({ role: "fallback", lifecycle: "legacy" });
     expect(getProviderPriority("cinecalidad")).toBeLessThan(getProviderPriority("gnula"));
   });
 
@@ -62,6 +63,7 @@ describe("provider policy v2", () => {
     expect(isProviderAllowedInMainPath("tioanime", "movie")).toBe(false);
     expect(isProviderAllowedInMainPath("animeflv", "anime")).toBe(false);
     expect(isProviderAllowedInMainPath("nuvio", "movie")).toBe(false);
+    expect(isProviderAllowedInMainPath("flixquest", "movie")).toBe(false);
     expect(isLegacyProvider("animeflv")).toBe(true);
   });
 

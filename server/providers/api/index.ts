@@ -5,6 +5,7 @@ import { NuvioClient } from "./nuvioClient";
 import { AnimeSdkClient } from "./animeSdkClient";
 import { StreamProviderClient } from "./streamProviderClient";
 import { StremioDirectClient } from "./stremioDirectClient";
+import { getProviderPolicy } from "../providerPolicy";
 
 const providers: DirectStreamProvider[] = [
   new VidSrcClient(),
@@ -23,7 +24,9 @@ export function getDirectStreamProviders(req: ProviderRequest): DirectStreamProv
       .filter(Boolean),
   );
   return providers.filter((provider) =>
-    !disabled.has(provider.id) && provider.kinds.includes(req.kind as any)
+    !disabled.has(provider.id)
+    && provider.kinds.includes(req.kind as any)
+    && ["active", "maintained"].includes(getProviderPolicy(provider.id)?.lifecycle || "")
   );
 }
 

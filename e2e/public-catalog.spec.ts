@@ -112,9 +112,9 @@ test('la búsqueda del usuario consulta TMDB con el texto completo', async ({ pa
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   const tmdbSearch = page.waitForResponse((response) => {
-    if (!response.url().includes('/api/v1/catalog/public?') || response.status() !== 200) return false;
+    if (!response.url().includes('/api/v1/catalog/search?') || response.status() !== 200) return false;
     const url = new URL(response.url());
-    return url.searchParams.get('query') === 'The Creator';
+    return url.searchParams.get('q') === 'The Creator';
   });
   await search.fill('The Creator');
   const response = await tmdbSearch;

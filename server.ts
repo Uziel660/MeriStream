@@ -1365,6 +1365,29 @@ async function startServer() {
   app.use(providerGatewayRouter());
   app.use(subtitleRouter(subtitleGateway));
 
+  // Search is a distinct TMDB-backed operation. Keeping it separate from
+  // the browse endpoint prevents the initial trending page (60 cards) from
+  // ever being mistaken for the complete searchable catalog.
+  app.get("/api/v1/catalog/search", async (req: Request, res: Response) => {
+    const query = String(req.query.q || req.query.query || "").trim();
+    if (query.length < 2) return res.status(400).json({ error: "La búsqueda requiere al menos 2 caracteres" });
+    try {
+      const result = await getPublicCatalog({
+        kind: "all",
+        query,
+        page: req.query.page ? Number(req.query.page) : 1,
+        limit: req.query.limit ? Number(req.query.limit) : 100,
+        mode: "search",
+      });
+      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=60");
+      res.setHeader("X-Catalog-Source", result.source);
+      res.setHeader("X-Catalog-Search", "tmdb");
+      return res.json(result);
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || "TMDB search unavailable" });
+    }
+  });
+
   // Public catalog identity is TMDB-first and deliberately independent from
   // imported provider rows. A card can therefore be browsed immediately while
   // Cinecalidad/Gnula/LatAnime/Zoko availability is resolved later by ID.

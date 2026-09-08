@@ -20,6 +20,11 @@ hiding a title that has not been ingested yet.
 
 Public endpoints:
 
+- `GET /api/v1/catalog/search?q=<text>&limit=100` queries TMDB directly for
+  the complete ranked search space (up to five upstream pages per media
+  family) and returns movie, series and anime cards. It is separate from the
+  60-card trending bootstrap, so a title does not need to be preloaded to be
+  found.
 - `GET /api/v1/catalog/public?kind=all|movie|series|anime&limit=60` returns
   TMDB cards (with a short in-memory server cache) with stable IDs such as `tmdb-movie-550` and
   `tmdb-anime-94664`.

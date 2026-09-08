@@ -416,7 +416,7 @@ export function App() {
         // parallel; using TMDB alone hides playable local matches whenever a
         // search result happens to exist there.
         const [publicRes, localRes] = await Promise.all([
-          fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
+          fetch(`/api/v1/catalog/search?q=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
           fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
         ]);
         if (isCancelled) return;

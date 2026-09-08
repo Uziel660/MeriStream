@@ -251,6 +251,46 @@ export class ResolutionCoordinator {
     return this.leases.get(resolutionId, locator);
   }
 
+  /**
+   * Registers metadata produced by a specialized extractor that already did
+   * the network work outside `resolve()`. The stable locator is kept as the
+   * authorization key so a later playback-session request can reuse the exact
+   * signed URL instead of resolving the provider page a second time.
+   */
+  rememberResolved(meta: Readonly<ResolvedStreamMeta>, stableLocator?: string): ResolvedStreamMeta {
+    const locator = (stableLocator || meta.canonical_locator || meta.original_url || "").trim();
+    if (!locator || !meta.resolved || !meta.url || meta.is_proxyable === false) return cloneMeta(meta);
+
+    const hasCompleteTiming = Boolean(
+      meta.resolution_id?.trim() &&
+      Number.isFinite(meta.resolved_at) &&
+      Number.isFinite(meta.refresh_after) &&
+      Number.isFinite(meta.expires_at)
+    );
+    const timing = hasCompleteTiming ? undefined : createResolutionTiming({
+      originalUrl: locator,
+      upstreamUrl: meta.url,
+      provider: meta.provider,
+      now: this.now(),
+      resolutionId: meta.resolution_id,
+    });
+    const remembered = freezeMeta({
+      ...meta,
+      original_url: locator,
+      canonical_locator: meta.canonical_locator || locator,
+      is_proxyable: meta.is_proxyable ?? true,
+      is_refreshable: meta.is_refreshable ?? true,
+      ...(timing || {}),
+    });
+    if (this.leases.put(remembered)) {
+      const resolutionId = remembered.resolution_id?.trim();
+      const originalUrl = remembered.original_url?.trim();
+      if (resolutionId && originalUrl) this.indexLocator(originalUrl, resolutionId);
+      if (resolutionId && remembered.canonical_locator) this.indexLocator(remembered.canonical_locator, resolutionId);
+    }
+    return cloneMeta(remembered);
+  }
+
   clear(): void {
     this.leases.clear();
     this.locatorIndex.clear();

@@ -132,6 +132,13 @@ export class PlaybackSessionStore {
     return session;
   }
 
+  /** Releases an abandoned browser session as soon as the user changes source. */
+  delete(id: string): boolean {
+    const removed = this.sessions.delete(id);
+    this.refreshing.delete(id);
+    return removed;
+  }
+
   /** Cheap operational counters; no signed URLs or resource data are exposed. */
   stats(): { sessions: number; refreshing: number; resources: number } {
     this.pruneSessions(this.now());
@@ -432,7 +439,7 @@ export function createPlaybackSessionHandlers(
   pathPrefix = "/api/v1/playback",
   hooks: PlaybackRelayHooks = {},
 ): {
-  masterManifest: RequestHandler; resource: RequestHandler;
+  masterManifest: RequestHandler; resource: RequestHandler; closeSession: RequestHandler;
 } {
   const proxy = (root: boolean): RequestHandler => async (req, res, next) => {
     const controller = new AbortController();
@@ -513,5 +520,12 @@ export function createPlaybackSessionHandlers(
       } catch { /* best-effort hook */ }
     }
   };
-  return { masterManifest: proxy(true), resource: proxy(false) };
+  const closeSession: RequestHandler = (req, res) => {
+    const id = String(req.params.sessionId || "");
+    if (!id) return res.sendStatus(400);
+    store.delete(id);
+    return res.sendStatus(204);
+  };
+
+  return { masterManifest: proxy(true), resource: proxy(false), closeSession };
 }

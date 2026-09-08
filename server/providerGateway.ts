@@ -7,6 +7,7 @@ import {
   renditionPreferenceScore,
 } from "./providers/providerPolicy";
 import { getHostHealth, isHostBlacklisted } from "./scrapers/hostHealth";
+import { isBlacklistedHost } from "./utils/streamSorter";
 import { getDirectStreamProviders } from "./providers/api";
 import type {
   DirectMediaKind,
@@ -245,6 +246,11 @@ function rankFallbacks(values: GatewayFallbackCandidate[]): GatewayFallbackCandi
   const seen = new Set<string>();
   return [...values]
     .filter((value) => {
+      // Never expose hosts that are deliberately disabled by the playback
+      // policy (VOE/Mixdrop/Filemoon/etc.). The canonical provider page is
+      // retained when available so its own resolver can discover a healthy
+      // replacement such as Vimeos.
+      if (isBlacklistedHost(value.url)) return false;
       const key = `${normalizeProviderId(value.provider)}|${value.url}`;
       if (seen.has(key)) return false;
       seen.add(key);

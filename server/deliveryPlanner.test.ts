@@ -180,6 +180,29 @@ describe("ResolutionCoordinator", () => {
     expect(coordinator.getByResolutionId(resolved.resolution_id!, locator)).toBeDefined();
   });
 
+  it("recuerda una resolución especializada bajo el localizador estable de la página", () => {
+    const locator = "https://www.cinecalidad.am/ver-pelicula/demo/";
+    const coordinator = new ResolutionCoordinator(async () => {
+      throw new Error("no debe volver a resolver");
+    }, { now: () => NOW });
+    const remembered = coordinator.rememberResolved({
+      url: "https://s9.vimeos.net/hls/demo/master.m3u8?t=opaque",
+      original_url: "https://s9.vimeos.net/hls/demo/master.m3u8?t=opaque",
+      canonical_locator: locator,
+      resolved: true,
+      type: "direct",
+      provider: "Vimeos",
+      requiredHeaders: { Referer: "https://www.cinecalidad.am/" },
+      is_proxyable: true,
+      is_refreshable: true,
+    }, locator);
+
+    expect(remembered.resolution_id).toBeTruthy();
+    expect(remembered.original_url).toBe(locator);
+    expect(coordinator.getByResolutionId(remembered.resolution_id!, locator)?.url).toContain("vimeos.net");
+    expect(coordinator.getByResolutionId(remembered.resolution_id!, remembered.url)).toBeUndefined();
+  });
+
   it("deduplicates concurrent resolution and reuses fresh metadata by original locator", async () => {
     let calls = 0;
     let release!: () => void;

@@ -72,6 +72,17 @@ export interface RankedStream {
   /** Nombre legible opcional que entrega el endpoint JIT. */
   provider?: string;
   source_site?: string;
+  original_url?: string;
+  canonical_locator?: string;
+  resolution_id?: string;
+  generation?: string;
+  delivery_mode?: "direct" | "direct_trial" | "proxy_required" | "embed";
+  is_proxyable?: boolean;
+  is_refreshable?: boolean;
+  refresh_after?: number;
+  expires_at?: number;
+  resolved_at?: number;
+  failure_reason?: string;
   requiredHeaders?: Record<string, string>;
   rating?: number;
   /** Provider-declared rendition label (sub/dub/audio). */

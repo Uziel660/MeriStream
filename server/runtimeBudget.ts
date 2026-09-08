@@ -63,6 +63,7 @@ export class RuntimeBudget {
   private expectedTickAt = 0;
   private activeRelays = 0;
   private activeResolutions = 0;
+  private interactiveHeadroomLeases = 0;
   private eventLoopLagMs = 0;
   private careLagStreak = 0;
   private saturatedLagStreak = 0;
@@ -154,11 +155,57 @@ export class RuntimeBudget {
   }
 
   tryBeginResolution(options: ResolutionAdmissionOptions = {}): RuntimeLease | null {
-    // En saturación se conserva un único carril interactivo para que una
+    // En saturación se conserva un pequeño margen interactivo para que una
     // reproducción solicitada por el usuario no se convierta automáticamente
     // en un iframe. El resto de resoluciones sigue rechazándose para proteger
     // memoria/CPU del host pequeño.
-    if (this.shouldFallback() && !(options.interactive && this.activeResolutions === 0)) return null;
+    if (this.shouldFallback()) {
+      const hardMemoryPressure =
+        // HLS relays temporarily retain external buffers while a browser is
+        // switching quality or source. Keep one explicit user resolution lane
+        // available through that transient peak; reserve the hard stop for a
+        // genuinely dangerous runaway (2.5x the saturated budget).
+        this.lastMemory.rssBytes >= this.thresholds.saturatedRssBytes * 2.5 ||
+        this.lastMemory.heapUsedBytes >= this.thresholds.saturatedHeapBytes * 2.5;
+      const eventLoopPressure = this.saturatedLagStreak >= this.thresholds.sustainedLagSamples;
+      const resolutionPressure = this.activeResolutions >= this.thresholds.saturatedResolutions;
+      // A source switch can overlap the tail of the previous request. Keep at
+      // most two explicit lanes (the current selection plus one stale one).
+      const headroomAvailable = this.interactiveHeadroomLeases < 2;
+      const interactiveMemoryLane =
+        options.interactive &&
+        // A previous provider may still be finishing after the user changes
+        // source. Admit the new explicit request alongside at most that one
+        // stale resolution instead of turning it into a 503 cascade.
+        this.activeResolutions < 2 &&
+        headroomAvailable &&
+        !eventLoopPressure &&
+        !hardMemoryPressure;
+      // A stale provider resolution can briefly fill the resolution counter
+      // after the user changes source. When memory, event-loop and relay
+      // pressure are healthy, admit a small extra interactive lane so that the
+      // selected fallback can finish instead of being misreported as dead.
+      const interactiveConcurrencyHeadroom =
+        options.interactive &&
+        resolutionPressure &&
+        headroomAvailable &&
+        !hardMemoryPressure &&
+        !eventLoopPressure &&
+        this.activeResolutions < this.thresholds.saturatedResolutions + 1;
+      const useInteractiveHeadroom = interactiveMemoryLane || interactiveConcurrencyHeadroom;
+      if (!useInteractiveHeadroom) return null;
+      const lease = this.beginResolution();
+      this.interactiveHeadroomLeases += 1;
+      let released = false;
+      return {
+        release: () => {
+          if (released) return;
+          released = true;
+          this.interactiveHeadroomLeases = Math.max(0, this.interactiveHeadroomLeases - 1);
+          lease.release();
+        },
+      };
+    }
     return this.beginResolution();
   }
 

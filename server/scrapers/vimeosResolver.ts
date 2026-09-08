@@ -35,7 +35,10 @@ export class VimeosResolver {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
   private static readonly EMBED_TIMEOUT_MS = 8000;
   /** Intentos de embed→validación antes de caer al POST download_orig. */
-  private static readonly MAX_EMBED_ATTEMPTS = 3;
+  // Vimeos rotates CDN tokens and a page can legitimately hand out a stale
+  // token. Five short attempts keep the resolver within the normal JIT budget
+  // while materially reducing false fallbacks on otherwise healthy pages.
+  private static readonly MAX_EMBED_ATTEMPTS = 5;
   /** Pausa entre intentos (ms): no martillar el edge mientras rota backends. */
   private static readonly RETRY_PAUSE_MS = 200;
 

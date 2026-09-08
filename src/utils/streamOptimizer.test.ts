@@ -100,6 +100,20 @@ describe('streamOptimizer — URL honesty helpers', () => {
       } as any);
       expect(latency).toBeNull();
     });
+
+    it('does not open speculative relays for signed VidSrc mirrors', async () => {
+      const latency = await quickProbeServerHealth({
+        id: 'vidsrc-signed',
+        url: 'https://lissomlabyrinth.site/pl/token/master.m3u8',
+        label: 'Lissomlabyrinth (VIDSRC)',
+        provider: 'Lissomlabyrinth (VIDSRC)',
+        sourceSite: 'vidsrc',
+        score: 100,
+        isEmbed: false,
+        streamType: 'direct',
+      } as any);
+      expect(latency).toBeNull();
+    });
   });
 });
 

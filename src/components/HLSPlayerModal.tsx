@@ -177,6 +177,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return window.localStorage.getItem('voidstream_show_server_selector') === 'true';
   });
   const [activeSessionUrl, setActiveSessionUrl] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const directWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const renewalTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Limpieza de listeners nativos del <video> para poder eliminarlos en cada
@@ -611,6 +612,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             delivery_mode: resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const,
             is_proxyable: resolved,
             is_refreshable: true,
+            resolution_id: first?.resolution_id,
+            generation: first?.generation,
+            refresh_after: first?.refresh_after,
+            expires_at: first?.expires_at,
+            resolved_at: first?.resolved_at,
             provider: first?.provider,
             requiredHeaders: first?.requiredHeaders || episodeResult.requiredHeaders,
             extraStreams: ranked,
@@ -785,6 +791,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       stallFailoverTimerRef.current = null;
     }
     proxyRequestInFlightRef.current = false;
+    const previousSessionId = activeSessionIdRef.current;
+    activeSessionIdRef.current = null;
+    if (previousSessionId) void api.closeProxySession(previousSessionId);
     setActiveSessionUrl(null);
     playbackConfirmedRef.current = false;
     loadStartMsRef.current = Date.now();
@@ -1098,6 +1107,39 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           }
         });
 
+        // Algunos hosts publican una variante HD que queda obsoleta antes que
+        // las demás. HLS.js la marca como `levelLoadError` fatal después de
+        // varios reintentos y el flujo anterior saltaba de inmediato a otro
+        // proveedor, aunque el mismo manifiesto todavía tuviera una calidad
+        // inferior reproducible. Retirar esa variante y continuar en la
+        // siguiente evita el fallback en cascada sin ocultar un fallo real del
+        // servidor completo.
+        const droppedLevels = new Set<number>();
+        const recoverUnavailableLevel = (data: any): boolean => {
+          const detail = String(data?.details || '');
+          const levelError = detail === 'levelLoadError' ||
+            detail === 'levelLoadTimeOut' ||
+            detail === 'levelParsingError' ||
+            detail === 'levelEmptyError';
+          if (!levelError || hls.levels.length <= 1) return false;
+          const rawLevel = Number(data?.level ?? data?.context?.level);
+          if (!Number.isInteger(rawLevel) || rawLevel < 0 || rawLevel >= hls.levels.length) return false;
+          if (droppedLevels.has(rawLevel)) return false;
+          droppedLevels.add(rawLevel);
+          try {
+            hls.removeLevel(rawLevel);
+          } catch {
+            return false;
+          }
+          if (hls.levels.length === 0) return false;
+          const nextLevel = Math.max(0, Math.min(rawLevel - 1, hls.levels.length - 1));
+          hls.nextLoadLevel = nextLevel;
+          hls.loadLevel = nextLevel;
+          hls.startLoad();
+          setCurrentResolutionLabel('Auto HD');
+          return true;
+        };
+
         // ERRORES FATALES Y NO FATALES (SEGMENTOS, BUFFER, PROTOCOLO)
         hls.on(Hls.Events.ERROR, (_evt, data) => {
           if (attemptId !== attemptIdRef.current) return;
@@ -1121,6 +1163,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 details: `Fallo de segmento HLS (${data.details}): reintentando descarga...`,
               });
             }
+            return;
+          }
+
+          if (recoverUnavailableLevel(data)) {
+            console.warn('HLS variant unavailable; continuing with a lower quality level', data.level);
             return;
           }
 
@@ -1216,8 +1263,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       api.requestProxySession(canonicalUrl, activeServer?.resolution_id)
         .then(session => {
           if (attemptId !== attemptIdRef.current || !proxyRequestInFlightRef.current) {
+            void api.closeProxySession(session.session_id);
             return;
           }
+          activeSessionIdRef.current = session.session_id;
           finalUrl = session.playback_url;
           setActiveSessionUrl(finalUrl);
           // Conservar la metadata de la sesión en el servidor activo.
@@ -1388,6 +1437,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   useEffect(() => {
     return () => {
+      const sessionId = activeSessionIdRef.current;
+      activeSessionIdRef.current = null;
+      if (sessionId) void api.closeProxySession(sessionId);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

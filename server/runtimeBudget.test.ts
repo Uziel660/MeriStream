@@ -76,15 +76,43 @@ describe("RuntimeBudget", () => {
     });
   });
 
-  it("reserva un único carril para una resolución interactiva bajo presión", () => {
+  it("reserva dos carriles como máximo para resoluciones interactivas bajo presión", () => {
     const subject = budget({ careResolutions: 1, saturatedResolutions: 2 });
     subject.sample({ rssBytes: 601 * MIB, heapUsedBytes: 50 * MIB });
     expect(subject.tryBeginResolution()).toBeNull();
-    const interactive = subject.tryBeginResolution({ interactive: true });
-    expect(interactive).not.toBeNull();
+    const firstInteractive = subject.tryBeginResolution({ interactive: true });
+    const secondInteractive = subject.tryBeginResolution({ interactive: true });
+    expect(firstInteractive).not.toBeNull();
+    expect(secondInteractive).not.toBeNull();
     expect(subject.tryBeginResolution({ interactive: true })).toBeNull();
-    interactive?.release();
+    firstInteractive?.release();
+    secondInteractive?.release();
     expect(subject.snapshot({ refreshMemory: false }).activeResolutions).toBe(0);
+  });
+
+  it("deja margen interactivo cuando la presión proviene solo de resoluciones viejas", () => {
+    const subject = budget({ careResolutions: 1, saturatedResolutions: 2 });
+    subject.beginResolution();
+    subject.beginResolution();
+    const firstInteractive = subject.tryBeginResolution({ interactive: true });
+    expect(firstInteractive).not.toBeNull();
+    expect(subject.tryBeginResolution({ interactive: true })).toBeNull();
+    firstInteractive?.release();
+  });
+
+  it("admite el cambio de fuente mientras termina una resolución anterior", () => {
+    const subject = budget({ careResolutions: 1, saturatedResolutions: 4 });
+    subject.sample({ rssBytes: 601 * MIB, heapUsedBytes: 50 * MIB });
+    subject.beginResolution();
+    const next = subject.tryBeginResolution({ interactive: true });
+    expect(next).not.toBeNull();
+    next?.release();
+  });
+
+  it("cierra el carril interactivo ante una presión de memoria realmente extrema", () => {
+    const subject = budget();
+    subject.sample({ rssBytes: 1_501 * MIB, heapUsedBytes: 50 * MIB });
+    expect(subject.tryBeginResolution({ interactive: true })).toBeNull();
   });
 
   it("refreshes injected metrics on snapshot and exposes cheap policy flags", () => {

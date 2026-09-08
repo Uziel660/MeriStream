@@ -643,6 +643,11 @@ export function applyBackendTiers(servers: ScoredServer[], ranked: (ExtendedRank
 export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 2500): Promise<number | null> {
   if (server.isEmbed) return null; // Los locators no tienen media que sondear
   if (server.notPlayable || server.score < 0) return null; // Páginas crudas/placeholders: nada que sondear
+  // VidSrc entrega URLs firmadas y cada sondeo abre otro relay HLS. Dejar que
+  // el candidato seleccionado valide su propio manifiesto evita acumular
+  // sesiones especulativas y reduce el consumo de memoria del backend.
+  const probeProvider = `${server.provider || ''} ${server.sourceSite || ''}`.toLowerCase();
+  if (probeProvider.includes('vidsrc')) return null;
   // A canonical provider page is intentionally represented as a refreshable
   // direct candidate so the JIT resolver can upgrade it. It is still HTML,
   // however, and probing it through `/proxy/stream` only creates a noisy

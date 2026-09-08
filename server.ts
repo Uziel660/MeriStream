@@ -28,7 +28,7 @@ import {
 } from "./server/showService";
 import { prisma, normalizeTitle, normalizeBaseTitle } from "./server/db";
 import { lookupAnimeIdentityByTitle } from "./server/animeIdentity";
-import { EmbedResolvers, isValidProvider, providerResolverRegistry } from "./server/resolvers";
+import { EmbedResolvers, isValidProvider, providerResolverRegistry, type ResolvedStreamMeta } from "./server/resolvers";
 import { getStreamTier, sortStreamsByPriority, isBlacklistedHost, hostOfStreamUrl, familyKeyOfStreamUrl } from "./server/utils/streamSorter";
 import { getServerPriorities, setServerOrder, moveServerPriority, hostOfUrl } from "./server/serverPriorities";
 import { getSiteRating, getAllSiteRatings, upsertSiteRating } from "./server/siteRatingService";
@@ -60,6 +60,7 @@ import {
 import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
 import { isInvalidCatalogSource, sanitizeCatalogLandingPages } from "./server/catalogIntegrity";
 import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import { request } from "undici";
 import { buildProxyHeaders } from "./server/hostProfiles";
 import { APP_CONFIG, localAllowedOrigins } from "./app.config";
@@ -1866,6 +1867,7 @@ async function startServer() {
   app.get("/api/v1/playback/:sessionId/master.mpd", playbackSessionHandlers.masterManifest);
   app.get("/api/v1/playback/:sessionId/resource/:resourceId", playbackSessionHandlers.resource);
   app.get(/^\/api\/v1\/playback\/([^/]+)\/resource\/([^/]+)\/(.*)$/, playbackSessionHandlers.resource);
+  app.delete("/api/v1/playback/sessions/:sessionId", playbackSessionHandlers.closeSession);
 
   // Snapshot inmediato: nunca espera las sondas. Los datos se actualizan en
   // segundo plano con stale-while-revalidate para no sumar latencia al play.
@@ -2440,27 +2442,34 @@ async function startServer() {
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
+      const abort = () => controller.abort();
+      req.once("aborted", abort);
+      res.once("close", () => { if (!res.writableEnded) controller.abort(); });
 
-      const upstream = await fetch(targetUrl, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-          "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        },
-      });
-      clearTimeout(timeout);
+      try {
+        const upstream = await fetch(targetUrl, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          },
+        });
 
-      if (!upstream.ok) {
-        return res.status(upstream.status).json({ error: `upstream ${upstream.status}` });
+        if (!upstream.ok) {
+          return res.status(upstream.status).json({ error: `upstream ${upstream.status}` });
+        }
+
+        const contentType = upstream.headers.get("content-type") || "image/jpeg";
+        const contentLength = upstream.headers.get("content-length");
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        if (!upstream.body) return res.end();
+        await pipeline(Readable.fromWeb(upstream.body as never), res);
+      } finally {
+        clearTimeout(timeout);
+        req.removeListener("aborted", abort);
       }
-
-      const contentType = upstream.headers.get("content-type") || "image/jpeg";
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-
-      const buffer = Buffer.from(await upstream.arrayBuffer());
-      res.setHeader("Content-Length", buffer.length);
-      res.end(buffer);
     } catch (e: any) {
       if (!res.headersSent) res.status(502).json({ error: e.message });
     }
@@ -2573,7 +2582,19 @@ async function startServer() {
       const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
 
       // Intentar desofuscar de inmediato los mejores embeds a stream nativo directo (.m3u8/.mp4)
-      const upgradedMap = new Map<string, { url: string; requiredHeaders?: Record<string, string>; subtitles?: any[] }>();
+      const upgradedMap = new Map<string, {
+        url: string;
+        requiredHeaders?: Record<string, string>;
+        subtitles?: any[];
+        resolution_id?: string;
+        generation?: string;
+        delivery_mode?: ResolvedStreamMeta["delivery_mode"];
+        is_proxyable?: boolean;
+        is_refreshable?: boolean;
+        refresh_after?: number;
+        expires_at?: number;
+        resolved_at?: number;
+      }>();
       for (const cand of rankedBase.slice(0, 3)) {
         // Las URLs directas de Vimeos también necesitan su perfil de cabeceras:
         // el CDN acepta el GET del backend, pero rechaza el navegador sin pasar
@@ -2597,10 +2618,26 @@ async function startServer() {
               if (directUrl.includes("okcdn.ru") || cand.url.includes("ok.ru")) {
                 directUrl = `/api/v1/proxy/stream?referer=https%3A%2F%2Fok.ru%2F&url=${encodeURIComponent(subMeta.url)}`;
               }
+              const remembered = resolutionCoordinator.rememberResolved({
+                ...subMeta,
+                url: subMeta.url,
+                original_url: url,
+                canonical_locator: url,
+                is_proxyable: true,
+                is_refreshable: true,
+              }, url);
               upgradedMap.set(cand.url, {
                 url: directUrl,
-                requiredHeaders: subMeta.requiredHeaders,
-                subtitles: subMeta.subtitles,
+                requiredHeaders: remembered.requiredHeaders,
+                subtitles: remembered.subtitles,
+                resolution_id: remembered.resolution_id,
+                generation: remembered.generation,
+                delivery_mode: deliveryPlanner.classify(remembered),
+                is_proxyable: remembered.is_proxyable,
+                is_refreshable: remembered.is_refreshable,
+                refresh_after: remembered.refresh_after,
+                expires_at: remembered.expires_at,
+                resolved_at: remembered.resolved_at,
               });
             }
           } catch {}
@@ -2615,11 +2652,19 @@ async function startServer() {
             ? {
                 url: upgraded.url,
                 type: "direct" as const,
-                original_url: r.url,
-                canonical_locator: r.url,
+                original_url: url,
+                canonical_locator: url,
                 tier: 1,
                 requiredHeaders: upgraded.requiredHeaders,
                 subtitles: upgraded.subtitles,
+                resolution_id: upgraded.resolution_id,
+                generation: upgraded.generation,
+                delivery_mode: upgraded.delivery_mode,
+                is_proxyable: upgraded.is_proxyable,
+                is_refreshable: upgraded.is_refreshable,
+                refresh_after: upgraded.refresh_after,
+                expires_at: upgraded.expires_at,
+                resolved_at: upgraded.resolved_at,
               }
             : {}),
           // Plataforma de origen (sitio cuya página se pidió) para el selector premium.

@@ -184,6 +184,18 @@ describe("PlaybackSessionStore", () => {
     expect(store.get(first.id)).toBeUndefined();
   });
 
+  it("libera inmediatamente una sesión abandonada por cambio de servidor", () => {
+    const store = new PlaybackSessionStore({ now: () => 100 });
+    const session = store.createFromResolved(
+      "https://embed.example/abandoned",
+      meta("https://embed.example/abandoned", "https://cdn.example/master.m3u8", 9_999),
+    );
+    expect(store.stats().sessions).toBe(1);
+    expect(store.delete(session.id)).toBe(true);
+    expect(store.stats().sessions).toBe(0);
+    expect(store.delete(session.id)).toBe(false);
+  });
+
   it("uses T100TA defaults and evicts sessions and resources by LRU", () => {
     let now = 100;
     const store = new PlaybackSessionStore({ now: () => now });

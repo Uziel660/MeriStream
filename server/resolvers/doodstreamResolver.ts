@@ -27,6 +27,7 @@ export function isDoodstreamUrl(url: string): boolean {
   const u = String(url || "").toLowerCase();
   return (
     u.includes("dood.") ||
+    u.includes("doodstream") ||
     u.includes("dsvplay") ||
     u.includes("d000d.") ||
     u.includes("ds2play") ||

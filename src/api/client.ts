@@ -550,7 +550,20 @@ export const api = {
     ranked_streams?: Array<{
       url: string;
       type?: "direct" | "embed";
+      tier?: number;
+      host?: string | null;
       provider?: string;
+      source_site?: string;
+      original_url?: string;
+      canonical_locator?: string;
+      resolution_id?: string;
+      generation?: string;
+      delivery_mode?: "direct" | "direct_trial" | "proxy_required" | "embed";
+      is_proxyable?: boolean;
+      is_refreshable?: boolean;
+      refresh_after?: number;
+      expires_at?: number;
+      resolved_at?: number;
       requiredHeaders?: Record<string, string>;
       subtitles?: Array<{ id?: string; label?: string; language?: string; src?: string; url?: string; is_default?: boolean }>;
     }>;
@@ -579,6 +592,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ original_url, resolution_id }),
     });
+  },
+
+  async closeProxySession(sessionId: string): Promise<void> {
+    if (!sessionId) return;
+    await fetch(`/api/v1/playback/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      keepalive: true,
+    }).catch(() => undefined);
   },
 
   async reportPlayerEvent(event: {

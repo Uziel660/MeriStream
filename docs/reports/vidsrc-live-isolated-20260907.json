@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-07T22:37:15.467Z",
+  "generatedAt": "2026-09-08T00:16:11.069Z",
   "branch": "test/vidsrc-live-isolated-20260907",
   "pipeline": "TMDB → VidSrc → embed → player/iframe → server hash → rcp/prorcp → HLS → manifest → variant → segmento",
   "cases": [

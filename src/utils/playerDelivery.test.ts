@@ -311,6 +311,7 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
       .toEqual(['direct-trial', 'direct', 'embed']);
   });
 
+
   it('deja al final páginas canónicas no reproducibles', () => {
     const unresolved = makeServer({
       id: 'page',

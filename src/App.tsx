@@ -648,8 +648,23 @@ export function App() {
         : Promise.resolve(null);
       const [gatewayData, legacyResponse, subtitleData] = await Promise.all([gatewayPromise, legacyPromise, subtitlePromise]);
 
-      const gatewayRanked = Array.isArray(gatewayData?.sources)
-        ? gatewayData.sources.map((source: any, index: number) => {
+      // Un gateway puede devolver muchos mirrors del mismo proveedor (VidSrc
+      // suele entregar una docena). Conservarlos todos hace que un host caído
+      // dispare una cascada de sesiones y consuma el presupuesto del backend
+      // antes de llegar a Cinecalidad/Gnula. Dejamos tres por proveedor para
+      // mantener mirrors reales sin convertir un fallo en una tormenta.
+      const gatewaySourceCount = new Map<string, number>();
+      const gatewaySources = Array.isArray(gatewayData?.sources)
+        ? gatewayData.sources.filter((source: any) => {
+            const provider = String(source?.provider || 'api').toLowerCase();
+            const count = gatewaySourceCount.get(provider) || 0;
+            if (count >= 3) return false;
+            gatewaySourceCount.set(provider, count + 1);
+            return true;
+          })
+        : [];
+      const gatewayRanked = gatewaySources.length > 0
+        ? gatewaySources.map((source: any, index: number) => {
             let host: string | null = null;
             try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
             return {

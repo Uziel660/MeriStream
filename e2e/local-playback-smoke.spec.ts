@@ -43,7 +43,8 @@ test.describe('Playback local nativo', () => {
     });
 
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
-    const search = page.getByRole('searchbox');
+    await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
+  const search = page.getByRole('searchbox');
     await expect(search).toBeVisible();
     await search.fill('One Piece');
 

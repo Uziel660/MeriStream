@@ -100,6 +100,26 @@ describe("TMDB public catalog", () => {
     expect(calls.some((url) => url.includes("/trending/movie/week") || url.includes("/trending/tv/week"))).toBe(false);
   });
 
+  it("uses a per-request TMDB key when a profile supplies one", async () => {
+    delete process.env.TMDB_API_KEY;
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      urls.push(url.toString());
+      if (url.pathname.endsWith("/search/movie")) {
+        return new Response(JSON.stringify({ page: 1, total_results: 1, total_pages: 1, results: [{ id: 550, title: "Fight Club", release_date: "1999-10-15" }] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/search/tv")) {
+        return new Response(JSON.stringify({ page: 1, total_results: 0, total_pages: 1, results: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", query: "Fight Club", limit: 1, apiKey: "personal-test-key" });
+    expect(result.shows[0]?.tmdb_id).toBe(550);
+    expect(urls[0]).toContain("api_key=personal-test-key");
+  });
+
   it("interleaves movies, series and anime in the unified public catalog", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -202,6 +222,12 @@ describe("TMDB public catalog", () => {
           first_air_date: "2008-01-20",
           seasons: [{ season_number: 1, episode_count: 2 }],
           external_ids: { imdb_id: "tt0903747", tvdb_id: 81189, wikidata_id: "Q1079" },
+          images: {
+            logos: [
+              { file_path: "/breaking-bad-en.png", iso_639_1: "en", width: 900 },
+              { file_path: "/breaking-bad-es.png", iso_639_1: "es", width: 700 },
+            ],
+          },
         }), { status: 200 });
       }
       return new Response(JSON.stringify({ data: { Media: null } }), { status: 200 });
@@ -212,6 +238,7 @@ describe("TMDB public catalog", () => {
     expect(detail?.episodes).toHaveLength(2);
     expect(detail?.episodes[0]?.id).toBe("tmdb-series-1396-s1-e1");
     expect(detail?.episodes[0]?.source_url).toBe("tmdb://series/1396/1/1");
+    expect(detail?.logo_url).toContain("/w500/breaking-bad-es.png");
   });
 
   it("falls back to Kitsu mappings when AniList is unavailable", async () => {

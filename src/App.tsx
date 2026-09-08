@@ -14,7 +14,8 @@ import { useAuth } from './contexts/AuthContext';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
-import { normalizeText, searchShows } from './utils/searchUtils';
+import { normalizeText, normalizeTextStrict, searchShows } from './utils/searchUtils';
+import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
@@ -112,9 +113,34 @@ function mapCatalogShow(s: any): Show {
 function catalogIdentityKey(show: Partial<Show>): string {
   const category = String(show.category || show.kind || 'media').toLowerCase();
   const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
-  return show.tmdb_id
-    ? `tmdb:${namespace}:${show.tmdb_id}`
+  if (show.tmdb_id) return `tmdb:${namespace}:${show.tmdb_id}`;
+  // Legacy provider imports can contain the same work under different row
+  // ids. Keep genuine releases with different years separate, but collapse
+  // exact title/year duplicates before they reach a rail or search result.
+  const title = normalizeTextStrict(String(show.title || show.original_title || ''));
+  const year = Number((show.year ?? show.release_year) || 0);
+  return title
+    ? `title:${category}:${title}:${Number.isFinite(year) ? year : 0}`
     : `id:${show.id || ''}`;
+}
+
+function dedupeCatalogShows(items: Show[]): Show[] {
+  const unique = new Map<string, Show>();
+  for (const item of items) {
+    const key = catalogIdentityKey(item);
+    const previous = unique.get(key);
+    if (!previous) {
+      unique.set(key, item);
+      continue;
+    }
+    // Preserve the richer row when duplicate legacy records disagree. This
+    // matters for playback because one row may carry the repaired identity or
+    // a poster while another only has a bare title.
+    const previousScore = Number(Boolean(previous.tmdb_id)) * 4 + Number(Boolean(previous.poster_url)) * 2 + Number(previous.episode_count || 0);
+    const currentScore = Number(Boolean(item.tmdb_id)) * 4 + Number(Boolean(item.poster_url)) * 2 + Number(item.episode_count || 0);
+    if (currentScore > previousScore) unique.set(key, item);
+  }
+  return [...unique.values()];
 }
 
 export function App() {
@@ -165,6 +191,25 @@ export function App() {
   const [playingStreamData, setPlayingStreamData] = useState<any | null>(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [orphanNotice, setOrphanNotice] = useState<string | null>(null);
+
+  // Aplica los ajustes visuales de cada perfil sin forzar un recálculo del
+  // catálogo. La clave personal se lee bajo demanda para que cambiarla en
+  // Preferencias afecte a la siguiente petición y nunca quede en el bundle.
+  useEffect(() => {
+    const applyPreferences = () => {
+      const preferences = getAppPreferences(user?.id);
+      document.documentElement.dataset.msContrast = preferences.contrast;
+      document.documentElement.dataset.msReduceMotion = preferences.reduceMotion ? 'true' : 'false';
+    };
+    applyPreferences();
+    window.addEventListener(APP_PREFERENCES_EVENT, applyPreferences);
+    return () => window.removeEventListener(APP_PREFERENCES_EVENT, applyPreferences);
+  }, [user?.id]);
+
+  const tmdbRequestInit = useCallback((): RequestInit => {
+    const key = getAppPreferences(user?.id).tmdbApiKey.trim();
+    return key ? { headers: { 'X-TMDB-Personal-Key': key } } : {};
+  }, [user?.id]);
 
   // Arnés local para validar VidSrc directamente en el reproductor interno.
   // Solo se activa en Vite dev mediante ?vidsrc-local-test=1; no forma parte
@@ -416,7 +461,7 @@ export function App() {
         // parallel; using TMDB alone hides playable local matches whenever a
         // search result happens to exist there.
         const [publicRes, localRes] = await Promise.all([
-          fetch(`/api/v1/catalog/search?q=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
+          fetch(`/api/v1/catalog/search?q=${encodeURIComponent(query)}&limit=100`, { ...tmdbRequestInit(), signal: controller.signal }),
           fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
         ]);
         if (isCancelled) return;
@@ -442,7 +487,7 @@ export function App() {
           const key = catalogIdentityKey(show);
           if (!merged.has(key)) merged.set(key, show);
         }
-        setServerSearchResults([...merged.values()]);
+        setServerSearchResults(dedupeCatalogShows([...merged.values()]));
       } catch (e: any) {
         if (e?.name !== 'AbortError') console.warn('Error en búsqueda server-side:', e);
       }
@@ -456,7 +501,7 @@ export function App() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [searchQuery]);
+  }, [searchQuery, tmdbRequestInit]);
 
   // LIMPIEZA DE HUÉRFANOS EN "SEGUIR VIENDO" (#2/R2): tras re-scrapes, las
   // tarjetas pueden apuntar a episodios borrados (404 al reproducir) o mostrar
@@ -537,7 +582,7 @@ export function App() {
   // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
   const fetchFreshCatalog = async (isBackground = false, page = 1, append = false) => {
     try {
-      const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${page}`);
+      const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${page}`, tmdbRequestInit());
       // TMDB is the canonical public catalog. If it is temporarily
       // unavailable, keep the local safety net bounded to the same small
       // bootstrap batch instead of loading the entire database into the
@@ -549,7 +594,7 @@ export function App() {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.shows || [];
         if (Array.isArray(list)) {
-          const safeShows: Show[] = list.map(mapCatalogShow);
+          const safeShows: Show[] = dedupeCatalogShows(list.map(mapCatalogShow));
 
           if (append) {
             // Merge by the namespaced TMDB id so loading the next public batch
@@ -628,23 +673,28 @@ export function App() {
   const loadMorePublicCatalogKind = async (kind: PublicCatalogKind) => {
     if (isLoadingMoreCatalogByKind[kind] || !hasMorePublicCatalogByKind[kind]) return;
     setIsLoadingMoreCatalogByKind((previous) => ({ ...previous, [kind]: true }));
-    const nextPage = publicCatalogPages[kind] + PUBLIC_CATALOG_PAGE_STEP;
+    // El cursor guarda la última página de TMDB realmente incluida en el lote.
+    // El endpoint agrega tres páginas por llamada, así que la siguiente debe
+    // comenzar en la página contigua y nunca saltarse 4/5.
+    const nextPage = publicCatalogPages[kind] + 1;
     try {
-      const response = await fetch(`/api/v1/catalog/public?kind=${kind}&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`);
+      const response = await fetch(`/api/v1/catalog/public?kind=${kind}&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`, tmdbRequestInit());
       if (!response.ok) throw new Error(`TMDB ${kind}: HTTP ${response.status}`);
       const data = await response.json();
       const list = Array.isArray(data) ? data : data.shows || [];
-      const safeShows: Show[] = Array.isArray(list) ? list.map(mapCatalogShow) : [];
+      const safeShows: Show[] = Array.isArray(list) ? dedupeCatalogShows(list.map(mapCatalogShow)) : [];
       setShows((previous) => {
         const merged = new Map(previous.map((show) => [show.id, show]));
         for (const show of safeShows) merged.set(show.id, show);
         return [...merged.values()];
       });
-      setPublicCatalogPages((previous) => ({ ...previous, [kind]: nextPage }));
       const totalPages = Number(data?.totalPages || 0);
+      const consumedPages = Math.max(1, Math.min(PUBLIC_CATALOG_PAGE_STEP, Math.ceil(safeShows.length / 20)));
+      const lastFetchedPage = nextPage + consumedPages - 1;
+      setPublicCatalogPages((previous) => ({ ...previous, [kind]: lastFetchedPage }));
       setHasMorePublicCatalogByKind((previous) => ({
         ...previous,
-        [kind]: safeShows.length > 0 && (!totalPages || nextPage + PUBLIC_CATALOG_PAGE_STEP - 1 < totalPages),
+        [kind]: safeShows.length > 0 && (!totalPages || lastFetchedPage < totalPages),
       }));
       try {
         const cached = localStorage.getItem(CATALOG_CACHE_KEY);
@@ -680,7 +730,7 @@ export function App() {
           );
           const cacheHasAllFamilies = PUBLIC_CATALOG_KINDS.every((kind) => cachedKinds.has(kind));
           if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0 && cacheHasAllFamilies) {
-            setShows(data);
+            setShows(dedupeCatalogShows(data.map(mapCatalogShow)));
             setPublicCatalogPage(1);
             setHasMorePublicCatalog(true);
             setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
@@ -1607,6 +1657,7 @@ export function App() {
         onClose={() => setSelectedShowId(null)}
         onSelectEpisode={(ep, title) => handleSelectEpisode(ep, title)}
         watchProgress={continueWatchingItems}
+        userId={user?.id}
       />
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}

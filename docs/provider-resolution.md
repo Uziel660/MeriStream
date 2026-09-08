@@ -38,6 +38,11 @@ Public endpoints:
   frontend never needs a provider database row in order to ask for a TMDB
   title's sources.
 
+The header search is collapsed to a keyboard accessible magnifying-glass
+button and expands across the available width when opened. Requests made with
+an optional per-user TMDB key include `X-TMDB-Personal-Key`; the server uses it
+only for that request and falls back to `TMDB_API_KEY` when it is absent.
+
 The frontend tries the public endpoint first and falls back to a bounded
 `/api/v1/shows?lite=true&limit=60` batch only when TMDB is unavailable. The legacy `Show` and
 `Episode` tables remain available to the admin and to gradual source imports;
@@ -98,8 +103,9 @@ multilingual and typo-tolerant queries. Full-text and substring matches remain
 the fast path; a bounded `pg_trgm` similarity fallback runs only when a query
 has no literal title hit. The player and subtitle menus group mirrors by
 language with a capped scroll area. Per-user preferences (priority languages,
-default quality, subtitle position/size and reduced motion) are stored in a
-namespaced local record and applied without changing playback contracts.
+default quality, subtitle position/size, contrast, reduced motion and an
+optional TMDB key) are stored in a namespaced local record and applied without
+changing playback contracts.
 
 Subtitle tracks from provider manifests are preserved through JIT resolution and
 rendered by the native `<track>` element. OpenSubtitles is an optional,

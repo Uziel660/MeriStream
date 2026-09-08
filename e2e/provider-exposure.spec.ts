@@ -29,6 +29,7 @@ test('la ficha de anime expone LatAnime y ZokoAnime en el selector de fuentes', 
   );
 
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('Gachiakuta');

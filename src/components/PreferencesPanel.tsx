@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, Eye, EyeOff, X } from 'lucide-react';
 import {
   APP_PREFERENCES_EVENT,
   DEFAULT_APP_PREFERENCES,
@@ -25,6 +25,7 @@ const LANGUAGE_OPTIONS = [
 
 export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
   const [preferences, setPreferences] = useState<AppPreferences>(() => getAppPreferences(userId));
+  const [showTmdbKey, setShowTmdbKey] = useState(false);
 
   useEffect(() => {
     const sync = (event: Event) => {
@@ -107,6 +108,35 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
               <input type="checkbox" checked={preferences.reduceMotion} onChange={(event) => setPreferences((current) => ({ ...current, reduceMotion: event.target.checked }))} className="h-4 w-4 accent-amber-400" />
             </label>
           </div>
+
+          <fieldset>
+            <legend className="text-sm font-semibold">Catálogo y accesibilidad</legend>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold">Contraste de interfaz
+                <select value={preferences.contrast} onChange={(event) => setPreferences((current) => ({ ...current, contrast: event.target.value as AppPreferences['contrast'] }))} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400">
+                  <option value="standard">Estándar</option><option value="high">Alto contraste</option>
+                </select>
+              </label>
+              <label className="text-sm font-semibold">Clave personal de TMDB
+                <span className="relative mt-2 block">
+                  <input
+                    type={showTmdbKey ? 'text' : 'password'}
+                    value={preferences.tmdbApiKey}
+                    onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKey: event.target.value.slice(0, 128) }))}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Opcional"
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 pr-10 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400"
+                    aria-describedby="tmdb-key-help"
+                  />
+                  <button type="button" onClick={() => setShowTmdbKey((value) => !value)} className="absolute inset-y-0 right-1 grid w-8 place-items-center text-zinc-400 hover:text-white" aria-label={showTmdbKey ? 'Ocultar clave de TMDB' : 'Mostrar clave de TMDB'}>
+                    {showTmdbKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </span>
+                <span id="tmdb-key-help" className="mt-1 block text-[10px] font-normal leading-relaxed text-zinc-500">Se usa solo en tus peticiones de catálogo de este dispositivo; si queda vacío se usa la configuración del servidor.</span>
+              </label>
+            </div>
+          </fieldset>
         </div>
 
         <div className="mt-7 flex justify-end gap-2 border-t border-zinc-800 pt-4">
@@ -117,4 +147,3 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
     </div>
   );
 }
-

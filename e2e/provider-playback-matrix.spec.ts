@@ -36,6 +36,7 @@ async function playCatalogTitle(
     .toBe(detail.episodes.length);
 
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill(searchTerm);
@@ -48,9 +49,10 @@ async function playCatalogTitle(
   await expect(details).toContainText(/Episodios \(|Reproducir película|Continuar película/, { timeout: 30_000 });
   if (process.env.DEBUG_E2E) console.log(`[e2e-details] ${((await details.innerText()).slice(0, 1200))}`);
   if (seasonButtonText) {
-    const seasonButton = details.getByRole('button', { name: seasonButtonText, exact: true });
-    await expect(seasonButton).toBeVisible();
-    await seasonButton.click();
+    const seasonSelect = details.getByRole('combobox', { name: 'Temporadas' });
+    await expect(seasonSelect).toBeVisible();
+    const seasonNumber = seasonButtonText.match(/(\d+)/)?.[1];
+    await seasonSelect.selectOption(seasonNumber || '1');
   }
   const target = details.locator('button.episode-card').first();
   const playButton = details.getByRole('button', { name: /Reproducir película|Continuar película/i }).first();

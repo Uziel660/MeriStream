@@ -12,6 +12,7 @@ import { displayEpisodeTitle } from '../utils/episodeLabels';
 import type { ShowDetail, Episode } from '../types';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { WatchProgress } from './ContinueWatching';
+import { getAppPreferences } from '../utils/appPreferences';
 
 function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anime'; tmdbId: number } | null {
   const match = /^tmdb-(movie|series|anime)-(\d+)$/.exec(String(value || ''));
@@ -28,6 +29,7 @@ interface MediaDetailsModalProps {
   onClose: () => void;
   onSelectEpisode: (episode: Episode, showTitle: string) => void;
   watchProgress?: WatchProgress[];
+  userId?: string | null;
 }
 
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
@@ -36,6 +38,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   onClose,
   onSelectEpisode,
   watchProgress = [],
+  userId,
 }) => {
   const dialogRef = useDialogFocus(isOpen);
   const [show, setShow] = useState<ShowDetail | null>(null);
@@ -57,7 +60,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       ? `/api/v1/catalog/public/${publicIdentity.kind}/${publicIdentity.tmdbId}`
       : `/api/v1/shows/${showId}`;
 
-    fetch(detailUrl)
+    const personalKey = getAppPreferences(userId).tmdbApiKey.trim();
+    fetch(detailUrl, personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined)
       .then(async (res) => {
         if (!res.ok) throw new Error('No se pudo cargar la información del título.');
         const localData = await res.json() as ShowDetail;
@@ -73,7 +77,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               ? 'anime'
               : 'series';
           try {
-            const localizedResponse = await fetch(`/api/v1/catalog/public/${publicKind}/${localData.tmdb_id}`);
+            const localizedResponse = await fetch(`/api/v1/catalog/public/${publicKind}/${localData.tmdb_id}`, personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined);
             if (localizedResponse.ok) {
               const localized = await localizedResponse.json() as Partial<ShowDetail>;
               return {
@@ -87,6 +91,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 banner_url: localized.banner_url || localData.banner_url,
                 backdrop_url: localized.backdrop_url || localData.backdrop_url,
                 backdrop_path: localized.backdrop_path || localData.backdrop_path,
+                logo_url: localized.logo_url || localData.logo_url,
                 genres: localized.genres?.length ? localized.genres : localData.genres,
                 year: localized.year || localData.year,
                 rating: localized.rating || localData.rating,
@@ -109,7 +114,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       })
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
-  }, [isOpen, showId]);
+  }, [isOpen, showId, userId]);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -371,9 +376,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       )}
                     </div>
 
-                    <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">
-                      {cleanDisplayTitle(show.title)}
-                    </h2>
+                    {show.logo_url ? (
+                      <SmartImage
+                        src={show.logo_url}
+                        alt={cleanDisplayTitle(show.title)}
+                        className="details-title-logo max-h-16 sm:max-h-20 max-w-[min(84vw,26rem)] object-contain object-left drop-shadow-[0_3px_12px_rgba(0,0,0,.85)]"
+                        fallback={<h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">{cleanDisplayTitle(show.title)}</h2>}
+                      />
+                    ) : (
+                      <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">
+                        {cleanDisplayTitle(show.title)}
+                      </h2>
+                    )}
                   </div>
                 </div>
 
@@ -470,21 +484,19 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               Episodios ({episodes.length})
                             </h4>
                             {availableSeasons.length > 1 && (
-                              <div className="flex flex-wrap gap-2 mt-1">
-                                {availableSeasons.map((season) => (
-                                  <button
-                                    key={season}
-                                    onClick={() => setSelectedSeason(season)}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors border ${
-                                      selectedSeason === season
-                                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold'
-                                        : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                                    }`}
-                                  >
-                                    Temporada {season}
-                                  </button>
-                                ))}
-                              </div>
+                              <label className="mt-1 flex items-center gap-2 text-xs font-normal text-zinc-400">
+                                <span>Temporadas</span>
+                                <select
+                                  aria-label="Temporadas"
+                                  value={String(selectedSeason)}
+                                  onChange={(event) => setSelectedSeason(Number(event.target.value))}
+                                  className="max-w-[min(72vw,15rem)] rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-200 outline-none transition focus:border-amber-500/70"
+                                >
+                                  {availableSeasons.map((season) => (
+                                    <option key={season} value={season}>Temporada {season}</option>
+                                  ))}
+                                </select>
+                              </label>
                             )}
                           </div>
                         </div>

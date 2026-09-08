@@ -17,13 +17,13 @@ body {
 
 /* Header floats over the featured artwork at the top, then becomes a surface on scroll. */
 .site-header {
-  border-bottom-color: rgba(255,255,255,.05) !important;
+  border-bottom: 0 !important;
   background: linear-gradient(180deg, rgba(7,8,13,.92), rgba(7,8,13,.76)) !important;
   box-shadow: none !important;
 }
 .site-header.is-at-top {
   background: linear-gradient(180deg, rgba(7,8,13,.86) 0%, rgba(7,8,13,.44) 60%, transparent 100%) !important;
-  border-bottom-color: transparent !important;
+  border-bottom: 0 !important;
   backdrop-filter: none !important;
 }
 .header-inner { max-width: 100% !important; }
@@ -39,6 +39,7 @@ body {
 .nav-item,
 .genre-shortcut { color: #aab1bf !important; }
 .nav-item.is-active { background: rgba(244,179,63,.14) !important; color: white !important; }
+.genre-nav { border-top: 0 !important; }
 
 /* Full-bleed featured artwork. The negative margin lets it live behind the transparent header. */
 .feature {

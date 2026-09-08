@@ -29,6 +29,8 @@ export interface Show {
   description?: string;
   synopsis?: string;
   poster_url?: string | null;
+  /** Logotipo/título gráfico de TMDB para la cabecera de detalle. */
+  logo_url?: string | null;
   banner_url?: string | null;
   backdrop_url?: string | null;
   poster_path?: string | null;

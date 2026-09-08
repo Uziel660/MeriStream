@@ -125,9 +125,9 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
             <button
               ref={mobileSearchTriggerRef}
               type="button"
-              className="mobile-search-trigger ui-icon-button"
-              onClick={openMobileSearch}
-              aria-label="Abrir búsqueda"
+              className="mobile-search-trigger search-toggle ui-icon-button"
+              onClick={() => mobileSearchOpen ? closeMobileSearch(false) : openMobileSearch()}
+              aria-label={mobileSearchOpen ? 'Cerrar búsqueda' : 'Abrir búsqueda'}
               aria-expanded={mobileSearchOpen}
               aria-controls="catalog-search"
             >

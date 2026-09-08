@@ -2,6 +2,26 @@
 
 Esta matriz se ejecutó con Playwright Chromium contra el servidor local. Cada caso siguió la ruta del usuario: ficha/landing → `resolve-embed` → sesión interna → master → primera playlist hija → primer segmento con `Range: bytes=0-1023`. Las URLs firmadas no se guardan en este informe; solo se conserva el host final y el estado observado.
 
+## Ejecución final de la matriz (08:33–08:36 UTC)
+
+Los artefactos reproducibles más recientes están en `work/provider-browser-current-*.json`.
+Cada fila aceptada pasó por resolución del locator, sesión de entrega interna, manifiesto
+HLS o MP4 y una lectura acotada del primer segmento. La identidad se comparó por TMDB
+ID (y por MAL en Zoko); las diferencias de idioma del título no invalidan el match.
+
+| Provider | Seleccionadas | Resolución | Manifest/MP4 | Segmento | Identidad por ID | Fallos excluidos |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cinecalidad | 10 | 10 | 10 | 10 | 10 | 0 |
+| GnulaHD | 15 | 14 | 14 | 14 | 15 | 1 (One Piece, upstream) |
+| LatAnime | 15 | 15 | 15 | 14 | 15 | 0 (1 MP4 sin segmento HLS) |
+| ZokoAnime | 15 | 15 | 15 | 15 | 15 (MAL incluido) | 0 |
+| TioAnime (legacy) | 15 | 13 | 13 | 13 | 13 | 2 (Mega upstream) |
+| VidSrc | 10 | 10 | 10 | 10 | 10 | 0 |
+
+Esto deja al menos diez reproducciones nativas aceptadas por cada adapter activo y
+mantiene TioAnime únicamente como fallback legacy. Gnula y Tio conservan sus casos
+upstream fallidos como fallos honestos; no se convierten en fuentes falsas.
+
 | Provider | Obras probadas | Válidas | Muestra documentada | Host final observado | Estado |
 | --- | ---: | ---: | ---: | --- | --- |
 | cinecalidad | 20 | 20 | 10 | Vimeos (20; nodos p/s.vimeos) | 10/10 mínimo cumplido |

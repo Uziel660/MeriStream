@@ -37,13 +37,13 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 
 - Anime en la base local: 6.328.
 - Sin MAL: 4.192; sin AniList: 4.225 (después de seis lotes de identidad aplicados y el enriquecimiento AniList de duplicados MAL).
-- Con TMDB pero sin MAL: 3.282; con TMDB pero sin AniList: 3.521.
+- Con TMDB pero sin MAL: 2.801; con TMDB pero sin AniList: 2.792.
 - Catálogo público TMDB anime: 5.427 resultados totales; las fichas se pueden abrir aunque todavía no exista una fila importada.
 - La falta de MAL no se rellena con una conjetura: sin correspondencia confiable Zoko no se anuncia, pero VidSrc y los proveedores de catálogo siguen disponibles.
 
 ## Validación ejecutada
 
-- `npm test -- --run --reporter=dot`: 83 archivos, 742 pruebas; 733 pasaron y 9 fallaron por respuestas upstream de Cinecalidad/LaMovie durante esta ejecución (522, búsqueda vacía, poster ausente y streams upstream). Las pruebas unitarias nuevas de búsqueda pasaron 3/3.
+- `npm test -- --run --reporter=dot`: 83 archivos, 742 pruebas; 733 pasaron y 9 fallaron por respuestas upstream de Cinecalidad/LaMovie durante esta ejecución (522, búsqueda vacía, poster ausente y streams upstream). Las pruebas unitarias nuevas de búsqueda pasaron 3/3. Las comprobaciones finales de catálogo público y reproducción por navegador se repitieron después de los cambios de interfaz.
 - `npx tsc --noEmit --pretty false`: correcto.
 - `npm run build`: correcto; Vite y bundle de servidor generados.
 - `npm run lint`: correcto (TypeScript).
@@ -52,7 +52,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
   - fallback TioAnime y reproducción en player interno: correcto;
   - guardia de identidad TMDB para Overflow: correcto.
   - paginación del catálogo unificado y reparación visual de la cartelera: correctas.
-  - paginación independiente por categoría desde la vista Explorar: correcta (Series solicita TMDB página 4 sin mover Películas ni Anime).
+  - paginación independiente por categoría desde la vista Explorar: correcta (cada familia conserva su cursor y solicita la página contigua, sin saltar páginas ni mover Películas o Anime).
   - respaldo local ante 502 de TMDB limitado a `limit=60`: correcto.
   - búsqueda de usuario con el typo `one pecie` → tarjeta `One Piece`: correcta.
   - flujo de usuario TMDB “La isla del minotauro” → ficha de 10 episodios → player interno: `Yashmak-yonder (VIDSRC)`, un elemento `<video>`, cero iframes.

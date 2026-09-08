@@ -1349,7 +1349,7 @@ async function startServer() {
         }
       },
       credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'X-Media-Title', 'X-Media-Provider', 'Accept', 'Origin', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'X-Media-Title', 'X-Media-Provider', 'X-TMDB-Personal-Key', 'Accept', 'Origin', 'X-Requested-With'],
       exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Type']
     })
   );
@@ -1372,12 +1372,14 @@ async function startServer() {
     const query = String(req.query.q || req.query.query || "").trim();
     if (query.length < 2) return res.status(400).json({ error: "La búsqueda requiere al menos 2 caracteres" });
     try {
+      const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
       const result = await getPublicCatalog({
         kind: "all",
         query,
         page: req.query.page ? Number(req.query.page) : 1,
         limit: req.query.limit ? Number(req.query.limit) : 100,
         mode: "search",
+        apiKey: personalApiKey,
       });
       res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=60");
       res.setHeader("X-Catalog-Source", result.source);
@@ -1393,12 +1395,14 @@ async function startServer() {
   // Cinecalidad/Gnula/LatAnime/Zoko availability is resolved later by ID.
   app.get("/api/v1/catalog/public", async (req: Request, res: Response) => {
     try {
+      const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
       const result = await getPublicCatalog({
         kind: req.query.kind,
         query: req.query.query || req.query.search,
         page: req.query.page ? Number(req.query.page) : 1,
         limit: req.query.limit ? Number(req.query.limit) : 40,
         mode: typeof req.query.mode === "string" ? req.query.mode : "trending",
+        apiKey: personalApiKey,
       });
       res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
       res.setHeader("X-Catalog-Source", result.source);
@@ -1410,7 +1414,8 @@ async function startServer() {
 
   app.get("/api/v1/catalog/public/:kind/:tmdbId", async (req: Request, res: Response) => {
     try {
-      const detail = await getPublicCatalogDetail(req.params.kind, req.params.tmdbId);
+      const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
+      const detail = await getPublicCatalogDetail(req.params.kind, req.params.tmdbId, personalApiKey);
       if (!detail) return res.status(400).json({ error: "kind/tmdbId inválidos" });
       res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=300");
       res.setHeader("X-Catalog-Source", "tmdb");

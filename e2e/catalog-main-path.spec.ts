@@ -13,6 +13,7 @@ test('la portada carga títulos del catálogo principal con el límite completo'
   expect(payload.shows.length).toBeGreaterThan(0);
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   await expect(page.getByRole('searchbox')).toBeVisible();
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
@@ -26,6 +27,7 @@ test('el catálogo público no muestra obras que solo tienen fuentes legacy', as
   expect(payload.total).toBe(0);
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   await expect(page.getByRole('searchbox')).toBeVisible();
   await page.getByRole('searchbox').fill('Project ARMS');
   await expect(page.locator('button.media-card').filter({ hasText: 'Project ARMS' })).toHaveCount(0);

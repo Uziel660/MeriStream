@@ -40,6 +40,7 @@ test('el catálogo unificado muestra películas, series y anime desde TMDB', asy
 test('la portada renderiza tarjetas del catálogo público como un usuario', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   await expect(page.getByRole('searchbox')).toBeVisible();
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
@@ -64,6 +65,7 @@ test('la búsqueda conserva la ficha local y descarta el PNG de título de TMDB'
   test.setTimeout(60_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('Te irás al infierno');
@@ -83,6 +85,7 @@ test('la ficha local usa el título localizado de TMDB sin perder sus episodios'
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('The Wrong Babysitter');
@@ -99,6 +102,7 @@ test('la búsqueda tolera un error de escritura y mantiene los títulos en otros
   test.setTimeout(60_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('one pecie');
@@ -109,6 +113,7 @@ test('la búsqueda del usuario consulta TMDB con el texto completo', async ({ pa
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   const tmdbSearch = page.waitForResponse((response) => {
@@ -153,12 +158,14 @@ test('Explorar mantiene paginación independiente para cada categoría', async (
   const seriesRequest = page.waitForResponse((response) => {
     if (!response.url().includes('/api/v1/catalog/public?') || response.status() !== 200) return false;
     const url = new URL(response.url());
-    return url.searchParams.get('kind') === 'series' && url.searchParams.get('page') === '4';
+    // El primer lote puede contener 40–60 series según el filtrado de anime;
+    // el cursor debe avanzar a la página contigua (3 o 4), nunca saltar a 6.
+    return url.searchParams.get('kind') === 'series' && Number(url.searchParams.get('page') || 0) > 1;
   });
   await page.getByRole('button', { name: 'Cargar más Series' }).click();
-  await seriesRequest;
+  const response = await seriesRequest;
+  expect(Number(new URL(response.url()).searchParams.get('page') || 0)).toBeLessThanOrEqual(4);
   await expect(page.getByRole('button', { name: 'Cargar más Series' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cargar más Películas' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cargar más Anime' })).toBeVisible();
 });
-

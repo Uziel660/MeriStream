@@ -26,6 +26,7 @@ export interface PublicCatalogShow {
   description: string;
   synopsis: string;
   poster_url: string;
+  logo_url?: string | null;
   banner_url: string;
   backdrop_url: string;
   poster_path: string | null;
@@ -109,6 +110,14 @@ type TmdbDetail = TmdbItem & {
       iso_639_1?: string;
       iso_3166_1?: string;
       data?: { title?: string; name?: string; overview?: string };
+    }>;
+  };
+  images?: {
+    logos?: Array<{
+      file_path?: string | null;
+      iso_639_1?: string | null;
+      width?: number;
+      height?: number;
     }>;
   };
 };
@@ -206,6 +215,7 @@ export function mapTmdbItem(item: TmdbItem, kind: PublicCatalogKind, isTrending 
     description: String(item.overview || ""),
     synopsis: String(item.overview || ""),
     poster_url: poster,
+    logo_url: null,
     banner_url: backdrop,
     backdrop_url: backdrop,
     poster_path: item.poster_path || null,
@@ -277,6 +287,20 @@ function applySpanishTranslation(detail: TmdbDetail): TmdbDetail {
     ...(detail.name !== undefined ? { name: translatedTitle || detail.name } : {}),
     ...(translatedOverview ? { overview: translatedOverview } : {}),
   };
+}
+
+function tmdbLogoUrl(detail: TmdbDetail): string | null {
+  const logos = Array.isArray(detail.images?.logos) ? detail.images.logos : [];
+  const valid = logos.filter((logo) => typeof logo.file_path === "string" && logo.file_path.startsWith("/"));
+  if (valid.length === 0) return null;
+  const languageRank = (logo: (typeof valid)[number]): number => {
+    const language = String(logo.iso_639_1 || "").toLowerCase();
+    return language === "es" ? 0 : language === "en" ? 1 : !language ? 2 : 3;
+  };
+  const selected = [...valid].sort((left, right) =>
+    languageRank(left) - languageRank(right) || Number(right.width || 0) - Number(left.width || 0),
+  )[0];
+  return selected.file_path ? imageUrl(selected.file_path) : null;
 }
 
 type PosterRepairTarget = {
@@ -454,8 +478,8 @@ function getApiKey(): string {
   return String(process.env.TMDB_API_KEY || "").trim();
 }
 
-async function tmdbFetch<T>(path: string, params: Record<string, string | number | undefined>): Promise<T> {
-  const apiKey = getApiKey();
+async function tmdbFetch<T>(path: string, params: Record<string, string | number | undefined>, personalApiKey?: string): Promise<T> {
+  const apiKey = String(personalApiKey || getApiKey()).trim().slice(0, 128);
   if (!apiKey) throw new Error("TMDB_API_KEY no configurada");
   const url = new URL(`${TMDB_BASE}${path}`);
   url.searchParams.set("api_key", apiKey);
@@ -513,16 +537,16 @@ function interleaveCatalogShows(shows: PublicCatalogShow[]): PublicCatalogShow[]
   return ordered;
 }
 
-async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string): Promise<TmdbListResponse> {
+async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, apiKey?: string): Promise<TmdbListResponse> {
   const language = "es-419";
   if (query) {
     const path = kind === "movie" ? "/search/movie" : "/search/tv";
-    return tmdbFetch<TmdbListResponse>(path, { query, page, language, include_adult: "false" });
+    return tmdbFetch<TmdbListResponse>(path, { query, page, language, include_adult: "false" }, apiKey);
   }
   if (kind === "movie") {
     return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/movie" : "/trending/movie/week", mode === "discover"
       ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
-      : { page, language });
+      : { page, language }, apiKey);
   }
   if (kind === "anime") {
     return tmdbFetch<TmdbListResponse>("/discover/tv", {
@@ -532,11 +556,11 @@ async function fetchList(kind: PublicCatalogKind, query: string, page: number, m
       with_genres: "16",
       with_original_language: "ja",
       include_adult: "false",
-    });
+    }, apiKey);
   }
   return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/tv" : "/trending/tv/week", mode === "discover"
     ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
-    : { page, language });
+    : { page, language }, apiKey);
 }
 
 export async function getPublicCatalog(options: {
@@ -545,6 +569,7 @@ export async function getPublicCatalog(options: {
   page?: number;
   limit?: number;
   mode?: string;
+  apiKey?: string;
 } = {}): Promise<PublicCatalogResult> {
   const kind = parseKind(options.kind);
   const query = String(options.query || "").trim().slice(0, 120);
@@ -560,7 +585,7 @@ export async function getPublicCatalog(options: {
   const groupedResponses = await Promise.all(kinds.map(async (entry) => ({
     kind: entry,
     pages: await Promise.all(Array.from({ length: pagesNeeded }, (_unused, offset) =>
-      fetchList(entry, query, page + offset, mode))),
+      fetchList(entry, query, page + offset, mode, options.apiKey))),
   })));
   const mappedShows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
     const results = response.results || [];
@@ -611,7 +636,7 @@ export async function getPublicCatalog(options: {
   };
 }
 
-export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: unknown): Promise<PublicCatalogDetail | null> {
+export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: unknown, apiKey?: string): Promise<PublicCatalogDetail | null> {
   const kind = parseKind(kindValue);
   const tmdbId = Number.parseInt(String(tmdbIdValue || ""), 10);
   if (kind === "all" || !Number.isInteger(tmdbId) || tmdbId <= 0) return null;
@@ -620,8 +645,9 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
   try {
     detail = await tmdbFetch<TmdbDetail>(kind === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`, {
       language: "es-419",
-      append_to_response: "external_ids,translations",
-    });
+      append_to_response: "external_ids,translations,images",
+      include_image_language: "es,en,null",
+    }, apiKey);
   } catch (error) {
     // TMDB stores anime films under /movie while the public rail uses the
     // unified "anime" kind. Retry that namespace before declaring the title
@@ -630,12 +656,14 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
     if (kind !== "anime") throw error;
     detail = await tmdbFetch<TmdbDetail>(`/movie/${tmdbId}`, {
       language: "es-419",
-      append_to_response: "external_ids,translations",
-    });
+      append_to_response: "external_ids,translations,images",
+      include_image_language: "es,en,null",
+    }, apiKey);
     isMovieDetail = true;
   }
   detail = applySpanishTranslation(detail);
   const show = mapTmdbItem(detail, kind);
+  show.logo_url = tmdbLogoUrl(detail);
   show.imdb_id = detail.external_ids?.imdb_id || null;
   if (kind === "anime") {
     const identity = await fetchAnimeIdentity(show.tmdb_id, show.title, show.original_title);

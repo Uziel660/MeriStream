@@ -1,5 +1,6 @@
 export type PreferredQuality = 'auto' | '1080p' | '720p' | '480p';
 export type SubtitlePosition = 'bottom' | 'center' | 'top';
+export type ContrastMode = 'standard' | 'high';
 
 export interface AppPreferences {
   preferredLanguages: string[];
@@ -8,6 +9,10 @@ export interface AppPreferences {
   subtitlePosition: SubtitlePosition;
   subtitleScale: 'small' | 'normal' | 'large';
   reduceMotion: boolean;
+  /** Optional per-user TMDB key. It is kept in this browser profile and sent
+   * only to MeriStream's same-origin catalog endpoints. */
+  tmdbApiKey: string;
+  contrast: ContrastMode;
 }
 
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
@@ -17,6 +22,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   subtitlePosition: 'bottom',
   subtitleScale: 'normal',
   reduceMotion: false,
+  tmdbApiKey: '',
+  contrast: 'standard',
 };
 
 const STORAGE_PREFIX = 'meristream_preferences_v1:';
@@ -32,9 +39,12 @@ export function getAppPreferences(userId?: string | null): AppPreferences {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return { ...DEFAULT_APP_PREFERENCES };
     const parsed = JSON.parse(raw) as Partial<AppPreferences>;
+    const contrast = parsed.contrast === 'high' ? 'high' : 'standard';
     return {
       ...DEFAULT_APP_PREFERENCES,
       ...parsed,
+      contrast,
+      tmdbApiKey: typeof parsed.tmdbApiKey === 'string' ? parsed.tmdbApiKey.trim().slice(0, 128) : '',
       preferredLanguages: Array.isArray(parsed.preferredLanguages) ? parsed.preferredLanguages : DEFAULT_APP_PREFERENCES.preferredLanguages,
       preferredSubtitleLanguages: Array.isArray(parsed.preferredSubtitleLanguages) ? parsed.preferredSubtitleLanguages : DEFAULT_APP_PREFERENCES.preferredSubtitleLanguages,
     };
@@ -54,4 +64,3 @@ export function updateAppPreferences(userId: string | null | undefined, patch: P
   saveAppPreferences(userId, next);
   return next;
 }
-

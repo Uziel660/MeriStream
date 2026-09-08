@@ -126,6 +126,7 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   expect(show?.id).toBeTruthy();
 
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('Thunderbolts');

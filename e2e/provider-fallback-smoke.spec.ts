@@ -24,6 +24,7 @@ test('TioAnime solo aparece como fallback de ZokoAnime y reproduce por el player
   expect(detail.episodes.some((episode: any) => episode.season_number === 3)).toBe(true);
 
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('SPY x FAMILY');

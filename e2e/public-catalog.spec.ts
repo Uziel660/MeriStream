@@ -54,11 +54,16 @@ test('la búsqueda se despliega hacia la izquierda sin solapar el viewport', asy
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await expect(page.locator('#main-unified-header')).toHaveClass(/has-search-open/);
-  await expect.poll(async () => page.evaluate(() => ({
+  const geometry = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     width: window.innerWidth,
+    searchLeft: document.querySelector<HTMLElement>('#catalog-search')?.getBoundingClientRect().left || window.innerWidth,
     searchRight: document.querySelector<HTMLElement>('#catalog-search')?.getBoundingClientRect().right || 0,
-  }))).toMatchObject({ scrollWidth: await page.evaluate(() => window.innerWidth) });
+    triggerLeft: document.querySelector<HTMLElement>('.search-toggle')?.getBoundingClientRect().left || 0,
+  }));
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+  expect(geometry.searchLeft).toBeLessThan(geometry.triggerLeft);
+  expect(geometry.searchRight).toBeLessThanOrEqual(geometry.width + 1);
 });
 
 test('el respaldo local queda acotado si TMDB está temporalmente fuera de servicio', async ({ page }) => {

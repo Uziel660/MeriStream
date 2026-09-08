@@ -1,19 +1,32 @@
-import { normalizeLanguageTag } from "../providers/providerPolicy";
+import { normalizeLanguageCode } from "../utils/languageDetector";
 import type { SubtitleCandidate, SubtitleFormat } from "./types";
 
 const LANGUAGE_LABELS: Record<string, string> = {
   "es-419": "Español Latino",
+  "es-ES": "Español (España)",
   es: "Español",
   en: "English",
+  ja: "日本語",
+  ko: "한국어",
+  zh: "中文",
+  "zh-Hans": "中文 (简体)",
+  "zh-Hant": "中文 (繁體)",
+  pt: "Português",
+  "pt-BR": "Português (Brasil)",
+  "pt-PT": "Português (Portugal)",
+  fr: "Français",
+  de: "Deutsch",
+  it: "Italiano",
+  ru: "Русский",
+  ar: "العربية",
+  hi: "हिन्दी",
+  tr: "Türkçe",
 };
 
 export function normalizeSubtitleLanguage(value: unknown): string | null {
-  const raw = String(value ?? "").trim().toLowerCase().replace(/_/g, "-");
+  const raw = String(value ?? "").trim();
   if (!raw) return null;
-  if (["spa", "spanish", "español", "espanol", "castellano", "es"].includes(raw)) return "es";
-  if (["lat", "latam", "latino", "es-la", "es-latam", "es-419", "spanish-latam", "español latino", "espanol latino"].includes(raw)) return "es-419";
-  if (["eng", "english", "en"].includes(raw)) return "en";
-  return normalizeLanguageTag(raw) || raw;
+  return normalizeLanguageCode(raw) || raw.toLowerCase().replace(/_/g, "-");
 }
 
 export function subtitleLanguageLabel(language: string, fallback?: string | null): string {
@@ -29,21 +42,46 @@ export function normalizeSubtitleFormat(value: unknown, sourceUrl = ""): Subtitl
     : "unknown";
 }
 
+function inferAccessibilityFlags(candidate: SubtitleCandidate): Pick<SubtitleCandidate, "hearingImpaired" | "forced"> {
+  const text = [candidate.label, candidate.fileName, candidate.release]
+    .map((value) => String(value || ""))
+    .join(" ")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, " ");
+
+  const hearingImpaired = candidate.hearingImpaired ?? /(?:^|[\s._()[\]-])(?:sdh|cc|hearing[\s._-]*impaired|closed[\s._-]*captions?)(?:$|[\s._()[\]-])/i.test(text);
+  const forced = candidate.forced ?? /(?:^|[\s._()[\]-])(?:forced|forzado|forzada|forzados|forzadas)(?:$|[\s._()[\]-])/i.test(text);
+  return { hearingImpaired, forced };
+}
+
+function enrichLabel(candidate: SubtitleCandidate, language: string, flags: Pick<SubtitleCandidate, "hearingImpaired" | "forced">): string {
+  const raw = String(candidate.label || "").trim();
+  const base = raw || subtitleLanguageLabel(language);
+  const suffixes: string[] = [];
+  if (flags.forced && !/(?:forced|forzad)/i.test(base)) suffixes.push("Forzado");
+  if (flags.hearingImpaired && !/(?:\bsdh\b|\bcc\b|hearing|closed captions?)/i.test(base)) suffixes.push("SDH");
+  return suffixes.length > 0 ? `${base} · ${suffixes.join(" · ")}` : base;
+}
+
 export function normalizeSubtitleCandidate(candidate: SubtitleCandidate): SubtitleCandidate | null {
   const sourceUrl = String(candidate.sourceUrl || "").trim();
   const language = normalizeSubtitleLanguage(candidate.language);
   if (!language || !/^https:\/\//i.test(sourceUrl)) return null;
   const format = normalizeSubtitleFormat(candidate.format, sourceUrl);
+  const flags = inferAccessibilityFlags(candidate);
   return {
     ...candidate,
     id: String(candidate.id || `${candidate.provider}:${sourceUrl}`),
     provider: String(candidate.provider || "unknown"),
     language,
-    label: String(candidate.label || subtitleLanguageLabel(language)),
+    label: enrichLabel(candidate, language, flags),
     sourceUrl,
     format,
     fileName: candidate.fileName ? String(candidate.fileName) : null,
     release: candidate.release ? String(candidate.release) : null,
+    hearingImpaired: flags.hearingImpaired,
+    forced: flags.forced,
   };
 }
 
@@ -61,7 +99,8 @@ export function subtitleDedupeKey(candidate: SubtitleCandidate): string {
   const url = candidate.sourceUrl.toLowerCase().split("?")[0];
   const release = normalizedText(candidate.release);
   const file = normalizedText(candidate.fileName || candidate.label);
-  return `${candidate.language}|${release}|${file}|${url}`;
+  const flags = `${candidate.forced ? "forced" : "full"}|${candidate.hearingImpaired ? "sdh" : "standard"}`;
+  return `${candidate.language}|${flags}|${release}|${file}|${url}`;
 }
 
 export function dedupeSubtitleCandidates(candidates: SubtitleCandidate[]): SubtitleCandidate[] {

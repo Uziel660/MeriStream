@@ -2379,7 +2379,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   >
                     {subtitleTracks.map((track) => (
                       <track
-                        key={track.id}
+                        // Providers often reuse ids such as `vidsrc-0` for
+                        // every mirror. The URL is the stable identity at the
+                        // player boundary, so include it to keep React's track
+                        // nodes distinct and avoid dropping captions.
+                        key={`${track.id}:${track.url}`}
                         kind="subtitles"
                         src={subtitleSourceUrl(track)}
                         srcLang={track.language}

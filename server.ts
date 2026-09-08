@@ -2781,7 +2781,10 @@ async function startServer() {
         expires_at?: number;
         resolved_at?: number;
       }>();
-      for (const cand of rankedBase.slice(0, 3)) {
+      // LatAnime can publish several embeds in one episode. Trying only the
+      // first three made a healthy fourth/fifth server unreachable whenever
+      // the early Uqload/MP4Upload entries were stale.
+      for (const cand of rankedBase.slice(0, 5)) {
         // Las URLs directas de Vimeos también necesitan su perfil de cabeceras:
         // el CDN acepta el GET del backend, pero rechaza el navegador sin pasar
         // por la sesión proxy. Releer su metadata aquí conserva ese requisito.
@@ -2889,7 +2892,13 @@ async function startServer() {
 
       const primaryCandidate = rankedStreams.find((r) => r.type === "direct" || isDirectMedia(r.url)) || rankedStreams[0];
       const finalStreamUrl = primaryCandidate?.url || extracted.stream_url;
-      const isResolved = rankedStreams.length > 0 && !isSourcePage(finalStreamUrl);
+      // A list of unresolved embeds is still useful as diagnostics/failover
+      // candidates, but it is not a playable resolution. Reporting it as
+      // resolved made the player enter a false-success state and retry the
+      // same dead page before moving on.
+      const isResolved = rankedStreams.some((stream) =>
+        (stream.type === "direct" || isDirectMedia(stream.url)) && !isSourcePage(stream.url)
+      );
 
       res.json({
         url,

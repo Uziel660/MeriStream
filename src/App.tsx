@@ -143,6 +143,45 @@ function dedupeCatalogShows(items: Show[]): Show[] {
   return [...unique.values()];
 }
 
+/**
+ * A local provider row can have the right TMDB id but stale metadata (for
+ * example Polar imported with the year of another film). When the same
+ * identity arrives from the live TMDB catalog, keep the local id/episodes for
+ * provider playback and overlay the canonical public metadata for the card.
+ */
+function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
+  const incomingIsPublic = /^tmdb-(?:movie|series|anime)-\d+$/.test(incoming.id);
+  const existingIsPublic = /^tmdb-(?:movie|series|anime)-\d+$/.test(existing.id);
+  if (!incomingIsPublic || existingIsPublic) return existing;
+
+  const description = String(incoming.description || incoming.synopsis || '').trim();
+  const yearConflict = Boolean(existing.year && incoming.year && existing.year !== incoming.year);
+  const publicIsUsable = Boolean(description || incoming.poster_url || incoming.backdrop_url || incoming.rating);
+  if (!publicIsUsable && !yearConflict) return existing;
+
+  return {
+    ...existing,
+    title: incoming.title || existing.title,
+    title_aliases: Array.from(new Set([...(existing.title_aliases || []), ...(incoming.title_aliases || [])])),
+    original_title: incoming.original_title || existing.original_title,
+    english_title: incoming.english_title || existing.english_title,
+    japanese_title: incoming.japanese_title || existing.japanese_title,
+    description: description || existing.description,
+    synopsis: description || existing.synopsis,
+    poster_url: incoming.poster_url || existing.poster_url,
+    logo_url: incoming.logo_url || existing.logo_url,
+    banner_url: incoming.banner_url || existing.banner_url,
+    backdrop_url: incoming.backdrop_url || existing.backdrop_url,
+    poster_path: incoming.poster_path || existing.poster_path,
+    backdrop_path: incoming.backdrop_path || existing.backdrop_path,
+    rating: incoming.rating || existing.rating,
+    year: incoming.year ?? existing.year,
+    release_year: incoming.year ?? existing.release_year,
+    episode_count: Math.max(Number(existing.episode_count || 0), Number(incoming.episode_count || 0)),
+    status: incoming.status || existing.status,
+  };
+}
+
 export function App() {
   const { user, isAuthenticated } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
@@ -485,7 +524,9 @@ export function App() {
           // namespace (instead of the display category) prevents an anime
           // returned as both `series` and `anime` from becoming two cards.
           const key = catalogIdentityKey(show);
-          if (!merged.has(key)) merged.set(key, show);
+          const previous = merged.get(key);
+          if (!previous) merged.set(key, show);
+          else merged.set(key, mergeCanonicalPublicRow(previous, show));
         }
         setServerSearchResults(dedupeCatalogShows([...merged.values()]));
       } catch (e: any) {
@@ -944,7 +985,14 @@ export function App() {
       const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
 
       if (!primaryStream) {
-        if (legacyResponse?.status === 404) {
+        // Public TMDB cards use virtual episode ids and intentionally have no
+        // row in the legacy `/play/:episodeId` table. A 404 there means
+        // "there is no imported legacy source", not that the public work was
+        // deleted. Keep the player open so it can explain that every checked
+        // provider is currently unavailable. Only purge real local progress.
+        const isPublicVirtualEpisode = /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(String(episode.id || ''))
+          || /^tmdb-(?:movie|series|anime)-\d+$/i.test(String(currentShow?.id || ''));
+        if (legacyResponse?.status === 404 && !isPublicVirtualEpisode) {
           removeContinueWatchingItem(episode.id);
           setPlayingStreamData((prev: any) =>
             prev?.episodeId === episode.id ? null : prev

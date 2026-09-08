@@ -4,6 +4,7 @@ import {
   getPublicCatalogDetail,
   mapTmdbItem,
   parsePublicCatalogId,
+  dedupePoorPublicDuplicates,
   resetPublicCatalogCache,
 } from "./publicCatalog";
 
@@ -13,6 +14,48 @@ afterEach(() => {
 });
 
 describe("TMDB public catalog", () => {
+  it("drops an empty TMDB stub when a richer same-title/year result exists", () => {
+    const rich = mapTmdbItem({
+      id: 483906,
+      title: "Polar",
+      release_date: "2019-01-01",
+      overview: "Duncan Vizla, el asesino más letal del mundo.",
+      poster_path: "/polar.jpg",
+      backdrop_path: "/polar-backdrop.jpg",
+      vote_average: 6.4,
+    }, "movie");
+    const stub = mapTmdbItem({
+      id: 889356,
+      title: "Polar",
+      release_date: "2019-01-01",
+      poster_path: "/stub-poster.jpg",
+      backdrop_path: "/stub-backdrop.jpg",
+    }, "movie");
+
+    expect(dedupePoorPublicDuplicates([stub, rich]).map((show) => show.tmdb_id)).toEqual([483906]);
+  });
+
+  it("keeps two meaningful films that share title and year", () => {
+    const first = mapTmdbItem({
+      id: 101,
+      title: "The Stranger",
+      release_date: "2020-01-01",
+      overview: "First film synopsis.",
+      poster_path: "/first.jpg",
+      vote_average: 6.2,
+    }, "movie");
+    const second = mapTmdbItem({
+      id: 202,
+      title: "The Stranger",
+      release_date: "2020-01-01",
+      overview: "Second film synopsis.",
+      poster_path: "/second.jpg",
+      vote_average: 7.1,
+    }, "movie");
+
+    expect(dedupePoorPublicDuplicates([first, second]).map((show) => show.tmdb_id)).toEqual([101, 202]);
+  });
+
   it("uses a namespaced stable id and preserves anime category", () => {
     const show = mapTmdbItem({
       id: 21,
@@ -98,6 +141,29 @@ describe("TMDB public catalog", () => {
     expect(result.total).toBe(1);
     expect(calls.some((url) => url.includes("/search/movie") && url.includes("query=The+Creator") && url.includes("language=es-419"))).toBe(true);
     expect(calls.some((url) => url.includes("/trending/movie/week") || url.includes("/trending/tv/week"))).toBe(false);
+  });
+
+  it("keeps a live-action TV search out of the anime namespace", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/search/movie")) {
+        return new Response(JSON.stringify({ page: 1, total_results: 0, total_pages: 1, results: [] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/search/tv")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 1,
+          total_pages: 1,
+          results: [{ id: 216405, name: "Hola Venus", original_language: "ko", first_air_date: "2022-01-01", genre_ids: [18] }],
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", query: "Hola Venus", limit: 10 });
+    expect(result.shows).toHaveLength(1);
+    expect(result.shows[0]).toMatchObject({ tmdb_id: 216405, kind: "series", title: "Hola Venus" });
   });
 
   it("uses a per-request TMDB key when a profile supplies one", async () => {

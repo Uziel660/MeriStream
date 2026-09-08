@@ -727,6 +727,7 @@ export class EmbedResolvers {
     if (rawUrl.includes("uqload")) {
       const uq = await resolveUqload(rawUrl);
       if (uq.type === "direct") return uq.url;
+      if (uq.available === false) return "";
       return rawUrl;
     }
 
@@ -1291,19 +1292,25 @@ async function isVidSrcManifestUsable(
       .split(/\r?\n/)
       .map((line) => line.trim())
       .find((line) => line && !line.startsWith("#"));
-    const child = mediaLine(manifest);
-    if (!child) return true;
-    const childUrl = new URL(child, response.url || hlsUrl).toString();
-    const childResponse = await fetch(childUrl, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: { Accept: "*/*", ...(requiredHeaders || {}) },
-    });
-    if (childResponse.status !== 200) return false;
-    const childText = await childResponse.text();
-    const segment = mediaLine(childText);
+    const isMaster = /#EXT-X-STREAM-INF:/i.test(manifest);
+    let mediaPlaylist = manifest;
+    let mediaPlaylistUrl = response.url || hlsUrl;
+    if (isMaster) {
+      const child = mediaLine(manifest);
+      if (!child) return true;
+      const childUrl = new URL(child, mediaPlaylistUrl).toString();
+      const childResponse = await fetch(childUrl, {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: { Accept: "*/*", ...(requiredHeaders || {}) },
+      });
+      if (childResponse.status !== 200) return false;
+      mediaPlaylist = await childResponse.text();
+      mediaPlaylistUrl = childResponse.url || childUrl;
+    }
+    const segment = mediaLine(mediaPlaylist);
     if (!segment) return true;
-    const segmentResponse = await fetch(new URL(segment, childResponse.url || childUrl), {
+    const segmentResponse = await fetch(new URL(segment, mediaPlaylistUrl), {
       redirect: "follow",
       signal: controller.signal,
       headers: { Accept: "*/*", Range: "bytes=0-1023", ...(requiredHeaders || {}) },
@@ -1327,16 +1334,30 @@ async function isVidSrcManifestUsable(
 
 async function resolveVidSrcLocator(locator: string): Promise<ResolvedStreamMeta> {
   let lastResult: Awaited<ReturnType<typeof resolveVidSrcEmbed>> | undefined;
-  for (const mirrorUrl of buildVidSrcMirrorUrls(locator)) {
-    const result = await resolveVidSrcEmbed(mirrorUrl);
-    lastResult = result;
-    const resolved = result.status === "direct" && Boolean(result.hlsUrl);
-    if (!resolved || !(await isVidSrcManifestUsable(result.hlsUrl, result.requiredHeaders))) continue;
-
-    return {
+  const mirrors = buildVidSrcMirrorUrls(locator);
+  // Keep mirror renewal bounded. A failed shared CDN used to make this loop
+  // resolve every mirror serially, so a single proxy error could stall a play
+  // attempt for several minutes.
+  for (let offset = 0; offset < mirrors.length; offset += 4) {
+    const attempts = await Promise.allSettled(mirrors.slice(offset, offset + 4).map(async (mirrorUrl) => {
+      const result = await resolveVidSrcEmbed(mirrorUrl);
+      const resolved = result.status === "direct" && Boolean(result.hlsUrl);
+      const usable = resolved && await isVidSrcManifestUsable(result.hlsUrl, result.requiredHeaders);
+      return { mirrorUrl, result, usable };
+    }));
+    const directHosts = new Set<string>();
+    for (const attempt of attempts) {
+      if (attempt.status !== "fulfilled") continue;
+      lastResult = attempt.value.result;
+      if (attempt.value.result.hlsUrl) {
+        try { directHosts.add(new URL(attempt.value.result.hlsUrl).hostname); } catch { /* malformed result */ }
+      }
+      if (!attempt.value.usable) continue;
+      const result = attempt.value.result;
+      return {
       url: result.hlsUrl!,
       original_url: locator,
-      canonical_locator: result.embedUrl || mirrorUrl,
+      canonical_locator: result.embedUrl || attempt.value.mirrorUrl,
       resolved: true,
       type: "direct",
       provider: "vidsrc",
@@ -1362,7 +1383,9 @@ async function resolveVidSrcLocator(locator: string): Promise<ResolvedStreamMeta
       is_proxyable: true,
       is_refreshable: true,
       ...(result.requiredHeaders ? { delivery_mode: "proxy_required" as const } : {}),
-    };
+      };
+    }
+    if (directHosts.size === 1) break;
   }
 
   const failure = lastResult?.status === "blocked" ? "provider_blocked" as const : "unresolved" as const;

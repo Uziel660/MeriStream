@@ -146,6 +146,35 @@ test('la ficha local usa el título localizado de TMDB sin perder sus episodios'
   await expect(details).toContainText('Reproducir película');
 });
 
+test('una ficha pública sin stream mantiene el reproductor y explica la indisponibilidad', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.route('**/api/v1/providers/series/216405?*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ sources: [], fallbackCandidates: [], persisted: 0, elapsedMs: 0 }),
+    });
+  });
+  await page.route('**/api/v1/play/tmdb-series-216405-s1-e1', async (route) => {
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not imported' }) });
+  });
+  await page.route('**/api/v1/subtitles?*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tracks: [] }) });
+  });
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Abrir búsqueda' }).click();
+  await page.getByRole('searchbox').fill('Hola Venus');
+  const card = page.locator('button.media-card').filter({ hasText: 'Hola Venus' }).first();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.click();
+  await page.locator('.episode-card').first().click();
+
+  const player = page.locator('[role="dialog"]').filter({ hasText: 'Hola Venus - Episodio 1' }).last();
+  await expect(player).toBeVisible({ timeout: 10_000 });
+  await expect(player).toContainText('No se encontró un stream directo ni un fallback reproducible', { timeout: 15_000 });
+});
+
 test('la búsqueda tolera un error de escritura y mantiene los títulos en otros idiomas', async ({ page }) => {
   test.setTimeout(60_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

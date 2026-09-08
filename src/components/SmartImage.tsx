@@ -14,6 +14,12 @@ interface SmartImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>
 export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
   ({ src, alt, fallback = null, onError, ...rest }, ref) => {
     const [failed, setFailed] = useState(false);
+    // React 19 warns when `fetchPriority` is forwarded to the DOM by this
+    // wrapper. Keep the hint for callers' type compatibility while omitting
+    // it from the rendered element; lazy loading/decoding provide the same
+    // low-end-device behaviour without a console warning.
+    const { fetchPriority, ...safeRest } = rest;
+    void fetchPriority;
 
     useEffect(() => {
       setFailed(!src);
@@ -26,13 +32,13 @@ export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
         ref={ref}
         src={src}
         alt={alt}
-        loading={rest.loading ?? 'lazy'}
-        decoding={rest.decoding ?? 'async'}
+        loading={safeRest.loading ?? 'lazy'}
+        decoding={safeRest.decoding ?? 'async'}
         onError={(e) => {
           setFailed(true);
           onError?.(e);
         }}
-        {...rest}
+        {...safeRest}
       />
     );
   }

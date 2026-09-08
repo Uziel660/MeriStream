@@ -149,6 +149,70 @@ function imageUrl(path: string | null | undefined, size: "w500" | "w780" = "w500
   return path ? `${IMAGE_BASE}/${size}${path}` : "";
 }
 
+function publicTitleKey(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+function publicMetadataScore(show: PublicCatalogShow): number {
+  const description = String(show.description || "").trim();
+  return (
+    (description.length >= 40 ? 4 : description.length > 0 ? 1 : 0) +
+    (show.poster_url ? 2 : 0) +
+    (show.backdrop_url ? 1 : 0) +
+    (show.rating > 0 ? 1 : 0) +
+    (show.episode_count > 0 ? 1 : 0)
+  );
+}
+
+function isPublicMetadataStub(show: PublicCatalogShow): boolean {
+  return !String(show.description || "").trim() && show.rating <= 0 && show.episode_count <= 0;
+}
+
+/**
+ * TMDB can contain duplicate entries for the same title/year. This is most
+ * visible when one record is a complete work and another is an empty stub
+ * with a different numeric id. Keep both when both have meaningful metadata,
+ * but remove the clearly empty stub so selecting a search result cannot route
+ * playback to a metadata-less duplicate.
+ */
+export function dedupePoorPublicDuplicates(shows: readonly PublicCatalogShow[]): PublicCatalogShow[] {
+  const output: PublicCatalogShow[] = [];
+  const byKey = new Map<string, { index: number; score: number }>();
+  for (const show of shows) {
+    const year = Number(show.year || 0);
+    const title = publicTitleKey(show.title || show.original_title);
+    const kind = show.kind === "movie" ? "movie" : "tv";
+    const key = title && year > 0 ? `${kind}:${title}:${year}` : "";
+    if (!key) {
+      output.push(show);
+      continue;
+    }
+    const score = publicMetadataScore(show);
+    const previous = byKey.get(key);
+    if (!previous) {
+      byKey.set(key, { index: output.length, score });
+      output.push(show);
+      continue;
+    }
+    const previousIsStub = isPublicMetadataStub(output[previous.index]);
+    const currentIsStub = isPublicMetadataStub(show);
+    if (previousIsStub && !currentIsStub) {
+      output[previous.index] = show;
+      previous.score = score;
+    } else if (!previousIsStub && currentIsStub) {
+      continue;
+    } else {
+      output.push(show);
+    }
+  }
+  return output;
+}
+
 function isSuspiciousPosterUrl(url: unknown): boolean {
   // TMDB occasionally returns a tiny transparent/logo PNG in poster_path
   // (for example, a 177x21 title wordmark). It is a valid CDN URL but it is
@@ -592,15 +656,15 @@ export async function getPublicCatalog(options: {
     const filtered = entryKind === "anime"
       ? results.filter(isAnimeItem)
       : entryKind === "series" && kind !== "series"
-        ? results
+        ? results.filter((item) => !isAnimeItem(item))
         : entryKind === "series"
           ? results.filter((item) => !isAnimeItem(item))
           : results;
-    // An exact anime search can be absent from TMDB's genre tags. Returning the
-    // TV result is more useful than an empty search; the gateway still uses the
-    // canonical TMDB id for playback.
-    const effective = filtered.length || entryKind !== "anime" || !query ? filtered : results;
-    return effective.map((item) => {
+    // Never relabel an ordinary TV result as anime merely because the anime
+    // search bucket had no exact match. The old fallback duplicated Korean and
+    // other live-action dramas into the Anime rail and sent the wrong kind to
+    // identity/provider matching.
+    return filtered.map((item) => {
       const outputKind: PublicCatalogKind = kind === "all" && entryKind === "series" && isAnimeItem(item)
         ? "anime"
         : entryKind;
@@ -615,7 +679,7 @@ export async function getPublicCatalog(options: {
     const previous = uniqueMap.get(key);
     if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
   }
-  const unique = [...uniqueMap.values()];
+  const unique = dedupePoorPublicDuplicates([...uniqueMap.values()]);
   const ordered = kind === "all" ? interleaveCatalogShows(unique) : unique;
   const totals = groupedResponses.reduce((sum, group) => {
     const firstPage = group.pages[0];

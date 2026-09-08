@@ -21,6 +21,29 @@ const isDeadOrBlocked = (url: string) =>
   DEAD_OR_BLOCKED_HOST_PATTERNS.some((p) => p.test(url));
 
 /**
+ * LatAnime normally publishes one continuous episode list, but some fichas
+ * include temporada markers in the link text/slug (S02, temporada-2, etc.).
+ * Preserve that signal so the multi-source catalog can attach the link to the
+ * correct MediaEpisode instead of silently putting every episode in season 1.
+ */
+export function parseLatAnimeSeason(value: string): number | undefined {
+  const normalized = decodeURIComponent(String(value || "")).toLowerCase();
+  const patterns = [
+    /(?:temporada|season|temp|tp)[\s._-]*(\d{1,2})(?:\b|[-_])/i,
+    /\bs(\d{1,2})e\d{1,4}\b/i,
+    /\b(\d{1,2})(?:st|nd|rd|th)[\s._-]*season\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const season = match ? Number(match[1]) : 0;
+    if (Number.isInteger(season) && season > 0 && season <= 99) return season;
+  }
+  return undefined;
+}
+
+const MAX_RETURNED_STREAMS = 5;
+
+/**
  * Adaptador para latanime.org
  *
  * - Catálogo/Búsqueda: enlaces `a[href^="https://latanime.org/anime/"]` (búsqueda en /buscar?q=)
@@ -178,9 +201,11 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       const linkText = $(el).text().replace(/\s+/g, " ").trim();
       const capMatch = linkText.match(/capitulo\s*(\d+)/i);
       const title = capMatch ? `Capitulo ${capMatch[1]}` : linkText || `Episodio ${number}`;
+      const season = parseLatAnimeSeason(`${fullUrl} ${linkText}`);
 
       episodes.push({
         number,
+        ...(season ? { season } : {}),
         title,
         url: fullUrl,
         server_name: "LatAnime",
@@ -373,6 +398,9 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     const directStreams: string[] = [];
 
     for (const { iframeUrl, resolved } of resolutions) {
+      // An empty resolution is reserved for a provider that positively
+      // reported the embed as unavailable (for example an expired Uqload
+      // file). Do not re-add that same dead iframe as a fallback candidate.
       if (resolved && this.isPlayableCandidate(resolved) && !isDeadOrBlocked(resolved) && !all_available_streams.includes(resolved)) {
         all_available_streams.push(resolved);
       }
@@ -382,7 +410,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
         directStreams.push(resolved);
       }
       // El iframe crudo solo si no se obtuvo media directa para ese player
-      if (!isDirectMedia && this.isPlayableCandidate(iframeUrl) && !isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
+      if (resolved !== "" && !isDirectMedia && this.isPlayableCandidate(iframeUrl) && !isDeadOrBlocked(iframeUrl) && !all_available_streams.includes(iframeUrl)) {
         all_available_streams.push(iframeUrl);
       }
     }
@@ -395,23 +423,15 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       ? [...liveDirectStreams, ...all_available_streams.filter((s) => !directStreams.includes(s))]
       : all_available_streams.filter((s) => !directStreams.includes(s));
 
-    // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
+    // Conservar varios candidatos permite llegar a un servidor posterior cuando
+    // los primeros embeds del episodio están caducados. La UI los agrupa y no
+    // muestra una lista gigante; el límite aquí evita inflar la respuesta.
     const directMedia = finalStreams.filter((u) => this.isDirectMedia(u));
     const backupEmbeds = finalStreams.filter((u) => !directMedia.includes(u));
-    
-    const topStreams: string[] = [];
-    if (directMedia.length > 0) {
-      topStreams.push(directMedia[0]);
-      if (directMedia.length > 1) {
-        topStreams.push(directMedia[1]);
-      } else if (backupEmbeds.length > 0) {
-        topStreams.push(backupEmbeds[0]);
-      }
-    } else {
-      topStreams.push(...backupEmbeds.slice(0, 2));
-    }
-
-    const resultStreams = topStreams.length > 0 ? topStreams : finalStreams.slice(0, 2);
+    const resultStreams = (directMedia.length > 0
+      ? [...directMedia, ...backupEmbeds]
+      : [...backupEmbeds, ...directMedia]
+    ).slice(0, MAX_RETURNED_STREAMS);
 
     return {
       stream_url: resultStreams[0] || "",

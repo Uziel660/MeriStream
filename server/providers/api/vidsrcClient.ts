@@ -18,6 +18,7 @@ const DEFAULT_DOMAINS = [
 ];
 
 const DEFAULT_TIMEOUT_MS = 6500;
+const MIRROR_BATCH_SIZE = 4;
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const NXSHA_API_ORIGIN = "https://web.nxsha.app";
@@ -279,6 +280,80 @@ async function fetchText(
       text: await response.text(),
       finalUrl: response.url || url,
     };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function firstMediaLine(text: string): string | undefined {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !line.startsWith("#"));
+}
+
+/**
+ * Checks the same delivery path that the internal player will use. A signed
+ * URL is only considered playable when its playlist is valid and its first
+ * child resource returns media bytes; Cloudflare/error HTML must never be
+ * advertised as a direct VidSrc source.
+ */
+export async function isVidSrcHlsUsable(
+  hlsUrl: string | undefined,
+  requiredHeaders: Record<string, string> | undefined,
+  fetcher: FetchLike = fetch,
+): Promise<boolean> {
+  if (!hlsUrl) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6500);
+  const headers = {
+    Accept: "application/vnd.apple.mpegurl,application/x-mpegURL,*/*;q=0.8",
+    ...(requiredHeaders || {}),
+  };
+  const read = async (url: string, extraHeaders?: Record<string, string>) => {
+    const response = await fetcher(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { ...headers, ...(extraHeaders || {}) },
+    });
+    return { response, text: await response.text() };
+  };
+  try {
+    const master = await read(hlsUrl);
+    if (!master.response.ok || !master.text.includes("#EXTM3U")) return false;
+    const isMaster = /#EXT-X-STREAM-INF:/i.test(master.text);
+    let mediaPlaylist = master.text;
+    let mediaPlaylistUrl = master.response.url || hlsUrl;
+    if (isMaster) {
+      const first = firstMediaLine(master.text);
+      if (!first) return true;
+      const childUrl = new URL(first, mediaPlaylistUrl).toString();
+      const child = await read(childUrl);
+      if (!child.response.ok || !child.text.includes("#EXTM3U")) return false;
+      mediaPlaylist = child.text;
+      mediaPlaylistUrl = child.response.url || childUrl;
+    }
+    const segment = firstMediaLine(mediaPlaylist);
+    if (!segment) return true;
+
+    const segmentResponse = await fetcher(
+      new URL(segment, mediaPlaylistUrl).toString(),
+      {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: { ...headers, Accept: "*/*", Range: "bytes=0-1023" },
+      },
+    );
+    if (segmentResponse.status < 200 || segmentResponse.status >= 300) return false;
+    const bytes = new Uint8Array(await segmentResponse.arrayBuffer()).subarray(0, 32);
+    if (bytes.length === 0) return false;
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const isPng = png.every((value, index) => bytes[index] === value);
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const prefix = new TextDecoder().decode(bytes).trimStart().toLowerCase();
+    return !isPng && !isJpeg && !prefix.startsWith("<html") && !prefix.startsWith("<!doctype");
+  } catch {
+    return false;
   } finally {
     clearTimeout(timer);
   }
@@ -723,35 +798,53 @@ export class VidSrcClient implements DirectStreamProvider {
 
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
     if (!this.kinds.includes(req.kind as any)) return [];
-
-    const attempts = await Promise.allSettled(
-      this.origins.map((origin) => resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher)),
-    );
-
     const sources: PlayableSource[] = [];
-    for (const attempt of attempts) {
-      if (attempt.status !== "fulfilled") continue;
-      const result = attempt.value;
-      if (result.status !== "direct" || !result.hlsUrl) continue;
-      const playable = playableUrl(result.hlsUrl, "hls");
-      if (!playable) continue;
-      const preferredAudio = result.audioTracks?.find((track) => track.isDefault)
-        || result.audioTracks?.find((track) => track.language?.toLowerCase().startsWith("en"))
-        || result.audioTracks?.[0];
-      sources.push({
-        provider: this.id,
-        providerGroup: "api",
-        url: playable.url,
-        streamType: playable.streamType,
-        audioLanguage: preferredAudio?.language || "en",
-        audioTracks: result.audioTracks,
-        subtitleLanguage: null,
-        subtitles: result.subtitles || [],
-        requiredHeaders: result.requiredHeaders,
-        canonicalLocator: result.embedUrl,
-        sourceStatus: "resolved",
-        score: 85,
-      });
+
+    // Mirrors are queried in bounded batches. The old all-at-once strategy made
+    // a blocked shared CDN consume every socket and delayed the UI for a minute;
+    // the first healthy batch is enough because mirrors are equivalent locators.
+    for (let offset = 0; offset < this.origins.length && sources.length === 0; offset += MIRROR_BATCH_SIZE) {
+      const batch = this.origins.slice(offset, offset + MIRROR_BATCH_SIZE);
+      const attempts = await Promise.allSettled(
+        batch.map(async (origin) => {
+          const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher);
+          const usable = result.status === "direct" && Boolean(result.hlsUrl)
+            && await isVidSrcHlsUsable(result.hlsUrl, result.requiredHeaders, this.fetcher);
+          return { result, usable };
+        }),
+      );
+      const directHosts = new Set<string>();
+      for (const attempt of attempts) {
+        if (attempt.status !== "fulfilled") continue;
+        const result = attempt.value.result;
+        if (result.hlsUrl) {
+          try { directHosts.add(new URL(result.hlsUrl).hostname); } catch { /* malformed result */ }
+        }
+        if (!attempt.value.usable) continue;
+        const playable = playableUrl(result.hlsUrl, "hls");
+        if (!playable) continue;
+        const preferredAudio = result.audioTracks?.find((track) => track.isDefault)
+          || result.audioTracks?.find((track) => track.language?.toLowerCase().startsWith("en"))
+          || result.audioTracks?.[0];
+        sources.push({
+          provider: this.id,
+          providerGroup: "api",
+          url: playable.url,
+          streamType: playable.streamType,
+          audioLanguage: preferredAudio?.language || "en",
+          audioTracks: result.audioTracks,
+          subtitleLanguage: null,
+          subtitles: result.subtitles || [],
+          requiredHeaders: result.requiredHeaders,
+          canonicalLocator: result.embedUrl,
+          sourceStatus: "resolved",
+          score: 85,
+        });
+      }
+      // Different VidSrc mirrors often point to the same terminal CDN. Once
+      // that CDN has failed validation, querying the remaining equivalent
+      // locators only adds latency and load without increasing coverage.
+      if (sources.length === 0 && directHosts.size === 1) break;
     }
 
     const deduped = new Map<string, PlayableSource>();

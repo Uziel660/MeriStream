@@ -18,6 +18,9 @@ export interface DirectResolution {
   type: "direct" | "embed";
   url: string;
   provider: string;
+  /** false only when the provider page positively says the file is gone. */
+  available?: boolean;
+  failure_reason?: "stale";
 }
 
 /** true si la URL pertenece a cualquier dominio uqload. */
@@ -57,6 +60,20 @@ export async function resolveUqload(embedUrl: string): Promise<DirectResolution>
 
     const html = await fetchEmbedHtml(embedUrl);
     if (!html) return { type: "embed", url: embedUrl, provider };
+
+    // Uqload responds 200 with an HTML tombstone after a file expires. Treating
+    // that page as a playable iframe is what caused LatAnime to announce a dead
+    // first server and cascade through the same failure twice.
+    const visibleText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&(?:nbsp|amp);/gi, " ")
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+    if (/file is no longer available|expired or has been deleted|file has been deleted|file does not exist/.test(visibleText)) {
+      return { type: "embed", url: "", provider, available: false, failure_reason: "stale" };
+    }
 
     // 1. Objeto sources/file tras desempaquetar (packed Dean Edwards habitual)
     const unpacked = unpackGeneric(html);

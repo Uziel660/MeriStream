@@ -47,6 +47,14 @@ video/720p.m3u8`, "https://cdn.example/master.m3u8");
 #EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="audio0"
 video.m3u8`, 200, "application/vnd.apple.mpegurl");
       }
+      if (url === "https://cdn.example/hi.m3u8" || url === "https://cdn.example/en.m3u8" || url === "https://cdn.example/video.m3u8") {
+        return mockResponse(`#EXTM3U
+#EXTINF:6,
+segment.ts`, 200, "application/vnd.apple.mpegurl");
+      }
+      if (url === "https://cdn.example/segment.ts") {
+        return new Response(new Uint8Array([0x47, 0x40, 0x00, 0x10]), { status: 200, headers: { "Content-Type": "video/mp2t" } });
+      }
       if (url.startsWith("https://web.nxsha.app/api/subtitles?q=")) {
         return mockResponse(JSON.stringify({ _hash: "U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk" }), 200, "application/json");
       }
@@ -105,6 +113,30 @@ video.m3u8`, 200, "application/vnd.apple.mpegurl");
     expect(result.hlsUrl).toBeUndefined();
   });
 
+  it("does not publish an HLS URL whose CDN returns an error page", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/embed/movie/216405")) {
+        return mockResponse('<iframe src="https://cloudnestra.com/player/dead"></iframe>');
+      }
+      if (url === "https://cloudnestra.com/player/dead") {
+        return mockResponse('<script>var source = { file: "https://proxy.itsnitrox.tech/master.m3u8" };</script>');
+      }
+      if (url === "https://proxy.itsnitrox.tech/master.m3u8") {
+        return mockResponse("<html><title>Attention Required!</title></html>", 403, "text/html");
+      }
+      return mockResponse("not found", 404);
+    });
+
+    const client = new VidSrcClient(
+      ["https://vidsrc.ir"],
+      fetcher as unknown as typeof fetch,
+    );
+    const sources = await client.resolve({ tmdbId: 216405, kind: "movie" });
+
+    expect(sources).toEqual([]);
+  });
+
   it("uses the series TMDB/S/E embed route and returns only playable media", async () => {
     const seen: string[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -115,6 +147,14 @@ video.m3u8`, 200, "application/vnd.apple.mpegurl");
       }
       if (url === "https://cloudnestra.com/player/show") {
         return mockResponse("<script>var source = { file: 'https://cdn.example/show/master.m3u8' };</script>");
+      }
+      if (url === "https://cdn.example/show/master.m3u8") {
+        return mockResponse(`#EXTM3U
+#EXTINF:6,
+/segment.ts`, 200, "application/vnd.apple.mpegurl");
+      }
+      if (url === "https://cdn.example/segment.ts") {
+        return new Response(new Uint8Array([0x47, 0x40, 0x00, 0x10]), { status: 200, headers: { "Content-Type": "video/mp2t" } });
       }
       return mockResponse("not found", 404);
     });
@@ -149,6 +189,14 @@ video.m3u8`, 200, "application/vnd.apple.mpegurl");
       if (url === "https://cloudnestra.com/player/anime") {
         return mockResponse("<script>var source = { file: 'https://cdn.example/anime/master.m3u8' };</script>");
       }
+      if (url === "https://cdn.example/anime/master.m3u8") {
+        return mockResponse(`#EXTM3U
+#EXTINF:6,
+/segment.ts`, 200, "application/vnd.apple.mpegurl");
+      }
+      if (url === "https://cdn.example/segment.ts") {
+        return new Response(new Uint8Array([0x47, 0x40, 0x00, 0x10]), { status: 200, headers: { "Content-Type": "video/mp2t" } });
+      }
       return mockResponse("not found", 404);
     });
 
@@ -173,6 +221,14 @@ video.m3u8`, 200, "application/vnd.apple.mpegurl");
       }
       if (url === "https://data.vidsrcme.ru/api.php?type=movie&tmdb=550&stream_urls") {
         return mockResponse(JSON.stringify({ data: { stream_urls: ["https://cdn.example/fight-club/master.m3u8"] } }), 200, "application/json");
+      }
+      if (url === "https://cdn.example/fight-club/master.m3u8") {
+        return mockResponse(`#EXTM3U
+#EXTINF:6,
+/segment.ts`, 200, "application/vnd.apple.mpegurl");
+      }
+      if (url === "https://cdn.example/segment.ts") {
+        return new Response(new Uint8Array([0x47, 0x40, 0x00, 0x10]), { status: 200, headers: { "Content-Type": "video/mp2t" } });
       }
       return mockResponse("not found", 404);
     });

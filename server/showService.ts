@@ -88,6 +88,8 @@ export interface SaveShowInput {
   episodes?: Array<{
     number?: number;
     episode_number?: number;
+    /** Temporada que aporta el adaptador cuando la ficha la publica. */
+    season?: number;
     title?: string;
     url?: string;
     source_url?: string;

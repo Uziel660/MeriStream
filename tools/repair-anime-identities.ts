@@ -48,6 +48,7 @@ function args() {
     concurrency: Math.min(6, Math.max(1, Number.isFinite(concurrency) ? Math.floor(concurrency) : 3)),
     delayMs: Math.max(250, Number(value("--delay-ms") || 600)),
     report: value("--report"),
+    afterId: value("--after-id"),
   };
 }
 
@@ -343,7 +344,11 @@ async function resolve(row: any): Promise<Result> {
 async function main() {
   const options = args();
   const rows = await prisma.show.findMany({
-    where: { category: "anime", OR: [{ mal_id: null }, { anilist_id: null }] },
+    where: {
+      category: "anime",
+      OR: [{ mal_id: null }, { anilist_id: null }],
+      ...(options.afterId ? { id: { gt: options.afterId } } : {}),
+    },
     orderBy: { id: "asc" },
     take: options.limit,
     select: { id: true, title: true, original_title: true, english_title: true, japanese_title: true, year: true, tmdb_id: true, mal_id: true, anilist_id: true },
@@ -368,6 +373,7 @@ async function main() {
     updated: results.filter((row) => row?.status === "updated").length,
     unresolved: results.filter((row) => row?.status === "unresolved").length,
     conflicts: results.filter((row) => row?.status === "conflict").length,
+    next_after_id: rows.length > 0 ? rows[rows.length - 1].id : null,
     results,
   };
   if (options.report) {

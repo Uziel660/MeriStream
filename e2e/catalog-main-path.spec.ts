@@ -58,7 +58,7 @@ test('la ruta legacy no-lite tampoco expone episodios de proveedores retirados',
   expect(Array.isArray(shows)).toBeTruthy();
   for (const show of shows) {
     for (const episode of show.episodes || []) {
-      expect(String(episode.source_url || '')).not.toMatch(/animeflv|animeav1|veranimes|tioanime|tioplus|lamovie|hianimes|doramasflix|tubepelis|wwv/i);
+      expect(String(episode.source_url || '')).not.toMatch(/animeflv|animeav1|veranimes|tioanime|tioplus|lamovie|hianimes|tubepelis|wwv/i);
     }
   }
 });

@@ -413,6 +413,34 @@ describe("enrichUniversalMetadata (integración con mocks)", () => {
     expect(isSubstantiveDescription(meta.description)).toBe(true);
   });
 
+  it("usa las pistas coreanas de Doramasflix para desempatar títulos iguales", async () => {
+    const calls: string[] = [];
+    stubFetch((url) => {
+      if (url.includes("api.themoviedb.org")) {
+        const u = new URL(url);
+        if (u.pathname.endsWith("/search/multi") && u.searchParams.get("language") === "es-MX") {
+          return {
+            json: {
+              results: [
+                { id: 1, media_type: "tv", name: "Moving", original_language: "en", origin_country: ["US"], overview: "A", first_air_date: "2023-01-01", popularity: 900 },
+                { id: 2, media_type: "tv", name: "Moving", original_language: "ko", origin_country: ["KR"], overview: "B", first_air_date: "2023-01-01", popularity: 1 },
+              ],
+            },
+          };
+        }
+        if (u.pathname.endsWith("/search/multi") && u.searchParams.get("language") === "en-US") {
+          return { json: { results: [{ id: 2, media_type: "tv", name: "Moving", original_language: "ko", overview: "B" }] } };
+        }
+        if (u.pathname.includes("/genre/tv/list")) return { json: { genres: [{ id: 1, name: "Drama" }] } };
+      }
+      if (url.includes("translate.googleapis.com")) return { json: googleEcho(new URL(url).searchParams.get("q") || "") };
+      return undefined;
+    }, calls);
+
+    const meta = await enrichUniversalMetadata("Moving", "series", { originalLanguage: "ko", originCountry: ["KR"] });
+    expect(meta.tmdb_id).toBe(2);
+  });
+
   it("rellena el overview desde en-US cuando la entrada no tiene sinopsis en es-MX", async () => {
     const calls: string[] = [];
     stubFetch((url) => {

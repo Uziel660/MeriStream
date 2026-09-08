@@ -21,6 +21,9 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/peliculas/", name: "GnulaHD Películas (ES-LATAM · secundario)" },
   { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/series/", name: "GnulaHD Series (ES-LATAM · secundario)" },
   { providerId: "latanime", targetUrl: "https://latanime.org/animes?p=1", name: "LatAnime (ES-LATAM · principal)" },
+  { providerId: "doramasflix", targetUrl: "https://doramasflix.io/doramas", name: "Doramasflix Doramas (mantenido · secundario)" },
+  { providerId: "doramasflix", targetUrl: "https://doramasflix.io/peliculas", name: "Doramasflix Películas (mantenido · secundario)" },
+  { providerId: "doramasflix", targetUrl: "https://doramasflix.io/variedades", name: "Doramasflix Variedades (mantenido · secundario)" },
   // Archive.org remains an explicit public-domain/open-license source for EN.
   { providerId: "archive-org", targetUrl: "https://archive.org/details/movies", name: "Internet Archive (contenido abierto)" },
 ];
@@ -37,7 +40,6 @@ export const LEGACY_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "lamovie", targetUrl: "https://lamovie.org/peliculas", name: "LaMovie (legacy)" },
   { providerId: "tioanime", targetUrl: "https://tioanime.com/directorio", name: "TioAnime (fallback de ZokoAnime)" },
   { providerId: "veranimes", targetUrl: "https://wwv.veranimes.net", name: "VerAnimes (legacy)" },
-  { providerId: "doramasflix", targetUrl: "https://doramasflix.io/doramas", name: "Doramasflix (legacy)" },
   { providerId: "tioplus", targetUrl: "https://tioplus.app/peliculas", name: "TioPlus (legacy)" },
   { providerId: "tubepelis", targetUrl: "https://tubepelis.com/peliculas", name: "TubePelis (legacy)" },
 ];

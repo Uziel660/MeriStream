@@ -78,13 +78,15 @@ describe("show episode main-path presentation", () => {
     expect(countDisplayPlatforms(canonical, display, "anime")).toEqual([{ domain: "zokoanime", episodes: 1 }]);
   });
 
-  it("falls back to displayed legacy rows when the selected canonical twin has no active links", () => {
+  it("falls back to displayed legacy rows when the selected canonical twin has no main-path links", () => {
     const canonical = [
       {
         id: "metadata-only-twin",
         season_number: 1,
         episode_number: 1,
-        links: [{ url: "https://doramasflix.io/capitulos/show-1x1", source_site: "doramasflix" }],
+        // A retired provider can still be present on a canonical row from
+        // an older import. It must not hide the displayed active legacy row.
+        links: [{ url: "https://animeflv.net/ver/show-1", source_site: "animeflv" }],
       },
     ];
     const display = [

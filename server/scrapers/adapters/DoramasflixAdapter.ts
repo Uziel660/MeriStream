@@ -397,7 +397,14 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     let fallback: EnrichedMetadata | null = null;
     for (const candidate of unique) {
       try {
-        const metadata = await enrichUniversalMetadata(candidate, kind);
+        const metadata = await enrichUniversalMetadata(
+          candidate,
+          kind,
+          // Las fichas suelen mezclar título español, romanización y nombre
+          // coreano. Esta pista solo desempata resultados que ya coinciden
+          // textualmente en TMDB; nunca asigna un ID por país/idioma aislado.
+          { originalLanguage: "ko", originCountry: ["KR"] },
+        );
         if (!fallback) fallback = metadata;
         if (metadata.tmdb_id || metadata.mal_id || metadata.anilist_id || metadata.kitsu_id) return metadata;
       } catch {

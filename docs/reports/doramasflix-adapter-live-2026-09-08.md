@@ -15,3 +15,25 @@ La ficha pública `https://doramasflix.io/doramas/khom-khlang` se analizó junto
 - En una ficha con identidad disponible (“Love With Benefits”, TMDB `224505`), `VidSrcClient` devolvió fuentes HLS; su disponibilidad se valida por manifiesto y segmento antes de anunciarlas.
 
 El contrato del adaptador solo considera éxito una URL HLS/DASH/MP4 directa y alcanzable. Las URLs de página, embeds y servidores que requieren interacción protegida se devuelven como no resueltas para que el gateway continúe con otro candidato o con VidSrc.
+
+## Integración en el camino normal
+
+Doramasflix quedó registrado como proveedor `maintained` secundario para
+películas y series, con `vidsrc` como fallback de identidad TMDB. Sus tres
+raíces públicas (`/doramas`, `/peliculas` y `/variedades`) ya participan en la
+lista de ingestión; los proveedores retirados siguen fuera de esa lista.
+
+La búsqueda de identidad acepta una pista opcional de idioma original `ko` y
+país `KR` para desempatar resultados que ya coinciden textualmente. La pista
+no puede crear un match sin coincidencia de título.
+
+Comprobación adicional en vivo del 2026-09-08:
+
+| Catálogo | Items | Primer detalle | Identidad |
+| --- | ---: | --- | --- |
+| `/doramas` | 24 | Khom Khlang | TMDB 308261 / IMDb tt45115286 |
+| `/peliculas` | 24 | Sleep | TMDB 964592 / IMDb tt8209702 |
+| `/variedades` | 24 | My AI Partner: Strange Love | TMDB 330741 |
+
+La prueba E2E volvió a reproducir el primer episodio de Khom Khlang con un
+manifiesto HLS directo de `premilkyway.com` y un segmento válido.

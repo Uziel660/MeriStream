@@ -44,6 +44,7 @@ describe("provider policy v2", () => {
     expect(getProviderPolicy("gnulahd.nu")).toMatchObject({ role: "secondary", lifecycle: "active" });
     expect(getProviderPolicy("latanime.org")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("zokoanime.video")).toMatchObject({ role: "primary", lifecycle: "active" });
+    expect(getProviderPolicy("doramasflix.io")).toMatchObject({ role: "secondary", lifecycle: "maintained", fallbackProvider: "vidsrc" });
     expect(getProviderPolicy("tioanime")).toMatchObject({ role: "fallback", lifecycle: "legacy" });
     expect(getProviderPriority("cinecalidad")).toBeLessThan(getProviderPriority("gnula"));
   });
@@ -75,7 +76,7 @@ describe("provider policy v2", () => {
 
   it("does not enqueue retired crawlers in the normal ingestion registry", () => {
     const ids = getEnabledIngestionTargets().map((target) => target.providerId);
-    expect(ids).toEqual(["cinecalidad", "latanime", "gnula", "gnula", "archive-org"]);
+    expect(ids).toEqual(["cinecalidad", "latanime", "gnula", "gnula", "archive-org", "doramasflix", "doramasflix", "doramasflix"]);
     expect(ids).not.toContain("tioanime");
     expect(ids).not.toContain("lamovie");
   });

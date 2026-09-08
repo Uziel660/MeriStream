@@ -172,7 +172,7 @@ export function isDoramasflixPageUrl(rawUrl: string | URL): boolean {
   try {
     const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
     const host = url.hostname.toLowerCase();
-    return /(?:^|\.)doramasflix\.(?:io|co|in)$/i.test(host);
+    return /(?:^|\.)doramasflix\.(?:io|co|in|net|com)$/i.test(host);
   } catch {
     return false;
   }

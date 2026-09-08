@@ -28,6 +28,14 @@ export interface EnrichedMetadata {
   backdrop_path?: string | null;
 }
 
+/** Optional source hints used to disambiguate titles from a known catalogue.
+ * They only influence ranking after a textual match exists; they never create
+ * an identity from country/language alone. */
+export interface MetadataSearchHints {
+  originalLanguage?: string;
+  originCountry?: string[];
+}
+
 type TmdbIdentityMetadata = EnrichedMetadata & {
   /** Campos internos usados únicamente para escoger entre idiomas de búsqueda. */
   __tmdb_match_score?: number;
@@ -531,9 +539,11 @@ async function fetchTMDBMetadata(
   yearHint?: number | null,
   identityOnly = false,
   language = "es-MX",
+  searchHints?: MetadataSearchHints,
 ): Promise<EnrichedMetadata | null> {
   const identityCacheKey = identityOnly
-    ? [String(query).trim().toLowerCase(), kind || "", seasonHint ?? "", yearHint ?? "", language].join("\u0000")
+    ? [String(query).trim().toLowerCase(), kind || "", seasonHint ?? "", yearHint ?? "", language,
+      searchHints?.originalLanguage || "", ...(searchHints?.originCountry || [])].join("\u0000")
     : null;
   if (identityCacheKey) {
     const cachedIdentity = tmdbIdentityCache.get(identityCacheKey);
@@ -584,7 +594,7 @@ async function fetchTMDBMetadata(
             (Array.isArray(candidate?.origin_country) && candidate.origin_country.includes("JP")),
           );
         };
-        const candidateScore = (candidate: any): number => {
+          const candidateScore = (candidate: any): number => {
           const names = [candidate?.title, candidate?.name, candidate?.original_title, candidate?.original_name]
             .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
           let score = 0;
@@ -602,6 +612,19 @@ async function fetchTMDBMetadata(
             }
           }
           const textualScore = score;
+          // Doramasflix frequently displays a translated/romanized title.
+          // When its native-language hint is available, prefer a matching
+          // Korean/Asian result among textual candidates without allowing the
+          // hint to manufacture an unrelated match.
+          if (textualScore >= 0.15 && searchHints?.originalLanguage) {
+            const expected = searchHints.originalLanguage.trim().toLowerCase();
+            if (String(candidate?.original_language || "").toLowerCase() === expected) score += 0.18;
+          }
+          if (textualScore >= 0.15 && searchHints?.originCountry?.length) {
+            const expected = new Set(searchHints.originCountry.map((country) => country.trim().toUpperCase()));
+            const countries = Array.isArray(candidate?.origin_country) ? candidate.origin_country : [];
+            if (countries.some((country: unknown) => expected.has(String(country).toUpperCase()))) score += 0.12;
+          }
           const resultYear = Number.parseInt(String(candidate?.release_date || candidate?.first_air_date || "").slice(0, 4), 10);
           // El año solo desambigua candidatos con una coincidencia textual
           // mínima; nunca convierte una obra ajena del mismo año en un match.
@@ -922,7 +945,8 @@ async function fillWeakDescription(meta: EnrichedMetadata, kindHint: string | un
 
 export async function enrichUniversalMetadata(
   rawQuery: string,
-  hintKind?: ContentKind
+  hintKind?: ContentKind,
+  searchHints?: MetadataSearchHints,
 ): Promise<EnrichedMetadata> {
   const parsed = parseTitleQuery(rawQuery);
   const cleaned = parsed.baseTitle;
@@ -937,7 +961,7 @@ export async function enrichUniversalMetadata(
   // se recuerda y se rellena después desde fuentes secundarias.
   let tmdbData: EnrichedMetadata | null = null;
   for (const cand of candidates) {
-    const res = await fetchTMDBMetadata(cand, hintKind, parsed.season, yearHint);
+    const res = await fetchTMDBMetadata(cand, hintKind, parsed.season, yearHint, false, "es-MX", searchHints);
     if (!res) continue;
     if (!tmdbData) tmdbData = res;
     if (isSubstantiveDescription(res.description)) {

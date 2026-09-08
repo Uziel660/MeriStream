@@ -9,6 +9,7 @@ import {
   resolveCinecalidadPage,
   resolveTioPlusPage,
   checkExpiredDirectStream,
+  isDoramasflixPageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
 
@@ -343,6 +344,12 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
         expect(res.canonical_locator).toBe(canonicalUrl);
       } finally {
         resolveSpy.mockRestore();
+      }
+    });
+
+    it("identifies every configured Doramasflix mirror as a canonical page", () => {
+      for (const host of ["io", "co", "in", "net", "com"]) {
+        expect(isDoramasflixPageUrl(`https://www.doramasflix.${host}/doramas/demo`)).toBe(true);
       }
     });
 

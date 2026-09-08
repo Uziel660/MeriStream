@@ -23,5 +23,6 @@ describe("provider registry", () => {
   it("models Cinecalidad to Gnula and ZokoAnime to TioAnime fallback chains", () => {
     expect(fallbackChain("cinecalidad", "movie").map((entry) => entry.id)).toEqual(["cinecalidad", "gnula"]);
     expect(fallbackChain("zokoanime", "anime").map((entry) => entry.id)).toEqual(["zokoanime", "tioanime"]);
+    expect(fallbackChain("doramasflix", "series").map((entry) => entry.id)).toEqual(["doramasflix", "vidsrc"]);
   });
 });

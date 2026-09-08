@@ -4,7 +4,9 @@ const BASE_URL = 'http://127.0.0.1:3010';
 
 test('la portada carga títulos del catálogo principal con el límite completo', async ({ page }) => {
   test.setTimeout(120_000);
-  const response = await page.request.get(`${BASE_URL}/api/v1/shows?lite=true&limit=25000`);
+  // The legacy fallback intentionally evaluates the full provider policy over
+  // the local catalog; a cold PostgreSQL cache can take ~20s on this machine.
+  const response = await page.request.get(`${BASE_URL}/api/v1/shows?lite=true&limit=25000`, { timeout: 60_000 });
   expect(response.status()).toBe(200);
   const payload = await response.json();
   expect(payload.total).toBeGreaterThan(0);

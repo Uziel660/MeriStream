@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PreferencesPanel } from './PreferencesPanel';
+import { APP_PREFERENCES_EVENT, applyAppPreferencesToDocument } from '../utils/appPreferences';
 
 export interface FilterItem {
   id: string;
@@ -46,6 +47,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const userMenuRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileSearchTriggerRef = useRef<HTMLButtonElement>(null);
+  const preferencesTriggerRef = useRef<HTMLButtonElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,6 +59,17 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Preferencias soporta también el perfil invitado. Aplicarlas desde el
+  // header evita que una capacidad existente quede escondida detrás del login
+  // y mantiene sincronizado el modo de rendimiento al cambiar de perfil.
+  useEffect(() => {
+    const applyPreferences = () => { applyAppPreferencesToDocument(user?.id); };
+    applyPreferences();
+    window.addEventListener(APP_PREFERENCES_EVENT, applyPreferences);
+    return () => window.removeEventListener(APP_PREFERENCES_EVENT, applyPreferences);
+  }, [user?.id]);
+
   useEffect(() => {
     const outside = (e: PointerEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setIsUserMenuOpen(false);
@@ -70,6 +83,12 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (preferencesOpen) {
+        e.preventDefault();
+        setPreferencesOpen(false);
+        requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
+        return;
+      }
       if (mobileSearchOpen) {
         e.preventDefault();
         setMobileSearchOpen(false);
@@ -84,7 +103,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
-  }, [mobileSearchOpen, isUserMenuOpen]);
+  }, [preferencesOpen, mobileSearchOpen, isUserMenuOpen]);
   useEffect(() => {
     if (mobileSearchOpen) requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [mobileSearchOpen]);
@@ -95,7 +114,17 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   };
   const openMobileSearch = () => {
     setIsUserMenuOpen(false);
+    setPreferencesOpen(false);
     setMobileSearchOpen(true);
+  };
+  const openPreferences = () => {
+    setMobileSearchOpen(false);
+    setIsUserMenuOpen(false);
+    setPreferencesOpen(true);
+  };
+  const closePreferences = () => {
+    setPreferencesOpen(false);
+    requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
   };
   const handleSelectTab = (id: string) => {
     setQuery('');
@@ -137,6 +166,20 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
             >
               <Search size={18} />
             </button>
+
+            <button
+              ref={preferencesTriggerRef}
+              type="button"
+              className="preferences-trigger ui-icon-button"
+              onClick={openPreferences}
+              aria-label="Abrir preferencias"
+              aria-haspopup="dialog"
+              aria-expanded={preferencesOpen}
+              title="Preferencias"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+
             <div className="header-account" ref={userMenuRef}>
               {isAuthenticated && user ? (
                 <>
@@ -146,7 +189,10 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                     className="account-trigger"
                     onClick={() => {
                       const willOpen = !isUserMenuOpen;
-                      if (willOpen) setMobileSearchOpen(false);
+                      if (willOpen) {
+                        setMobileSearchOpen(false);
+                        setPreferencesOpen(false);
+                      }
                       setIsUserMenuOpen(willOpen);
                     }}
                     aria-label={isUserMenuOpen ? 'Cerrar mi cuenta' : 'Abrir mi cuenta'}
@@ -157,10 +203,10 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                     <span className="account-name">{user.username}</span><ChevronDown size={15} />
                   </button>
                   {isUserMenuOpen && (
-                      <div id="account-menu" className="account-menu">
+                    <div id="account-menu" className="account-menu">
                       <strong>{user.username}</strong><p>Tu cuenta MeriStream</p>
-                      <button type="button" className="flex w-full items-center gap-2 rounded-lg border border-zinc-700/70 bg-zinc-900/70 px-3 py-2 text-left text-xs text-zinc-200 transition hover:border-amber-400/50 hover:bg-zinc-800" onClick={() => { setPreferencesOpen(true); setIsUserMenuOpen(false); }}>
-                        <SlidersHorizontal size={15} className="text-amber-400" />Preferencias de reproducción
+                      <button type="button" className="flex w-full items-center gap-2 rounded-lg border border-zinc-700/70 bg-zinc-900/70 px-3 py-2 text-left text-xs text-zinc-200 transition hover:border-amber-400/50 hover:bg-zinc-800" onClick={openPreferences}>
+                        <SlidersHorizontal size={15} className="text-amber-400" />Preferencias
                       </button>
                       <span className="account-color-label">Color de perfil</span>
                       <div className="account-colors">{Object.keys(AVATAR_BG_MAP).map(colorKey => (
@@ -171,7 +217,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                   )}
                 </>
               ) : (
-                <button type="button" onClick={() => { setMobileSearchOpen(false); openAuthModal(); }} className="account-login"><LogIn size={17} /><span>Ingresar</span></button>
+                <button type="button" onClick={() => { setMobileSearchOpen(false); setPreferencesOpen(false); openAuthModal(); }} className="account-login"><LogIn size={17} /><span>Ingresar</span></button>
               )}
             </div>
           </div>
@@ -190,7 +236,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
           ))}</nav>
         </div>
       </div>
-      {preferencesOpen && <PreferencesPanel userId={user?.id} onClose={() => setPreferencesOpen(false)} />}
+      {preferencesOpen && <PreferencesPanel userId={user?.id} onClose={closePreferences} />}
     </header>
   );
 };

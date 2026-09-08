@@ -17,6 +17,8 @@ interface ExploreCatalogViewProps {
   onSortBy: (s: SortMode) => void;
   catalogPageSize: number;
   onLoadMore: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
   availableYears: number[];
   onSelectMedia: (m: Show) => void;
   onHoverMedia?: (m: Show | null) => void;
@@ -24,7 +26,8 @@ interface ExploreCatalogViewProps {
 
 export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
   shows, allGenresList, showsCountByGenre, genreFilter, onGenreFilter, yearFilter, onYearFilter,
-  sortBy, onSortBy, catalogPageSize, onLoadMore, availableYears, onSelectMedia, onHoverMedia,
+  sortBy, onSortBy, catalogPageSize, onLoadMore, hasMore = false, isLoadingMore = false,
+  availableYears, onSelectMedia, onHoverMedia,
 }) => {
   const { isGenreHidden } = useHiddenGenres();
 
@@ -102,9 +105,13 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
               <MediaCard key={item.id} media={item} onSelectMedia={onSelectMedia} onHover={onHoverMedia} />
             ))}
           </div>
-          {filteredShows.length > catalogPageSize && (
+          {(filteredShows.length > catalogPageSize || hasMore) && (
             <div className="catalog-loadmore">
-              <button type="button" onClick={onLoadMore}>Mostrar más · {filteredShows.length - catalogPageSize} restantes</button>
+              <button type="button" onClick={onLoadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? 'Cargando catálogo…' : filteredShows.length > catalogPageSize
+                  ? `Mostrar más · ${filteredShows.length - catalogPageSize} restantes`
+                  : 'Cargar más desde TMDB'}
+              </button>
             </div>
           )}
         </>

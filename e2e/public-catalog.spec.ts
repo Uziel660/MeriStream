@@ -44,3 +44,21 @@ test('la portada renderiza tarjetas del catálogo público como un usuario', asy
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
 
+test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
+  await page.getByText('Explorar', { exact: true }).first().click();
+  await expect(page.locator('.catalog-shell')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cargar más desde TMDB' })).toBeVisible();
+  const nextBatch = page.waitForResponse((response) => {
+    if (!response.url().includes('/api/v1/catalog/public?') || response.status() !== 200) return false;
+    return new URL(response.url()).searchParams.get('page') === '4';
+  });
+  await page.getByRole('button', { name: 'Cargar más desde TMDB' }).click();
+  await nextBatch;
+  await expect(page.locator('.catalog-count')).toContainText('títulos');
+  await expect.poll(async () => page.locator('.catalog-grid .media-card').count()).toBeGreaterThan(60);
+});
+

@@ -30,6 +30,10 @@ const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
 const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v4';
 const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const PUBLIC_CATALOG_BATCH_SIZE = 60;
+// The unified backend batch spans three TMDB pages per kind (20 rows each).
+// Advance by that width when loading the next batch so pages do not overlap.
+const PUBLIC_CATALOG_PAGE_STEP = 3;
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
 function safeEpisodeTitle(episode: { title?: string; episode_number?: number }): string {
@@ -116,6 +120,9 @@ export function App() {
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
   const [catalogPageSize, setCatalogPageSize] = useState(100);
+  const [publicCatalogPage, setPublicCatalogPage] = useState(1);
+  const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
+  const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
 
@@ -487,9 +494,9 @@ export function App() {
   );
 
   // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
-  const fetchFreshCatalog = async (isBackground = false) => {
+  const fetchFreshCatalog = async (isBackground = false, page = 1, append = false) => {
     try {
-      const publicRes = await fetch('/api/v1/catalog/public?kind=all&mode=trending&limit=60');
+      const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${page}`);
       const res = publicRes.ok
         ? publicRes
         : await fetch('/api/v1/shows?lite=true&limit=25000');
@@ -499,6 +506,28 @@ export function App() {
         if (Array.isArray(list)) {
           const safeShows: Show[] = list.map(mapCatalogShow);
 
+          if (append) {
+            // Merge by the namespaced TMDB id so loading the next public batch
+            // cannot reintroduce duplicates from provider or legacy rows.
+            setShows((previous) => {
+              const merged = new Map(previous.map((show) => [show.id, show]));
+              for (const show of safeShows) merged.set(show.id, show);
+              return [...merged.values()];
+            });
+            setPublicCatalogPage(page);
+            setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
+            try {
+              const cached = localStorage.getItem(CATALOG_CACHE_KEY);
+              const cachedData = cached ? JSON.parse(cached).data : [];
+              const merged = new Map< string, Show>(
+                (Array.isArray(cachedData) ? cachedData : []).map((show: Show) => [show.id, show]),
+              );
+              for (const show of safeShows) merged.set(show.id, show);
+              localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ data: [...merged.values()], timestamp: Date.now() }));
+            } catch {}
+            return;
+          }
+
           // Only re-render if catalog actually changed (avoids SmartImage reset)
           if (isBackground) {
             const currentIds = shows.map(s => s.id).join(',');
@@ -507,6 +536,8 @@ export function App() {
           }
 
           setShows(safeShows);
+          setPublicCatalogPage(page);
+          setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
 
           // Save to cache
           try {
@@ -519,6 +550,19 @@ export function App() {
       }
     } catch (e) {
       if (!isBackground) console.error('Error cargando catálogo:', e);
+    }
+  };
+
+  const loadMorePublicCatalog = async () => {
+    if (isLoadingMoreCatalog || !hasMorePublicCatalog) return;
+    setIsLoadingMoreCatalog(true);
+    try {
+      // `kind=all&limit=60` consumes three TMDB pages per request. Start the
+      // next batch immediately after the pages already shown.
+      await fetchFreshCatalog(true, publicCatalogPage + PUBLIC_CATALOG_PAGE_STEP, true);
+      setCatalogPageSize((previous) => previous + PUBLIC_CATALOG_BATCH_SIZE);
+    } finally {
+      setIsLoadingMoreCatalog(false);
     }
   };
 
@@ -537,6 +581,8 @@ export function App() {
           const { data, timestamp } = JSON.parse(cached);
           if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0) {
             setShows(data);
+            setPublicCatalogPage(1);
+            setHasMorePublicCatalog(true);
             setIsLoading(false);
             // Still fetch fresh in background
             fetchFreshCatalog(true);
@@ -1165,7 +1211,9 @@ export function App() {
                   sortBy={sortBy}
                   onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
                   catalogPageSize={catalogPageSize}
-                  onLoadMore={() => setCatalogPageSize((prev) => prev + 100)}
+                  onLoadMore={loadMorePublicCatalog}
+                  hasMore={hasMorePublicCatalog}
+                  isLoadingMore={isLoadingMoreCatalog}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
                 />

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ExternalIdResolver } from './ExternalIdResolver';
+import { ExternalIdResolver, normalizePreferredLanguages } from './ExternalIdResolver';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -64,5 +64,19 @@ describe('ExternalIdResolver', () => {
       year: 2024,
     });
     expect(result).toBeNull();
+  });
+});
+
+describe('normalizePreferredLanguages', () => {
+  it('keeps Latin Spanish discoverable when legacy clients request generic Spanish', () => {
+    expect(normalizePreferredLanguages(['es', 'en'])).toEqual(['es-419', 'es', 'en']);
+  });
+
+  it('keeps both Spanish variants without duplicates', () => {
+    expect(normalizePreferredLanguages(['es-419', 'es', 'en'])).toEqual(['es-419', 'es', 'en']);
+  });
+
+  it('retains the Spanish-first default', () => {
+    expect(normalizePreferredLanguages()).toEqual(['es-419', 'es', 'en']);
   });
 });

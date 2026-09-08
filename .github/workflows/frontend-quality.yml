@@ -45,12 +45,26 @@ jobs:
       - name: TypeScript / lint
         run: npm run lint
 
-      - name: Unit tests
-        run: npm test
+      - name: Deterministic frontend tests
+        run: >-
+          npx vitest run
+          src/utils/playbackBootstrap.test.ts
+          src/utils/playerLanguages.test.ts
+          src/utils/searchUtils.test.ts
+          src/utils/imageSizes.test.ts
+          src/utils/playerDelivery.test.ts
+          src/utils/streamOptimizer.test.ts
+          src/utils/streamOptimizer.zilla.test.ts
+          src/utils/deliveryCapabilities.test.ts
+          src/utils/episodeLabels.test.ts
+          src/utils/subtitleFormat.test.ts
+          src/utils/colorExtractor.test.ts
+          tests/continueWatchingAndDetails.test.ts
 
       - name: Production build
         run: npm run build
 
-      # Browser validation intentionally lives in playwright.yml. Keeping it
-      # separate prevents dataset/live-provider specs from turning this
-      # deterministic frontend gate into a flaky integration test.
+      # Full DB/integration coverage belongs to provider-v2-ci.yml, which
+      # provisions PostgreSQL. Browser coverage belongs to playwright.yml.
+      # Keeping those responsibilities separate makes this frontend gate fast
+      # and deterministic instead of depending on databases or live providers.

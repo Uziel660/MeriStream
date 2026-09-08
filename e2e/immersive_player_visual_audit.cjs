@@ -82,8 +82,8 @@ async function installMocks(page) {
         { id: 1, name: 'English', lang: 'en' },
       ],
       subtitles: [
-        { id: 'es', label: 'Español Latino', language: 'es-419', url: `${BASE_URL}/api/v1/subtitles/file/${SUB_TOKEN_ES}.vtt`, is_default: true },
-        { id: 'en', label: 'English SDH', language: 'en', url: `${BASE_URL}/api/v1/subtitles/file/${SUB_TOKEN_EN}.vtt` },
+        { id: 'es', label: 'Español Latino', language: 'es-419', url: `/api/v1/subtitles/file/${SUB_TOKEN_ES}.vtt`, is_default: true },
+        { id: 'en', label: 'English SDH', language: 'en', url: `/api/v1/subtitles/file/${SUB_TOKEN_EN}.vtt` },
       ],
     }],
   }));
@@ -159,11 +159,13 @@ async function capturePlayer(browser, name, viewport) {
   await page.screenshot({ path: path.join(OUT_DIR, `${name}-player-audio.png`), fullPage: false });
 
   const subtitleButton = page.locator('button[title="Subtítulos"]');
+  await subtitleButton.waitFor({ state: 'visible', timeout: 8_000 });
   await subtitleButton.click();
   await page.waitForTimeout(120);
   await page.screenshot({ path: path.join(OUT_DIR, `${name}-player-subtitles.png`), fullPage: false });
 
   const qualityButton = page.locator('button[title="Calidad de video"]');
+  await qualityButton.waitFor({ state: 'visible', timeout: 8_000 });
   await qualityButton.click();
   await page.waitForTimeout(120);
   await page.screenshot({ path: path.join(OUT_DIR, `${name}-player-quality.png`), fullPage: false });

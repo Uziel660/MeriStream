@@ -18,7 +18,8 @@ interface PreferencesPanelProps {
 
 const LANGUAGE_OPTIONS = [
   ['es-419', 'Español latino'],
-  ['es', 'Español / castellano'],
+  ['es-ES', 'Castellano'],
+  ['es', 'Español (genérico)'],
   ['en', 'Inglés'],
   ['ja', 'Japonés'],
   ['ko', 'Coreano'],

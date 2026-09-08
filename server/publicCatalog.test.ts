@@ -98,4 +98,30 @@ describe("TMDB public catalog", () => {
     expect(detail?.anilist_id).toBe("108465");
     expect(detail?.kitsu_id).toBe("42323");
   });
+
+  it("resolves an anime film through TMDB movie details and keeps a virtual episode", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/tv/685274")) return new Response("missing", { status: 404 });
+      if (url.includes("/movie/685274")) {
+        return new Response(JSON.stringify({
+          id: 685274,
+          title: "Mobile Suit Gundam Hathaway",
+          original_title: "機動戦士ガンダム 閃光のハサウェイ",
+          release_date: "2021-06-11",
+          overview: "Una película de anime.",
+          genres: [{ id: 16, name: "Animación" }],
+          external_ids: { imdb_id: "tt12783454" },
+        }), { status: 200 });
+      }
+      if (url.includes("graphql.anilist.co")) return new Response("disabled", { status: 403 });
+      return new Response("not found", { status: 404 });
+    }));
+
+    const detail = await getPublicCatalogDetail("anime", 685274);
+    expect(detail?.title).toBe("Mobile Suit Gundam Hathaway");
+    expect(detail?.episodes).toHaveLength(1);
+    expect(detail?.episodes[0]?.source_url).toBe("tmdb://anime/685274/1/1");
+  });
 });

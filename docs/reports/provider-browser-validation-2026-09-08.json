@@ -1,0 +1,1941 @@
+{
+  "generatedAt": "2026-09-08",
+  "baseUrl": "http://127.0.0.1:3010",
+  "browser": "Playwright Chromium headless (MeriStream-browser-matrix/1.0)",
+  "networkChecks": [
+    "landing GET status/content-type/redirect/bytes",
+    "internal resolve POST",
+    "playback session POST",
+    "browser-facing master manifest GET",
+    "first child playlist GET",
+    "first media segment GET with Range bytes=0-1023"
+  ],
+  "acceptance": "accepted means native resolution plus master/child/segment success for HLS, or internal MP4 relay status 200/206",
+  "providers": {
+    "cinecalidad": {
+      "tested": 20,
+      "passing": 20,
+      "accepted": 10,
+      "identityTitleMismatches": 4,
+      "malChecks": null,
+      "hosts": {
+        "p5.vimeos.zip": 5,
+        "s10.vimeos.net": 2,
+        "p6.vimeos.zip": 6,
+        "s1.vimeos.net": 1,
+        "p3.vimeos.zip": 1,
+        "s9.vimeos.net": 2,
+        "s11.vimeos.net": 2,
+        "s12.vimeos.net": 1
+      },
+      "acceptedWorks": [
+        {
+          "title": "A la carrera",
+          "tmdbId": 1386315,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p5.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1386315,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Prácticamente magia",
+          "tmdbId": 6435,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "s10.vimeos.net",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 6435,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Jim y el durazno gigante",
+          "tmdbId": 10539,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p6.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 10539,
+            "titleMatch": false,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Terror en El Óceano",
+          "tmdbId": 982620,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "s1.vimeos.net",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 982620,
+            "titleMatch": false,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Morirás en 6 horas",
+          "tmdbId": 1147266,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p5.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1147266,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Mi Perfecto Ex",
+          "tmdbId": 1529510,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p6.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1529510,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Entre los vivos",
+          "tmdbId": 985890,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p3.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 985890,
+            "titleMatch": false,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Juego de brujas",
+          "tmdbId": 1067833,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p6.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1067833,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Fin de la línea",
+          "tmdbId": 974383,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p5.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 974383,
+            "titleMatch": false,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "The Wrong Babysitter",
+          "tmdbId": 453296,
+          "kind": "movie",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "p6.vimeos.zip",
+          "observedProvider": "Vimeos",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 453296,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        }
+      ],
+      "failures": []
+    },
+    "gnula": {
+      "tested": 15,
+      "passing": 14,
+      "accepted": 10,
+      "identityTitleMismatches": 0,
+      "malChecks": null,
+      "hosts": {
+        "edge1-waw-sprintcdn.r66nv9ed.com": 2,
+        "edge2-waw-sprintcdn.r66nv9ed.com": 4,
+        "edge1-frankfurt-sprintcdn.owphbf24.com": 4,
+        "edge1-moscow-sprintcdn.owphbf24.com": 2,
+        "edge1-vienna-sprintcdn.owphbf24.com": 1,
+        "edge1-madrid-sprintcdn.r66nv9ed.com": 1
+      },
+      "acceptedWorks": [
+        {
+          "title": "Linternas",
+          "tmdbId": 95350,
+          "kind": "series",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "edge1-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 95350,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Bleach",
+          "tmdbId": 30984,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge2-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 30984,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Silo",
+          "tmdbId": 125988,
+          "kind": "series",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 125988,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Operaciones Especiales: Lioness",
+          "tmdbId": 113962,
+          "kind": "series",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 113962,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Reacher",
+          "tmdbId": 108978,
+          "kind": "series",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 108978,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Ghost in the Shell",
+          "tmdbId": 255358,
+          "kind": "anime",
+          "season": 1,
+          "episode": 7,
+          "finalHost": "edge1-moscow-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 255358,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Los Simpson",
+          "tmdbId": 456,
+          "kind": "series",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 456,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Star Wars Visions: La Jedi número 9",
+          "tmdbId": 289324,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 289324,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Juego de tronos",
+          "tmdbId": 1399,
+          "kind": "series",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "edge1-vienna-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1399,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Solo Leveling",
+          "tmdbId": 127532,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "edge1-moscow-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 127532,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        }
+      ],
+      "failures": [
+        {
+          "title": "One Piece",
+          "tmdbId": 37854,
+          "resolved": false,
+          "childStatus": null,
+          "segmentStatus": null,
+          "reason": "unresolved"
+        }
+      ]
+    },
+    "latanime": {
+      "tested": 12,
+      "passing": 12,
+      "accepted": 10,
+      "identityTitleMismatches": 0,
+      "malChecks": null,
+      "hosts": {
+        "edge2-waw-sprintcdn.r66nv9ed.com": 5,
+        "unknown": 1,
+        "edge1-moscow-sprintcdn.owphbf24.com": 1,
+        "edge1-frankfurt-sprintcdn.owphbf24.com": 4,
+        "edge1-vienna-sprintcdn.owphbf24.com": 1
+      },
+      "acceptedWorks": [
+        {
+          "title": "Shiguang Dailiren",
+          "tmdbId": 123542,
+          "kind": "anime",
+          "season": 3,
+          "episode": 2,
+          "finalHost": "edge2-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 123542,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Mobile Suit Gundam Hathaway",
+          "tmdbId": 685274,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge2-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 685274,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "MOBILE SUIT GUNDAM HATHAWAY The Sorcery of Nymph Circe",
+          "tmdbId": 910850,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge2-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 910850,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Bleach",
+          "tmdbId": 30984,
+          "kind": "anime",
+          "season": 4,
+          "episode": 2,
+          "finalHost": "MeriStream Mega relay",
+          "observedProvider": "Mega",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 206,
+            "contentType": "video/mp4"
+          },
+          "child": {
+            "status": null,
+            "contentType": null
+          },
+          "segment": {
+            "status": null,
+            "contentType": null,
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 30984,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "MAO",
+          "tmdbId": 295999,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-moscow-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 295999,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Kaguya-sama wa Kokurasetai",
+          "tmdbId": 83121,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 83121,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Tenmaku no Jaadugar",
+          "tmdbId": 288971,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 288971,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Star Wars Visions: La Jedi número 9",
+          "tmdbId": 289324,
+          "kind": "anime",
+          "season": 1,
+          "episode": 4,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 289324,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "La heroína del moño",
+          "tmdbId": 1679730,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "edge2-waw-sprintcdn.r66nv9ed.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1679730,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Blue Exorcist: The Blue Night Saga",
+          "tmdbId": 38464,
+          "kind": "anime",
+          "season": 1,
+          "episode": 5,
+          "finalHost": "edge1-frankfurt-sprintcdn.owphbf24.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 38464,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        }
+      ],
+      "failures": []
+    },
+    "zokoanime": {
+      "tested": 15,
+      "passing": 15,
+      "accepted": 10,
+      "identityTitleMismatches": 1,
+      "malChecks": {
+        "checked": 15,
+        "matching": 15
+      },
+      "hosts": {
+        "hls2.aniwatchtv.uk": 15
+      },
+      "acceptedWorks": [
+        {
+          "title": "My Status as an Assassin Obviously Exceeds the Hero's",
+          "tmdbId": 284644,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 284644,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Gintama Mr. Ginpachi's Zany Class",
+          "tmdbId": 222624,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 222624,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "A Gatherer's Adventure in Isekai",
+          "tmdbId": 284442,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 284442,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Plus-sized Misadventures in Love!",
+          "tmdbId": 296287,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 296287,
+            "titleMatch": false,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "A Mangaka's Weirdly Wonderful Workplace",
+          "tmdbId": 284388,
+          "kind": "anime",
+          "season": 1,
+          "episode": 5,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 284388,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Anila to Cocora",
+          "tmdbId": 302169,
+          "kind": "anime",
+          "season": 1,
+          "episode": 8,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 302169,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Koupen Chan",
+          "tmdbId": 285797,
+          "kind": "anime",
+          "season": 1,
+          "episode": 6,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 285797,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Gachiakuta",
+          "tmdbId": 256721,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 256721,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Hands Off: Sawaranaide Kotesashi-kun",
+          "tmdbId": 283880,
+          "kind": "anime",
+          "season": 1,
+          "episode": 6,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 283880,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        },
+        {
+          "title": "Alma-chan Wants to Be a Family!",
+          "tmdbId": 289217,
+          "kind": "anime",
+          "season": 1,
+          "episode": 6,
+          "finalHost": "hls2.aniwatchtv.uk",
+          "observedProvider": "ZokoAnime",
+          "deliveryMode": "proxy_required",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp2t",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 289217,
+            "titleMatch": true,
+            "malIdMatch": true
+          }
+        }
+      ],
+      "failures": []
+    },
+    "tioanime": {
+      "tested": 15,
+      "passing": 13,
+      "accepted": 10,
+      "identityTitleMismatches": 0,
+      "malChecks": null,
+      "hosts": {
+        "ugc-cdn-caching-n3y5ud9vqosusforpv.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3wvutylqavhuksgin.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3ixotzmyhx6nxk5ht.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3zzac1qwcu2wzlxg4.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3wfrcerk46zmlqom9.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3lkvxgheee2fzfh03.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3ruf00x5endb2luld.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3wdv8gsbrzfgwxo1u.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3dvifdwlponu03jbm.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n35oon8upkzi1zeghh.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3p7xh0or5dp3h6tfm.cloudwindow-route.com": 1,
+        "ugc-cdn-caching-n3h4j7mno7vbx9gvr6.cloudwindow-route.com": 2
+      },
+      "acceptedWorks": [
+        {
+          "title": "La heroína del moño",
+          "tmdbId": 1679730,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "ugc-cdn-caching-n3y5ud9vqosusforpv.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1679730,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Futsutsuka na Akujo dewa Gozaimasu ga: Suuguu Chouso Torikae Den",
+          "tmdbId": 286345,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "ugc-cdn-caching-n3wvutylqavhuksgin.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 286345,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Hanaori-san wa Tensei shitemo Kenka ga Shitai",
+          "tmdbId": 312266,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "ugc-cdn-caching-n3ixotzmyhx6nxk5ht.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 312266,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Fumando juntos detrás del súper",
+          "tmdbId": 296286,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "ugc-cdn-caching-n3zzac1qwcu2wzlxg4.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 296286,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Mebius Dust",
+          "tmdbId": 98865,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "ugc-cdn-caching-n3wfrcerk46zmlqom9.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 98865,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Ibitte Konai Gibo to Gishi",
+          "tmdbId": 298103,
+          "kind": "anime",
+          "season": 1,
+          "episode": 3,
+          "finalHost": "ugc-cdn-caching-n3lkvxgheee2fzfh03.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 298103,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Otome Game Sekai wa Mob ni Kibishii Sekai desu 2",
+          "tmdbId": 139512,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "ugc-cdn-caching-n3ruf00x5endb2luld.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 139512,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Clevatess",
+          "tmdbId": 258348,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "ugc-cdn-caching-n3wdv8gsbrzfgwxo1u.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 258348,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Thunder 3",
+          "tmdbId": 326119,
+          "kind": "anime",
+          "season": 1,
+          "episode": 1,
+          "finalHost": "ugc-cdn-caching-n3dvifdwlponu03jbm.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 326119,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Dogul Wang",
+          "tmdbId": 297826,
+          "kind": "anime",
+          "season": 1,
+          "episode": 2,
+          "finalHost": "ugc-cdn-caching-n35oon8upkzi1zeghh.cloudwindow-route.com",
+          "observedProvider": "Servidor",
+          "deliveryMode": "direct_trial",
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/MP2T",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 297826,
+            "titleMatch": true,
+            "malIdMatch": null
+          }
+        }
+      ],
+      "failures": [
+        {
+          "title": "Kimetsu no Yaiba Movie 1: Mugenjou-hen Akaza Sairai",
+          "tmdbId": 1311031,
+          "resolved": true,
+          "mediaStatus": 502,
+          "childStatus": null,
+          "segmentStatus": null,
+          "reason": null
+        },
+        {
+          "title": "Nige Jouzu no Wakagimi",
+          "tmdbId": 222623,
+          "resolved": true,
+          "mediaStatus": 429,
+          "childStatus": null,
+          "segmentStatus": null,
+          "reason": null
+        }
+      ]
+    },
+    "vidsrc": {
+      "tested": 10,
+      "passing": 10,
+      "accepted": 10,
+      "identityTitleMismatches": 0,
+      "malChecks": null,
+      "hosts": {
+        "comityofcognomen.site": 1,
+        "zealotsofzenith.site": 1,
+        "peregrinepalaver.space": 1,
+        "noosphere-nectar.site": 1,
+        "palindromepanorama.website": 1,
+        "quorumofquiddity.site": 1,
+        "antilogarithm-atlas.site": 1,
+        "seraphimonolith.space": 1,
+        "panoplypalaver.site": 1,
+        "demesnedialectic.website": 1
+      },
+      "acceptedWorks": [
+        {
+          "title": "Fight Club",
+          "tmdbId": 550,
+          "kind": "movie",
+          "finalHost": "comityofcognomen.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 550,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "The Matrix",
+          "tmdbId": 603,
+          "kind": "movie",
+          "finalHost": "zealotsofzenith.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 603,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Inception",
+          "tmdbId": 27205,
+          "kind": "movie",
+          "finalHost": "peregrinepalaver.space",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp4",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 27205,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Interstellar",
+          "tmdbId": 157336,
+          "kind": "movie",
+          "finalHost": "noosphere-nectar.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 157336,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Parasite",
+          "tmdbId": 496243,
+          "kind": "movie",
+          "finalHost": "palindromepanorama.website",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=utf-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 496243,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Game of Thrones",
+          "tmdbId": 1399,
+          "kind": "series",
+          "finalHost": "quorumofquiddity.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp4",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1399,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Breaking Bad",
+          "tmdbId": 1396,
+          "kind": "series",
+          "finalHost": "antilogarithm-atlas.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 1396,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Stranger Things",
+          "tmdbId": 66732,
+          "kind": "series",
+          "finalHost": "seraphimonolith.space",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 66732,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "Arcane",
+          "tmdbId": 94605,
+          "kind": "series",
+          "finalHost": "panoplypalaver.site",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 206,
+            "contentType": "video/mp4",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 94605,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        },
+        {
+          "title": "The Last of Us",
+          "tmdbId": 94954,
+          "kind": "series",
+          "finalHost": "demesnedialectic.website",
+          "observedProvider": "VidSrc",
+          "deliveryMode": null,
+          "resolutionStatus": 200,
+          "resolved": true,
+          "media": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "child": {
+            "status": 200,
+            "contentType": "application/vnd.apple.mpegurl; charset=utf-8"
+          },
+          "segment": {
+            "status": 200,
+            "contentType": "text/html; charset=UTF-8",
+            "range": "bytes=0-1023"
+          },
+          "identity": {
+            "tmdbId": 94954,
+            "titleMatch": null,
+            "malIdMatch": null
+          }
+        }
+      ],
+      "failures": []
+    }
+  }
+}

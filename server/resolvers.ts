@@ -350,6 +350,7 @@ export class EmbedResolvers {
     if (u.includes("mixdrop") || u.includes("mxdrop")) return "Mixdrop";
     if (u.includes("hqq.tv") || u.includes("waaw")) return "Netu/HQQ";
     if (u.includes("byseqekaho.com") || u.includes("byselapuix.com") || u.includes("bysekoze")) return "Bysekoze";
+    if (u.includes("sprintcdn") || /edge\d+-(?:[a-z-]+-)??sprintcdn\./i.test(u)) return "SprintCDN";
     if (u.includes("hexload")) return "Hexload";
     if (u.includes("uqload")) return "Uqload";
     if (u.includes("goodstream")) return "Goodstream";

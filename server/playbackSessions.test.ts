@@ -184,6 +184,23 @@ describe("PlaybackSessionStore", () => {
     expect(store.get(first.id)).toBeUndefined();
   });
 
+  it("conserva el primer segmento de una playlist VOD larga", () => {
+    const store = new PlaybackSessionStore({ maxResourcesPerSession: 3_000, now: () => 100 });
+    const session = store.createFromResolved(
+      "https://vidsrc.me/embed/movie/27205",
+      meta("https://vidsrc.me/embed/movie/27205", "https://cdn.example/master.m3u8", 9_999),
+    );
+    const rewritten = store.rewriteManifest(
+      session.id,
+      Array.from({ length: 2_500 }, (_, index) => `segment-${index}.m4s`).join("\n"),
+      session.current.url,
+    );
+    const first = rewritten.split("\n")[0];
+    const key = first.match(/\/resource\/([^/]+)/)?.[1];
+    expect(key).toBeTruthy();
+    expect(store.resourceUrl(session.id, decodeURIComponent(key!))).toContain("/segment-0.m4s");
+  });
+
   it("libera inmediatamente una sesión abandonada por cambio de servidor", () => {
     const store = new PlaybackSessionStore({ now: () => 100 });
     const session = store.createFromResolved(

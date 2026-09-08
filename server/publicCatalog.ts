@@ -400,10 +400,25 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
   const kind = parseKind(kindValue);
   const tmdbId = Number.parseInt(String(tmdbIdValue || ""), 10);
   if (kind === "all" || !Number.isInteger(tmdbId) || tmdbId <= 0) return null;
-  const detail = await tmdbFetch<TmdbDetail>(kind === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`, {
-    language: "es-419",
-    append_to_response: "external_ids",
-  });
+  let detail: TmdbDetail;
+  let isMovieDetail = kind === "movie";
+  try {
+    detail = await tmdbFetch<TmdbDetail>(kind === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`, {
+      language: "es-419",
+      append_to_response: "external_ids",
+    });
+  } catch (error) {
+    // TMDB stores anime films under /movie while the public rail uses the
+    // unified "anime" kind. Retry that namespace before declaring the title
+    // missing so a movie such as Gundam Hathaway keeps its canonical ID and
+    // gets the same virtual S01E01 contract as other one-off releases.
+    if (kind !== "anime") throw error;
+    detail = await tmdbFetch<TmdbDetail>(`/movie/${tmdbId}`, {
+      language: "es-419",
+      append_to_response: "external_ids",
+    });
+    isMovieDetail = true;
+  }
   const show = mapTmdbItem(detail, kind);
   show.imdb_id = detail.external_ids?.imdb_id || null;
   if (kind === "anime") {
@@ -414,14 +429,14 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
     show.title_aliases = [...new Set([...(show.title_aliases || []), ...identity.aliases])];
   }
   const episodes: PublicCatalogEpisode[] = [];
-  if (kind === "movie") {
+  if (kind === "movie" || isMovieDetail) {
     episodes.push({
       id: `tmdb-movie-${tmdbId}-s1-e1`,
       show_id: show.id,
       title: show.title,
       episode_number: 1,
       season_number: 1,
-      source_url: `tmdb://movie/${tmdbId}/1/1`,
+      source_url: `tmdb://${kind}/${tmdbId}/1/1`,
     });
   } else {
     const seasons = (detail.seasons || [])

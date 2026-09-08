@@ -49,7 +49,7 @@ import {
 } from "./server/showEpisodePolicy";
 import { PlaybackSessionStore, createPlaybackSessionHandlers } from "./server/playbackSessions";
 import { streamHealthService } from "./server/streamHealthService";
-import { listHostHealth, reportPlaybackSignal } from "./server/scrapers/hostHealth";
+import { listHostHealth, probeStream, reportPlaybackSignal } from "./server/scrapers/hostHealth";
 import { runtimeBudget } from "./server/runtimeBudget";
 import { assertSafePublicHttpUrl, UnsafeUrlError } from "./server/urlSafety";
 import {
@@ -137,7 +137,11 @@ const playbackSessions = new PlaybackSessionStore({
   // producing browser-visible 404s. Keep enough opaque locators for one active
   // user while bounding abandoned sessions for the low-memory ASUS host.
   maxSessions: 8,
-  maxResourcesPerSession: 2_000,
+  // VidSrc VOD playlists can expose 4k+ short segments per rendition. Keep
+  // every opaque locator for the active session so the first segment is not
+  // evicted while a long child playlist is being rewritten. The entries only
+  // contain short upstream URL metadata; media bytes are never buffered here.
+  maxResourcesPerSession: 10_000,
 });
 const playbackSessionHandlers = createPlaybackSessionHandlers(
   playbackSessions,
@@ -1934,51 +1938,79 @@ async function startServer() {
     }
 
     try {
+      // A resolver can return a syntactically valid signed URL whose CDN token
+      // is already dead. Validate native media before exposing it so the UI
+      // does not enter a false-success state and skip the next provider. The
+      // probe uses the same host profile and headers as the playback proxy.
+      const isNativeExternalUrl = (value: unknown): value is string =>
+        typeof value === "string" && /^https?:\/\//i.test(value)
+        && /\.(?:m3u8|mpd|mp4)(?:[?#]|$)/i.test(value);
+      const isPlayableDirect = async (meta: ResolvedStreamMeta): Promise<boolean> => {
+        if (!meta.resolved || meta.type !== "direct" || !meta.url) return false;
+        // Internal stream relays (for example Mega) are already owned by
+        // MeriStream and are validated when the relay serves the resource.
+        if (/^\/api\/v1\//i.test(meta.url)) return true;
+        if (!isNativeExternalUrl(meta.url)) return false;
+        const health = await probeStream(meta.url, { playerReferer: rawUrl });
+        return health.ok;
+      };
+      const respondWithValidated = async (meta: ResolvedStreamMeta, strategy: string) => {
+        if (!(await isPlayableDirect(meta))) return false;
+        res.json(proxyResolvedSubtitles(
+          buildResolveDeliveryResponse(meta, strategy, deliveryPlanner),
+          meta.provider,
+        ));
+        return true;
+      };
+
       // Zoko's stable locator carries the subtitle list in the player payload.
       // Resolve that locator itself before the generic page extractor turns it
       // into a CDN URL (the CDN URL no longer has subtitle metadata).
       if (/zokoanime\.video\/stream\//i.test(rawUrl)) {
         const zokoMeta = await EmbedResolvers.resolveWithMeta(rawUrl);
-        if (zokoMeta.resolved && zokoMeta.url) {
-          return res.json(proxyResolvedSubtitles(
-            buildResolveDeliveryResponse(zokoMeta, "zokoanime", deliveryPlanner),
-            "zokoanime",
-          ));
-        }
+        if (zokoMeta.resolved && zokoMeta.url && await respondWithValidated(zokoMeta, "zokoanime")) return;
       }
 
       // Si la URL es una página web de episodio (animeflv, jkanime, etc.), extraer streams reales primero
       if (classifySourceKind(rawUrl) === "page" || isCanonicalLocator(rawUrl)) {
-        try {
-          const extracted = await extractStreamFromUrl(rawUrl);
-          const candidates = Array.from(
-            new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
-          );
-          for (const cand of candidates) {
-            const resolvedMeta = await resolutionCoordinator.resolve(cand);
-            if (resolvedMeta.resolved && resolvedMeta.type === "direct") {
-              return res.json(proxyResolvedSubtitles(
-                buildResolveDeliveryResponse(resolvedMeta, "regex_fast", deliveryPlanner),
-                resolvedMeta.provider,
-              ));
+        // Signed Vimeos/SprintCDN URLs can rotate between page fetches. If the
+        // first page response only contains expired tokens, fetch the canonical
+        // page again before declaring the provider unavailable. This keeps the
+        // fallback chain from being triggered by a transient token miss.
+        for (let pageAttempt = 0; pageAttempt < 3; pageAttempt += 1) {
+          try {
+            const extracted = await extractStreamFromUrl(rawUrl);
+            const candidates = Array.from(
+              new Set([extracted.stream_url, ...(extracted.all_available_streams || [])].filter(Boolean))
+            );
+            for (const cand of candidates) {
+              const resolvedMeta = await resolutionCoordinator.resolve(cand);
+              if (resolvedMeta.resolved && resolvedMeta.type === "direct"
+                && await respondWithValidated(resolvedMeta, "regex_fast")) return;
             }
-          }
-        } catch {}
+          } catch {}
+          if (pageAttempt < 2) await new Promise((resolve) => setTimeout(resolve, 220));
+        }
       }
 
       // Capa ligera: fetch HTTP + extractores específicos, sin navegador headless.
       const meta = await resolutionCoordinator.resolve(rawUrl);
-      if (meta.resolved) {
-        return res.json(proxyResolvedSubtitles(
-          buildResolveDeliveryResponse(meta, "regex_fast", deliveryPlanner),
-          meta.provider,
-        ));
-      }
+      if (meta.resolved && await respondWithValidated(meta, "regex_fast")) return;
 
       // Fallback barato: el navegador abre el embed o avanza al siguiente host.
       return res.json(proxyResolvedSubtitles(
         buildResolveDeliveryResponse(
-          { ...meta, url: meta.url || rawUrl },
+          // Do not leak the last unvalidated native URL as a false success. A
+          // stale signed token must be represented as an unresolved locator so
+          // the player can advance to the next provider candidate.
+          {
+            ...meta,
+            url: rawUrl,
+            resolved: false,
+            type: "embed",
+            is_proxyable: false,
+            failure_reason: "unresolved",
+          },
           "unresolved_embed",
           deliveryPlanner,
         ),

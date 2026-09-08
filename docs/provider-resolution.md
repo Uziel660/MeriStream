@@ -68,8 +68,8 @@ as health failures so the provider can cool down or fail over.
 
 | Content | Primary | Secondary/fallback |
 | --- | --- | --- |
-| Movies and series, ES-LATAM | Cinecalidad (`vimeos` common resolver) | GnulaHD (`bysevepoin` locator → rotating SprintCDN HLS) |
-| Anime, ES-LATAM | LatAnime (`sprintcdn` HLS) | — |
+| Movies and series, ES-LATAM | Cinecalidad (`Vimeos` common resolver) | GnulaHD (`bysevepoin` locator → rotating SprintCDN HLS) |
+| Anime, ES-LATAM | LatAnime (SprintCDN HLS; Mega relay only when returned by the source) | — |
 | Anime, JA + subtitles | ZokoAnime (`aniwatchtv.uk` HLS) | TioAnime legacy fallback |
 | English movies, series and anime | Direct API clients and configured Stremio addons | VidSrc/VidSrc mirrors only when their API returns native media |
 
@@ -112,8 +112,23 @@ Proxy sessions support both `master.m3u8` and `master.mpd`. DASH `BaseURL` and
 segment templates remain opaque to the browser while `$Number$`, `$Time$` and
 other placeholders are expanded by dash.js before the internal resource relay,
 so signed upstream URLs stay server-side and can be renewed on a 401/403.
+The session keeps up to 10,000 short-lived opaque locators so long VidSrc/Vimeos
+playlists do not evict their first segments; only URL metadata is retained and
+media bytes are streamed through the relay.
 
 The latest public probes are stored in:
 
 - `docs/reports/provider-host-probe-2026-09-07.json`
 - `docs/reports/provider-resolver-probe-2026-09-07.json`
+- `docs/reports/provider-browser-validation-2026-09-08.md`
+- `docs/reports/provider-browser-validation-2026-09-08.json`
+
+The browser validation report is the current evidence for the minimum ten-work
+acceptance gate. It records the final host, response status and content type for
+the landing page, resolver, internal playback session, manifest, child playlist
+and first media segment. A successful HLS case requires a `200` master and child
+plus a `200`/`206` segment; internal MP4 relays are checked with a bounded range
+request. Failures remain documented instead of being turned into fallback
+successes. Public TMDB titles are shown in Spanish (`es-419`) when TMDB provides
+that localization; when it does not, the canonical title or Japanese/English
+title is kept to avoid inventing metadata.

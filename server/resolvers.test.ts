@@ -16,6 +16,7 @@ describe("EmbedResolvers with Status & Meta", () => {
     expect(EmbedResolvers.getProviderName("https://mp4upload.com/embed-123.html")).toBe("MP4Upload");
     expect(EmbedResolvers.getProviderName("https://voe.sx/e/xyz")).toBe("VOE");
     expect(EmbedResolvers.getProviderName("https://yourupload.com/embed/123")).toBe("YourUpload");
+    expect(EmbedResolvers.getProviderName("https://edge2-waw-sprintcdn.r66nv9ed.com/hls/master.m3u8")).toBe("SprintCDN");
   });
 
   it("resolves mega file URL to embed", async () => {

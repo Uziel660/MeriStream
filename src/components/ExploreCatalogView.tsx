@@ -5,6 +5,8 @@ import { MediaCard } from './MediaCard';
 import { CatalogFilters, type SortMode } from './CatalogFilters';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 
+type PublicCatalogKind = 'movie' | 'series' | 'anime';
+
 interface ExploreCatalogViewProps {
   shows: Show[];
   allGenresList: string[];
@@ -19,6 +21,9 @@ interface ExploreCatalogViewProps {
   onLoadMore: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+  onLoadMoreByKind?: (kind: PublicCatalogKind) => void;
+  hasMoreByKind?: Record<PublicCatalogKind, boolean>;
+  isLoadingMoreByKind?: Record<PublicCatalogKind, boolean>;
   availableYears: number[];
   onSelectMedia: (m: Show) => void;
   onHoverMedia?: (m: Show | null) => void;
@@ -27,7 +32,9 @@ interface ExploreCatalogViewProps {
 export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
   shows, allGenresList, showsCountByGenre, genreFilter, onGenreFilter, yearFilter, onYearFilter,
   sortBy, onSortBy, catalogPageSize, onLoadMore, hasMore = false, isLoadingMore = false,
-  availableYears, onSelectMedia, onHoverMedia,
+  availableYears, onSelectMedia, onHoverMedia, onLoadMoreByKind,
+  hasMoreByKind = { movie: false, series: false, anime: false },
+  isLoadingMoreByKind = { movie: false, series: false, anime: false },
 }) => {
   const { isGenreHidden } = useHiddenGenres();
 
@@ -75,6 +82,26 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
         </div>
         <span className="catalog-count" aria-live="polite">{filteredShows.length} {filteredShows.length === 1 ? 'título' : 'títulos'}</span>
       </div>
+
+      {onLoadMoreByKind && (
+        <div className="catalog-category-loadmore" aria-label="Cargar más por categoría">
+          {([
+            ['movie', 'Películas'],
+            ['series', 'Series'],
+            ['anime', 'Anime'],
+          ] as Array<[PublicCatalogKind, string]>).map(([kind, label]) => (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => onLoadMoreByKind(kind)}
+              disabled={isLoadingMoreByKind[kind] || !hasMoreByKind[kind]}
+              className="catalog-loadmore-kind"
+            >
+              {isLoadingMoreByKind[kind] ? 'Cargando…' : hasMoreByKind[kind] ? `Cargar más ${label}` : `${label} completas`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="catalog-toolbar" aria-label="Filtros del catálogo">
         <label className="filter-control">

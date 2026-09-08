@@ -24,6 +24,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 - Los relays Mega pasan una sonda de metadata y primeros 2 KiB antes de entrar al selector; un 502/429 queda como candidato fallido y no dispara una cascada falsa en el player.
 - Gnula usa su endpoint público de player para descubrir servidores en tiempo de reproducción.
 - La cartelera pública TMDB pagina las solicitudes y la respuesta unificada de 60 intercala 20 películas, 20 series y 20 animes; las fichas siguen siendo virtuales y se resuelven por sus IDs canónicos.
+- La cartelera no importa todo TMDB de forma masiva: Inicio usa un lote acotado y Explorar/Películas/Series/Anime solicitan el siguiente lote bajo demanda. Cada categoría conserva su propio cursor y su propio botón “Cargar más”, sin consumir páginas de las otras ni crear filas duplicadas en la base.
 - TMDB puede devolver una imagen PNG de logotipo como `poster_path` (el caso observado de “Te irás al infierno” medía 177×21). El catálogo y las recomendaciones ahora consultan el detalle canónico para sustituir ese arte por el póster vertical; el backfill local también marca esos PNG para reparación.
 - En la pasada local se repararon 523 de 530 filas con arte PNG TMDB y `poster_path` vacío. Siete títulos no tienen póster vertical en el detalle TMDB y quedan protegidos por el placeholder/arte alternativo, sin fabricar una imagen.
 - La búsqueda consulta TMDB y PostgreSQL en paralelo y conserva la ficha local cuando ambas fuentes comparten TMDB, de modo que una coincidencia pública no oculta los providers reproducibles.
@@ -50,6 +51,7 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
   - fallback TioAnime y reproducción en player interno: correcto;
   - guardia de identidad TMDB para Overflow: correcto.
   - paginación del catálogo unificado y reparación visual de la cartelera: correctas.
+  - paginación independiente por categoría desde la vista Explorar: correcta (Series solicita TMDB página 4 sin mover Películas ni Anime).
   - matriz conjunta de audio, exposición y playback Cinecalidad/LatAnime/Gnula/TioAnime: 6/6 correctas.
 - Pruebas reales de red: catálogo, resolución, manifiestos, segmentos y subtítulos internos WebVTT.
 

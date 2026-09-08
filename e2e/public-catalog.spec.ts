@@ -81,3 +81,22 @@ test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas'
   await expect.poll(async () => page.locator('.catalog-grid .media-card').count()).toBeGreaterThan(60);
 });
 
+test('Explorar mantiene paginación independiente para cada categoría', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
+  await page.getByText('Explorar', { exact: true }).first().click();
+  await expect(page.locator('.catalog-category-loadmore')).toBeVisible();
+  const seriesRequest = page.waitForResponse((response) => {
+    if (!response.url().includes('/api/v1/catalog/public?') || response.status() !== 200) return false;
+    const url = new URL(response.url());
+    return url.searchParams.get('kind') === 'series' && url.searchParams.get('page') === '4';
+  });
+  await page.getByRole('button', { name: 'Cargar más Series' }).click();
+  await seriesRequest;
+  await expect(page.getByRole('button', { name: 'Cargar más Series' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cargar más Películas' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cargar más Anime' })).toBeVisible();
+});
+

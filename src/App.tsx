@@ -34,6 +34,8 @@ const PUBLIC_CATALOG_BATCH_SIZE = 60;
 // The unified backend batch spans three TMDB pages per kind (20 rows each).
 // Advance by that width when loading the next batch so pages do not overlap.
 const PUBLIC_CATALOG_PAGE_STEP = 3;
+type PublicCatalogKind = 'movie' | 'series' | 'anime';
+const PUBLIC_CATALOG_KINDS: PublicCatalogKind[] = ['movie', 'series', 'anime'];
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
 function safeEpisodeTitle(episode: { title?: string; episode_number?: number }): string {
@@ -131,6 +133,11 @@ export function App() {
   const [publicCatalogPage, setPublicCatalogPage] = useState(1);
   const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
   const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
+  // Cada familia de TMDB lleva su propio cursor. Así un botón de Películas no
+  // consume páginas de Series o Anime ni deja una categoría sin resultados.
+  const [publicCatalogPages, setPublicCatalogPages] = useState<Record<PublicCatalogKind, number>>({ movie: 1, series: 1, anime: 1 });
+  const [hasMorePublicCatalogByKind, setHasMorePublicCatalogByKind] = useState<Record<PublicCatalogKind, boolean>>({ movie: true, series: true, anime: true });
+  const [isLoadingMoreCatalogByKind, setIsLoadingMoreCatalogByKind] = useState<Record<PublicCatalogKind, boolean>>({ movie: false, series: false, anime: false });
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
 
@@ -544,6 +551,15 @@ export function App() {
             });
             setPublicCatalogPage(page);
             setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
+            const fetchedByKind = Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
+              const count = safeShows.filter((show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
+              return [kind, Math.max(1, Math.ceil(count / 20))];
+            })) as Record<PublicCatalogKind, number>;
+            setPublicCatalogPages((previous) => ({
+              movie: Math.max(previous.movie, page + Math.max(0, fetchedByKind.movie - 1)),
+              series: Math.max(previous.series, page + Math.max(0, fetchedByKind.series - 1)),
+              anime: Math.max(previous.anime, page + Math.max(0, fetchedByKind.anime - 1)),
+            }));
             try {
               const cached = localStorage.getItem(CATALOG_CACHE_KEY);
               const cachedData = cached ? JSON.parse(cached).data : [];
@@ -566,6 +582,11 @@ export function App() {
           setShows(safeShows);
           setPublicCatalogPage(page);
           setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
+          setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
+            const count = safeShows.filter((show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
+            return [kind, Math.max(1, Math.ceil(count / 20))];
+          })) as Record<PublicCatalogKind, number>);
+          setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
 
           // Save to cache
           try {
@@ -594,6 +615,41 @@ export function App() {
     }
   };
 
+  const loadMorePublicCatalogKind = async (kind: PublicCatalogKind) => {
+    if (isLoadingMoreCatalogByKind[kind] || !hasMorePublicCatalogByKind[kind]) return;
+    setIsLoadingMoreCatalogByKind((previous) => ({ ...previous, [kind]: true }));
+    const nextPage = publicCatalogPages[kind] + PUBLIC_CATALOG_PAGE_STEP;
+    try {
+      const response = await fetch(`/api/v1/catalog/public?kind=${kind}&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`);
+      if (!response.ok) throw new Error(`TMDB ${kind}: HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : data.shows || [];
+      const safeShows: Show[] = Array.isArray(list) ? list.map(mapCatalogShow) : [];
+      setShows((previous) => {
+        const merged = new Map(previous.map((show) => [show.id, show]));
+        for (const show of safeShows) merged.set(show.id, show);
+        return [...merged.values()];
+      });
+      setPublicCatalogPages((previous) => ({ ...previous, [kind]: nextPage }));
+      const totalPages = Number(data?.totalPages || 0);
+      setHasMorePublicCatalogByKind((previous) => ({
+        ...previous,
+        [kind]: safeShows.length > 0 && (!totalPages || nextPage + PUBLIC_CATALOG_PAGE_STEP - 1 < totalPages),
+      }));
+      try {
+        const cached = localStorage.getItem(CATALOG_CACHE_KEY);
+        const cachedData = cached ? JSON.parse(cached).data : [];
+        const merged = new Map<string, Show>((Array.isArray(cachedData) ? cachedData : []).map((show: Show) => [show.id, show]));
+        for (const show of safeShows) merged.set(show.id, show);
+        localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ data: [...merged.values()], timestamp: Date.now() }));
+      } catch { /* cache is an optional optimization */ }
+    } catch (error) {
+      console.warn(`No se pudo cargar más ${kind} desde TMDB`, error);
+    } finally {
+      setIsLoadingMoreCatalogByKind((previous) => ({ ...previous, [kind]: false }));
+    }
+  };
+
   const loadCatalog = async () => {
     try {
       setIsLoading(true);
@@ -611,6 +667,11 @@ export function App() {
             setShows(data);
             setPublicCatalogPage(1);
             setHasMorePublicCatalog(true);
+            setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
+              const count = data.filter((show: Show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
+              return [kind, Math.max(1, Math.ceil(count / 20))];
+            })) as Record<PublicCatalogKind, number>);
+            setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
             setIsLoading(false);
             // Still fetch fresh in background
             fetchFreshCatalog(true);
@@ -1182,6 +1243,20 @@ export function App() {
                           </button>
                         </div>
                       )}
+                      {(['movie', 'series', 'anime'] as const).includes(activeFilter as any) && hasMorePublicCatalogByKind[activeFilter as PublicCatalogKind] && (
+                        <div className="flex justify-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => loadMorePublicCatalogKind(activeFilter as PublicCatalogKind)}
+                            disabled={isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]}
+                            className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
+                          >
+                            {isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]
+                              ? 'Cargando desde TMDB…'
+                              : `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activeFilter as PublicCatalogKind]}`}
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
                 </section>
@@ -1249,6 +1324,9 @@ export function App() {
                   onLoadMore={loadMorePublicCatalog}
                   hasMore={hasMorePublicCatalog}
                   isLoadingMore={isLoadingMoreCatalog}
+                  onLoadMoreByKind={loadMorePublicCatalogKind}
+                  hasMoreByKind={hasMorePublicCatalogByKind}
+                  isLoadingMoreByKind={isLoadingMoreCatalogByKind}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
                 />

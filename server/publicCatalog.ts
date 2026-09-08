@@ -564,12 +564,17 @@ export async function getPublicCatalog(options: {
     const firstPage = group.pages[0];
     return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);
   }, 0);
+  // `page` is a TMDB page cursor (20 results), even when this endpoint
+  // aggregates three pages into a 60-item response. Expose the upstream page
+  // count so category-specific "Cargar más" buttons can stop at the real
+  // boundary instead of treating 60 as one TMDB page.
+  const upstreamTotalPages = Math.max(1, ...groupedResponses.map((group) => Number(group.pages[0]?.total_pages || 1)));
   return {
     shows: ordered.slice(0, pageSize),
     total: totals,
     page,
     pageSize,
-    totalPages: Math.max(1, Math.ceil(totals / pageSize)),
+    totalPages: upstreamTotalPages,
     source: "tmdb",
   };
 }

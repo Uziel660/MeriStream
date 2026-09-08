@@ -58,9 +58,47 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       : `/api/v1/shows/${showId}`;
 
     fetch(detailUrl)
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) throw new Error('No se pudo cargar la información del título.');
-        return res.json();
+        const localData = await res.json() as ShowDetail;
+        // Las tarjetas locales conservan los links reproducibles, pero algunas
+        // fueron importadas con el título del proveedor en inglés. Cuando hay
+        // TMDB ID, hidratar solo la presentación con la ficha es-419 canónica;
+        // episodios, providers y el id local permanecen intactos para playback.
+        if (!publicIdentity && Number(localData.tmdb_id) > 0) {
+          const rawKind = String(localData.category || localData.kind || '').toLowerCase();
+          const publicKind = rawKind.includes('movie') || rawKind.includes('pel')
+            ? 'movie'
+            : rawKind.includes('anime')
+              ? 'anime'
+              : 'series';
+          try {
+            const localizedResponse = await fetch(`/api/v1/catalog/public/${publicKind}/${localData.tmdb_id}`);
+            if (localizedResponse.ok) {
+              const localized = await localizedResponse.json() as Partial<ShowDetail>;
+              return {
+                ...localData,
+                title: localized.title || localData.title,
+                original_title: localized.original_title || localData.original_title,
+                description: localized.description || localData.description,
+                synopsis: localized.synopsis || localized.description || localData.synopsis,
+                poster_url: localized.poster_url || localData.poster_url,
+                poster_path: localized.poster_path || localData.poster_path,
+                banner_url: localized.banner_url || localData.banner_url,
+                backdrop_url: localized.backdrop_url || localData.backdrop_url,
+                backdrop_path: localized.backdrop_path || localData.backdrop_path,
+                genres: localized.genres?.length ? localized.genres : localData.genres,
+                year: localized.year || localData.year,
+                rating: localized.rating || localData.rating,
+                tmdb_id: localized.tmdb_id || localData.tmdb_id,
+                episodes: localData.episodes?.length ? localData.episodes : (localized.episodes || []),
+              } as ShowDetail;
+            }
+          } catch {
+            // Si TMDB no responde, la ficha local sigue siendo reproducible.
+          }
+        }
+        return localData;
       })
       .then((data: ShowDetail) => {
         setShow(data);

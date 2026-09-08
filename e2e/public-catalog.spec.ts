@@ -63,6 +63,22 @@ test('la búsqueda conserva la ficha local y descarta el PNG de título de TMDB'
   expect(dimensions.height / dimensions.width).toBeGreaterThan(1);
 });
 
+test('la ficha local usa el título localizado de TMDB sin perder sus episodios', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await search.fill('The Wrong Babysitter');
+  const card = page.locator('button.media-card').filter({ hasText: 'The Wrong Babysitter' }).first();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.click();
+  const details = page.getByRole('dialog').last();
+  await expect(details).toBeVisible();
+  await expect(details).toContainText('Muerte en familia', { timeout: 30_000 });
+  await expect(details).toContainText('Reproducir película');
+});
+
 test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas', async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

@@ -407,6 +407,44 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
   }
 
   /**
+   * Signed CDN URLs rotate independently. A stale first URL must not become
+   * the preferred source just because it still looks like an m3u8. Probe a
+   * small batch with the same public headers used by the source and keep
+   * unprobeable candidates as a later fallback for browser-only CDNs.
+   */
+  private async orderHealthyDirectStreams(streams: string[]): Promise<string[]> {
+    if (streams.length < 2) return streams;
+    const checked = await Promise.all(streams.slice(0, 6).map(async (url, index) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            ...COMMON_HEADERS,
+            Accept: "application/vnd.apple.mpegurl,application/x-mpegURL,video/*,*/*;q=0.8",
+            Referer: "https://jkanime.net/",
+            Range: "bytes=0-2048",
+          },
+          signal: controller.signal,
+        });
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        const body = await response.text().catch(() => "");
+        const healthy = (response.status === 200 || response.status === 206)
+          && (contentType.includes("mpegurl") || contentType.includes("video/") || body.trimStart().startsWith("#EXTM3U"));
+        return { url, index, healthy };
+      } catch {
+        return { url, index, healthy: false };
+      } finally {
+        clearTimeout(timer);
+      }
+    }));
+    checked.sort((a, b) => Number(b.healthy) - Number(a.healthy) || a.index - b.index);
+    const reordered = checked.map((entry) => entry.url);
+    return [...reordered, ...streams.slice(6).filter((url) => !reordered.includes(url))];
+  }
+
+  /**
    * mp4upload: la página con el .mp4 directo es /embed-{code}.html; la variante
    * plana /{code} solo sirve el HTML de descarga (sin player).
    */
@@ -555,7 +593,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       return { stream_url: "", all_available_streams: [], title };
     }
 
-    const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const { directStreams: resolvedDirectStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const directStreams = await this.orderHealthyDirectStreams(resolvedDirectStreams);
     // Enfoque infalible: máximo 2 servidores de máxima calidad por proveedor
     const topStreams: string[] = [];
     if (directStreams.length > 0) {
@@ -675,7 +714,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         const rawStreams = this.parseJkanimeServers(html);
         if (rawStreams.length === 0) continue;
 
-        const { directStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const { directStreams: resolvedDirectStreams, embedStreams } = await this.resolveCandidates(rawStreams);
+    const directStreams = await this.orderHealthyDirectStreams(resolvedDirectStreams);
         const topStreams: string[] = [];
         if (directStreams.length > 0) {
           topStreams.push(directStreams[0]);

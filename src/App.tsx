@@ -397,18 +397,38 @@ export function App() {
     let isCancelled = false;
     const fetchServerSearch = async () => {
       try {
-        const publicRes = await fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`);
-        const res = publicRes.ok
-          ? publicRes
-          : await fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`);
-        if (res.ok && !isCancelled) {
-          const data = await res.json();
+        // TMDB is the public identity catalog, while the local row carries
+        // provider links, episodes and repaired metadata. Query both in
+        // parallel; using TMDB alone hides playable local matches whenever a
+        // search result happens to exist there.
+        const [publicRes, localRes] = await Promise.all([
+          fetch(`/api/v1/catalog/public?kind=all&query=${encodeURIComponent(query)}&limit=100`),
+          fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`),
+        ]);
+        if (isCancelled) return;
+
+        const readShows = async (response: Response): Promise<Show[]> => {
+          if (!response.ok) return [];
+          const data = await response.json();
           const list = Array.isArray(data) ? data : data.shows || [];
-          if (Array.isArray(list)) {
-            const mapped: Show[] = list.map(mapCatalogShow);
-            setServerSearchResults(mapped);
-          }
+          return Array.isArray(list) ? list.map(mapCatalogShow) : [];
+        };
+        const [localShows, publicShows] = await Promise.all([
+          readShows(localRes),
+          readShows(publicRes),
+        ]);
+
+        // Prefer the local record for a shared TMDB identity because it keeps
+        // the provider-aware id and source metadata needed by playback.
+        const merged = new Map<string, Show>();
+        for (const show of [...localShows, ...publicShows]) {
+          const category = String(show.category || show.kind || 'media').toLowerCase();
+          const key = show.tmdb_id
+            ? `tmdb:${category}:${show.tmdb_id}`
+            : `id:${show.id}`;
+          if (!merged.has(key)) merged.set(key, show);
         }
+        setServerSearchResults([...merged.values()]);
       } catch (e) {
         console.warn('Error en búsqueda server-side:', e);
       }

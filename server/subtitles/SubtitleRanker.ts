@@ -15,7 +15,10 @@ function releaseScore(candidate: SubtitleCandidate): number {
   if (/bluray|blu[- .]?ray/.test(release)) score += 12;
   if (/amzn|amazon|nf|netflix/.test(release)) score += 8;
   if (candidate.hearingImpaired) score -= 2;
-  if (candidate.forced) score += 2;
+  // Forced subtitles normally contain only signs / foreign-language dialogue.
+  // Keep them available as an explicit alternative, but do not let a tiny
+  // metadata bonus make them the default over a complete track.
+  if (candidate.forced) score -= 12;
   if (candidate.fps) score += 1;
   return score;
 }
@@ -32,8 +35,16 @@ export function rankSubtitleCandidates(
   const ranked = candidates.filter((candidate) => order.includes(candidate.language)).map((candidate, index) => ({
     candidate: { ...candidate },
     index,
+    languageRank: order.indexOf(candidate.language),
     score: languageScore(candidate.language, order) + releaseScore(candidate) + (candidate.score || 0),
-  })).sort((a, b) => b.score - a.score || a.index - b.index);
+  })).sort((a, b) => {
+    // Language preference remains authoritative. Within the same language a
+    // complete subtitle is always offered before a Forced-only rendition.
+    if (a.languageRank !== b.languageRank) return a.languageRank - b.languageRank;
+    const forcedDelta = Number(Boolean(a.candidate.forced)) - Number(Boolean(b.candidate.forced));
+    if (forcedDelta !== 0) return forcedDelta;
+    return b.score - a.score || a.index - b.index;
+  });
 
   const grouped = new Map<string, typeof ranked>();
   for (const item of ranked) {

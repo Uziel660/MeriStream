@@ -139,7 +139,29 @@ export class ExternalIdResolver {
 }
 
 export function normalizePreferredLanguages(values?: string[]): string[] {
-  return (values || ["es-419", "es", "en"])
+  const raw = values?.length ? values : ["es-419", "es", "en"];
+  const normalized = raw
     .map((value) => normalizeLanguageTag(value))
     .filter((value): value is string => Boolean(value));
+
+  // `es` is historically what the frontend sent for "Spanish", while newer
+  // providers correctly distinguish Latin America as `es-419`. Treat both as
+  // a compatible family so improving provider metadata can never make a valid
+  // subtitle disappear. In MeriStream's Spanish-first default, Latin Spanish
+  // is preferred unless the caller explicitly requested `es-419`/`es` order.
+  const expanded: string[] = [];
+  for (const language of normalized) {
+    if (language === "es") {
+      if (!expanded.includes("es-419")) expanded.push("es-419");
+      if (!expanded.includes("es")) expanded.push("es");
+      continue;
+    }
+    if (language === "es-419") {
+      if (!expanded.includes("es-419")) expanded.push("es-419");
+      if (!expanded.includes("es")) expanded.push("es");
+      continue;
+    }
+    if (!expanded.includes(language)) expanded.push(language);
+  }
+  return expanded;
 }

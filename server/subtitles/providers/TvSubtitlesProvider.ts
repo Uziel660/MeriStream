@@ -5,6 +5,19 @@ import { normalizeSubtitleLanguage, subtitleLanguageLabel } from "../SubtitleNor
 const BASE_URL = "https://www.tvsubtitles.net";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io/meta";
 
+function uniqueTitles(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const title = String(value || "").replace(/\s+/g, " ").trim();
+    const key = title.toLowerCase();
+    if (!title || key.length < 2 || seen.has(key)) continue;
+    seen.add(key);
+    result.push(title);
+  }
+  return result;
+}
+
 export class TvSubtitlesProvider implements SubtitleProvider {
   readonly id = "tvsubtitles";
   readonly kinds = ["series"] as const;
@@ -13,14 +26,28 @@ export class TvSubtitlesProvider implements SubtitleProvider {
 
   async search(request: SubtitleSearchRequest): Promise<SubtitleCandidate[]> {
     if (!request.imdbId || request.season == null || request.episode == null) return [];
-    const title = request.title || await this.seriesTitle(request.imdbId);
-    if (!title) return [];
-    const showId = await this.findShowId(title);
-    if (!showId) return [];
-    const html = await this.fetchText(`${BASE_URL}/tvshow-${showId}-${request.season}.html`);
-    if (!html) return [];
-    const candidates = await this.parseEpisode(html, showId, request.season, request.episode, request.preferredLanguages);
-    return candidates.slice(0, 20);
+
+    // TVSubtitles indexa muchas series únicamente por su título inglés/original.
+    // Probar el título visible, aliases canónicos y Cinemeta evita perder una
+    // serie solo porque MeriStream la muestra localizada. La búsqueda sigue
+    // validando similitud antes de aceptar un showId, por lo que un alias no
+    // puede fabricar una identidad distinta por sí solo.
+    const cinemetaTitle = await this.seriesTitle(request.imdbId);
+    const titles = uniqueTitles([
+      request.title,
+      ...(request.titleAliases || []),
+      cinemetaTitle,
+    ]).slice(0, 6);
+
+    for (const title of titles) {
+      const showId = await this.findShowId(title);
+      if (!showId) continue;
+      const html = await this.fetchText(`${BASE_URL}/tvshow-${showId}-${request.season}.html`);
+      if (!html) continue;
+      const candidates = await this.parseEpisode(html, showId, request.season, request.episode, request.preferredLanguages);
+      if (candidates.length > 0) return candidates.slice(0, 20);
+    }
+    return [];
   }
 
   private async seriesTitle(imdbId: string): Promise<string> {

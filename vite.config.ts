@@ -29,5 +29,9 @@ export default defineConfig({
   },
   test: {
     exclude: [...configDefaults.exclude, "e2e/**"],
+    // Several provider tests intentionally exercise live public endpoints.
+    // Keep the default wide enough for normal network latency while each
+    // test still owns its stricter timeout when it needs one.
+    testTimeout: 30_000,
   },
 });

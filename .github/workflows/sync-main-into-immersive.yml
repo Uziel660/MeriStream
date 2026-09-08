@@ -1,0 +1,65 @@
+name: Sync main into immersive branch
+
+on:
+  push:
+    branches:
+      - integrate/immersive-ui-provider-v2
+    paths:
+      - .github/workflows/sync-main-into-immersive.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meristream_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d meristream_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meristream_test?schema=public
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integrate/immersive-ui-provider-v2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Fetch main
+        run: git fetch origin main
+      - name: Merge main preserving newer immersive conflict hunks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-ff --no-commit -X ours origin/main
+          git status --short
+          test -f .github/workflows/frontend-quality.yml
+      - name: Install dependencies
+        run: npm ci
+      - name: Prepare test database
+        run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
+      - name: Typecheck
+        run: npm run lint
+      - name: Full unit suite
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Commit and push validated merge
+        run: |
+          git commit -m "merge: sync main into immersive integration branch"
+          git push origin HEAD:integrate/immersive-ui-provider-v2

@@ -34,7 +34,8 @@ body {
 }
 .header-search:focus-within {
   background: rgba(10,12,20,.88) !important;
-  border-color: rgba(244,179,63,.42) !important;
+  border-color: rgba(255,255,255,.22) !important;
+  box-shadow: 0 14px 38px rgba(0,0,0,.34) !important;
 }
 .nav-item,
 .genre-shortcut { color: #aab1bf !important; }
@@ -153,15 +154,24 @@ body {
   backdrop-filter: blur(14px) saturate(125%);
 }
 
-/* Home content floats slightly into the featured artwork for a continuous app-like canvas. */
+/* Shared catalog surface. Only the home view overlaps the featured artwork. */
 .catalog-content {
   position: relative !important;
   z-index: 4 !important;
   width: 100% !important;
   max-width: none !important;
+  margin: 0 auto !important;
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(.9rem, 3.4vw, 3.5rem) 5rem !important;
+  background: var(--ms-immersive-bg) !important;
+}
+.catalog-content-home {
   margin: -4.75rem auto 0 !important;
-  padding: 0 clamp(.9rem, 3.4vw, 3.5rem) 5rem !important;
+  padding-top: 0 !important;
   background: linear-gradient(180deg, transparent 0, var(--ms-immersive-bg) 5.5rem, var(--ms-immersive-bg) 100%) !important;
+}
+.catalog-content-browse {
+  margin-top: 0 !important;
+  padding-top: clamp(1.25rem, 3vw, 2.5rem) !important;
 }
 .catalog-content > * + * { margin-top: clamp(2rem, 4vw, 3.25rem) !important; }
 
@@ -371,7 +381,9 @@ body {
   .feature-content > * { max-width: min(38rem, 94vw); }
   .feature h1 { font-size: clamp(3rem, 12vw, 5.25rem) !important; }
   .feature-synopsis { -webkit-line-clamp: 2 !important; }
-  .catalog-content { margin-top: -3.25rem !important; padding-inline: 1rem !important; }
+  .catalog-content { padding-inline: 1rem !important; }
+  .catalog-content-home { margin-top: -3.25rem !important; padding-top: 0 !important; }
+  .catalog-content-browse { margin-top: 0 !important; padding-top: 1.25rem !important; }
   .poster-slot { flex-basis: clamp(8.25rem, 25vw, 10.5rem) !important; }
   .details-hero { height: 60vh !important; min-height: 26rem !important; }
 }
@@ -398,7 +410,9 @@ body {
   .feature-synopsis { display: none !important; }
   .feature-actions { margin-top: 1rem !important; }
   .button-primary,.button-secondary { min-height: 44px !important; padding: .65rem .95rem !important; }
-  .catalog-content { margin-top: -2.5rem !important; padding-inline: .8rem !important; }
+  .catalog-content { padding-inline: .8rem !important; }
+  .catalog-content-home { margin-top: -2.5rem !important; padding-top: 0 !important; }
+  .catalog-content-browse { margin-top: 0 !important; padding-top: 1rem !important; }
   .row-count { display: none !important; }
   .row-navigation .icon-button { display: none !important; }
   .poster-slot { flex-basis: clamp(7.5rem, 37vw, 9.3rem) !important; }

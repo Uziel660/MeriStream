@@ -1247,7 +1247,7 @@ export function App() {
               />
             )}
 
-            <div className="catalog-content space-y-12">
+            <div className={`catalog-content space-y-12 ${activeFilter === 'all' && !searchQuery.trim() ? 'catalog-content-home' : 'catalog-content-browse'}`}>
 
               {/* CASO 0: SI HAY BÚSQUEDA ACTIVA, MOSTRAR RESULTADOS (TIENE PRIORIDAD SOBRE CUALQUIER PESTAÑA O VISTA) */}
               {searchQuery && searchQuery.trim().length >= 2 ? (

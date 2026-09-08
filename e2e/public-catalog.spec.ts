@@ -64,6 +64,33 @@ test('la búsqueda se despliega hacia la izquierda sin solapar el viewport', asy
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
   expect(geometry.searchLeft).toBeLessThan(geometry.triggerLeft);
   expect(geometry.searchRight).toBeLessThanOrEqual(geometry.width + 1);
+  const focusStyle = await page.locator('#catalog-search input').evaluate((element) => ({
+    outlineStyle: getComputedStyle(element).outlineStyle,
+  }));
+  expect(focusStyle.outlineStyle).toBe('none');
+});
+
+test('las vistas de categoría respetan el espacio del encabezado', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Anime', exact: true }).first().click();
+  const content = page.locator('.catalog-content-browse');
+  await expect(content).toBeVisible();
+  const heading = content.getByRole('heading', { name: 'Anime', exact: true });
+  await expect(heading).toBeVisible({ timeout: 60_000 });
+  const geometry = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('#main-unified-header')?.getBoundingClientRect();
+    const title = [...document.querySelectorAll<HTMLElement>('.catalog-content-browse h1, .catalog-content-browse h2, .catalog-content-browse h3')]
+      .find((element) => element.textContent?.trim() === 'Anime')?.getBoundingClientRect();
+    return {
+      headerBottom: header?.bottom ?? 0,
+      titleTop: title?.top ?? 0,
+      scrollWidth: document.documentElement.scrollWidth,
+      width: window.innerWidth,
+    };
+  });
+  expect(geometry.titleTop).toBeGreaterThanOrEqual(geometry.headerBottom - 1);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
 });
 
 test('el respaldo local queda acotado si TMDB está temporalmente fuera de servicio', async ({ page }) => {

@@ -74,6 +74,12 @@
   letter-spacing: -.055em !important;
 }
 .catalog-content { margin-top: -4.15rem !important; }
+/* Browse/category pages sit below the sticky header; only home may overlap the hero. */
+.catalog-content-browse {
+  margin-top: 0 !important;
+  padding-top: clamp(1.25rem, 3vw, 2.5rem) !important;
+  background: var(--ms-immersive-bg) !important;
+}
 
 /* Details body spans the viewport so there is no visible dark rectangle edge. */
 .details-body {
@@ -184,6 +190,10 @@
   .catalog-content {
     margin-top: -3.1rem !important;
     padding-inline: .72rem !important;
+  }
+  .catalog-content-browse {
+    margin-top: 0 !important;
+    padding-top: 1rem !important;
   }
   .section-heading { margin-bottom: .62rem !important; }
   .poster-rail { gap: .62rem !important; }

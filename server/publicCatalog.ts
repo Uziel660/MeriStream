@@ -150,7 +150,11 @@ function genreNames(item: TmdbItem): string[] {
 }
 
 function isAnimeItem(item: TmdbItem): boolean {
-  return Boolean(item.genre_ids?.includes(16) || item.genres?.some((genre) => genre.id === 16));
+  const isAnimated = Boolean(item.genre_ids?.includes(16) || item.genres?.some((genre) => genre.id === 16));
+  // TMDB uses the animation genre for western cartoons as well. Keep the
+  // public Anime rail limited to Japanese/Chinese/Korean-origin animation so
+  // a title such as Rick and Morty is not duplicated as an anime card.
+  return isAnimated && ["ja", "zh", "ko"].includes(String(item.original_language || "").toLowerCase());
 }
 
 function publicId(kind: PublicCatalogKind, tmdbId: number): string {
@@ -355,16 +359,32 @@ export async function getPublicCatalog(options: {
   const shows = responses.flatMap((response, index) => {
     const entryKind = kinds[index];
     const results = response.results || [];
-    const filtered = entryKind === "anime" && query
+    const filtered = entryKind === "anime"
       ? results.filter(isAnimeItem)
-      : results;
+      : entryKind === "series" && kind !== "series"
+        ? results
+        : entryKind === "series"
+          ? results.filter((item) => !isAnimeItem(item))
+          : results;
     // An exact anime search can be absent from TMDB's genre tags. Returning the
     // TV result is more useful than an empty search; the gateway still uses the
     // canonical TMDB id for playback.
     const effective = filtered.length || entryKind !== "anime" || !query ? filtered : results;
-    return effective.map((item) => mapTmdbItem(item, entryKind, !query && mode === "trending"));
+    return effective.map((item) => {
+      const outputKind: PublicCatalogKind = kind === "all" && entryKind === "series" && isAnimeItem(item)
+        ? "anime"
+        : entryKind;
+      return mapTmdbItem(item, outputKind, !query && mode === "trending");
+    });
   });
-  const unique = [...new Map(shows.map((show) => [show.id, show])).values()];
+  const uniqueMap = new Map<string, PublicCatalogShow>();
+  for (const show of shows) {
+    const namespace = show.kind === "movie" ? "movie" : "tv";
+    const key = `${namespace}:${show.tmdb_id}`;
+    const previous = uniqueMap.get(key);
+    if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
+  }
+  const unique = [...uniqueMap.values()];
   const totals = responses.reduce((sum, response) => sum + Number(response.total_results || response.results?.length || 0), 0);
   return {
     shows: unique.slice(0, pageSize),

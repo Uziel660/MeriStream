@@ -72,6 +72,34 @@ describe("TMDB public catalog", () => {
     expect(result.shows[39]?.tmdb_id).toBe(2019);
   });
 
+  it("searches TMDB globally for a query instead of reusing the trending batch", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      calls.push(url.toString());
+      if (url.pathname.endsWith("/search/movie")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 1,
+          total_pages: 1,
+          results: [{ id: 670292, title: "The Creator", original_language: "en", release_date: "2023-10-05" }],
+        }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/search/tv")) {
+        return new Response(JSON.stringify({ page: 1, total_results: 0, total_pages: 1, results: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", query: "The Creator", limit: 10 });
+    expect(result.source).toBe("tmdb");
+    expect(result.shows[0]?.title).toBe("The Creator");
+    expect(result.total).toBe(1);
+    expect(calls.some((url) => url.includes("/search/movie") && url.includes("query=The+Creator") && url.includes("language=es-419"))).toBe(true);
+    expect(calls.some((url) => url.includes("/trending/movie/week") || url.includes("/trending/tv/week"))).toBe(false);
+  });
+
   it("interleaves movies, series and anime in the unified public catalog", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

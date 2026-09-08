@@ -29,14 +29,14 @@ Los enlaces de página se resuelven de nuevo bajo demanda; no se persisten URLs 
 - TMDB puede devolver una imagen PNG de logotipo como `poster_path` (el caso observado de “Te irás al infierno” medía 177×21). El catálogo y las recomendaciones ahora consultan el detalle canónico para sustituir ese arte por el póster vertical; el backfill local también marca esos PNG para reparación.
 - En la pasada local se repararon 523 de 530 filas con arte PNG TMDB y `poster_path` vacío. Siete títulos no tienen póster vertical en el detalle TMDB y quedan protegidos por el placeholder/arte alternativo, sin fabricar una imagen.
 - La búsqueda consulta TMDB y PostgreSQL en paralelo y conserva la ficha local cuando ambas fuentes comparten TMDB, de modo que una coincidencia pública no oculta los providers reproducibles.
-- El reparador de identidades usa cruces TMDB→Wikidata y MAL→AniList exactos antes de búsquedas difusas. En los lotes locales de 20 y 50 filas se aplicaron 12 y 19 actualizaciones verificadas; los pendientes y conflictos se conservaron sin conjeturas. La ejecución es seca por defecto y admite aplicación por lotes acotados.
+- El reparador de identidades usa cruces TMDB→Wikidata y MAL→AniList exactos antes de búsquedas difusas. Después de los lotes iniciales de 20 y 50 filas, se aplicaron tres lotes continuables de 100, 500 y 500 filas: 27, 132 y 357 filas recibieron identidad; 103 filas adicionales conservaron AniList aunque su MAL ya estaba usado por otra ficha. Los pendientes y conflictos se conservaron sin conjeturas. La ejecución es seca por defecto, admite `--after-id` y devuelve `next_after_id` para reanudarla.
 - Subtítulos: OpenSubtitles v3, TVSubtitles, YIFY y SubtitleCat convergen a candidatos internos, deduplicación, ranking, proxy y WebVTT. Las URLs externas no se entregan al frontend.
 - Zoko informa `subtitle_mode=burned_in` cuando el endpoint `/sub` no trae pista externa; el player muestra “Subtítulos incrustados”. Los subtítulos quemados en píxeles no se pueden cambiar ni traducir desde el navegador.
 
 ## Estado de identidades y catálogo
 
 - Anime en la base local: 6.328.
-- Sin MAL: 4.711; sin AniList: 5.005 (después de dos lotes de identidad aplicados).
+- Sin MAL: 4.398; sin AniList: 4.487 (después de cinco lotes de identidad aplicados y el enriquecimiento AniList de duplicados MAL).
 - Con TMDB pero sin MAL: 3.282; con TMDB pero sin AniList: 3.521.
 - Catálogo público TMDB anime: 5.427 resultados totales; las fichas se pueden abrir aunque todavía no exista una fila importada.
 - La falta de MAL no se rellena con una conjetura: sin correspondencia confiable Zoko no se anuncia, pero VidSrc y los proveedores de catálogo siguen disponibles.

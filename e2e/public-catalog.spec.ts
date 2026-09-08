@@ -105,6 +105,26 @@ test('la búsqueda tolera un error de escritura y mantiene los títulos en otros
   await expect(page.locator('button.media-card').filter({ hasText: 'One Piece' }).first()).toBeVisible({ timeout: 30_000 });
 });
 
+test('la búsqueda del usuario consulta TMDB con el texto completo', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  const tmdbSearch = page.waitForResponse((response) => {
+    if (!response.url().includes('/api/v1/catalog/public?') || response.status() !== 200) return false;
+    const url = new URL(response.url());
+    return url.searchParams.get('query') === 'The Creator';
+  });
+  await search.fill('The Creator');
+  const response = await tmdbSearch;
+  const payload = await response.json();
+  expect(payload.source).toBe('tmdb');
+  expect(payload.total).toBeGreaterThan(0);
+  expect(payload.shows.some((show: any) => show.title === 'The Creator')).toBe(true);
+  await expect(page.locator('button.media-card').filter({ hasText: 'The Creator' }).first()).toBeVisible({ timeout: 30_000 });
+});
+
 test('Explorar catálogo carga el siguiente lote TMDB sin quedarse en 60 fichas', async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });

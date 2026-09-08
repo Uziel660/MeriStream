@@ -21,8 +21,11 @@ hiding a title that has not been ingested yet.
 Public endpoints:
 
 - `GET /api/v1/catalog/public?kind=all|movie|series|anime&limit=60` returns
-  cached TMDB cards with stable IDs such as `tmdb-movie-550` and
+  TMDB cards (with a short in-memory server cache) with stable IDs such as `tmdb-movie-550` and
   `tmdb-anime-94664`.
+- `page=1` is the small Inicio bootstrap. Explorar and the Películas, Series
+  and Anime views request later pages independently through their own “Cargar
+  más” action; no full TMDB catalog is downloaded into the browser or database.
 - `GET /api/v1/catalog/public/:kind/:tmdbId` returns the canonical detail,
   IMDb ID when TMDB exposes it, and virtual episodes whose locators use the
   form `tmdb://<kind>/<tmdbId>/<season>/<episode>`.
@@ -30,8 +33,8 @@ Public endpoints:
   frontend never needs a provider database row in order to ask for a TMDB
   title's sources.
 
-The frontend tries the public endpoint first and falls back to
-`/api/v1/shows?lite=true` only when TMDB is unavailable. The legacy `Show` and
+The frontend tries the public endpoint first and falls back to a bounded
+`/api/v1/shows?lite=true&limit=60` batch only when TMDB is unavailable. The legacy `Show` and
 `Episode` tables remain available to the admin and to gradual source imports;
 they are not the identity of a public card.
 

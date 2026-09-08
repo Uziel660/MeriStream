@@ -49,9 +49,10 @@ function inferAccessibilityFlags(candidate: SubtitleCandidate): Pick<SubtitleCan
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, " ");
+  const token = (pattern: string) => new RegExp(`(?:^|[^a-z0-9])(?:${pattern})(?:$|[^a-z0-9])`, "i").test(text);
 
-  const hearingImpaired = candidate.hearingImpaired ?? /(?:^|[\s._()[\]-])(?:sdh|cc|hearing[\s._-]*impaired|closed[\s._-]*captions?)(?:$|[\s._()[\]-])/i.test(text);
-  const forced = candidate.forced ?? /(?:^|[\s._()[\]-])(?:forced|forzado|forzada|forzados|forzadas)(?:$|[\s._()[\]-])/i.test(text);
+  const hearingImpaired = candidate.hearingImpaired ?? token("sdh|cc|hearing[\\s._-]*impaired|closed[\\s._-]*captions?");
+  const forced = candidate.forced ?? token("forced|forzado|forzada|forzados|forzadas");
   return { hearingImpaired, forced };
 }
 

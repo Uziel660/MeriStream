@@ -74,6 +74,32 @@ describe("SubtitleNormalizer", () => {
     expect(result.map((item) => item.language)).toEqual(["es-419", "es", "en"]);
   });
 
+  it("keeps a complete subtitle ahead of Forced for the same language", () => {
+    const result = rankSubtitleCandidates([
+      {
+        id: "forced",
+        provider: "opensubtitles-v3",
+        language: "es-419",
+        label: "Español Latino · Forced · WEB-DL",
+        release: "WEB-DL",
+        forced: true,
+        score: 50,
+        sourceUrl: "https://subs.example/forced.srt",
+      },
+      {
+        id: "full",
+        provider: "tvsubtitles",
+        language: "es-419",
+        label: "Español Latino · WEB-DL",
+        release: "WEB-DL",
+        forced: false,
+        sourceUrl: "https://subs.example/full.srt",
+      },
+    ], ["es-419"]);
+
+    expect(result.map((item) => item.id)).toEqual(["full", "forced"]);
+  });
+
   it("honors an explicit English preference", () => {
     const result = rankSubtitleCandidates([
       { id: "es", provider: "a", language: "es", label: "Español", sourceUrl: "https://subs5.strem.io/a.srt" },

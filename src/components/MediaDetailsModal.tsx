@@ -377,12 +377,15 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     </div>
 
                     {show.logo_url ? (
-                      <SmartImage
-                        src={show.logo_url}
-                        alt={cleanDisplayTitle(show.title)}
-                        className="details-title-logo max-h-16 sm:max-h-20 max-w-[min(84vw,26rem)] object-contain object-left drop-shadow-[0_3px_12px_rgba(0,0,0,.85)]"
-                        fallback={<h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">{cleanDisplayTitle(show.title)}</h2>}
-                      />
+                      <div>
+                        <SmartImage
+                          src={show.logo_url}
+                          alt={cleanDisplayTitle(show.title)}
+                          className="details-title-logo max-h-16 sm:max-h-20 max-w-[min(84vw,26rem)] object-contain object-left drop-shadow-[0_3px_12px_rgba(0,0,0,.85)]"
+                          fallback={<h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">{cleanDisplayTitle(show.title)}</h2>}
+                        />
+                        <h2 className="sr-only">{cleanDisplayTitle(show.title)}</h2>
+                      </div>
                     ) : (
                       <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white leading-tight text-title-shadow">
                         {cleanDisplayTitle(show.title)}

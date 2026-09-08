@@ -45,6 +45,22 @@ test('la portada renderiza tarjetas del catálogo público como un usuario', asy
   await expect(page.locator('button.media-card').first()).toBeVisible({ timeout: 60_000 });
 });
 
+test('la búsqueda se despliega hacia la izquierda sin solapar el viewport', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  const trigger = page.getByRole('button', { name: 'Abrir búsqueda' });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await expect(page.locator('#main-unified-header')).toHaveClass(/has-search-open/);
+  await expect.poll(async () => page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    width: window.innerWidth,
+    searchRight: document.querySelector<HTMLElement>('#catalog-search')?.getBoundingClientRect().right || 0,
+  }))).toMatchObject({ scrollWidth: await page.evaluate(() => window.innerWidth) });
+});
+
 test('el respaldo local queda acotado si TMDB está temporalmente fuera de servicio', async ({ page }) => {
   test.setTimeout(90_000);
   let fallbackUrl = '';

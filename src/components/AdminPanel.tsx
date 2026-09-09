@@ -35,6 +35,7 @@ import ShowEditModal from './ShowEditModal';
 import VerificationPanel from './VerificationPanel';
 import ServerTesterCard from './ServerTesterCard';
 import { GenresManager } from './GenresManager';
+import AdminOverview, { type AdminTab } from './AdminOverview';
 
 export interface AdminPlayStreamResult {
   title?: string;
@@ -56,7 +57,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const { isOpen = true, onClose } = props;
   const onPlayHandler = props.onPlayDirect || props.onPlay || props.onPlayStream;
 
-  const [activeTab, setActiveTab] = useState<'smart' | 'worker_tasks' | 'sources' | 'library' | 'verification' | 'genres'>('smart');
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [editingShow, setEditingShow] = useState<any>(null);
 
   // --- Fuentes: ratings de sitios + toggle del selector de servidores ---
@@ -351,7 +352,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   };
 
   useEffect(() => {
-    if (activeTab === 'library') {
+    if (activeTab === 'library' || activeTab === 'genres') {
       const timer = setTimeout(() => {
         setLibraryPage(1);
         loadLibrary(librarySearch, 1, false);
@@ -605,132 +606,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const hasMoreLibrary = libraryShows.length < libraryTotal;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
-      <div className="relative flex flex-col w-full max-w-5xl h-[90vh] bg-zinc-950 border border-zinc-800/90 rounded-2xl shadow-2xl overflow-hidden">
-        {/* Cabecera del Panel */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/60">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200">
-              <Globe size={16} />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold tracking-tight text-white">
-                Centro de Ingesta & Scraper Universal
-              </h2>
-              <p className="text-xs text-zinc-400">
-                Extracción automática para Anime, Películas, Series de TV, Archivos Abiertos y Streams HLS.
-              </p>
+    <div data-admin-root className="admin-shell fixed inset-0 z-50 flex bg-[#090c11] text-zinc-200 animate-in fade-in duration-200">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-zinc-800/80 bg-[#0b0f14] md:flex">
+        <div className="flex h-20 items-center gap-3 border-b border-zinc-800/80 px-5">
+          <div className="grid h-9 w-9 place-items-center rounded-lg border border-amber-300/40 bg-amber-300/10 text-amber-300"><Globe size={17} /></div>
+          <div><p className="text-sm font-semibold tracking-tight text-white">meristream.</p><p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-zinc-500">Administración</p></div>
+        </div>
+        <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5" aria-label="Secciones administrativas">
+          <div>
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Control</p>
+            <div className="space-y-1">
+              {[
+                { id: 'overview' as const, label: 'Resumen', icon: Activity, detail: 'Estado general' },
+                { id: 'library' as const, label: 'Catálogo', icon: Database, detail: libraryTotal ? `${libraryTotal.toLocaleString()} obras` : 'Gestionar obras' },
+                { id: 'sources' as const, label: 'Fuentes', icon: Star, detail: 'Prioridad y salud' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><Icon size={15} /><span className="min-w-0"><span className="block text-xs font-semibold">{item.label}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{item.detail}</span></span></button>;
+              })}
             </div>
           </div>
+          <div>
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Operaciones</p>
+            <div className="space-y-1">
+              {[
+                { id: 'verification' as const, label: 'Verificación', icon: ShieldCheck, detail: 'Auditar catálogo' },
+                { id: 'worker_tasks' as const, label: 'Cola de tareas', icon: Activity, detail: workerJobs.length ? `${workerJobs.length} tareas` : 'Sin tareas' },
+                { id: 'smart' as const, label: 'Importar / analizar', icon: Search, detail: 'Añadir contenido' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><Icon size={15} /><span className="min-w-0"><span className="block text-xs font-semibold">{item.label}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{item.detail}</span></span>{item.id === 'worker_tasks' && workerJobs.some((job) => job.status === 'running') && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-300" />}</button>;
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Configuración</p>
+            <button type="button" onClick={() => setActiveTab('genres')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === 'genres' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><ListFilter size={15} /><span><span className="block text-xs font-semibold">Géneros</span><span className="mt-0.5 block text-[10px] text-zinc-500">Visibilidad del catálogo</span></span></button>
+          </div>
+        </nav>
+        <div className="border-t border-zinc-800/80 p-4"><button type="button" onClick={onClose} className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-900 hover:text-white"><X size={14} /> Salir del panel</button></div>
+      </aside>
 
-          <button
-            onClick={onClose}
-            type="button"
-            title="Salir del panel y cerrar sesión"
-            aria-label="Salir del panel y cerrar sesión"
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-h-20 items-center justify-between gap-4 border-b border-zinc-800/80 bg-[#0b0f14] px-4 sm:px-7">
+          <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300">MeriStream / Admin</p><h2 className="mt-1 truncate text-base font-semibold text-white">{activeTab === 'overview' ? 'Resumen operativo' : activeTab === 'library' ? 'Catálogo' : activeTab === 'sources' ? 'Fuentes y servidores' : activeTab === 'verification' ? 'Verificación' : activeTab === 'worker_tasks' ? 'Cola de tareas' : activeTab === 'genres' ? 'Géneros' : 'Importar contenido'}</h2></div>
+          <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1.5 text-[10px] text-zinc-500 sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Sesión protegida</span><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white md:hidden" aria-label="Salir del panel"><X size={16} /></button></div>
+        </header>
 
-        {/* Barra de Pestañas */}
-        <div className="flex items-center gap-1.5 px-6 py-2 border-b border-zinc-800 bg-zinc-900/30 text-xs overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('smart')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'smart'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <Search size={14} />
-            Extractor Universal & Ficha
-          </button>
-
-
-          <button
-            onClick={() => setActiveTab('worker_tasks')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors relative ${
-              activeTab === 'worker_tasks'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <Activity size={14} />
-            Cola de Tareas & Worker
-            {workerJobs.filter((j) => j.status === 'running' || j.status === 'pending').length > 0 && (
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-            )}
-            {workerJobs.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300 font-mono">
-                {workerJobs.length}
-              </span>
-            )}
-          </button>
-
-
-          <button
-            onClick={() => setActiveTab('verification')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'verification'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <ShieldCheck size={14} />
-            Verificación
-          </button>
-
-          <button
-            onClick={() => setActiveTab('sources')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'sources'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <Star size={14} />
-            Fuentes
-          </button>
-
-          <button
-            onClick={() => setActiveTab('library')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ml-auto ${
-              activeTab === 'library'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <Database size={14} />
-            Catálogo ({libraryTotal > 0 ? libraryTotal.toLocaleString() : libraryShows.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab('genres')}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'genres'
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
-            }`}
-          >
-            <ListFilter size={14} />
-            Géneros
-          </button>
+        <div className="flex gap-1 overflow-x-auto border-b border-zinc-800/80 bg-[#0b0f14] px-4 py-2 md:hidden">
+          {[
+            { id: 'overview' as const, label: 'Resumen' }, { id: 'library' as const, label: 'Catálogo' }, { id: 'sources' as const, label: 'Fuentes' }, { id: 'verification' as const, label: 'Verificación' }, { id: 'worker_tasks' as const, label: 'Tareas' }, { id: 'smart' as const, label: 'Importar' }, { id: 'genres' as const, label: 'Géneros' },
+          ].map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`whitespace-nowrap rounded-md px-3 py-2 text-[11px] font-semibold ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>{item.label}</button>)}
         </div>
 
         {/* Mensaje global de éxito / feedback */}
         {importMessage && (
-          <div className="mx-6 mt-3 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between animate-in fade-in">
+          <div className="mx-4 mt-4 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-400 sm:mx-7">
             <div className="flex items-center gap-2">
               <Check size={15} />
               <span>{importMessage}</span>
@@ -743,6 +674,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
         {/* Contenido Principal con Scroll */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {activeTab === 'overview' && <AdminOverview onNavigate={setActiveTab} />}
+
           {/* ========================================================================= */}
           {/* PESTAÑA 1: EXTRACTOR UNIVERSAL Y FICHA INTELIGENTE */}
           {/* ========================================================================= */}
@@ -1891,7 +1824,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             <GenresManager shows={libraryShows} />
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };

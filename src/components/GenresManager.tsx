@@ -66,7 +66,7 @@ export const GenresManager: React.FC<GenresManagerProps> = ({ shows }) => {
     }
   }, [emptyGenres, toggleGenre]);
 
-  const visibleCount = allGenres.length - hiddenCount;
+  const visibleCount = Math.max(0, allGenres.length - hiddenCount);
 
   return (
     <div className="space-y-4">

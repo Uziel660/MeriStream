@@ -141,6 +141,7 @@ describe("adminAuth", () => {
       ["/shows/show-1", "DELETE"],
       ["/shows/show-1/force-metadata", "POST"],
       ["/network/logs", "DELETE"],
+      ["/admin/overview", "GET"],
     ] as const) {
       expect(isAdminControlPlaneRequest(path, method)).toBe(true);
     }
@@ -152,6 +153,8 @@ describe("adminAuth", () => {
       ["/catalog/episode-servers", "POST"],
       ["/extract", "POST"],
       ["/network/player-event", "POST"],
+      ["/admin/session", "GET"],
+      ["/admin/login", "POST"],
     ] as const) {
       expect(isAdminControlPlaneRequest(path, method)).toBe(false);
     }

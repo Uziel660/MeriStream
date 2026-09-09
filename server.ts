@@ -3812,6 +3812,100 @@ async function startServer() {
   app.get("/api/v1/admin/session", adminSession);
   app.post("/api/v1/admin/logout", adminLogout);
 
+  // Resumen operativo del panel: una sola consulta protegida para no hacer
+  // que la interfaz dispare una batería de peticiones al abrirse.
+  app.get("/api/v1/admin/overview", async (_req: Request, res: Response) => {
+    try {
+      const [
+        showCount,
+        mediaCount,
+        episodeCount,
+        mediaEpisodeCount,
+        sourceLinkCount,
+        missingShowTmdb,
+        missingMediaTmdb,
+        missingShowArtwork,
+        missingMediaArtwork,
+        failingLinks,
+        users,
+        duplicateTmdbGroups,
+        ratings,
+        jobs,
+        recentWorks,
+      ] = await Promise.all([
+        prisma.show.count(),
+        prisma.mediaItem.count(),
+        prisma.episode.count(),
+        prisma.mediaEpisode.count(),
+        prisma.sourceLink.count(),
+        prisma.show.count({ where: { tmdb_id: null } }),
+        prisma.mediaItem.count({ where: { tmdb_id: null } }),
+        prisma.show.count({ where: { OR: [{ poster_url: null }, { poster_url: "" }, { banner_url: null }, { banner_url: "" }] } }),
+        prisma.mediaItem.count({ where: { OR: [{ poster_url: null }, { poster_url: "" }, { backdrop_path: null }, { backdrop_path: "" }] } }),
+        prisma.sourceLink.count({ where: { source_status: { in: ["failed", "error", "dead"] } } }),
+        prisma.user.count(),
+        prisma.show.groupBy({
+          by: ["tmdb_id"],
+          where: { tmdb_id: { not: null } },
+          _count: { tmdb_id: true },
+          having: { tmdb_id: { _count: { gt: 1 } } },
+        }),
+        getAllSiteRatings(),
+        taskWorker.getAllJobs(),
+        prisma.show.findMany({
+          orderBy: { created_at: "desc" },
+          take: 6,
+          select: { id: true, title: true, category: true, poster_url: true, created_at: true },
+        }),
+      ]);
+
+      const verification = getVerificationStatus();
+      const providerHealth = getProviderHealthStats()
+        .map((provider) => ({
+          provider: provider.provider,
+          attempts: provider.totalAttempts,
+          success_rate: provider.totalAttempts > 0 ? Math.round((provider.successfulPlays / provider.totalAttempts) * 100) : 0,
+        }))
+        .sort((a, b) => b.attempts - a.attempts)
+        .slice(0, 8);
+      const activeJobs = jobs.filter((job: any) => job.status === "running").length;
+      const pendingJobs = jobs.filter((job: any) => job.status === "pending" || job.status === "paused").length;
+      const failedJobs = jobs.filter((job: any) => job.status === "failed").length;
+
+      res.setHeader("Cache-Control", "private, max-age=5, stale-while-revalidate=10");
+      res.json({
+        generated_at: new Date().toISOString(),
+        catalog: {
+          shows: showCount,
+          media_items: mediaCount,
+          episodes: episodeCount + mediaEpisodeCount,
+          source_links: sourceLinkCount,
+          missing_tmdb: missingShowTmdb + missingMediaTmdb,
+          missing_artwork: missingShowArtwork + missingMediaArtwork,
+          duplicate_tmdb_ids: duplicateTmdbGroups.length,
+        },
+        operations: {
+          active_jobs: activeJobs,
+          pending_jobs: pendingJobs,
+          failed_jobs: failedJobs,
+          verification_running: Boolean(verification.running || verification.is_running),
+          verification_phase: verification.phase,
+          last_verification_at: verification.last_run_at,
+        },
+        sources: {
+          enabled_sites: ratings.filter((rating) => rating.enabled).length,
+          total_sites: ratings.length,
+          failing_links: failingLinks,
+          provider_health: providerHealth,
+        },
+        users,
+        recent_works: recentWorks,
+      });
+    } catch (error: any) {
+      res.status(500).json({ detail: `No se pudo construir el resumen administrativo: ${error?.message || String(error)}` });
+    }
+  });
+
   // =========================================================================
   // DEBUG SIMULATOR: Click-to-Play Frontend Simulation with Network Probe
   // Simulates frontend user clicking 'Play', calling /api/v1/play/:episode_id,

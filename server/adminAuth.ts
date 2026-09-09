@@ -112,6 +112,7 @@ export function isAdminControlPlaneRequest(path: string, method: string): boolea
   }
 
   if (normalizedPath.startsWith("/network/") && normalizedPath !== "/network/player-event") return true;
+  if (normalizedPath === "/admin/overview") return true;
   if (normalizedPath === "/discover") return true;
   if (/^\/catalog\/(analyze|import-show|batch-import|crawl|reset-sample|merge-works|reconcile-sequels)$/.test(normalizedPath)) {
     return true;

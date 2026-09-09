@@ -137,7 +137,9 @@ test('la ficha local usa el título localizado de TMDB sin perder sus episodios'
   const search = page.getByRole('searchbox');
   await expect(search).toBeVisible();
   await search.fill('The Wrong Babysitter');
-  const card = page.locator('button.media-card').filter({ hasText: 'The Wrong Babysitter' }).first();
+  // TMDB returns the localized title in the card while keeping the English
+  // title as an alias for search.
+  const card = page.locator('button.media-card').filter({ hasText: 'Muerte en familia' }).first();
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.click();
   const details = page.getByRole('dialog').last();

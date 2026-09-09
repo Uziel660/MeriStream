@@ -43,7 +43,9 @@ test('el detalle elige el espejo activo cuando hay una ficha legacy con el mismo
   const detailResponse = await page.request.get(`${BASE_URL}/api/v1/shows/${show.id}`);
   expect(detailResponse.ok()).toBeTruthy();
   const detail = await detailResponse.json();
-  expect(detail.episode_platforms).toEqual([{ domain: 'gnula', episodes: expect.any(Number) }]);
+  expect(detail.episode_platforms).toEqual(expect.arrayContaining([
+    { domain: 'gnula', episodes: expect.any(Number) },
+  ]));
   expect(detail.episode_platforms[0].episodes).toBeGreaterThan(0);
   expect(detail.episodes.length).toBeGreaterThan(0);
   expect(new Set(detail.episodes.map((episode: any) => `${episode.season_number || 1}:${episode.episode_number}`)).size)

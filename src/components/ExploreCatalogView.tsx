@@ -3,6 +3,7 @@ import { Grid3X3, Film, ListFilter } from 'lucide-react';
 import type { Show } from '../types';
 import { MediaCard } from './MediaCard';
 import { CatalogFilters, type SortMode } from './CatalogFilters';
+import { FilterMenu } from './FilterMenu';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 
 type PublicCatalogKind = 'movie' | 'series' | 'anime';
@@ -104,17 +105,17 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
       )}
 
       <div className="catalog-toolbar" aria-label="Filtros del catálogo">
-        <label className="filter-control">
-          <ListFilter size={14} aria-hidden="true" />
-          <span className="sr-only">Filtrar por género</span>
-          <select value={genreFilter ?? ''} onChange={(event) => onGenreFilter(event.target.value || null)} className="filter-select" aria-label="Filtrar por género">
-            <option value="">Todos los géneros</option>
-            {validGenres.map((genre) => {
-              const count = showsCountByGenre[genre.toLowerCase()] || 0;
-              return <option key={genre} value={genre}>{genre}{count ? ` (${count})` : ''}</option>;
-            })}
-          </select>
-        </label>
+        <FilterMenu
+          ariaLabel="Filtrar por género"
+          icon={<ListFilter size={14} />}
+          value={genreFilter || ''}
+          placeholder="Todos los géneros"
+          options={[{ value: '', label: 'Todos los géneros' }, ...validGenres.map((genre) => {
+            const count = showsCountByGenre[genre.toLowerCase()] || 0;
+            return { value: genre, label: `${genre}${count ? ` · ${count}` : ''}` };
+          })]}
+          onChange={(value) => onGenreFilter(value || null)}
+        />
         <CatalogFilters years={availableYears} year={yearFilter} onYear={onYearFilter} sort={sortBy} onSort={onSortBy} />
         {genreFilter && <button type="button" className="filter-clear" onClick={() => onGenreFilter(null)}>Quitar género</button>}
       </div>

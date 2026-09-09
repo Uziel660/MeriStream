@@ -18,7 +18,7 @@ import { normalizeText, normalizeTextStrict, searchShows } from './utils/searchU
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { createPlaybackRequests } from './utils/playbackBootstrap';
-import { RefreshCw, Film, Tv, ArrowUpRight, Search, Sparkles } from 'lucide-react';
+import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -143,11 +143,18 @@ function mapCatalogShow(s: any): Show {
 function catalogIdentityKey(show: Partial<Show>): string {
   const category = String(show.category || show.kind || 'media').toLowerCase();
   const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
-  if (show.tmdb_id) return `tmdb:${namespace}:${show.tmdb_id}`;
+  const canonicalTitle = normalizeTextStrict(String(show.title || show.original_title || ''))
+    .replace(/(?:themovie|movie|pelicula|film)$/g, '');
+  if (show.tmdb_id) {
+    // Local provider rows can label a TMDB film as anime while the public
+    // result labels it movie (Jujutsu Kaisen 0 is a common example). The
+    // numeric id plus canonical title is safer here than trusting that label.
+    return `tmdb:${show.tmdb_id}:${canonicalTitle || namespace}`;
+  }
   // Legacy provider imports can contain the same work under different row
   // ids. Keep genuine releases with different years separate, but collapse
   // exact title/year duplicates before they reach a rail or search result.
-  const title = normalizeTextStrict(String(show.title || show.original_title || ''));
+  const title = canonicalTitle;
   const year = Number((show.year ?? show.release_year) || 0);
   return title
     ? `title:${category}:${title}:${Number.isFinite(year) ? year : 0}`
@@ -1444,12 +1451,6 @@ export function App() {
                 <section className="search-results-panel">
                   <div className="search-results-heading">
                     <div>
-                      <div className="search-results-kicker">
-                        <Search size={13} aria-hidden="true" />
-                        <span className="search-results-kicker-dot" aria-hidden="true" />
-                        <span>Resultados globales</span>
-                        <em>TMDB</em>
-                      </div>
                       <h3>
                         Resultados para <span className="search-query-mark">“{searchQuery}”</span>
                       </h3>

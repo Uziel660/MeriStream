@@ -1,5 +1,6 @@
 import React from 'react';
 import { Calendar, ArrowDownWideNarrow, X } from 'lucide-react';
+import { FilterMenu } from './FilterMenu';
 
 export type SortMode = 'recientes' | 'rating' | 'anio' | 'az';
 
@@ -21,22 +22,24 @@ const SORT_LABELS: Record<SortMode, string> = {
 
 export const CatalogFilters: React.FC<CatalogFiltersProps> = ({ years, year, onYear, sort, onSort, className = 'contents' }) => (
   <div className={className}>
-    <label className="filter-control">
-      <Calendar size={14} aria-hidden="true" />
-      <span className="sr-only">Filtrar por año</span>
-      <select value={year ?? ''} onChange={(e) => onYear(e.target.value ? Number(e.target.value) : null)} className="filter-select" aria-label="Filtrar por año">
-        <option value="">Todos los años</option>
-        {years.map((y) => <option key={y} value={y}>{y}</option>)}
-      </select>
-    </label>
+    <FilterMenu
+      ariaLabel="Filtrar por año"
+      icon={<Calendar size={14} />}
+      value={year === null ? '' : String(year)}
+      placeholder="Todos los años"
+      options={[{ value: '', label: 'Todos los años' }, ...years.map((value) => ({ value: String(value), label: String(value) }))]}
+      onChange={(value) => onYear(value ? Number(value) : null)}
+    />
 
-    <label className="filter-control">
-      <ArrowDownWideNarrow size={14} aria-hidden="true" />
-      <span className="sr-only">Ordenar catálogo</span>
-      <select value={sort} onChange={(e) => onSort(e.target.value as SortMode)} className="filter-select" aria-label="Ordenar catálogo">
-        {(Object.keys(SORT_LABELS) as SortMode[]).map((key) => <option key={key} value={key}>{SORT_LABELS[key]}</option>)}
-      </select>
-    </label>
+    <FilterMenu
+      ariaLabel="Ordenar catálogo"
+      icon={<ArrowDownWideNarrow size={14} />}
+      value={sort}
+      placeholder="Recientes"
+      active={sort !== 'recientes'}
+      options={(Object.keys(SORT_LABELS) as SortMode[]).map((value) => ({ value, label: SORT_LABELS[value] }))}
+      onChange={(value) => onSort(value as SortMode)}
+    />
 
     {(year !== null || sort !== 'recientes') && (
       <button type="button" onClick={() => { onYear(null); onSort('recientes'); }} className="filter-clear" aria-label="Restablecer filtros de año y orden">

@@ -26,10 +26,15 @@ const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
 // render cards that are now admin/legacy-only while the fresh request loads.
 // Bumped after the unified TMDB rail started interleaving movie/series/anime;
 // profiles with the old movie-only payload must fetch the corrected catalog.
-const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v4';
+const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v5';
 const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const PUBLIC_CATALOG_BATCH_SIZE = 60;
+// Inicio mantiene más metadata disponible para repartirla entre sus secciones,
+// pero las imágenes siguen siendo lazy y solo las cercanas al viewport se
+// descargan. Dos lotes respetan el límite seguro de 100 del endpoint público.
+const HOME_CATALOG_FIRST_BATCH_SIZE = 100;
+const HOME_CATALOG_REMAINING_BATCH_SIZE = 50;
 // The unified backend batch spans three TMDB pages per kind (20 rows each).
 // Advance by that width when loading the next batch so pages do not overlap.
 const PUBLIC_CATALOG_PAGE_STEP = 3;
@@ -178,6 +183,28 @@ function dedupeCatalogShows(items: Show[]): Show[] {
     if (currentScore > previousScore) unique.set(key, item);
   }
   return [...unique.values()];
+}
+
+function homeIdentityKey(show: Partial<Show>): string {
+  const tmdbId = Number(show.tmdb_id);
+  if (Number.isInteger(tmdbId) && tmdbId > 0) {
+    const category = String(show.category || show.kind || '').toLowerCase();
+    const family = /movie|pel[ií]cula|film/.test(category) ? 'movie' : 'tv';
+    return `tmdb-home:${family}:${tmdbId}`;
+  }
+  return `local-home:${catalogIdentityKey(show)}`;
+}
+
+function takeUniqueHomeShows(items: Show[], usedKeys: Set<string>, limit = Number.POSITIVE_INFINITY): Show[] {
+  const selected: Show[] = [];
+  for (const item of items) {
+    if (selected.length >= limit) break;
+    const key = homeIdentityKey(item);
+    if (usedKeys.has(key)) continue;
+    usedKeys.add(key);
+    selected.push(item);
+  }
+  return selected;
 }
 
 function sortSearchResults(items: Show[]): Show[] {
@@ -686,10 +713,17 @@ export function App() {
     [removeContinueWatchingItem, updateContinueWatchingItem]
   );
 
-  // 1. Cargar el catálogo UNA SOLA VEZ (lite: sin episodios, ~2MB)
-  const fetchFreshCatalog = async (isBackground = false, page = 1, append = false) => {
+  // 1. Cargar el catálogo sin episodios. En Inicio se piden hasta 150 filas
+  // ligeras; las imágenes no forman parte de este payload y cada tarjeta las
+  // resuelve con loading="lazy".
+  const fetchFreshCatalog = async (
+    isBackground = false,
+    page = 1,
+    append = false,
+    requestedLimit = PUBLIC_CATALOG_BATCH_SIZE,
+  ): Promise<{ lastFetchedPage: number; hasMore: boolean; usedPublicCatalog: boolean } | null> => {
     try {
-      const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${page}`, tmdbRequestInit());
+      const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${requestedLimit}&page=${page}`, tmdbRequestInit());
       // TMDB is the canonical public catalog. If it is temporarily
       // unavailable, keep the local safety net bounded to the same small
       // bootstrap batch instead of loading the entire database into the
@@ -736,7 +770,7 @@ export function App() {
               for (const show of safeShows) merged.set(show.id, show);
               localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ data: [...merged.values()], timestamp: Date.now() }));
             } catch {}
-            return;
+            return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
           }
 
           setPublicCatalogPage(lastFetchedPage);
@@ -747,7 +781,7 @@ export function App() {
           if (isBackground) {
             const currentIds = shows.map(s => s.id).join(',');
             const newIds = safeShows.map(s => s.id).join(',');
-            if (currentIds === newIds) return;
+            if (currentIds === newIds) return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
           }
 
           setShows(safeShows);
@@ -760,11 +794,33 @@ export function App() {
               timestamp: Date.now(),
             }));
           } catch {}
+          return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
         }
       }
     } catch (e) {
       if (!isBackground) console.error('Error cargando catálogo:', e);
     }
+    return null;
+  };
+
+  const preloadHomeCatalog = async (isBackground: boolean) => {
+    const firstBatch = await fetchFreshCatalog(
+      isBackground,
+      1,
+      false,
+      HOME_CATALOG_FIRST_BATCH_SIZE,
+    );
+    if (!firstBatch?.usedPublicCatalog || !firstBatch.hasMore) return;
+
+    // La primera respuesta ya deja Inicio usable. El segundo lote se añade en
+    // segundo plano para que el usuario no tenga que esperar 150 títulos antes
+    // de ver la pantalla, y solo contiene metadata sin precargar imágenes.
+    void fetchFreshCatalog(
+      true,
+      firstBatch.lastFetchedPage + 1,
+      true,
+      HOME_CATALOG_REMAINING_BATCH_SIZE,
+    );
   };
 
   const loadMorePublicCatalog = async () => {
@@ -908,14 +964,14 @@ export function App() {
             setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
             setIsLoading(false);
             // Still fetch fresh in background
-            fetchFreshCatalog(true);
+            void preloadHomeCatalog(true);
             return;
           }
         }
       } catch {}
 
       // 2. No cache or expired: fetch normally
-      await fetchFreshCatalog(false);
+      await preloadHomeCatalog(false);
     } catch (e) {
       console.error('Error cargando catálogo:', e);
     } finally {
@@ -1249,12 +1305,6 @@ export function App() {
     return [...set].sort((a, b) => b - a);
   }, [shows]);
 
-  // Secciones divididas para la pantalla de inicio
-  const topRatedShows = useMemo(
-    () => [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 10),
-    [shows]
-  );
-
   // Filas por GÉNERO: los géneros más comunes del catálogo, cada uno ordenado
   // por rating. Reemplaza las viejas filas "por recencia" (anime/internacional).
   const genreRows = useMemo(() => {
@@ -1290,19 +1340,22 @@ export function App() {
   const featuredShow = useMemo(() => {
     if (shows.length === 0) return null;
 
+    const watchedIds = new Set(continueWatchingItems.map((item) => item.showId).filter(Boolean));
+    const unwatchedShows = shows.filter((show) => !watchedIds.has(show.id));
+    const heroPool = unwatchedShows.length > 0 ? unwatchedShows : shows;
+
     // 1. Si el servidor nos dio un Hero Pick personalizado con buena imagen, usarlo
     if (heroRecommendation) {
       const matchInCatalog = shows.find((s) => s.id === heroRecommendation.id);
       const target = matchInCatalog || heroRecommendation;
       const hasVisuals = Boolean((target as any).backdrop_path || (target as any).banner_url || target.poster_url);
-      if (hasVisuals) {
+      if (hasVisuals && (heroPool.includes(target) || heroPool.length === 0)) {
         return target;
       }
     }
 
     // 2. Extraer afinidad de géneros basada en el historial del usuario
     const genreScore: Record<string, number> = {};
-    const watchedIds = new Set(continueWatchingItems.map((i) => i.showId));
 
     continueWatchingItems.forEach((it, idx) => {
       const show = shows.find((s) => s.id === it.showId);
@@ -1326,7 +1379,7 @@ export function App() {
     let bestShow: Show | null = null;
     let bestScore = -Infinity;
 
-    for (const s of shows) {
+    for (const s of heroPool) {
       let score = 0;
 
       // A. Calidad visual de backdrop / poster
@@ -1376,8 +1429,51 @@ export function App() {
       }
     }
 
-    return bestShow || shows[0] || null;
+    return bestShow || heroPool[0] || null;
   }, [shows, heroRecommendation, continueWatchingItems]);
+
+  // Inicio es una sola superficie editorial, aunque visualmente esté formada
+  // por varias filas. Reservar cada identidad aquí evita que el mismo título
+  // aparezca en recomendaciones, recién agregados, destacados, géneros y el
+  // catálogo inferior. Las imágenes no participan en esta reserva y siguen
+  // siendo cargadas por cada tarjeta de forma diferida.
+  const homeSections = useMemo(() => {
+    const usedKeys = new Set<string>();
+    const continueIds = new Set(continueWatchingItems.map((item) => item.showId).filter(Boolean));
+
+    // "Seguir viendo" ya ocupa una tarjeta por obra; impedir que sus títulos
+    // vuelvan a entrar en otra fila mantiene la diversidad de todo Inicio.
+    for (const show of shows) {
+      if (continueIds.has(show.id)) usedKeys.add(homeIdentityKey(show));
+    }
+    if (featuredShow) usedKeys.add(homeIdentityKey(featuredShow));
+
+    const allocateRails = (rails: typeof recommendationRails) => rails
+      .map((rail) => ({ ...rail, shows: takeUniqueHomeShows(rail.shows, usedKeys, 16) }))
+      .filter((rail) => rail.shows.length > 0);
+
+    const primaryRails = allocateRails(recommendationRails.slice(0, 2));
+    const recentShows = takeUniqueHomeShows(shows.slice(0, 50), usedKeys, 24);
+    const topRatedShows = takeUniqueHomeShows(
+      [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0)),
+      usedKeys,
+      10,
+    );
+    const secondaryRails = allocateRails(recommendationRails.slice(2));
+    const uniqueGenreRows = genreRows
+      .map((row) => ({ ...row, items: takeUniqueHomeShows(row.items, usedKeys, 24) }))
+      .filter((row) => row.items.length > 0);
+    const exploreShows = takeUniqueHomeShows(filteredShows, usedKeys);
+
+    return {
+      primaryRails,
+      recentShows,
+      topRatedShows,
+      secondaryRails,
+      genreRows: uniqueGenreRows,
+      exploreShows,
+    };
+  }, [continueWatchingItems, featuredShow, filteredShows, genreRows, recommendationRails, shows]);
 
   const activePublicKind = PUBLIC_CATALOG_KINDS.includes(activeFilter as PublicCatalogKind)
     ? activeFilter as PublicCatalogKind
@@ -1688,7 +1784,7 @@ export function App() {
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN PERSONALIZADA INTELIGENTE */}
-                  {recommendationRails.slice(0, 2).map((rail) => (
+                  {homeSections.primaryRails.map((rail) => (
                     <MediaRow
                       key={rail.id}
                       title={rail.title}
@@ -1700,24 +1796,26 @@ export function App() {
                   ))}
 
                   {/* RECÉN AGREGADOS (por fecha de ingesta, lo más nuevo primero) */}
-                  <MediaRow
-                    title="Recién agregados"
-                    items={shows.slice(0, 50)}
-                    onSelectMedia={handleOpenDetails}
-                    isLoading={isLoading}
-                  />
+                  {homeSections.recentShows.length > 0 && (
+                    <MediaRow
+                      title="Recién agregados"
+                      items={homeSections.recentShows}
+                      onSelectMedia={handleOpenDetails}
+                      isLoading={isLoading}
+                    />
+                  )}
 
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
-                  {topRatedShows.length >= 3 && (
+                  {homeSections.topRatedShows.length >= 3 && (
                     <BentoCollection
                       title="Destacados por la crítica"
-                      items={topRatedShows}
+                      items={homeSections.topRatedShows}
                       onSelectMedia={handleOpenDetails}
                     />
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN RESTANTES (ej. Descubrimientos o Género Favorito) */}
-                  {recommendationRails.slice(2).map((rail) => (
+                  {homeSections.secondaryRails.map((rail) => (
                     <MediaRow
                       key={rail.id}
                       title={rail.title}
@@ -1729,7 +1827,7 @@ export function App() {
                   ))}
 
                   {/* FILAS POR GÉNERO (ordenadas por rating dentro de cada una) */}
-                  {genreRows.map((row) => (
+                  {homeSections.genreRows.map((row) => (
                     <MediaRow
                       key={row.genre}
                       title={row.genre}
@@ -1746,7 +1844,7 @@ export function App() {
                         Explorar Catálogo
                       </h3>
                       <span className="font-mono text-xs text-zinc-500">
-                        {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
+                        {homeSections.exploreShows.length} {homeSections.exploreShows.length === 1 ? 'obra' : 'obras'}
                       </span>
                     </div>
                     <CatalogFilters
@@ -1756,14 +1854,14 @@ export function App() {
                       sort={sortBy}
                       onSort={(s) => { setSortBy(s); setCatalogPageSize(100); }}
                     />
-                    {filteredShows.length === 0 ? (
+                    {homeSections.exploreShows.length === 0 ? (
                       <div className="py-12 text-center text-sm text-zinc-500">
                         No hay obras con estos filtros.
                       </div>
                     ) : (
                       <>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                          {filteredShows.slice(0, catalogPageSize).map((item) => (
+                          {homeSections.exploreShows.slice(0, catalogPageSize).map((item) => (
                             <MediaCard
                               key={item.id}
                               media={item}
@@ -1771,14 +1869,14 @@ export function App() {
                             />
                           ))}
                         </div>
-                        {filteredShows.length > catalogPageSize && (
+                        {homeSections.exploreShows.length > catalogPageSize && (
                           <div className="flex justify-center pt-4">
                             <button
                               type="button"
                               onClick={() => setCatalogPageSize((prev) => prev + 100)}
                               className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
                             >
-                              Cargar más ({filteredShows.length - catalogPageSize} restantes)
+                              Cargar más ({homeSections.exploreShows.length - catalogPageSize} restantes)
                             </button>
                           </div>
                         )}

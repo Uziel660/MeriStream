@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { optionalAuth, AuthRequest } from "./auth";
 import { filterShowsToMainPath } from "./showService";
 import { repairTmdbPosters } from "./publicCatalog";
+import { catalogIdentityKey } from "./catalogDedup";
 
 const recommendationsRouter = Router();
 
@@ -12,6 +13,32 @@ interface RecommendedRail {
   subtitle?: string;
   reason?: string;
   shows: any[];
+}
+
+function recommendationIdentity(show: any): string {
+  const tmdbId = Number(show?.tmdb_id);
+  if (Number.isInteger(tmdbId) && tmdbId > 0) {
+    const category = String(show?.category || show?.kind || "").toLowerCase();
+    const family = /movie|pel[ií]cula|film/.test(category) ? "movie" : "tv";
+    return `tmdb-recommendation:${family}:${tmdbId}`;
+  }
+  return catalogIdentityKey(show) || `id:${String(show?.id || "")}`;
+}
+
+/** Keep recommendation rails disjoint before they reach any client surface. */
+function dedupeRecommendationRails(rails: RecommendedRail[]): RecommendedRail[] {
+  const used = new Set<string>();
+  return rails
+    .map((rail) => ({
+      ...rail,
+      shows: rail.shows.filter((show) => {
+        const key = recommendationIdentity(show);
+        if (used.has(key)) return false;
+        used.add(key);
+        return true;
+      }),
+    }))
+    .filter((rail) => rail.shows.length > 0);
 }
 
 /**
@@ -225,7 +252,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       heroCandidate = visibleTopRated[0];
     }
 
-    return res.json({ hero: heroCandidate || null, rails });
+    return res.json({ hero: heroCandidate || null, rails: dedupeRecommendationRails(rails) });
   } catch (error: any) {
     console.error("Error al calcular recomendaciones:", error);
     return res.status(500).json({ error: "Error al generar recomendaciones: " + (error?.message || error) });
@@ -286,7 +313,7 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
 
     return {
       hero: heroPick,
-      rails: [
+      rails: dedupeRecommendationRails([
         {
           id: "trending-guest",
           title: "Tendencias",
@@ -302,7 +329,7 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
           title: "Películas y Series Populares",
           shows: visibleMovies,
         },
-      ],
+      ]),
     };
   } catch {
     return { hero: null, rails: [] };

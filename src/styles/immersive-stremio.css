@@ -127,6 +127,22 @@ body {
   letter-spacing: -.06em !important;
   text-shadow: 0 4px 34px rgba(0,0,0,.58) !important;
 }
+.feature h1.feature-title--logo {
+  max-width: min(31rem, 48vw) !important;
+  width: min(31rem, 48vw) !important;
+}
+.feature-logo {
+  display: block !important;
+  width: 100% !important;
+  max-height: clamp(5rem, 15vw, 10.5rem) !important;
+  object-fit: contain !important;
+  object-position: left bottom !important;
+  filter: drop-shadow(0 5px 22px rgba(0,0,0,.64));
+}
+.feature-title--logo > span {
+  display: block;
+  max-width: 12ch;
+}
 .feature-genres {
   margin-top: 1rem !important;
   color: rgba(255,255,255,.84) !important;

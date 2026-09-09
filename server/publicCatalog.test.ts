@@ -335,7 +335,7 @@ describe("TMDB public catalog", () => {
     expect(detail?.episodes).toHaveLength(2);
     expect(detail?.episodes[0]?.id).toBe("tmdb-series-1396-s1-e1");
     expect(detail?.episodes[0]?.source_url).toBe("tmdb://series/1396/1/1");
-    expect(detail?.logo_url).toContain("/w500/breaking-bad-es.png");
+    expect(detail?.logo_url).toContain("/w780/breaking-bad-es.png");
   });
 
   it("falls back to Kitsu mappings when AniList is unavailable", async () => {

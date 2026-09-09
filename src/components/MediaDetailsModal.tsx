@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
-import { thumbBackdropUrl } from '../utils/imageSizes';
+import { heroBackdropSrcSet, heroBackdropUrl } from '../utils/imageSizes';
 import { cleanDescription, cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
@@ -227,7 +227,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   // Imagen de cabecera según fuente disponible: el backdrop 16:9 llena el hero
   // con object-cover; si solo hay poster 2:3 se muestra contenido (object-contain)
   // sobre un blur-fill del mismo poster para no recortar caras/títulos.
-  const headerBackdrop = thumbBackdropUrl(show ?? {});
+  const headerBackdrop = heroBackdropUrl(show ?? {});
+  const headerBackdropSrcSet = heroBackdropSrcSet(show ?? {});
   const hasWideHeader = Boolean((show as any)?.backdrop_path || show?.banner_url || show?.backdrop_url);
   const headerImage = headerBackdrop ?? show?.poster_url ?? undefined;
 
@@ -323,6 +324,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   {headerImage && !hasWideHeader && (
                     <SmartImage
                       src={headerImage}
+                      srcSet={headerBackdropSrcSet}
+                      sizes="100vw"
                       alt=""
                       aria-hidden="true"
                       className="absolute inset-0 h-full w-full object-cover scale-110 blur-2xl brightness-[0.35]"
@@ -331,6 +334,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   {headerImage && (
                     <SmartImage
                       src={headerImage}
+                      srcSet={headerBackdropSrcSet}
+                      sizes="100vw"
                       alt={show.title}
                       className={`relative h-full w-full ${
                         hasWideHeader

@@ -64,7 +64,7 @@ function responsiveTmdbSrcSet(
     .join(', ');
 }
 
-/** Hero: backdrop 1280px como fallback; el navegador puede bajar a 500/780. */
+/** Hero: backdrop 1280px como fallback; el navegador puede elegir original en DPR/pantallas grandes. */
 export function heroBackdropUrl(m: ImageSourceMedia): string | null {
   return (
     tmdbImageUrl(m.backdrop_path, 'w1280') ||
@@ -81,6 +81,7 @@ export function heroBackdropSrcSet(m: ImageSourceMedia): string | undefined {
     { size: 'w500', width: 500 },
     { size: 'w780', width: 780 },
     { size: 'w1280', width: 1280 },
+    { size: 'original', width: 1920 },
   ]);
 }
 

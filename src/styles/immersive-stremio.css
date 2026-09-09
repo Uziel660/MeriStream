@@ -419,12 +419,16 @@ body {
   min-width: 0 !important;
 }
 .media-card {
-  border-radius: 0 !important;
+  border-radius: .82rem !important;
   background: transparent !important;
   overflow: visible !important;
+  /* Let the poster keep its own rounded clipping while the hover transform
+     and white outline can paint beyond the card's text box. */
+  contain: layout style !important;
 }
 .media-poster {
   border-radius: .82rem !important;
+  overflow: hidden !important;
   border: 1px solid transparent !important;
   background: #11131b !important;
   box-shadow: none !important;

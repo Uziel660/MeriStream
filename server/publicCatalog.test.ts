@@ -143,6 +143,37 @@ describe("TMDB public catalog", () => {
     expect(calls.some((url) => url.includes("/trending/movie/week") || url.includes("/trending/tv/week"))).toBe(false);
   });
 
+  it("orders global search results by TMDB popularity descending", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/search/movie")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 2,
+          total_pages: 1,
+          results: [
+            { id: 1, title: "Less Popular Movie", release_date: "2024-01-01", popularity: 5 },
+            { id: 2, title: "Most Popular Movie", release_date: "2024-01-02", popularity: 80 },
+          ],
+        }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/search/tv")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 1,
+          total_pages: 1,
+          results: [{ id: 11, name: "Popular Series", first_air_date: "2024-01-01", popularity: 40 }],
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", query: "popular", limit: 10 });
+    expect(result.shows.map((show) => show.tmdb_id)).toEqual([2, 11, 1]);
+    expect(result.shows.map((show) => show.popularity)).toEqual([80, 40, 5]);
+  });
+
   it("keeps a live-action TV search out of the anime namespace", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

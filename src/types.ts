@@ -41,6 +41,8 @@ export interface Show {
   year?: number | null;
   release_year?: number | null;
   rating?: number;
+  /** TMDB popularity score used to rank live search results. */
+  popularity?: number;
   duration?: string;
   runtime_minutes?: number | null;
   quality?: string;

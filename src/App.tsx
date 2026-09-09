@@ -96,6 +96,7 @@ function mapCatalogShow(s: any): Show {
     backdrop_path: s.backdrop_path ?? null,
     category: s.category || 'movie',
     rating: Number(s.rating || 0),
+    popularity: Number.isFinite(Number(s.popularity)) ? Number(s.popularity) : undefined,
     year: s.year ?? null,
     genres: Array.isArray(s.genres)
       ? s.genres
@@ -144,6 +145,19 @@ function dedupeCatalogShows(items: Show[]): Show[] {
   return [...unique.values()];
 }
 
+function sortSearchResults(items: Show[]): Show[] {
+  return [...items].sort((a, b) => {
+    const popularityA = Number.isFinite(Number(a.popularity)) ? Number(a.popularity) : -1;
+    const popularityB = Number.isFinite(Number(b.popularity)) ? Number(b.popularity) : -1;
+    if (popularityB !== popularityA) return popularityB - popularityA;
+
+    const ratingA = Number(a.rating || 0);
+    const ratingB = Number(b.rating || 0);
+    if (ratingB !== ratingA) return ratingB - ratingA;
+    return String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' });
+  });
+}
+
 /**
  * A local provider row can have the right TMDB id but stale metadata (for
  * example Polar imported with the year of another film). When the same
@@ -157,8 +171,9 @@ function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
 
   const description = String(incoming.description || incoming.synopsis || '').trim();
   const yearConflict = Boolean(existing.year && incoming.year && existing.year !== incoming.year);
+  const incomingPopularity = Number.isFinite(Number(incoming.popularity)) ? Number(incoming.popularity) : undefined;
   const publicIsUsable = Boolean(description || incoming.poster_url || incoming.backdrop_url || incoming.rating);
-  if (!publicIsUsable && !yearConflict) return existing;
+  if (!publicIsUsable && !yearConflict && incomingPopularity === undefined) return existing;
 
   return {
     ...existing,
@@ -186,6 +201,7 @@ function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
     poster_path: incoming.poster_path || existing.poster_path,
     backdrop_path: incoming.backdrop_path || existing.backdrop_path,
     rating: incoming.rating || existing.rating,
+    popularity: incomingPopularity ?? existing.popularity,
     year: incoming.year ?? existing.year,
     release_year: incoming.year ?? existing.release_year,
     episode_count: Math.max(Number(existing.episode_count || 0), Number(incoming.episode_count || 0)),
@@ -539,7 +555,7 @@ export function App() {
           if (!previous) merged.set(key, show);
           else merged.set(key, mergeCanonicalPublicRow(previous, show));
         }
-        setServerSearchResults(dedupeCatalogShows([...merged.values()]));
+        setServerSearchResults(sortSearchResults(dedupeCatalogShows([...merged.values()])));
       } catch (e: any) {
         if (e?.name !== 'AbortError') console.warn('Error en búsqueda server-side:', e);
       }

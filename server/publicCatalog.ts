@@ -32,6 +32,7 @@ export interface PublicCatalogShow {
   poster_path: string | null;
   backdrop_path: string | null;
   rating: number;
+  popularity?: number;
   year: number | null;
   genres: string[];
   episode_count: number;
@@ -82,6 +83,7 @@ type TmdbItem = {
   poster_path?: string | null;
   backdrop_path?: string | null;
   vote_average?: number;
+  popularity?: number;
   release_date?: string;
   first_air_date?: string;
   genre_ids?: number[];
@@ -285,6 +287,7 @@ export function mapTmdbItem(item: TmdbItem, kind: PublicCatalogKind, isTrending 
     poster_path: item.poster_path || null,
     backdrop_path: item.backdrop_path || null,
     rating: Number.isFinite(Number(item.vote_average)) ? Number(item.vote_average) : 0,
+    popularity: Number.isFinite(Number(item.popularity)) ? Number(item.popularity) : 0,
     year: yearFrom(item),
     genres: genreNames(item),
     episode_count: Number(item.number_of_episodes || 0),
@@ -666,6 +669,19 @@ function interleaveCatalogShows(shows: PublicCatalogShow[]): PublicCatalogShow[]
   return ordered;
 }
 
+function sortSearchShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
+  return [...shows].sort((a, b) => {
+    const popularityA = Number.isFinite(Number(a.popularity)) ? Number(a.popularity) : -1;
+    const popularityB = Number.isFinite(Number(b.popularity)) ? Number(b.popularity) : -1;
+    if (popularityB !== popularityA) return popularityB - popularityA;
+
+    const ratingB = Number(b.rating || 0);
+    const ratingA = Number(a.rating || 0);
+    if (ratingB !== ratingA) return ratingB - ratingA;
+    return String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' });
+  });
+}
+
 async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, apiKey?: string): Promise<TmdbListResponse> {
   const language = "es-419";
   if (query) {
@@ -745,7 +761,9 @@ export async function getPublicCatalog(options: {
     if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
   }
   const unique = dedupePoorPublicDuplicates([...uniqueMap.values()]);
-  const ordered = kind === "all" ? interleaveCatalogShows(unique) : unique;
+  const ordered = query
+    ? sortSearchShows(unique)
+    : kind === "all" ? interleaveCatalogShows(unique) : unique;
   const totals = groupedResponses.reduce((sum, group) => {
     const firstPage = group.pages[0];
     return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);

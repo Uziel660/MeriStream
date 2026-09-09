@@ -161,14 +161,20 @@ test('Cinecalidad expone audio español e inglés en el player interno', async (
   const audioButton = player.getByTitle('Idioma de Audio');
   await expect(audioButton).toBeVisible();
   await audioButton.click();
-  await expect(player).toContainText('Audio ES');
-  await expect(player).toContainText('Audio EN');
+  await expect(player).toContainText('Español');
+  await expect(player).toContainText('English');
   await expect(player).toContainText(/Fuentes por idioma/i);
 
   const captionsButton = player.getByTitle('Subtítulos');
   await expect(captionsButton).toBeVisible();
   await captionsButton.click();
   await expect(player).toContainText('Español (prueba)');
+  const subtitleSettingsButton = player.getByRole('button', { name: 'Ajustar sincronización de subtítulos' });
+  await subtitleSettingsButton.click();
+  await expect(player.getByLabel('Aplicar ajuste de subtítulos desde')).toHaveValue('00:00');
+  await expect(player.getByLabel('Desfase de subtítulos en segundos')).toHaveValue('00:00');
+  await player.getByLabel('Aplicar ajuste de subtítulos desde').fill('01:30');
+  await player.getByLabel('Desfase de subtítulos en segundos').fill('+00:12');
   await player.getByRole('button', { name: 'Español (prueba)' }).click();
   // El fixture no contiene frames de video, así que el navegador puede dejar
   // la pista en modo disabled hasta que haya un buffer. Verificamos el contrato

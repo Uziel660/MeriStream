@@ -11,6 +11,7 @@ import {
   Maximize,
   Minimize,
   Settings,
+  Settings2,
   Captions,
   RotateCcw,
   RotateCw,
@@ -25,6 +26,13 @@ import {
 import { api, type PlaybackResolution } from '../api/client';
 import type { MediaStreamOut, SubtitleTrack, MediaStreamVariant, RankedStream } from '../types';
 import { parseWebVttCues, type ParsedSubtitleCue } from '../utils/subtitleFormat';
+import {
+  DEFAULT_SUBTITLE_TIMING,
+  formatSubtitleTime,
+  parseSubtitleTime,
+  subtitleTimelineTime,
+  type SubtitleTimingSettings,
+} from '../utils/subtitleTiming';
 // proxiedStreamUrl removed
 import {
   rankAndSortServers,
@@ -236,9 +244,40 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [activeSubtitleCues, setActiveSubtitleCues] = useState<ParsedSubtitleCue[]>([]);
   const [expandedAudioLanguages, setExpandedAudioLanguages] = useState<Record<string, boolean>>({});
   const [expandedSubtitleLanguages, setExpandedSubtitleLanguages] = useState<Record<string, boolean>>({});
+  const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
+  const [subtitleTiming, setSubtitleTiming] = useState<SubtitleTimingSettings>(DEFAULT_SUBTITLE_TIMING);
+  const [subtitleStartInput, setSubtitleStartInput] = useState(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.startAt));
+  const [subtitleOffsetInput, setSubtitleOffsetInput] = useState(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.offset, true));
+  const [loadedSubtitleTimingKey, setLoadedSubtitleTimingKey] = useState<string | null>(null);
   const [preferencesRevision, setPreferencesRevision] = useState(0);
   const preferenceScope = props.userId || 'guest';
   const appPreferences = getAppPreferences(preferenceScope);
+  const subtitleTimingKey = `meristream:subtitle-timing:${preferenceScope}:${String(media?.id || props.item?.id || props.title || 'current')}`;
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(subtitleTimingKey);
+      const parsed = raw ? JSON.parse(raw) as Partial<SubtitleTimingSettings> : {};
+      const next: SubtitleTimingSettings = {
+        startAt: Number.isFinite(parsed.startAt) ? Math.max(0, Number(parsed.startAt)) : 0,
+        offset: Number.isFinite(parsed.offset) ? Number(parsed.offset) : 0,
+      };
+      setSubtitleTiming(next);
+      setSubtitleStartInput(formatSubtitleTime(next.startAt));
+      setSubtitleOffsetInput(formatSubtitleTime(next.offset, true));
+      setLoadedSubtitleTimingKey(subtitleTimingKey);
+    } catch {
+      setSubtitleTiming(DEFAULT_SUBTITLE_TIMING);
+      setSubtitleStartInput(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.startAt));
+      setSubtitleOffsetInput(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.offset, true));
+      setLoadedSubtitleTimingKey(subtitleTimingKey);
+    }
+  }, [subtitleTimingKey]);
+
+  useEffect(() => {
+    if (loadedSubtitleTimingKey !== subtitleTimingKey) return;
+    window.localStorage.setItem(subtitleTimingKey, JSON.stringify(subtitleTiming));
+  }, [loadedSubtitleTimingKey, subtitleTiming, subtitleTimingKey]);
 
   useEffect(() => {
     const sync = (event: Event) => {
@@ -319,8 +358,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => controller.abort();
   }, [activeSubtitleId, subtitleSignature]);
 
+  const subtitleClockTime = subtitleTimelineTime(currentTime, subtitleTiming);
   const visibleSubtitleText = activeSubtitleCues
-    .filter((cue) => currentTime >= cue.startTime && currentTime < cue.endTime)
+    .filter((cue) => subtitleClockTime >= cue.startTime && subtitleClockTime < cue.endTime)
     .map((cue) => cue.text)
     .join('\n');
 
@@ -2015,6 +2055,34 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       setActiveSubtitleId(track.id);
     }
     setActiveMenu('none');
+    setSubtitleSettingsOpen(false);
+  };
+
+  const updateSubtitleTiming = (field: keyof SubtitleTimingSettings, rawValue: string) => {
+    if (field === 'startAt') {
+      setSubtitleStartInput(rawValue);
+      const value = parseSubtitleTime(rawValue);
+      if (value !== null) setSubtitleTiming((current) => ({ ...current, startAt: value }));
+      return;
+    }
+
+    setSubtitleOffsetInput(rawValue);
+    const value = parseSubtitleTime(rawValue, true);
+    if (value !== null) setSubtitleTiming((current) => ({ ...current, offset: value }));
+  };
+
+  const normalizeSubtitleTimingInput = (field: keyof SubtitleTimingSettings) => {
+    if (field === 'startAt') {
+      setSubtitleStartInput(formatSubtitleTime(subtitleTiming.startAt));
+    } else {
+      setSubtitleOffsetInput(formatSubtitleTime(subtitleTiming.offset, true));
+    }
+  };
+
+  const resetSubtitleTiming = () => {
+    setSubtitleTiming(DEFAULT_SUBTITLE_TIMING);
+    setSubtitleStartInput(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.startAt));
+    setSubtitleOffsetInput(formatSubtitleTime(DEFAULT_SUBTITLE_TIMING.offset, true));
   };
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -2701,6 +2769,65 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       </button>
                       {activeMenu === 'subtitles' && (
                         <div className="absolute bottom-10 right-0 z-[100] w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                          <div className="mb-1 flex items-center justify-between border-b border-zinc-800 px-2 pb-1.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">Subtítulos</span>
+                            <button
+                              type="button"
+                              onClick={() => setSubtitleSettingsOpen((open) => !open)}
+                              aria-label="Ajustar sincronización de subtítulos"
+                              aria-pressed={subtitleSettingsOpen}
+                              title="Ajustar sincronización de subtítulos"
+                              className={`rounded-md p-1 transition ${subtitleSettingsOpen ? 'bg-zinc-800 text-emerald-300' : 'text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-200'}`}
+                            >
+                              <Settings2 size={14} />
+                            </button>
+                          </div>
+
+                          {subtitleSettingsOpen && (
+                            <div className="mb-1 space-y-2 border-b border-zinc-800 px-2 pb-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-xs font-medium text-zinc-200">Ajuste independiente</p>
+                                  <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-500">Se aplica solo a este contenido.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={resetSubtitleTiming}
+                                  className="shrink-0 text-[10px] text-zinc-500 transition hover:text-zinc-200"
+                                >
+                                  Restablecer
+                                </button>
+                              </div>
+                              <label className="block text-[10px] text-zinc-400">
+                                Aplicar desde
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={subtitleStartInput}
+                                  onChange={(event) => updateSubtitleTiming('startAt', event.target.value)}
+                                  onBlur={() => normalizeSubtitleTimingInput('startAt')}
+                                  placeholder="00:00"
+                                  aria-label="Aplicar ajuste de subtítulos desde"
+                                  className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 font-mono text-xs text-zinc-100 outline-none transition focus:border-emerald-400/70"
+                                />
+                              </label>
+                              <label className="block text-[10px] text-zinc-400">
+                                Desfase en segundos
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={subtitleOffsetInput}
+                                  onChange={(event) => updateSubtitleTiming('offset', event.target.value)}
+                                  onBlur={() => normalizeSubtitleTimingInput('offset')}
+                                  placeholder="+00:00"
+                                  aria-label="Desfase de subtítulos en segundos"
+                                  className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 font-mono text-xs text-zinc-100 outline-none transition focus:border-emerald-400/70"
+                                />
+                                <span className="mt-1 block leading-relaxed text-zinc-600">Positivo retrasa los subtítulos; negativo los adelanta.</span>
+                              </label>
+                            </div>
+                          )}
+
                           <button
                             type="button"
                             onClick={() => selectSubtitle('off')}

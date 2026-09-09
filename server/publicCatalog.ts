@@ -905,6 +905,50 @@ export async function getPublicCatalogDetail(kindValue: unknown, tmdbIdValue: un
   };
 }
 
+/** Related titles for the detail sheet. Keep this separate from the main
+ * catalog so opening one title never expands the user's home payload. */
+export async function getPublicCatalogRelated(kindValue: unknown, tmdbIdValue: unknown, apiKey?: string): Promise<PublicCatalogShow[]> {
+  const kind = parseKind(kindValue);
+  const tmdbId = Number.parseInt(String(tmdbIdValue || ""), 10);
+  if (kind === "all" || !Number.isInteger(tmdbId) || tmdbId <= 0) return [];
+
+  const related = new Map<string, PublicCatalogShow>();
+
+  // Anime can live in either TMDB namespace: episodic titles use /tv while
+  // anime films use /movie. Start with the likely namespace and fall back to
+  // the other one only when it produces no usable recommendation.
+  const pathKinds = kind === "movie" ? ["movie"] : kind === "anime" ? ["tv", "movie"] : ["tv"];
+  for (const pathKind of pathKinds) {
+    const requests = [
+      `/${pathKind}/${tmdbId}/recommendations`,
+      `/${pathKind}/${tmdbId}/similar`,
+    ];
+    for (const path of requests) {
+      try {
+        const response = await tmdbFetch<TmdbListResponse>(path, {
+          language: "es-419",
+          page: 1,
+        }, apiKey);
+        for (const item of response.results || []) {
+          if (!item?.id || item.id === tmdbId) continue;
+          const mapped = mapTmdbItem(item, kind);
+          const namespace = kind === "movie" ? "movie" : kind === "anime" ? "anime" : "series";
+          const key = `${namespace}:${item.id}`;
+          if (!related.has(key)) related.set(key, mapped);
+        }
+        if (related.size >= 12) break;
+      } catch {
+        // Recommendations are an enhancement; a missing related rail must not
+        // make the actual title detail fail.
+      }
+    }
+    if (related.size >= 12) break;
+  }
+
+  const repaired = await repairTmdbPosters([...related.values()].slice(0, 18));
+  return repaired.slice(0, 12);
+}
+
 export function resetPublicCatalogCache(): void {
   cache.clear();
 }

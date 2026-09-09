@@ -53,6 +53,31 @@
 }
 .episode-card:hover { border-color: var(--ms-border-strong) !important; background: rgba(255,255,255,.05) !important; }
 .episode-play { min-width: 44px !important; min-height: 44px !important; color: var(--ms-accent) !important; }
+.details-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(7rem,1fr)); gap:.55rem; }
+.details-facts > div { min-height:4rem; display:flex; flex-direction:column; justify-content:center; gap:.22rem; padding:.7rem .8rem; border:1px solid var(--ms-border); border-radius:.85rem; background:rgba(255,255,255,.025); }
+.details-facts span { color:var(--ms-text-dim); font-size:.64rem; text-transform:uppercase; letter-spacing:.08em; }
+.details-facts strong { color:var(--ms-text); font-size:.78rem; font-weight:750; }
+.details-season-picker { width:min(15rem,72vw); }
+.details-season-trigger { width:100%; min-height:2.3rem; display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.48rem .7rem; border:1px solid var(--ms-border-strong); border-radius:.72rem; background:var(--ms-surface-2); color:var(--ms-text); font-size:.72rem; font-weight:750; text-align:left; }
+.details-season-trigger:hover { background:var(--ms-surface-3); border-color:rgba(244,179,63,.42); }
+.details-season-menu { position:absolute; z-index:30; top:calc(100% + .35rem); left:0; width:100%; max-height:15rem; overflow-y:auto; padding:.3rem; border:1px solid var(--ms-border-strong); border-radius:.85rem; background:rgba(13,16,23,.98); box-shadow:var(--ms-shadow-2); }
+.details-season-option { width:100%; min-height:2.35rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.45rem .6rem; border-radius:.58rem; color:var(--ms-text-muted); font-size:.7rem; text-align:left; }
+.details-season-option:hover,.details-season-option[aria-selected="true"] { background:rgba(244,179,63,.12); color:var(--ms-text); }
+.details-season-option[aria-selected="true"] { color:var(--ms-accent-strong); }
+.details-season-option small { color:var(--ms-text-dim); font-size:.62rem; }
+.episode-loadmore { width:100%; min-height:2.6rem; margin-top:.7rem; display:flex; align-items:center; justify-content:center; gap:.45rem; border:1px solid var(--ms-border); border-radius:.75rem; background:rgba(255,255,255,.025); color:var(--ms-text-muted); font-size:.72rem; font-weight:700; transition:background 150ms,border-color 150ms,color 150ms; }
+.episode-loadmore:hover { background:rgba(255,255,255,.07); border-color:var(--ms-border-strong); color:var(--ms-text); }
+.episode-loadmore span { color:var(--ms-text-dim); font-weight:500; }
+.details-related { padding-top:1.25rem; border-top:1px solid var(--ms-border); }
+.details-section-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:.85rem; }
+.details-section-heading h4 { margin-top:.28rem; color:var(--ms-text); font-size:1.08rem; font-weight:820; letter-spacing:-.025em; }
+.details-section-heading > span { color:var(--ms-text-dim); font-size:.68rem; }
+.details-section-kicker { display:inline-flex; align-items:center; gap:.35rem; color:var(--ms-accent); font-size:.63rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.details-related-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
+.details-related-grid .media-card-title { font-size:.72rem; }
+.details-related-grid .media-card-meta { font-size:.6rem; }
+.details-related-skeleton { aspect-ratio:2/3; border-radius:.85rem; background:linear-gradient(110deg,rgba(255,255,255,.04) 30%,rgba(255,255,255,.09) 45%,rgba(255,255,255,.04) 60%); background-size:220% 100%; animation:details-related-shimmer 1.4s linear infinite; }
+@keyframes details-related-shimmer { to { background-position:-220% 0; } }
 
 /* Authentication remains compact, readable and password-manager friendly. */
 .auth-overlay {
@@ -116,6 +141,9 @@ body:has([data-admin-root]), body:has(.admin-shell) { background: #090c11; }
     border-radius: 0 !important;
   }
   .details-scroll { padding-bottom: env(safe-area-inset-bottom); }
+  .details-related-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+  .details-related-grid .media-card-title { font-size:.66rem; }
+  .details-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .auth-panel { border-radius: 1.15rem !important; }
 }
 

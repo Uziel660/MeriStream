@@ -1,15 +1,16 @@
 // src/components/MediaDetailsModal.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw } from 'lucide-react';
+import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw, ChevronDown, Film } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { heroBackdropSrcSet, heroBackdropUrl } from '../utils/imageSizes';
 import { cleanDescription, cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
+import { MediaCard } from './MediaCard';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import { displayEpisodeTitle } from '../utils/episodeLabels';
-import type { ShowDetail, Episode } from '../types';
+import type { Show, ShowDetail, Episode } from '../types';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { WatchProgress } from './ContinueWatching';
 import { getAppPreferences } from '../utils/appPreferences';
@@ -28,6 +29,7 @@ interface MediaDetailsModalProps {
   isOpen?: boolean;
   onClose: () => void;
   onSelectEpisode: (episode: Episode, showTitle: string) => void;
+  onSelectShow?: (show: Show) => void;
   watchProgress?: WatchProgress[];
   userId?: string | null;
 }
@@ -37,6 +39,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   isOpen = Boolean(showId),
   onClose,
   onSelectEpisode,
+  onSelectShow,
   watchProgress = [],
   userId,
 }) => {
@@ -46,6 +49,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [episodeSearch, setEpisodeSearch] = useState('');
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const [visibleEpisodeCount, setVisibleEpisodeCount] = useState(12);
+  const [isSeasonMenuOpen, setIsSeasonMenuOpen] = useState(false);
+  const [relatedShows, setRelatedShows] = useState<Show[]>([]);
+  const [isLoadingRelated, setIsLoadingRelated] = useState(false);
+  const seasonMenuRef = useRef<HTMLDivElement>(null);
   const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
 
   useEffect(() => {
@@ -53,7 +61,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
     setIsLoading(true);
     setError(null);
+    setShow(null);
     setEpisodeSearch('');
+    setSelectedSeason(1);
+    setVisibleEpisodeCount(12);
+    setIsSeasonMenuOpen(false);
+    setRelatedShows([]);
+    setIsLoadingRelated(false);
 
     const publicIdentity = parsePublicCatalogId(showId);
     const detailUrl = publicIdentity
@@ -116,6 +130,46 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       .finally(() => setIsLoading(false));
   }, [isOpen, showId, userId]);
 
+  // Related titles arrive after the main sheet so they never delay playback
+  // or the useful metadata above. The API keeps the TMDB key server-side.
+  useEffect(() => {
+    const tmdbId = Number(show?.tmdb_id);
+    if (!isOpen || !show || !Number.isInteger(tmdbId) || tmdbId <= 0) {
+      setRelatedShows([]);
+      setIsLoadingRelated(false);
+      return;
+    }
+
+    const rawCategory = String(show.category || show.kind || '').toLowerCase();
+    const kind = rawCategory.includes('movie') || rawCategory.includes('pel') ? 'movie'
+      : rawCategory.includes('anime') ? 'anime' : 'series';
+    const controller = new AbortController();
+    const personalKey = getAppPreferences(userId).tmdbApiKey.trim();
+    setIsLoadingRelated(true);
+
+    fetch(`/api/v1/catalog/public/${kind}/${tmdbId}/related`, {
+      signal: controller.signal,
+      ...(personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : {}),
+    })
+      .then(async (response) => {
+        if (!response.ok) return [];
+        const payload = await response.json();
+        const items = Array.isArray(payload) ? payload : payload?.shows;
+        return Array.isArray(items) ? items as Show[] : [];
+      })
+      .then((items) => {
+        if (!controller.signal.aborted) setRelatedShows(items.filter((item) => item?.id && item.id !== show.id));
+      })
+      .catch((reason) => {
+        if (reason?.name !== 'AbortError') setRelatedShows([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoadingRelated(false);
+      });
+
+    return () => controller.abort();
+  }, [isOpen, show, userId]);
+
   // Cerrar con Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -124,6 +178,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isSeasonMenuOpen) return;
+    const handleOutsidePointer = (event: PointerEvent) => {
+      if (seasonMenuRef.current && !seasonMenuRef.current.contains(event.target as Node)) {
+        setIsSeasonMenuOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', handleOutsidePointer);
+    return () => window.removeEventListener('pointerdown', handleOutsidePointer);
+  }, [isSeasonMenuOpen]);
 
   // ── MAPA DE PROGRESO DE EPISODIOS DE ESTA OBRA ──────────────────────
   const episodeProgressMap = useMemo(() => {
@@ -209,6 +274,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         String(ep.episode_number).includes(q)
     );
   }, [seasonData, selectedSeason, episodeSearch]);
+
+  useEffect(() => {
+    // Searching can show a useful first window immediately; normal browsing
+    // stays intentionally small so a 300-episode season never floods the DOM.
+    setVisibleEpisodeCount(episodeSearch.trim() ? 50 : 12);
+  }, [selectedSeason, episodeSearch, showId]);
+
+  const displayedEpisodes = useMemo(
+    () => filteredEpisodes.slice(0, visibleEpisodeCount),
+    [filteredEpisodes, visibleEpisodeCount],
+  );
 
   const { isGenreHidden } = useHiddenGenres();
 
@@ -416,6 +492,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     </div>
                   )}
 
+                  <div className="details-facts" aria-label="Información rápida">
+                    <div><span>Formato</span><strong>{contentLabel(show.category)}</strong></div>
+                    {show.year && <div><span>Estreno</span><strong>{show.year}</strong></div>}
+                    {isMovie && (show.runtime_minutes || show.duration) && (
+                      <div><span>Duración</span><strong>{show.runtime_minutes ? `${show.runtime_minutes} min` : show.duration}</strong></div>
+                    )}
+                    {!isMovie && episodes.length > 0 && <div><span>Temporadas</span><strong>{availableSeasons.length}</strong></div>}
+                    {show.rating ? <div><span>Valoración</span><strong className="text-amber-300">★ {Number(show.rating).toFixed(1)}</strong></div> : null}
+                  </div>
+
                   {/* SINOPSIS */}
                   <div className="space-y-1.5">
                     <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider font-mono">
@@ -492,19 +578,39 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               Episodios ({episodes.length})
                             </h4>
                             {availableSeasons.length > 1 && (
-                              <label className="mt-1 flex items-center gap-2 text-xs font-normal text-zinc-400">
-                                <span>Temporadas</span>
-                                <select
-                                  aria-label="Temporadas"
-                                  value={String(selectedSeason)}
-                                  onChange={(event) => setSelectedSeason(Number(event.target.value))}
-                                  className="max-w-[min(72vw,15rem)] rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-200 outline-none transition focus:border-amber-500/70"
+                              <div ref={seasonMenuRef} className="details-season-picker relative mt-1">
+                                <button
+                                  type="button"
+                                  aria-haspopup="listbox"
+                                  aria-expanded={isSeasonMenuOpen}
+                                  aria-label="Elegir temporada"
+                                  onClick={() => setIsSeasonMenuOpen((open) => !open)}
+                                  className="details-season-trigger"
                                 >
-                                  {availableSeasons.map((season) => (
-                                    <option key={season} value={season}>Temporada {season}</option>
-                                  ))}
-                                </select>
-                              </label>
+                                  <span>Temporada {selectedSeason}</span>
+                                  <ChevronDown size={14} aria-hidden="true" />
+                                </button>
+                                {isSeasonMenuOpen && (
+                                  <div className="details-season-menu" role="listbox" aria-label="Temporadas disponibles">
+                                    {availableSeasons.map((season) => (
+                                      <button
+                                        key={season}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={selectedSeason === season}
+                                        onClick={() => {
+                                          setSelectedSeason(season);
+                                          setIsSeasonMenuOpen(false);
+                                        }}
+                                        className="details-season-option"
+                                      >
+                                        <span>Temporada {season}</span>
+                                        <small>{seasonData.seasonsMap.get(season)?.length || 0} eps.</small>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -532,8 +638,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                           No se encontraron episodios {episodeSearch ? `que coincidan con "${episodeSearch}"` : 'registrados'}.
                         </div>
                       ) : (
-                        <div className="episode-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[440px] overflow-y-auto pr-1">
-                          {filteredEpisodes.map((ep) => {
+                        <>
+                          <div className="episode-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pr-1">
+                          {displayedEpisodes.map((ep) => {
                             const prog = episodeProgressMap.get(ep.id) || episodeProgressMap.get(`num_${ep.episode_number}`);
                             const percent = prog?.percent || 0;
                             const isCompleted = percent >= 85;
@@ -603,9 +710,47 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               </button>
                             );
                           })}
-                        </div>
+                          </div>
+                          {filteredEpisodes.length > displayedEpisodes.length && (
+                            <button
+                              type="button"
+                              className="episode-loadmore"
+                              onClick={() => setVisibleEpisodeCount((count) => Math.min(count + (episodeSearch ? 50 : 12), filteredEpisodes.length))}
+                            >
+                              Mostrar más episodios <span>{displayedEpisodes.length} de {filteredEpisodes.length}</span>
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
+                  )}
+
+                  {(isLoadingRelated || relatedShows.length > 0) && (
+                    <section className="details-related" aria-labelledby="details-related-title">
+                      <div className="details-section-heading">
+                        <div>
+                          <span className="details-section-kicker"><Film size={13} /> Para continuar</span>
+                          <h4 id="details-related-title">También podría gustarte</h4>
+                        </div>
+                        {!isLoadingRelated && <span>{relatedShows.length} títulos</span>}
+                      </div>
+                      {isLoadingRelated ? (
+                        <div className="details-related-grid" aria-label="Cargando recomendaciones">
+                          {Array.from({ length: 4 }, (_, index) => <div key={index} className="details-related-skeleton" />)}
+                        </div>
+                      ) : (
+                        <div className="details-related-grid">
+                          {relatedShows.map((related) => (
+                            <MediaCard
+                              key={related.id}
+                              media={related}
+                              imageLoading="lazy"
+                              onSelectMedia={(item) => onSelectShow?.(item)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
                   )}
                 </div>
               </div>

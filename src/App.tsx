@@ -2024,6 +2024,7 @@ export function App() {
         isOpen={Boolean(selectedShowId)}
         onClose={() => setSelectedShowId(null)}
         onSelectEpisode={(ep, title) => handleSelectEpisode(ep, title)}
+        onSelectShow={(related) => setSelectedShowId(related.id)}
         watchProgress={continueWatchingItems}
         userId={user?.id}
       />

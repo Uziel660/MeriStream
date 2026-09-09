@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getPublicCatalog,
   getPublicCatalogDetail,
+  getPublicCatalogRelated,
   mapTmdbItem,
   parsePublicCatalogId,
   dedupePoorPublicDuplicates,
@@ -14,6 +15,29 @@ afterEach(() => {
 });
 
 describe("TMDB public catalog", () => {
+  it("returns unique related titles without including the current work", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/movie/100/recommendations")) {
+        return new Response(JSON.stringify({ results: [
+          { id: 100, title: "Current", poster_path: "/current.jpg" },
+          { id: 101, title: "Related one", poster_path: "/one.jpg" },
+        ] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/movie/100/similar")) {
+        return new Response(JSON.stringify({ results: [
+          { id: 101, title: "Related one", poster_path: "/one.jpg" },
+          { id: 102, title: "Related two", poster_path: "/two.jpg" },
+        ] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const related = await getPublicCatalogRelated("movie", 100);
+    expect(related.map((show) => show.tmdb_id)).toEqual([101, 102]);
+  });
+
   it("drops an empty TMDB stub when a richer same-title/year result exists", () => {
     const rich = mapTmdbItem({
       id: 483906,

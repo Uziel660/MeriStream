@@ -96,7 +96,7 @@ import { resolveByTmdb } from "./server/providerGateway";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
-import { getPublicCatalog, getPublicCatalogDetail } from "./server/publicCatalog";
+import { getPublicCatalog, getPublicCatalogDetail, getPublicCatalogRelated } from "./server/publicCatalog";
 import {
   adminLogin,
   adminLogout,
@@ -1424,6 +1424,18 @@ async function startServer() {
     } catch (error: any) {
       const status = String(error?.message || "").includes("TMDB HTTP 404") ? 404 : 502;
       return res.status(status).json({ error: error?.message || "TMDB title unavailable" });
+    }
+  });
+
+  app.get("/api/v1/catalog/public/:kind/:tmdbId/related", async (req: Request, res: Response) => {
+    try {
+      const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
+      const related = await getPublicCatalogRelated(req.params.kind, req.params.tmdbId, personalApiKey);
+      res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=300");
+      res.setHeader("X-Catalog-Source", "tmdb");
+      return res.json({ shows: related });
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || "TMDB related titles unavailable" });
     }
   });
 

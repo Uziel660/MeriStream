@@ -380,21 +380,11 @@ body {
 .section-heading p { color: #8f97a6 !important; }
 .genre-nav { gap: .45rem !important; }
 .genre-nav-label {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
+  display: inline-block;
   padding-right: .3rem;
   color: #778193 !important;
   font-size: .58rem !important;
   letter-spacing: .14em !important;
-}
-.genre-nav-label::before {
-  content: '';
-  width: .34rem;
-  height: .34rem;
-  border-radius: 999px;
-  background: #6b70cf;
-  box-shadow: 0 0 .8rem rgba(107,112,207,.8);
 }
 .genre-shortcut {
   min-height: 2rem !important;

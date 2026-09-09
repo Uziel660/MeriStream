@@ -50,6 +50,16 @@
 .header-search { height: 2.5rem !important; }
 .nav-item,
 .genre-shortcut { min-height: 2.25rem !important; }
+
+/* The account popover belongs below both header rows. Anchoring it to the
+   account button's row used to cover the quick-genre navigation. */
+@media (min-width: 981px) {
+  .header-account .account-menu {
+    top: calc(100% + 3.55rem) !important;
+    z-index: 80;
+  }
+}
+
 .site-header.is-at-top {
   background: linear-gradient(180deg, rgba(7,8,13,.86) 0%, rgba(7,8,13,.48) 58%, rgba(7,8,13,.08) 88%, transparent 100%) !important;
 }

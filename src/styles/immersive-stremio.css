@@ -435,17 +435,17 @@ body {
 }
 .media-poster {
   border-radius: .82rem !important;
-  border: 1px solid rgba(255,255,255,.065) !important;
+  border: 1px solid transparent !important;
   background: #11131b !important;
-  box-shadow: 0 8px 24px rgba(0,0,0,.15) !important;
+  box-shadow: none !important;
   transform: translateZ(0);
   transition: transform .22s cubic-bezier(.2,.7,.2,1), border-color .22s ease, box-shadow .22s ease !important;
 }
 .media-card:hover .media-poster,
 .media-card:focus-visible .media-poster {
   transform: translateY(-5px) scale(1.025) !important;
-  border-color: rgba(255,255,255,.17) !important;
-  box-shadow: 0 18px 42px rgba(0,0,0,.34) !important;
+  border-color: rgba(255,255,255,.96) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.34), 0 0 0 1px rgba(255,255,255,.96) !important;
 }
 .media-poster-image {
   border-radius: inherit !important;

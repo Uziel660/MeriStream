@@ -210,6 +210,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .poster-rail { display:grid; grid-auto-flow:column; grid-auto-columns:clamp(8.6rem,15vw,12rem); gap:clamp(.7rem,1.3vw,1rem); overflow-x:auto; overscroll-behavior-inline:contain; scroll-snap-type:x proximity; scrollbar-width:none; padding:.2rem .1rem .75rem; }
 .poster-rail::-webkit-scrollbar { display:none; }
 .poster-slot { min-width:0; scroll-snap-align:start; }
+.media-row-deferred { display:block; width:min(68%,12rem); aspect-ratio:2/3; border:1px solid rgba(255,255,255,.045); border-radius:var(--ms-radius-md); background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.012)); }
 .rail-empty { min-height:14rem; min-width:min(30rem,85vw); display:flex; align-items:center; justify-content:center; gap:.5rem; border:1px dashed var(--ms-border); border-radius:var(--ms-radius-lg); color:var(--ms-text-dim); font-size:.82rem; }
 
 /* ---------- media cards ---------- */

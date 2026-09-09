@@ -41,6 +41,15 @@ function dedupeRecommendationRails(rails: RecommendedRail[]): RecommendedRail[] 
     .filter((rail) => rail.shows.length > 0);
 }
 
+function dedupeRecommendationCandidates(shows: any[]): any[] {
+  const unique = new Map<string, any>();
+  for (const show of shows) {
+    const key = recommendationIdentity(show);
+    if (!unique.has(key)) unique.set(key, show);
+  }
+  return [...unique.values()];
+}
+
 /**
  * GET /api/recommendations
  * Devuelve rieles de recomendaciones personalizadas basadas en el historial del usuario.
@@ -183,12 +192,12 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       take: 20,
     });
 
-    const recommendedCandidates = [
+    const recommendedCandidates = dedupeRecommendationCandidates([
       ...personalizedShows,
       ...becauseYouWatchedShows,
       ...topRatedGenreShows,
       ...discoveryShows,
-    ];
+    ]);
     const repairedRecommended = await repairTmdbPosters(recommendedCandidates as any[]);
     const repairedById = new Map(repairedRecommended.map((show: any) => [show.id, show]));
     const playableRecommended = await filterShowsToMainPath(repairedRecommended as any[]);
@@ -295,7 +304,12 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
       }),
     ]);
 
-    const allCandidates = [...topHeroPicks, ...popularAnime, ...topMoviesSeries, ...trendingAll];
+    const allCandidates = dedupeRecommendationCandidates([
+      ...topHeroPicks,
+      ...popularAnime,
+      ...topMoviesSeries,
+      ...trendingAll,
+    ]);
     const repairedCandidates = await repairTmdbPosters(allCandidates as any[]);
     const repairedById = new Map(repairedCandidates.map((show: any) => [show.id, show]));
     const playable = await filterShowsToMainPath(repairedCandidates as any[]);

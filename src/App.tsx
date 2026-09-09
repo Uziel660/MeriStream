@@ -30,6 +30,10 @@ const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v5';
 const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const PUBLIC_CATALOG_BATCH_SIZE = 60;
+const HOME_GRID_INITIAL_SIZE = 48;
+const HOME_RAIL_MAX_ITEMS = 12;
+const HOME_RAIL_MIN_ITEMS = 8;
+const HOME_GENRE_MAX_ITEMS = 12;
 // Inicio mantiene más metadata disponible para repartirla entre sus secciones,
 // pero las imágenes siguen siendo lazy y solo las cercanas al viewport se
 // descargan. Dos lotes respetan el límite seguro de 100 del endpoint público.
@@ -281,7 +285,7 @@ export function App() {
   const [gridPageSize, setGridPageSize] = useState(100);
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
-  const [catalogPageSize, setCatalogPageSize] = useState(100);
+  const [catalogPageSize, setCatalogPageSize] = useState(HOME_GRID_INITIAL_SIZE);
   const [publicCatalogPage, setPublicCatalogPage] = useState(1);
   const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
   const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
@@ -514,10 +518,17 @@ export function App() {
     try {
       const res = await api.getRecommendations();
       if (res?.hero) {
-        setHeroRecommendation(res.hero);
+        // Recommendations are card metadata only. Strip any accidental
+        // episode/source payload before it reaches the long-lived home state.
+        setHeroRecommendation(mapCatalogShow(res.hero));
       }
       if (Array.isArray(res?.rails)) {
-        setRecommendationRails(res.rails);
+        setRecommendationRails(res.rails.map((rail) => ({
+          ...rail,
+          shows: dedupeCatalogShows(
+            Array.isArray(rail.shows) ? rail.shows.map(mapCatalogShow) : [],
+          ).slice(0, HOME_RAIL_MAX_ITEMS),
+        })));
       }
     } catch (e) {
       console.warn('Error cargando recomendaciones:', e);
@@ -916,6 +927,7 @@ export function App() {
   const handleSelectCategory = (filter: string) => {
     setActiveFilter(filter);
     setGridPageSize(100);
+    if (filter === 'all') setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
 
     const kind = PUBLIC_CATALOG_KINDS.includes(filter as PublicCatalogKind) ? filter as PublicCatalogKind : null;
     if (kind && !publicCatalogKindLoaded[kind]) void loadMorePublicCatalogKind(kind, true);
@@ -928,7 +940,7 @@ export function App() {
 
   const handleExploreGenreFilter = (genre: string | null) => {
     setExploreGenreFilter(genre);
-    setCatalogPageSize(100);
+    setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
     if (!genre) return;
     const genreKey = publicGenreKey(genre);
     if (PUBLIC_GENRE_IDS[genreKey] && !Object.prototype.hasOwnProperty.call(publicGenrePages, genreKey)) {
@@ -1450,21 +1462,53 @@ export function App() {
     }
     if (featuredShow) usedKeys.add(homeIdentityKey(featuredShow));
 
+    const rankedCatalog = [...shows].sort((a, b) =>
+      Number(b.popularity || 0) - Number(a.popularity || 0) ||
+      Number(b.rating || 0) - Number(a.rating || 0) ||
+      Number(b.year || 0) - Number(a.year || 0),
+    );
+    const genresFor = (show: Show) => (Array.isArray(show.genres) ? show.genres : String(show.genres || '').split(','))
+      .map((genre) => publicGenreKey(String(genre)))
+      .filter(Boolean);
+
+    // A recommendation rail can arrive with only a few playable rows after
+    // deduplication. Complete it from the already-loaded TMDB catalog, using
+    // the rail's genre when its title tells us one. This fills the surface
+    // without duplicating a title or fetching another payload.
+    const allocateRail = (rail: (typeof recommendationRails)[number]) => {
+      const selected = takeUniqueHomeShows(rail.shows, usedKeys, HOME_RAIL_MAX_ITEMS);
+      if (selected.length < HOME_RAIL_MIN_ITEMS) {
+        const normalizedTitle = publicGenreKey(rail.title);
+        const genreMatch = normalizedTitle.startsWith('lo mejor de ')
+          ? normalizedTitle.slice('lo mejor de '.length)
+          : '';
+        const genreFallback = genreMatch
+          ? rankedCatalog.filter((show) => genresFor(show).some((genre) => genre.includes(genreMatch) || genreMatch.includes(genre)))
+          : [];
+        const fallback = [...genreFallback, ...rankedCatalog];
+        selected.push(...takeUniqueHomeShows(fallback, usedKeys, HOME_RAIL_MAX_ITEMS - selected.length));
+      }
+      return { ...rail, shows: selected };
+    };
+
     const allocateRails = (rails: typeof recommendationRails) => rails
-      .map((rail) => ({ ...rail, shows: takeUniqueHomeShows(rail.shows, usedKeys, 16) }))
+      .map(allocateRail)
       .filter((rail) => rail.shows.length > 0);
 
     const primaryRails = allocateRails(recommendationRails.slice(0, 2));
-    const recentShows = takeUniqueHomeShows(shows.slice(0, 50), usedKeys, 24);
-    const topRatedShows = takeUniqueHomeShows(
-      [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0)),
-      usedKeys,
-      10,
-    );
+    // Reserve all recommendation rails before the secondary rows. This keeps
+    // a rail such as "Lo mejor de Acción" from collapsing to four cards just
+    // because a previous generic row consumed its same popular titles.
     const secondaryRails = allocateRails(recommendationRails.slice(2));
     const uniqueGenreRows = genreRows
-      .map((row) => ({ ...row, items: takeUniqueHomeShows(row.items, usedKeys, 24) }))
-      .filter((row) => row.items.length > 0);
+      .map((row) => ({ ...row, items: takeUniqueHomeShows(row.items, usedKeys, HOME_GENRE_MAX_ITEMS) }))
+      .filter((row) => row.items.length >= HOME_RAIL_MIN_ITEMS);
+    const recentShows = takeUniqueHomeShows(shows.slice(0, 50), usedKeys, 18);
+    const topRatedShows = takeUniqueHomeShows(
+      [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0) || Number(b.year || 0) - Number(a.year || 0)),
+      usedKeys,
+      8,
+    );
     const exploreShows = takeUniqueHomeShows(filteredShows, usedKeys);
 
     return {

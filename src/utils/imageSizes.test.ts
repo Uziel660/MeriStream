@@ -13,6 +13,8 @@ describe('card poster selection', () => {
     expect(cardPosterUrl(media)).toContain('/w342/backdrop.jpg');
     expect(cardPosterUrl(media)).not.toMatch(/\.png/i);
     expect(cardPosterSrcSet(media)).toContain('/w342/backdrop.jpg');
+    expect(cardPosterSrcSet(media)).toContain('/w780/backdrop.jpg 780w');
+    expect(cardPosterSrcSet(media)).not.toContain('/w185/');
   });
 
   it('does not generate a PNG srcset when TMDB poster_path is title art', () => {

@@ -132,9 +132,9 @@ export function cardPosterSrcSet(m: ImageSourceMedia): string | undefined {
     .map((value) => String(value || '').trim())
     .find((value) => value && !TITLE_ART_RE.test(value));
   return responsiveTmdbSrcSet(m.poster_path, fallback, [
-    { size: 'w185', width: 185 },
     { size: 'w342', width: 342 },
     { size: 'w500', width: 500 },
+    { size: 'w780', width: 780 },
   ]);
 }
 

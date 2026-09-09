@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, SlidersHorizontal } from 'lucide-react';
+import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PreferencesPanel } from './PreferencesPanel';
 import { APP_PREFERENCES_EVENT, applyAppPreferencesToDocument } from '../utils/appPreferences';
@@ -225,6 +225,16 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
 
         <div className="header-bottom">
           <nav className="primary-nav" aria-label="Navegación principal">
+            <button
+              type="button"
+              className="scroll-top-button"
+              onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })}
+              disabled={atTop}
+              aria-label="Volver arriba"
+              title="Volver arriba"
+            >
+              <ArrowUp size={15} aria-hidden="true" />
+            </button>
             {[...coreTabs, exploreTab].map(filter => (
               <button type="button" key={filter.id} onClick={() => handleSelectTab(filter.id)} aria-current={activeFilter === filter.id ? 'page' : undefined} className={activeFilter === filter.id ? 'nav-item is-active' : 'nav-item'}>
                 {filter.id === 'explore' ? 'Explorar' : filter.label}

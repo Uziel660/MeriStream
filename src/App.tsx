@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { HeroBanner } from './components/HeroBanner';
@@ -296,6 +296,8 @@ export function App() {
   const [isLoadingMorePublicGenre, setIsLoadingMorePublicGenre] = useState<Record<string, boolean>>({});
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
+  const autoLoadSentinelRef = useRef<HTMLDivElement | null>(null);
+  const autoLoadInFlightRef = useRef<string | null>(null);
 
   // Continue Watching State
   const [continueWatchingItems, setContinueWatchingItems] = useState<WatchProgress[]>(() => {
@@ -1494,10 +1496,65 @@ export function App() {
   const exploreIsLoadingMore = Boolean(exploreGenreId
     ? isLoadingMorePublicGenre[exploreGenreKey]
     : isLoadingMoreCatalog);
-  const loadMoreExploreCatalog = () => {
-    if (exploreGenreId) void loadMorePublicGenre(exploreGenreKey);
-    else void loadMorePublicCatalog();
-  };
+  const loadMoreExploreCatalog = () => exploreGenreId
+    ? loadMorePublicGenre(exploreGenreKey)
+    : loadMorePublicCatalog();
+
+  // La siguiente página se pide antes de que el usuario llegue al final. Un
+  // sentinel con IntersectionObserver evita escuchar cada evento de scroll y
+  // mantiene el trabajo fuera del hilo de interacción; las tarjetas nuevas
+  // siguen usando lazy loading para no descargar imágenes fuera de pantalla.
+  useEffect(() => {
+    const sentinel = autoLoadSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    if (searchQuery.trim().length >= 2 || activeFilter === 'recommendations') return;
+
+    const mode = activeFilter === 'all'
+      ? 'catalog:all'
+      : activePublicKind
+        ? `catalog:${activePublicKind}`
+        : activePublicGenreId
+          ? `genre:${activePublicGenreKey}`
+          : activeFilter === 'explore'
+            ? `explore:${exploreGenreId || 'all'}`
+            : null;
+    if (!mode) return;
+
+    const hasMore = activeFilter === 'all'
+      ? hasMorePublicCatalog
+      : activeFilter === 'explore'
+        ? exploreHasMore
+        : activeRemoteHasMore;
+    const loading = activeFilter === 'all'
+      ? isLoadingMoreCatalog
+      : activeFilter === 'explore'
+        ? exploreIsLoadingMore
+        : activeRemoteLoading;
+    if (!hasMore || loading) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting || autoLoadInFlightRef.current === mode) return;
+      autoLoadInFlightRef.current = mode;
+
+      const request = activeFilter === 'all'
+        ? loadMorePublicCatalog()
+        : activeFilter === 'explore'
+          ? loadMoreExploreCatalog()
+          : activePublicKind
+            ? loadMorePublicCatalogKind(activePublicKind)
+            : loadMorePublicGenre(activePublicGenreKey);
+
+      void Promise.resolve(request).then(() => undefined, () => undefined).finally(() => {
+        if (autoLoadInFlightRef.current === mode) autoLoadInFlightRef.current = null;
+      });
+    }, { rootMargin: '0px 0px 1000px 0px' });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // The loader functions are intentionally read from the active render;
+    // state changes above recreate the observer with the next cursor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilter, activePublicGenreId, activePublicGenreKey, activePublicKind, activeRemoteHasMore, activeRemoteLoading, exploreGenreId, exploreHasMore, exploreIsLoadingMore, hasMorePublicCatalog, isLoadingMoreCatalog, searchQuery]);
 
   return (
     <div className="app-shell relative min-h-screen text-zinc-100 flex flex-col">
@@ -1957,6 +2014,7 @@ export function App() {
             </div>
           )
         )}
+        <div ref={autoLoadSentinelRef} className="catalog-autoload-sentinel" aria-hidden="true" />
       </main>
       <footer className="site-footer"><span className="footer-brand">meristream.</span><span>Cine, series y anime. A tu ritmo.</span></footer>
 

@@ -1324,17 +1324,22 @@ export function App() {
 
               {/* CASO 0: SI HAY BÚSQUEDA ACTIVA, MOSTRAR RESULTADOS (TIENE PRIORIDAD SOBRE CUALQUIER PESTAÑA O VISTA) */}
               {searchQuery && searchQuery.trim().length >= 2 ? (
-                <section className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
-                    <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
-                      Resultados para "{searchQuery}"
-                    </h3>
-                    <span className="font-mono text-xs text-zinc-500">
-                      {filteredShows.length} {filteredShows.length === 1 ? 'obra' : 'obras'}
+                <section className="search-results-panel">
+                  <div className="search-results-heading">
+                    <div>
+                      <div className="search-results-kicker"><span aria-hidden="true" /> Búsqueda en TMDB</div>
+                      <h3>
+                        Resultados para <span className="search-query-mark">“{searchQuery}”</span>
+                      </h3>
+                      <p>Descubre títulos ordenados por popularidad y afinidad.</p>
+                    </div>
+                    <span className="search-results-count">
+                      <strong>{filteredShows.length}</strong> {filteredShows.length === 1 ? 'obra' : 'obras'}
                     </span>
                   </div>
 
                   <CatalogFilters
+                    className="search-filter-bar"
                     years={availableYears}
                     year={yearFilter}
                     onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
@@ -1343,11 +1348,11 @@ export function App() {
                   />
 
                   {filteredShows.length === 0 ? (
-                    <div className="py-20 text-center space-y-3">
-                      <Film size={36} className="mx-auto text-zinc-600" />
-                      <p className="text-sm text-zinc-400 font-medium">
-                        No se encontraron títulos para este criterio.
-                      </p>
+                    <div className="search-empty-state">
+                      <div className="search-empty-icon" aria-hidden="true"><Film size={28} /></div>
+                      <span className="search-empty-kicker">Sin coincidencias</span>
+                      <p>No encontramos títulos para <strong>“{searchQuery}”</strong>.</p>
+                      <small>Prueba con otro nombre, género o una búsqueda más corta.</small>
                       <button
                         type="button"
                         onClick={() => {
@@ -1355,14 +1360,14 @@ export function App() {
                           setActiveFilter('all');
                           setGridPageSize(100);
                         }}
-                        className="text-xs text-amber-400 hover:underline font-semibold"
+                        className="search-empty-reset"
                       >
-                        Restablecer filtros
+                        Limpiar búsqueda
                       </button>
                     </div>
                   ) : (
                     <>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+                      <div className="search-results-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
                         {filteredShows.slice(0, gridPageSize).map((item) => (
                           <MediaCard
                             key={item.id}

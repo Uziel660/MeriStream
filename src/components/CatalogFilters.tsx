@@ -9,6 +9,7 @@ interface CatalogFiltersProps {
   onYear: (y: number | null) => void;
   sort: SortMode;
   onSort: (s: SortMode) => void;
+  className?: string;
 }
 
 const SORT_LABELS: Record<SortMode, string> = {
@@ -18,8 +19,8 @@ const SORT_LABELS: Record<SortMode, string> = {
   az: 'A → Z',
 };
 
-export const CatalogFilters: React.FC<CatalogFiltersProps> = ({ years, year, onYear, sort, onSort }) => (
-  <div className="contents">
+export const CatalogFilters: React.FC<CatalogFiltersProps> = ({ years, year, onYear, sort, onSort, className = 'contents' }) => (
+  <div className={className}>
     <label className="filter-control">
       <Calendar size={14} aria-hidden="true" />
       <span className="sr-only">Filtrar por año</span>

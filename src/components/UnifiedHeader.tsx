@@ -231,7 +231,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
               </button>
             ))}
           </nav>
-          <nav className="genre-nav" aria-label="Géneros rápidos"><span>Géneros</span>{quickGenres.map(filter => (
+          <nav className="genre-nav" aria-label="Géneros rápidos"><span className="genre-nav-label">Explorar por</span>{quickGenres.map(filter => (
             <button type="button" key={filter.id} onClick={() => handleSelectTab(filter.id)} aria-pressed={activeFilter.toLowerCase() === filter.id.toLowerCase()} className="genre-shortcut">{filter.label}</button>
           ))}</nav>
         </div>

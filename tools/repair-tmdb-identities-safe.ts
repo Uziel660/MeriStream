@@ -12,6 +12,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { resolveTmdbIdentityCandidate, type IdentityKind, type TmdbIdentityResolution } from "../server/identity/tmdbIdentityResolver";
+import { normalizeTitleKey } from "../server/utils/titleNormalizer";
 
 interface ReportEntry {
   model: "Show" | "MediaItem";
@@ -27,11 +28,14 @@ interface Summary {
   dryRun: boolean;
   considered: number;
   highConfidence: number;
+  rejectedHigh: number;
   inherited: number;
   mediumConfidence: number;
   unresolved: number;
   applied: number;
   errors: number;
+  nextAfterShowId: string | null;
+  nextAfterMediaId: string | null;
 }
 
 function parseArgs() {
@@ -46,6 +50,8 @@ function parseArgs() {
     apply: args.includes("--apply"),
     limit: Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : undefined,
     concurrency: Math.min(8, Math.max(1, Number.isFinite(concurrencyRaw) ? Math.floor(concurrencyRaw) : 3)),
+    afterShowId: value("--after-show-id"),
+    afterMediaId: value("--after-media-id"),
     reportFile: value("--report"),
   };
 }
@@ -79,6 +85,19 @@ function compatibleShowCategories(kind: IdentityKind): string[] {
   return ["movie", "pelicula", "película"];
 }
 
+/**
+ * Las aliases de proveedores pueden estar contaminadas (por ejemplo, el
+ * título visible pertenece a una obra y el alias japonés a otra). Una
+ * coincidencia HIGH solo se puede aplicar automáticamente si coincide con el
+ * título canónico del registro o proviene de un IMDb existente.
+ */
+function isSafeHighMatch(title: string, resolution: TmdbIdentityResolution): boolean {
+  return resolution.confidence === "high" && (
+    resolution.source === "imdb" ||
+    normalizeTitleKey(title) === normalizeTitleKey(resolution.matchedAlias)
+  );
+}
+
 async function writeReport(target: string | undefined, summary: Summary, entries: ReportEntry[]): Promise<void> {
   if (!target) return;
   const fs = await import("node:fs/promises");
@@ -107,16 +126,22 @@ async function main(): Promise<void> {
     dryRun: !opts.apply,
     considered: 0,
     highConfidence: 0,
+    rejectedHigh: 0,
     inherited: 0,
     mediumConfidence: 0,
     unresolved: 0,
     applied: 0,
     errors: 0,
+    nextAfterShowId: null,
+    nextAfterMediaId: null,
   };
 
   try {
     const shows = await prisma.show.findMany({
-      where: { tmdb_id: null },
+      where: {
+        tmdb_id: null,
+        ...(opts.afterShowId ? { id: { gt: opts.afterShowId } } : {}),
+      },
       orderBy: { id: "asc" },
       take: opts.limit,
       select: {
@@ -125,34 +150,86 @@ async function main(): Promise<void> {
         original_title: true,
         english_title: true,
         japanese_title: true,
+        normalized_title: true,
+        base_normalized_title: true,
         year: true,
         category: true,
       },
     });
+    summary.nextAfterShowId = shows.at(-1)?.id || null;
 
     await mapConcurrent(shows, opts.concurrency, async (show) => {
       summary.considered++;
       const kind = normalizeKind(show.category);
+      const year = validYear(show.year);
       try {
+        const titleKeys = uniqueAliases([
+          show.title,
+          show.normalized_title,
+          show.base_normalized_title,
+        ]);
+        const linked = await prisma.show.findFirst({
+          where: {
+            id: { not: show.id },
+            tmdb_id: { not: null },
+            category: { in: compatibleShowCategories(kind) },
+            ...(year ? { year } : {}),
+            OR: [
+              { normalized_title: { in: titleKeys } },
+              ...(year ? [{ base_normalized_title: { in: titleKeys } }] : []),
+            ],
+          },
+          select: { tmdb_id: true },
+          orderBy: { created_at: "asc" },
+        });
+        if (linked?.tmdb_id) {
+          summary.inherited++;
+          if (opts.apply) {
+            const updated = await prisma.show.updateMany({ where: { id: show.id, tmdb_id: null }, data: { tmdb_id: linked.tmdb_id } });
+            if (updated.count > 0) summary.applied++;
+          }
+          report.push({
+            model: "Show", id: show.id, title: show.title, year, kind, resolution: {
+              tmdbId: linked.tmdb_id,
+              mediaType: kind === "movie" ? "movie" : "tv",
+              title: show.title,
+              originalTitle: show.original_title,
+              year,
+              score: 1,
+              confidence: "high",
+              matchedAlias: show.title,
+              reasons: ["inherited_from_confirmed_show"],
+              source: "tmdb-search",
+            }, action: opts.apply ? "inherited" : "would_inherit",
+          });
+          return;
+        }
         const resolution = await resolveTmdbIdentityCandidate({
           title: show.title,
           aliases: uniqueAliases([show.original_title, show.english_title, show.japanese_title]),
-          year: validYear(show.year),
+          year,
           kind,
         });
-        if (resolution?.confidence === "high") {
+        if (resolution && isSafeHighMatch(show.title, resolution)) {
           summary.highConfidence++;
           if (opts.apply) {
             const updated = await prisma.show.updateMany({ where: { id: show.id, tmdb_id: null }, data: { tmdb_id: resolution.tmdbId } });
             if (updated.count > 0) summary.applied++;
           }
-          report.push({ model: "Show", id: show.id, title: show.title, year: validYear(show.year), kind, resolution, action: opts.apply ? "applied" : "would_apply" });
+          report.push({ model: "Show", id: show.id, title: show.title, year, kind, resolution, action: opts.apply ? "applied" : "would_apply" });
+        } else if (resolution?.confidence === "high") {
+          summary.rejectedHigh++;
+          report.push({
+            model: "Show", id: show.id, title: show.title, year: validYear(show.year), kind,
+            resolution: { ...resolution, reasons: [...resolution.reasons, "canonical_title_mismatch"] },
+            action: "review",
+          });
         } else if (resolution?.confidence === "medium") {
           summary.mediumConfidence++;
-          report.push({ model: "Show", id: show.id, title: show.title, year: validYear(show.year), kind, resolution, action: "review" });
+          report.push({ model: "Show", id: show.id, title: show.title, year, kind, resolution, action: "review" });
         } else {
           summary.unresolved++;
-          report.push({ model: "Show", id: show.id, title: show.title, year: validYear(show.year), kind, resolution, action: "unresolved" });
+          report.push({ model: "Show", id: show.id, title: show.title, year, kind, resolution, action: "unresolved" });
         }
       } catch (error) {
         summary.errors++;
@@ -162,7 +239,10 @@ async function main(): Promise<void> {
 
     const remaining = opts.limit ? Math.max(0, opts.limit - shows.length) : undefined;
     const mediaItems = remaining === 0 ? [] : await prisma.mediaItem.findMany({
-      where: { tmdb_id: null },
+      where: {
+        tmdb_id: null,
+        ...(opts.afterMediaId ? { id: { gt: opts.afterMediaId } } : {}),
+      },
       orderBy: { id: "asc" },
       take: remaining,
       select: {
@@ -175,6 +255,7 @@ async function main(): Promise<void> {
         kind: true,
       },
     });
+    summary.nextAfterMediaId = mediaItems.at(-1)?.id || null;
 
     await mapConcurrent(mediaItems, opts.concurrency, async (item) => {
       summary.considered++;
@@ -225,13 +306,20 @@ async function main(): Promise<void> {
           year,
           kind,
         });
-        if (resolution?.confidence === "high") {
+        if (resolution && isSafeHighMatch(item.title, resolution)) {
           summary.highConfidence++;
           if (opts.apply) {
             const updated = await prisma.mediaItem.updateMany({ where: { id: item.id, tmdb_id: null }, data: { tmdb_id: resolution.tmdbId } });
             if (updated.count > 0) summary.applied++;
           }
           report.push({ model: "MediaItem", id: item.id, title: item.title, year, kind, resolution, action: opts.apply ? "applied" : "would_apply" });
+        } else if (resolution?.confidence === "high") {
+          summary.rejectedHigh++;
+          report.push({
+            model: "MediaItem", id: item.id, title: item.title, year, kind,
+            resolution: { ...resolution, reasons: [...resolution.reasons, "canonical_title_mismatch"] },
+            action: "review",
+          });
         } else if (resolution?.confidence === "medium") {
           summary.mediumConfidence++;
           report.push({ model: "MediaItem", id: item.id, title: item.title, year, kind, resolution, action: "review" });

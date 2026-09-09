@@ -23,6 +23,7 @@
     "repair:tmdb:safe": "npx tsx tools/repair-tmdb-identities-safe.ts",
     "repair:source-languages": "npx tsx tools/repair-source-languages.ts",
     "repair:anime-identities": "npx tsx tools/repair-anime-identities.ts",
+    "sync:local-catalog": "npx tsx tools/sync-local-catalog-index.ts",
     "repair:catalog-links": "npx tsx tools/cleanup-landing-pages-from-episodes.ts",
     "reconcile:tmdb": "npx tsx tools/reconcile-tmdb-seasons.ts",
     "backfill:canonical": "npx tsx tools/backfill-canonical-locators.ts",

@@ -6,6 +6,7 @@
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { findLocalAnimeIdentity } from "../server/localCatalogIndex";
 
 type AnimeCandidate = {
   id: number;
@@ -232,6 +233,41 @@ async function resolve(row: any): Promise<Result> {
         reason: "exact_mal_wikidata",
       };
     }
+  }
+  // El índice local se consulta antes de tocar servicios remotos. Es una
+  // relación exacta por título normalizado y año aproximado; nunca sustituye
+  // un MAL ya existente.
+  const local = await findLocalAnimeIdentity(
+    [row.title, row.english_title, row.original_title, row.japanese_title].filter(Boolean),
+    row.year,
+  );
+  if (local && (local.malId || local.anilistId)) {
+    if (row.mal_id && local.malId && row.mal_id !== local.malId) {
+      if (args().apply && !row.anilist_id && local.anilistId) {
+        await prisma.show.update({ where: { id: row.id }, data: { anilist_id: local.anilistId } });
+      }
+      return { showId: row.id, title: row.title, status: "conflict", reason: `local_mal_conflict:${row.malId}` };
+    }
+    const result: Result = {
+      showId: row.id,
+      title: row.title,
+      matchedTitle: local.canonicalTitle,
+      ...(local.anilistId && !row.anilist_id ? { anilistId: local.anilistId } : {}),
+      ...(local.malId && !row.mal_id ? { malId: local.malId } : {}),
+      score: 1,
+      status: "updated",
+      reason: "local_index_exact",
+    };
+    if (args().apply) {
+      await prisma.show.update({
+        where: { id: row.id },
+        data: {
+          ...(row.mal_id || !local.malId ? {} : { mal_id: local.malId }),
+          ...(row.anilist_id || !local.anilistId ? {} : { anilist_id: local.anilistId }),
+        },
+      });
+    }
+    return result;
   }
   // A TMDB→Wikidata edge is an exact cross-reference. Prefer it over any
   // title search so localized legacy rows can be repaired without guessing a

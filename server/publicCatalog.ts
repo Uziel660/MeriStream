@@ -7,6 +7,8 @@
  * a title that TMDB knows about.
  */
 
+import { readExternalApiCache, writeExternalApiCache } from "./externalApiCache";
+
 export type PublicCatalogKind = "movie" | "series" | "anime";
 
 export interface PublicCatalogShow {
@@ -657,6 +659,11 @@ async function tmdbFetch<T>(path: string, params: Record<string, string | number
   const cacheKey = url.toString().replace(/([?&])api_key=[^&]+/, "$1api_key=redacted");
   const cached = cache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.value as T;
+  const persistent = await readExternalApiCache<T>("tmdb", cacheKey);
+  if (persistent) {
+    cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value: persistent });
+    return persistent;
+  }
   const response = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "MeriStream/1.0" },
     signal: AbortSignal.timeout(8_000),
@@ -664,6 +671,7 @@ async function tmdbFetch<T>(path: string, params: Record<string, string | number
   if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
   const value = await response.json() as T;
   cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value });
+  await writeExternalApiCache("tmdb", cacheKey, value, CACHE_TTL_MS);
   if (cache.size > CACHE_MAX_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (oldest) cache.delete(oldest);

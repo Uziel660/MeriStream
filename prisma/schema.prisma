@@ -109,6 +109,40 @@ model MediaItem {
   @@index([tmdb_id])
 }
 
+/// Índice de referencias externas mantenido en el servidor. No se expone al
+/// cliente: sirve para resolver identidades sin repetir búsquedas remotas.
+model LocalCatalogIndex {
+  id              String   @id @default(cuid())
+  kind            String
+  canonical_title String
+  normalized_title String
+  aliases         String   @default("") @db.Text
+  tmdb_id         Int?
+  mal_id          Int?
+  anilist_id      String?
+  kitsu_id        String?
+  anidb_id        String?
+  year            Int?
+  source          String
+  updated_at      DateTime @updatedAt
+
+  @@index([kind, normalized_title])
+  @@index([kind, tmdb_id])
+  @@index([kind, mal_id])
+  @@index([kind, anilist_id])
+}
+
+model ExternalApiCache {
+  id         String   @id @default(cuid())
+  provider   String
+  cache_key  String   @unique
+  payload    Json
+  expires_at DateTime
+  updated_at DateTime @updatedAt
+
+  @@index([provider, expires_at])
+}
+
 model SiteRating {
   id      String  @id @default(cuid())
   site    String  @unique

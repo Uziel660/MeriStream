@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowUpRight, Star, Film } from 'lucide-react';
 import { SmartImage } from './SmartImage';
 import { contentLabel } from '../utils/labels';
-import { cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
+import { cardPosterCandidates, cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
 import { cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
 import type { Show } from '../types';
 
@@ -11,11 +11,13 @@ interface MediaCardProps {
   onSelectMedia?: (media: Show) => void;
   onHover?: (media: Show) => void;
   isNew?: boolean;
+  imageLoading?: 'lazy' | 'eager';
 }
 
-export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelectMedia, onHover }) => {
+export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelectMedia, onHover, imageLoading = 'lazy' }) => {
   const title = cleanDisplayTitle(media.title);
   const genre = cleanDisplayGenres(media.genres)[0] || contentLabel(media.category);
+  const posterSources = cardPosterCandidates(media);
   return (
     <button
       type="button"
@@ -28,8 +30,10 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
       <span className="media-poster">
         <SmartImage
           src={cardPosterUrl(media)}
+          sources={posterSources}
           srcSet={cardPosterSrcSet(media)}
           alt=""
+          loading={imageLoading}
           sizes="(min-width: 1760px) 190px, (min-width: 1280px) 180px, (min-width: 768px) 22vw, 39vw"
           decoding="async"
           className="media-poster-image"

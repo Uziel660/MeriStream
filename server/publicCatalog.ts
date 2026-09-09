@@ -470,6 +470,8 @@ type PosterRepairTarget = {
   category?: PublicCatalogKind | string | null;
   poster_url?: string | null;
   poster_path?: string | null;
+  banner_url?: string | null;
+  backdrop_url?: string | null;
 };
 
 /** Fetches only the canonical TMDB artwork for a title whose list result
@@ -510,8 +512,8 @@ export async function repairTmdbPosters<T extends PosterRepairTarget>(shows: T[]
   const candidates = shows.filter((show) =>
     Number.isInteger(Number(show.tmdb_id)) &&
     Number(show.tmdb_id) > 0 &&
-    isSuspiciousPosterUrl(show.poster_url),
-  );
+    (isSuspiciousPosterUrl(show.poster_url) || !show.poster_url || !show.poster_path),
+  ).slice(0, 20);
   if (candidates.length === 0) return shows;
 
   const repaired = new Map<number, { poster_url: string; poster_path: string | null }>();

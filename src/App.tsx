@@ -1491,11 +1491,12 @@ export function App() {
                   ) : (
                     <>
                       <div className="search-results-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                        {filteredShows.slice(0, gridPageSize).map((item) => (
+                        {filteredShows.slice(0, gridPageSize).map((item, index) => (
                           <MediaCard
                             key={item.id}
                             media={item}
                             onSelectMedia={handleOpenDetails}
+                            imageLoading={index < 12 ? 'eager' : 'lazy'}
                           />
                         ))}
                       </div>

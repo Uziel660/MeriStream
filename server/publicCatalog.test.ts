@@ -311,6 +311,35 @@ describe("TMDB public catalog", () => {
     expect(result.shows[0]?.poster_url).toContain("/w500/canonical-poster.jpg");
   });
 
+  it("hydrates a missing search poster from the TMDB detail response", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/search/movie")) {
+        return new Response(JSON.stringify({
+          page: 1,
+          total_results: 1,
+          total_pages: 1,
+          results: [{ id: 777001, title: "Poster tardío", release_date: "2025-01-01" }],
+        }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/movie/777001")) {
+        return new Response(JSON.stringify({
+          id: 777001,
+          title: "Poster tardío",
+          poster_path: "/repaired-poster.jpg",
+          backdrop_path: "/repaired-backdrop.jpg",
+          release_date: "2025-01-01",
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "movie", query: "Poster tardío", limit: 1 });
+    expect(result.shows[0]?.poster_path).toBe("/repaired-poster.jpg");
+    expect(result.shows[0]?.poster_url).toContain("/w500/repaired-poster.jpg");
+  });
+
   it("uses a Spanish TMDB translation when the localized detail title is unavailable", async () => {
     process.env.TMDB_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

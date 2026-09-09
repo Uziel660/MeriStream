@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowUpRight, Star } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
-import { bentoBackdropSrcSet, bentoBackdropUrl, cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
+import { bentoBackdropSrcSet, bentoBackdropUrl, cardPosterCandidates, cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
 import { SmartImage } from './SmartImage';
 import type { Show } from '../types';
 
@@ -40,6 +40,7 @@ export const BentoCollection: React.FC<BentoCollectionProps> = ({ title, items, 
             <span className="spotlight-thumb">
               <SmartImage
                 src={cardPosterUrl(item)}
+                sources={cardPosterCandidates(item)}
                 srcSet={cardPosterSrcSet(item)}
                 sizes="(max-width: 760px) 24vw, 112px"
                 alt=""

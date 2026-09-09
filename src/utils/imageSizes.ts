@@ -110,13 +110,21 @@ export function bentoBackdropSrcSet(m: ImageSourceMedia): string | undefined {
  * y Retina aunque existiera un póster TMDB de mayor calidad.
  */
 export function cardPosterUrl(m: ImageSourceMedia): string | null {
-  return (
-    usablePosterCandidate(tmdbImageUrl(m.poster_path, 'w342')) ||
-    usablePosterCandidate(sizedImageUrl(m.poster_url, 'w342')) ||
-    usablePosterCandidate(sizedImageUrl(m.banner_url, 'w342')) ||
-    usablePosterCandidate(sizedImageUrl(m.backdrop_url, 'w342')) ||
-    null
-  );
+  return cardPosterCandidates(m)[0] || null;
+}
+
+/**
+ * Ordered artwork fallbacks for a poster slot. The first URL is still the
+ * canonical TMDB poster; the remaining entries are only requested when the
+ * previous image actually fails, so search grids do not preload extra memory.
+ */
+export function cardPosterCandidates(m: ImageSourceMedia): string[] {
+  return [
+    tmdbImageUrl(m.poster_path, 'w342'),
+    sizedImageUrl(m.poster_url, 'w342'),
+    sizedImageUrl(m.banner_url, 'w342'),
+    sizedImageUrl(m.backdrop_url, 'w342'),
+  ].map(usablePosterCandidate).filter((value): value is string => Boolean(value));
 }
 
 export function cardPosterSrcSet(m: ImageSourceMedia): string | undefined {

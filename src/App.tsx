@@ -18,7 +18,7 @@ import { normalizeText, normalizeTextStrict, searchShows } from './utils/searchU
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { createPlaybackRequests } from './utils/playbackBootstrap';
-import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
+import { RefreshCw, Film, Tv, ArrowUpRight, Search, Sparkles } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -1444,11 +1444,16 @@ export function App() {
                 <section className="search-results-panel">
                   <div className="search-results-heading">
                     <div>
-                      <div className="search-results-kicker"><span aria-hidden="true" /> Búsqueda en TMDB</div>
+                      <div className="search-results-kicker">
+                        <Search size={13} aria-hidden="true" />
+                        <span className="search-results-kicker-dot" aria-hidden="true" />
+                        <span>Resultados globales</span>
+                        <em>TMDB</em>
+                      </div>
                       <h3>
                         Resultados para <span className="search-query-mark">“{searchQuery}”</span>
                       </h3>
-                      <p>Descubre títulos ordenados por popularidad y afinidad.</p>
+                      <p>Coincidencias ordenadas por popularidad y afinidad.</p>
                     </div>
                     <span className="search-results-count">
                       <strong>{filteredShows.length}</strong> {filteredShows.length === 1 ? 'obra' : 'obras'}

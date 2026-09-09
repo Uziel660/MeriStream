@@ -234,12 +234,23 @@ body {
   letter-spacing: .14em;
   text-transform: uppercase;
 }
-.search-results-kicker span {
+.search-results-kicker > svg { color: #f4b33f; opacity: .9; }
+.search-results-kicker-dot {
   width: .42rem;
   height: .42rem;
   border-radius: 999px;
   background: #f4b33f;
   box-shadow: 0 0 0 .24rem rgba(244,179,63,.12), 0 0 1rem rgba(244,179,63,.55);
+}
+.search-results-kicker em {
+  margin-left: .1rem;
+  padding: .2rem .4rem;
+  border: 1px solid rgba(244,179,63,.24);
+  border-radius: 999px;
+  color: #f6d489;
+  font-size: .53rem;
+  font-style: normal;
+  letter-spacing: .12em;
 }
 .search-results-heading h3 {
   margin: 0;
@@ -271,8 +282,8 @@ body {
 }
 .search-results-count strong { color: #f6d489; font-size: .9rem; }
 .search-filter-bar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   align-items: center;
   gap: .6rem;
   margin-top: 1.1rem;
@@ -281,7 +292,7 @@ body {
   border-radius: 1rem;
   background: rgba(4,6,11,.42);
 }
-.search-filter-bar .filter-control { flex: 0 1 13rem; min-width: 11rem; }
+.search-filter-bar .filter-control { min-width: 0; }
 .search-filter-bar .filter-select {
   min-height: 2.65rem;
   border-color: rgba(255,255,255,.1);
@@ -619,9 +630,9 @@ body {
   .search-results-heading { align-items: flex-start; flex-direction: column; gap: .9rem; padding-bottom: 1rem; }
   .search-results-heading h3 { font-size: clamp(1.45rem, 8vw, 2rem); }
   .search-results-count { align-self: flex-start; }
-  .search-filter-bar { gap: .45rem; }
-  .search-filter-bar .filter-control { flex: 1 1 calc(50% - .25rem); min-width: 0; }
-  .search-filter-bar .filter-clear { flex: 0 0 auto; }
+  .search-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+  .search-filter-bar .filter-control { min-width: 0; }
+  .search-filter-bar .filter-clear { grid-column: 1 / -1; justify-self: start; }
   .search-empty-state { min-height: 17rem; padding: 2rem .75rem; }
   .row-count { display: none !important; }
   .row-navigation .icon-button { display: none !important; }

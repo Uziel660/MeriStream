@@ -1499,6 +1499,17 @@ export function App() {
   const loadMoreExploreCatalog = () => exploreGenreId
     ? loadMorePublicGenre(exploreGenreKey)
     : loadMorePublicCatalog();
+  // Las pestañas de Anime/Películas/Series ya tienen un buffer local que se
+  // muestra por bloques. Al llegar al final, primero revelamos el siguiente
+  // bloque; solo cuando ese buffer queda cerca de agotarse pedimos otra página
+  // remota. Así el usuario no tiene que pulsar "Cargar más" para continuar.
+  const activeCategoryHasHiddenLocal = Boolean(
+    activeFilter !== 'all' &&
+    activeFilter !== 'explore' &&
+    activeFilter !== 'recommendations' &&
+    !searchQuery.trim() &&
+    filteredShows.length > gridPageSize,
+  );
 
   // La siguiente página se pide antes de que el usuario llegue al final. Un
   // sentinel con IntersectionObserver evita escuchar cada evento de scroll y
@@ -1524,7 +1535,7 @@ export function App() {
       ? hasMorePublicCatalog
       : activeFilter === 'explore'
         ? exploreHasMore
-        : activeRemoteHasMore;
+        : activeCategoryHasHiddenLocal || activeRemoteHasMore;
     const loading = activeFilter === 'all'
       ? isLoadingMoreCatalog
       : activeFilter === 'explore'
@@ -1536,25 +1547,29 @@ export function App() {
       if (!entry?.isIntersecting || autoLoadInFlightRef.current === mode) return;
       autoLoadInFlightRef.current = mode;
 
-      const request = activeFilter === 'all'
-        ? loadMorePublicCatalog()
-        : activeFilter === 'explore'
-          ? loadMoreExploreCatalog()
-          : activePublicKind
-            ? loadMorePublicCatalogKind(activePublicKind)
-            : loadMorePublicGenre(activePublicGenreKey);
+      // No hacemos una petición si todavía hay obras ya descargadas que el
+      // usuario aún no ha recorrido: basta con ampliar la ventana renderizada.
+      const request = activeCategoryHasHiddenLocal
+        ? Promise.resolve(setGridPageSize((previous) => previous + 100))
+        : activeFilter === 'all'
+          ? loadMorePublicCatalog()
+          : activeFilter === 'explore'
+            ? loadMoreExploreCatalog()
+            : activePublicKind
+              ? loadMorePublicCatalogKind(activePublicKind)
+              : loadMorePublicGenre(activePublicGenreKey);
 
       void Promise.resolve(request).then(() => undefined, () => undefined).finally(() => {
         if (autoLoadInFlightRef.current === mode) autoLoadInFlightRef.current = null;
       });
-    }, { rootMargin: '0px 0px 1000px 0px' });
+    }, { rootMargin: '0px 0px 500px 0px' });
 
     observer.observe(sentinel);
     return () => observer.disconnect();
     // The loader functions are intentionally read from the active render;
     // state changes above recreate the observer with the next cursor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilter, activePublicGenreId, activePublicGenreKey, activePublicKind, activeRemoteHasMore, activeRemoteLoading, exploreGenreId, exploreHasMore, exploreIsLoadingMore, hasMorePublicCatalog, isLoadingMoreCatalog, searchQuery]);
+  }, [activeCategoryHasHiddenLocal, activeFilter, activePublicGenreId, activePublicGenreKey, activePublicKind, activeRemoteHasMore, activeRemoteLoading, exploreGenreId, exploreHasMore, exploreIsLoadingMore, filteredShows.length, gridPageSize, hasMorePublicCatalog, isLoadingMoreCatalog, searchQuery]);
 
   return (
     <div className="app-shell relative min-h-screen text-zinc-100 flex flex-col">

@@ -1,4 +1,5 @@
 import { lookupAnimeIdentityByTitle } from "../animeIdentity";
+import { readExternalApiCache, writeExternalApiCache } from "../externalApiCache";
 import { normalizeTitleKey } from "../utils/titleNormalizer";
 
 export type IdentityKind = "movie" | "series" | "anime";
@@ -46,6 +47,7 @@ export interface TmdbIdentityResolution {
 type CacheEntry = { expiresAt: number; value: TmdbIdentityResolution | null };
 const CACHE_TTL_MS = 30 * 60_000;
 const cache = new Map<string, CacheEntry>();
+const rawApiCache = new Map<string, { expiresAt: number; value: any }>();
 const SEARCH_TIMEOUT_MS = 5_000;
 
 function text(value: unknown): string {
@@ -211,12 +213,25 @@ export function scoreTmdbIdentityCandidate(
 }
 
 async function fetchJson(url: string): Promise<any | null> {
+  const cacheKey = url.replace(/([?&])api_key=[^&]+/i, "$1api_key=redacted");
+  const memoryHit = rawApiCache.get(cacheKey);
+  if (memoryHit && memoryHit.expiresAt > Date.now()) return memoryHit.value;
+
+  const persistent = await readExternalApiCache<any>("tmdb", cacheKey);
+  if (persistent !== null) {
+    rawApiCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value: persistent });
+    return persistent;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
     if (!response.ok) return null;
-    return await response.json();
+    const value = await response.json();
+    rawApiCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+    await writeExternalApiCache("tmdb", cacheKey, value, CACHE_TTL_MS);
+    return value;
   } catch {
     return null;
   } finally {
@@ -334,4 +349,5 @@ export async function resolveTmdbIdentityCandidate(input: TmdbIdentityInput): Pr
 
 export function clearTmdbIdentityResolverCache(): void {
   cache.clear();
+  rawApiCache.clear();
 }

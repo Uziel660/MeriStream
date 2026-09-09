@@ -3,6 +3,7 @@ import { normalizeTitleKey } from "./utils/titleNormalizer";
 
 export type LocalAnimeIdentity = {
   canonicalTitle: string;
+  aliases: string[];
   malId: number | null;
   anilistId: string | null;
   kitsuId: string | null;
@@ -30,10 +31,22 @@ export async function findLocalAnimeIdentity(titles: string[], year?: number | n
   const row = usable[0];
   return row ? {
     canonicalTitle: row.canonical_title,
+    aliases: parseAliases(row.aliases),
     malId: row.mal_id,
     anilistId: row.anilist_id,
     kitsuId: row.kitsu_id,
     anidbId: row.anidb_id,
     year: row.year,
   } : null;
+}
+
+function parseAliases(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((alias): alias is string => typeof alias === "string" && alias.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
 }

@@ -1,4 +1,5 @@
 import { normalizeBaseTitle, normalizeTitle } from "./db";
+import { findLocalAnimeIdentity } from "./localCatalogIndex";
 
 const KITSU_API = "https://kitsu.io/api/edge";
 // Kitsu can take several seconds on a cold connection from the desktop host;
@@ -89,6 +90,21 @@ export async function lookupAnimeIdentityByTitle(title: string): Promise<AnimeId
   if (!key) return null;
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) return cached.value;
+
+  // El índice local es la fuente primaria para aliases e IDs estables. Así,
+  // las fichas ya conocidas no dependen de una llamada fría a Kitsu.
+  const local = await findLocalAnimeIdentity([title]);
+  if (local && (local.malId || local.anilistId || local.kitsuId)) {
+    const identity: AnimeIdentityLookup = {
+      aliases: uniqueText([local.canonicalTitle, ...local.aliases]),
+      normalizedAliases: uniqueText([local.canonicalTitle, ...local.aliases].flatMap((alias) => [normalizeTitle(alias), normalizeBaseTitle(alias)])),
+      malId: local.malId,
+      anilistId: positiveInt(local.anilistId),
+      kitsuId: local.kitsuId,
+    };
+    cache.set(key, { expires: Date.now() + CACHE_TTL_MS, value: identity });
+    return identity;
+  }
 
   const url = `${KITSU_API}/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=5`;
   const payload = await fetchJson(url);

@@ -1448,9 +1448,9 @@ export function App() {
 
   // Inicio es una sola superficie editorial, aunque visualmente esté formada
   // por varias filas. Reservar cada identidad aquí evita que el mismo título
-  // aparezca en recomendaciones, recién agregados, destacados, géneros y el
-  // catálogo inferior. Las imágenes no participan en esta reserva y siguen
-  // siendo cargadas por cada tarjeta de forma diferida.
+  // aparezca en recomendaciones, recién agregados, destacados y géneros. Las
+  // imágenes no participan en esta reserva y siguen siendo cargadas por cada
+  // tarjeta de forma diferida.
   const homeSections = useMemo(() => {
     const usedKeys = new Set<string>();
     const continueIds = new Set(continueWatchingItems.map((item) => item.showId).filter(Boolean));
@@ -1509,15 +1509,12 @@ export function App() {
       usedKeys,
       8,
     );
-    const exploreShows = takeUniqueHomeShows(filteredShows, usedKeys);
-
     return {
       primaryRails,
       recentShows,
       topRatedShows,
       secondaryRails,
       genreRows: uniqueGenreRows,
-      exploreShows,
     };
   }, [continueWatchingItems, featuredShow, filteredShows, genreRows, recommendationRails, shows]);
 
@@ -1957,52 +1954,6 @@ export function App() {
                     />
                   ))}
 
-                  {/* EXPLORAR CATÁLOGO COMPLETO (filtros de año + orden + grid paginado) */}
-                  <section className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
-                      <h3 className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
-                        Explorar Catálogo
-                      </h3>
-                      <span className="font-mono text-xs text-zinc-500">
-                        {homeSections.exploreShows.length} {homeSections.exploreShows.length === 1 ? 'obra' : 'obras'}
-                      </span>
-                    </div>
-                    <CatalogFilters
-                      years={availableYears}
-                      year={yearFilter}
-                      onYear={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
-                      sort={sortBy}
-                      onSort={(s) => { setSortBy(s); setCatalogPageSize(100); }}
-                    />
-                    {homeSections.exploreShows.length === 0 ? (
-                      <div className="py-12 text-center text-sm text-zinc-500">
-                        No hay obras con estos filtros.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                          {homeSections.exploreShows.slice(0, catalogPageSize).map((item) => (
-                            <MediaCard
-                              key={item.id}
-                              media={item}
-                              onSelectMedia={handleOpenDetails}
-                            />
-                          ))}
-                        </div>
-                        {homeSections.exploreShows.length > catalogPageSize && (
-                          <div className="flex justify-center pt-4">
-                            <button
-                              type="button"
-                              onClick={() => setCatalogPageSize((prev) => prev + 100)}
-                              className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
-                            >
-                              Cargar más ({homeSections.exploreShows.length - catalogPageSize} restantes)
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </section>
                 </>
               )}
             </div>

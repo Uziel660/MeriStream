@@ -14,10 +14,10 @@ describe("provider registry", () => {
 
   it("orders only active providers for each content kind", () => {
     const anime = listProvidersForKind("anime").map((entry) => entry.id);
-    expect(anime.slice(0, 3)).toEqual(["direct", "latanime", "zokoanime"]);
+    expect(anime.slice(0, 4)).toEqual(["direct", "latanime", "tioanime", "zokoanime"]);
     expect(anime).toContain("zokoanime");
     expect(anime).not.toContain("animeflv");
-    expect(anime).not.toContain("tioanime");
+    expect(anime).toContain("tioanime");
   });
 
   it("models Cinecalidad to Gnula and ZokoAnime to TioAnime fallback chains", () => {

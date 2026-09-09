@@ -26,6 +26,8 @@ interface OverviewData {
   catalog: {
     shows: number;
     media_items: number;
+    unique_works?: number;
+    duplicate_records?: number;
     episodes: number;
     source_links: number;
     missing_tmdb: number;
@@ -140,7 +142,8 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigate }) => {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const totalWorks = data.catalog.shows + data.catalog.media_items;
+  const totalWorks = data.catalog.unique_works ?? (data.catalog.shows + data.catalog.media_items);
+  const duplicateRecords = data.catalog.duplicate_records ?? Math.max(0, data.catalog.shows + data.catalog.media_items - totalWorks);
 
   return (
     <section className="space-y-6" aria-labelledby="admin-overview-title">
@@ -159,11 +162,23 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigate }) => {
       {error && <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-950/20 px-4 py-3 text-xs text-red-300"><AlertTriangle size={15} />{error}</div>}
 
       {loading ? (
-        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/60 text-xs text-zinc-500"><Loader2 size={16} className="mr-2 animate-spin" />Consultando el estado del catálogo…</div>
+        <div className="admin-overview-skeleton" role="status" aria-live="polite" aria-label="Consultando el estado del catálogo">
+          <div className="admin-overview-skeleton-row">
+            {Array.from({ length: 4 }, (_, index) => <div key={index} className="admin-overview-skeleton-block" />)}
+          </div>
+          <div className="admin-overview-skeleton-row" style={{ gridTemplateColumns: '1.25fr .75fr' }}>
+            <div className="admin-overview-skeleton-block is-large" />
+            <div className="admin-overview-skeleton-block is-large" />
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs text-zinc-500">
+            <Loader2 size={15} className="animate-spin" />
+            Consultando el estado del catálogo…
+          </div>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <MetricCard label="Obras en catálogo" value={number(totalWorks)} detail={`${number(data.catalog.shows)} fichas · ${number(data.catalog.media_items)} obras multimedia`} icon={<Database size={15} />} tone="blue" onClick={() => onNavigate("library")} />
+            <MetricCard label="Obras únicas en catálogo" value={number(totalWorks)} detail={`${number(data.catalog.shows)} fichas · ${number(data.catalog.media_items)} multimedia · ${number(duplicateRecords)} registros duplicados`} icon={<Database size={15} />} tone="blue" onClick={() => onNavigate("library")} />
             <MetricCard label="Identidades pendientes" value={number(data.catalog.missing_tmdb)} detail="Sin ID TMDB confirmado; revisar antes de enriquecer" icon={<Sparkles size={15} />} tone={data.catalog.missing_tmdb ? "warning" : "good"} onClick={() => onNavigate("library")} />
             <MetricCard label="Artwork por completar" value={number(data.catalog.missing_artwork)} detail="Poster o backdrop ausente" icon={<Image size={15} />} tone={data.catalog.missing_artwork ? "warning" : "good"} onClick={() => onNavigate("library")} />
             <MetricCard label="Fuentes habilitadas" value={`${number(data.sources.enabled_sites)}/${number(data.sources.total_sites)}`} detail={`${number(data.sources.failing_links)} enlaces con fallos recientes`} icon={<Server size={15} />} tone={data.sources.failing_links ? "warning" : "good"} onClick={() => onNavigate("sources")} />

@@ -18,9 +18,11 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   // Gnula mantiene índices separados para películas y series. Importarlos
   // por separado evita que la portada (un carrusel de novedades) se confunda
   // con el catálogo completo y permite reanudar cada sección de forma aislada.
-  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/peliculas/", name: "GnulaHD Películas (ES-LATAM · secundario)" },
-  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/series/", name: "GnulaHD Series (ES-LATAM · secundario)" },
+  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/peliculas/", name: "GnulaHD Películas (ES-LATAM · principal)" },
+  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/series/", name: "GnulaHD Series (ES-LATAM · principal)" },
+  { providerId: "gnula", targetUrl: "https://ww3.gnulahd.nu/ver/anime/", name: "GnulaHD Anime (ES-LATAM · principal)" },
   { providerId: "latanime", targetUrl: "https://latanime.org/animes?p=1", name: "LatAnime (ES-LATAM · principal)" },
+  { providerId: "tioanime", targetUrl: "https://tioanime.com/directorio", name: "TioAnime (anime · principal)" },
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/doramas", name: "Doramasflix Doramas (mantenido · secundario)" },
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/peliculas", name: "Doramasflix Películas (mantenido · secundario)" },
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/variedades", name: "Doramasflix Variedades (mantenido · secundario)" },

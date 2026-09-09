@@ -35,6 +35,41 @@ export interface ParsedRawTitle {
   plausible: boolean;
 }
 
+const HTML_ENTITY_VALUES: Record<string, string> = {
+  amp: "&", apos: "'", quot: '"', lt: "<", gt: ">", nbsp: " ",
+  aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", ntilde: "ñ",
+  Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú", Ntilde: "Ñ",
+  auml: "ä", euml: "ë", iuml: "ï", ouml: "ö", uuml: "ü", Auml: "Ä", Euml: "Ë", Iuml: "Ï", Ouml: "Ö", Uuml: "Ü",
+  agrave: "à", egrave: "è", igrave: "ì", ograve: "ò", ugrave: "ù", Agrave: "À", Egrave: "È", Igrave: "Ì", Ograve: "Ò", Ugrave: "Ù",
+  acirc: "â", ecirc: "ê", icirc: "î", ocirc: "ô", ucirc: "û", Acirc: "Â", Ecirc: "Ê", Icirc: "Î", Ocirc: "Ô", Ucirc: "Û",
+  ccedil: "ç", Ccedil: "Ç", aring: "å", Aring: "Å", ae: "æ", AE: "Æ", oe: "œ", OE: "Œ",
+  szlig: "ß", Szlig: "ẞ", middot: "·", hearts: "♥", frac12: "½", frac14: "¼", frac34: "¾",
+  copy: "©", reg: "®", trade: "™", bull: "•", times: "×", divide: "÷", plusmn: "±", radic: "√", dagger: "†",
+  iquest: "¿", iexcl: "¡", oslash: "ø", Oslash: "Ø", thorn: "þ", Thorn: "Þ", eth: "ð", Eth: "Ð",
+  laquo: "«", raquo: "»", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", ndash: "–", mdash: "—", hellip: "…", deg: "°",
+};
+
+/** Decodifica entidades HTML, incluidas las doblemente escapadas por scrapers. */
+export function decodeHtmlEntities(value: string): string {
+  let decoded = String(value ?? "");
+  for (let pass = 0; pass < 3; pass++) {
+    const next = decoded.replace(/&(?:#x([\da-f]+)|#(\d+)|([a-z][\da-z]+));?/gi, (entity, hex, decimal, named) => {
+      if (hex) {
+        const codePoint = Number.parseInt(hex, 16);
+        return Number.isInteger(codePoint) ? String.fromCodePoint(codePoint) : entity;
+      }
+      if (decimal) {
+        const codePoint = Number.parseInt(decimal, 10);
+        return Number.isInteger(codePoint) ? String.fromCodePoint(codePoint) : entity;
+      }
+      return HTML_ENTITY_VALUES[named] || HTML_ENTITY_VALUES[String(named).toLowerCase()] || entity;
+    });
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
+}
+
 /** Tokens de ruido (completos tras normalizar a minúsculas/sin acentos/símbolos). */
 const NOISE_TOKENS = new Set([
   "ver", "veronline", "online", "gratis", "completa", "completo", "pelicula",
@@ -210,7 +245,7 @@ function slugify(text: string): string {
  * Parsea un título crudo de cualquier scraper y separa el nombre base del ruido.
  */
 export function parseRawTitle(raw: string): ParsedRawTitle {
-  const original = String(raw ?? "").replace(/\s+/g, " ").trim();
+  const original = decodeHtmlEntities(String(raw ?? "")).replace(/\s+/g, " ").trim();
 
   let text = original;
   for (const [re, replacement] of MULTIWORD_QUALITY_RES) {

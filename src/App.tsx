@@ -11,14 +11,15 @@ import type { WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
 import { ExploreCatalogView } from './components/ExploreCatalogView';
 import { useAuth } from './contexts/AuthContext';
+import { useHiddenGenres } from './hooks/useHiddenGenres';
 import { thumbBackdropUrl } from './utils/imageSizes';
 import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
-import { normalizeText, normalizeTextStrict, searchShows } from './utils/searchUtils';
+import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { createPlaybackRequests } from './utils/playbackBootstrap';
-import { RefreshCw, Film, Tv, ArrowUpRight, Sparkles } from 'lucide-react';
+import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -29,11 +30,32 @@ const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
 const CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v5';
 const RETIRED_CATALOG_CACHE_KEY = 'nitiflix_catalog_cache_v1';
 const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const SEARCH_CACHE_KEY = 'meristream_tmdb_search_cache_v1';
+const SEARCH_CACHE_FRESH_TTL = 5 * 60 * 1000;
+const SEARCH_CACHE_MAX_TTL = 30 * 60 * 1000;
+const SEARCH_CACHE_MAX_ENTRIES = 12;
 const PUBLIC_CATALOG_BATCH_SIZE = 60;
 const HOME_GRID_INITIAL_SIZE = 48;
 const HOME_RAIL_MAX_ITEMS = 12;
 const HOME_RAIL_MIN_ITEMS = 8;
 const HOME_GENRE_MAX_ITEMS = 12;
+// React StrictMode monta la pantalla dos veces en desarrollo para detectar
+// efectos no idempotentes. Mantener una promesa por usuario evita que ese
+// ciclo (o dos montajes rápidos al volver a Inicio) descargue el mismo bloque
+// de recomendaciones varias veces sin cambiar el resultado visible.
+type RecommendationsResponse = Awaited<ReturnType<typeof api.getRecommendations>>;
+const recommendationInFlight = new Map<string, Promise<RecommendationsResponse>>();
+
+function requestRecommendationsOnce(userKey: string): Promise<RecommendationsResponse> {
+  const existing = recommendationInFlight.get(userKey);
+  if (existing) return existing;
+
+  const next = api.getRecommendations().finally(() => {
+    if (recommendationInFlight.get(userKey) === next) recommendationInFlight.delete(userKey);
+  });
+  recommendationInFlight.set(userKey, next);
+  return next;
+}
 // Inicio mantiene más metadata disponible para repartirla entre sus secciones,
 // pero las imágenes siguen siendo lazy y solo las cercanas al viewport se
 // descargan. Dos lotes respetan el límite seguro de 100 del endpoint público.
@@ -149,6 +171,75 @@ function mapCatalogShow(s: any): Show {
   } as Show;
 }
 
+function isPublicTmdbShow(show: Show): boolean {
+  const tmdbId = Number(show.tmdb_id);
+  return Number.isInteger(tmdbId) && tmdbId > 0 && /^tmdb-(?:movie|series|anime)-\d+$/i.test(String(show.id || ''));
+}
+
+function recommendationKind(show: Partial<Show>): 'movie' | 'series' | 'anime' {
+  const rawCategory = String(show.category || show.kind || '').toLowerCase();
+  if (rawCategory.includes('anime')) return 'anime';
+  if (rawCategory.includes('movie') || rawCategory.includes('pel') || rawCategory.includes('film')) return 'movie';
+  return 'series';
+}
+
+function mapRecommendationShow(value: unknown): Show | null {
+  if (!value || typeof value !== 'object') return null;
+  const mapped = mapCatalogShow(value);
+  const tmdbId = Number(mapped.tmdb_id);
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+  const kind = recommendationKind(mapped);
+  return {
+    ...mapped,
+    id: `tmdb-${kind}-${tmdbId}`,
+    kind,
+    category: kind,
+  };
+}
+
+function mapPublicCatalogShows(value: unknown): Show[] {
+  if (!Array.isArray(value)) return [];
+  return dedupeCatalogShows(value.map(mapCatalogShow).filter(isPublicTmdbShow));
+}
+
+type SearchCacheEntry = { savedAt: number; data: Show[] };
+
+function readTmdbSearchCache(query: string): { data: Show[]; fresh: boolean } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(SEARCH_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as Record<string, SearchCacheEntry>;
+    const key = normalizeText(query);
+    const entry = cache?.[key];
+    if (!entry || !Number.isFinite(entry.savedAt) || Date.now() - entry.savedAt > SEARCH_CACHE_MAX_TTL) return null;
+    const data = mapPublicCatalogShows(entry.data);
+    return { data, fresh: Date.now() - entry.savedAt <= SEARCH_CACHE_FRESH_TTL };
+  } catch {
+    return null;
+  }
+}
+
+function writeTmdbSearchCache(query: string, data: Show[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const key = normalizeText(query);
+    const raw = window.sessionStorage.getItem(SEARCH_CACHE_KEY);
+    const cache = raw ? JSON.parse(raw) as Record<string, SearchCacheEntry> : {};
+    const now = Date.now();
+    const next: Record<string, SearchCacheEntry> = Object.fromEntries(
+      Object.entries(cache)
+        .filter(([, entry]) => entry && Number.isFinite(entry.savedAt) && now - entry.savedAt <= SEARCH_CACHE_MAX_TTL)
+        .sort(([, left], [, right]) => right.savedAt - left.savedAt)
+        .slice(0, SEARCH_CACHE_MAX_ENTRIES - 1),
+    );
+    next[key] = { savedAt: now, data: data.slice(0, 100) };
+    window.sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    // El caché de búsqueda es opcional y nunca debe bloquear la navegación.
+  }
+}
+
 function catalogIdentityKey(show: Partial<Show>): string {
   const category = String(show.category || show.kind || 'media').toLowerCase();
   const namespace = /movie|pel[ií]cula/.test(category) ? 'movie' : 'tv';
@@ -244,6 +335,10 @@ function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
   return {
     ...existing,
     title: incoming.title || existing.title,
+    // The bridge is only allowed for an unambiguous exact-title/type match,
+    // so carrying the public identity into a bare local row is safe and keeps
+    // subsequent detail/playback requests on the canonical TMDB path.
+    tmdb_id: existing.tmdb_id ?? incoming.tmdb_id,
     // Keep the local/provider title as a searchable alias before replacing
     // the display label with TMDB's canonical translation. This preserves
     // searches such as "Shiguang Dailiren" when TMDB displays "Link Click".
@@ -275,8 +370,71 @@ function mergeCanonicalPublicRow(existing: Show, incoming: Show): Show {
   };
 }
 
+function searchTitleIdentity(show: Partial<Show>): string {
+  const title = normalizeTextStrict(String(show.title || show.original_title || ''));
+  const category = String(show.category || show.kind || '').toLowerCase();
+  const namespace = /movie|pel[ií]cula|film/.test(category) ? 'movie' : 'tv';
+  return title ? `${namespace}:${title}` : '';
+}
+
+function isBareLegacySearchRow(show: Show): boolean {
+  return (
+    !show.tmdb_id &&
+    !show.mal_id &&
+    !show.anilist_id &&
+    !show.poster_url &&
+    !show.poster_path &&
+    !show.backdrop_url &&
+    !show.backdrop_path &&
+    !String(show.description || show.synopsis || '').trim() &&
+    !Number(show.year || show.release_year || 0)
+  );
+}
+
+/**
+ * Search receives two intentionally different datasets: TMDB's public result
+ * and local provider rows. A legacy row may have the exact title but no year,
+ * identity or artwork, so its regular identity key cannot match TMDB's key.
+ * Bridge only an unambiguous, same-type title match; remakes and ambiguous
+ * names remain separate instead of being guessed together.
+ */
+export function mergeSearchCatalogRows(localRows: Show[], publicRows: Show[]): Show[] {
+  const publicByTitle = new Map<string, Show[]>();
+  for (const row of publicRows) {
+    const titleKey = searchTitleIdentity(row);
+    if (!titleKey || !row.tmdb_id) continue;
+    const list = publicByTitle.get(titleKey) || [];
+    list.push(row);
+    publicByTitle.set(titleKey, list);
+  }
+
+  const merged = new Map<string, Show>();
+  for (const local of localRows) {
+    const titleKey = searchTitleIdentity(local);
+    const candidates = [...new Map(
+      (publicByTitle.get(titleKey) || []).map((row) => [row.tmdb_id, row])
+    ).values()];
+    if (isBareLegacySearchRow(local) && candidates.length === 1) {
+      const publicRow = candidates[0];
+      merged.set(catalogIdentityKey(publicRow), mergeCanonicalPublicRow(local, publicRow));
+      continue;
+    }
+    merged.set(catalogIdentityKey(local), local);
+  }
+
+  for (const publicRow of publicRows) {
+    const key = catalogIdentityKey(publicRow);
+    const previous = merged.get(key);
+    if (!previous) merged.set(key, publicRow);
+    else merged.set(key, mergeCanonicalPublicRow(previous, publicRow));
+  }
+
+  return [...merged.values()];
+}
+
 export function App() {
   const { user, isAuthenticated } = useAuth();
+  const { isGenreHidden, isShowHidden } = useHiddenGenres();
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -516,17 +674,21 @@ export function App() {
   const fetchRecommendations = useCallback(async () => {
     setIsLoadingRecs(true);
     try {
-      const res = await api.getRecommendations();
-      if (res?.hero) {
-        // Recommendations are card metadata only. Strip any accidental
-        // episode/source payload before it reaches the long-lived home state.
-        setHeroRecommendation(mapCatalogShow(res.hero));
-      }
+      const recommendationKey = user?.id ? String(user.id) : 'anonymous';
+      const res = await requestRecommendationsOnce(recommendationKey);
+      const mappedHero = res?.hero ? mapRecommendationShow(res.hero) : null;
+      // TMDB is the only public identity. Provider-only/local rows stay out
+      // of the home hero even if an older recommendation response contains one.
+      setHeroRecommendation(mappedHero && isPublicTmdbShow(mappedHero) ? mappedHero : null);
       if (Array.isArray(res?.rails)) {
         setRecommendationRails(res.rails.map((rail) => ({
           ...rail,
           shows: dedupeCatalogShows(
-            Array.isArray(rail.shows) ? rail.shows.map(mapCatalogShow) : [],
+            Array.isArray(rail.shows)
+              ? rail.shows
+                .map(mapRecommendationShow)
+                .filter((show): show is Show => Boolean(show && isPublicTmdbShow(show) && !isShowHidden(show)))
+              : [],
           ).slice(0, HOME_RAIL_MAX_ITEMS),
         })));
       }
@@ -535,7 +697,7 @@ export function App() {
     } finally {
       setIsLoadingRecs(false);
     }
-  }, []);
+  }, [isShowHidden, user?.id]);
 
   useEffect(() => {
     fetchRecommendations();
@@ -588,61 +750,39 @@ export function App() {
     fetchGenres();
   }, []);
 
-  // Búsqueda server-side en PostgreSQL con debounce: consulta toda la base de
-  // Búsqueda server-side en PostgreSQL: consulta toda la base de
-  // datos de 38,000+ obras para títulos que no entraron en el lote inicial de 25k.
+  // Búsqueda pública TMDB con debounce. El caché de sesión muestra una consulta
+  // reciente al instante y la petición siguiente revalida en segundo plano;
+  // las filas privadas de proveedores nunca se mezclan en los resultados.
   useEffect(() => {
     const query = searchQuery.trim();
     if (query.length < 2) {
       setServerSearchResults([]);
       return;
     }
+    const cached = readTmdbSearchCache(query);
+    setServerSearchResults(cached?.data || []);
     const controller = new AbortController();
     let isCancelled = false;
     const fetchServerSearch = async () => {
       try {
-        // TMDB is the public identity catalog, while the local row carries
-        // provider links, episodes and repaired metadata. Query both in
-        // parallel; using TMDB alone hides playable local matches whenever a
-        // search result happens to exist there.
-        const [publicRes, localRes] = await Promise.all([
-          fetch(`/api/v1/catalog/search?q=${encodeURIComponent(query)}&limit=100`, { ...tmdbRequestInit(), signal: controller.signal }),
-          fetch(`/api/v1/shows?lite=true&search=${encodeURIComponent(query)}&limit=100`, { signal: controller.signal }),
-        ]);
+        // 40 results consume only two TMDB pages per family instead of the
+        // previous 100-result request plus a second PostgreSQL search.
+        const publicRes = await fetch(`/api/v1/catalog/search?q=${encodeURIComponent(query)}&limit=40`, { ...tmdbRequestInit(), signal: controller.signal });
         if (isCancelled) return;
-
-        const readShows = async (response: Response): Promise<Show[]> => {
-          if (!response.ok) return [];
-          const data = await response.json();
-          const list = Array.isArray(data) ? data : data.shows || [];
-          return Array.isArray(list) ? list.map(mapCatalogShow) : [];
-        };
-        const [localShows, publicShows] = await Promise.all([
-          readShows(localRes),
-          readShows(publicRes),
-        ]);
-
-        // Prefer the local record for a shared TMDB identity because it keeps
-        // the provider-aware id and source metadata needed by playback.
-        const merged = new Map<string, Show>();
-        for (const show of [...localShows, ...publicShows]) {
-          // TMDB uses one namespace for all TV/anime entries. Keeping the
-          // namespace (instead of the display category) prevents an anime
-          // returned as both `series` and `anime` from becoming two cards.
-          const key = catalogIdentityKey(show);
-          const previous = merged.get(key);
-          if (!previous) merged.set(key, show);
-          else merged.set(key, mergeCanonicalPublicRow(previous, show));
-        }
-        setServerSearchResults(sortSearchResults(dedupeCatalogShows([...merged.values()])));
+        if (!publicRes.ok) return;
+        const data = await publicRes.json();
+        const list = Array.isArray(data) ? data : data.shows || [];
+        const publicShows = mapPublicCatalogShows(list);
+        const sorted = sortSearchResults(publicShows);
+        writeTmdbSearchCache(query, sorted);
+        setServerSearchResults(sorted);
       } catch (e: any) {
         if (e?.name !== 'AbortError') console.warn('Error en búsqueda server-side:', e);
       }
     };
-    // The header already debounces keystrokes; this short second delay avoids
-    // issuing a pair of network requests while a user is still composing a
-    // word on a slow device or mobile keyboard.
-    const timer = window.setTimeout(fetchServerSearch, 140);
+    // The header already debounces keystrokes; 260ms avoids issuing a request
+    // for every intermediate character on slow keyboards.
+    const timer = window.setTimeout(fetchServerSearch, cached?.fresh ? 320 : 260);
     return () => {
       isCancelled = true;
       window.clearTimeout(timer);
@@ -726,9 +866,9 @@ export function App() {
     [removeContinueWatchingItem, updateContinueWatchingItem]
   );
 
-  // 1. Cargar el catálogo sin episodios. En Inicio se piden hasta 150 filas
-  // ligeras; las imágenes no forman parte de este payload y cada tarjeta las
-  // resuelve con loading="lazy".
+  // 1. Cargar el catálogo público sin episodios. En Inicio se piden hasta 150
+  // filas ligeras desde TMDB; los proveedores solo se resuelven al abrir una
+  // ficha/reproducir y nunca entran en el estado público de tarjetas.
   const fetchFreshCatalog = async (
     isBackground = false,
     page = 1,
@@ -737,18 +877,14 @@ export function App() {
   ): Promise<{ lastFetchedPage: number; hasMore: boolean; usedPublicCatalog: boolean } | null> => {
     try {
       const publicRes = await fetch(`/api/v1/catalog/public?kind=all&mode=trending&limit=${requestedLimit}&page=${page}`, tmdbRequestInit());
-      // TMDB is the canonical public catalog. If it is temporarily
-      // unavailable, keep the local safety net bounded to the same small
-      // bootstrap batch instead of loading the entire database into the
-      // browser.
-      const res = publicRes.ok
-        ? publicRes
-        : await fetch(`/api/v1/shows?lite=true&limit=${PUBLIC_CATALOG_BATCH_SIZE}`);
-      if (res.ok) {
-        const data = await res.json();
+      // TMDB is the only public catalog. If it is unavailable, retain the
+      // already-rendered TMDB cache instead of showing provider-owned rows with
+      // incomplete identity or artwork.
+      if (publicRes.ok) {
+        const data = await publicRes.json();
         const list = Array.isArray(data) ? data : data.shows || [];
         if (Array.isArray(list)) {
-          const safeShows: Show[] = dedupeCatalogShows(list.map(mapCatalogShow));
+          const safeShows: Show[] = mapPublicCatalogShows(list);
           // The endpoint aggregates three TMDB pages into one 60-item batch.
           // Keep the real upstream cursor so the next request starts after the
           // whole batch instead of repeating pages 2 and 3.
@@ -777,13 +913,11 @@ export function App() {
             try {
               const cached = localStorage.getItem(CATALOG_CACHE_KEY);
               const cachedData = cached ? JSON.parse(cached).data : [];
-              const merged = new Map< string, Show>(
-                (Array.isArray(cachedData) ? cachedData : []).map((show: Show) => [show.id, show]),
-              );
+              const merged = new Map<string, Show>(mapPublicCatalogShows(cachedData).map((show) => [show.id, show]));
               for (const show of safeShows) merged.set(show.id, show);
               localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ data: [...merged.values()], timestamp: Date.now() }));
             } catch {}
-            return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
+            return { lastFetchedPage, hasMore, usedPublicCatalog: true };
           }
 
           setPublicCatalogPage(lastFetchedPage);
@@ -794,7 +928,7 @@ export function App() {
           if (isBackground) {
             const currentIds = shows.map(s => s.id).join(',');
             const newIds = safeShows.map(s => s.id).join(',');
-            if (currentIds === newIds) return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
+            if (currentIds === newIds) return { lastFetchedPage, hasMore, usedPublicCatalog: true };
           }
 
           setShows(safeShows);
@@ -807,7 +941,7 @@ export function App() {
               timestamp: Date.now(),
             }));
           } catch {}
-          return { lastFetchedPage, hasMore, usedPublicCatalog: publicRes.ok };
+          return { lastFetchedPage, hasMore, usedPublicCatalog: true };
         }
       }
     } catch (e) {
@@ -861,7 +995,7 @@ export function App() {
       if (!response.ok) throw new Error(`TMDB ${kind}: HTTP ${response.status}`);
       const data = await response.json();
       const list = Array.isArray(data) ? data : data.shows || [];
-      const safeShows: Show[] = Array.isArray(list) ? dedupeCatalogShows(list.map(mapCatalogShow)) : [];
+      const safeShows: Show[] = mapPublicCatalogShows(list);
       setShows((previous) => {
         const merged = new Map(previous.map((show) => [show.id, show]));
         for (const show of safeShows) merged.set(show.id, show);
@@ -879,7 +1013,7 @@ export function App() {
       try {
         const cached = localStorage.getItem(CATALOG_CACHE_KEY);
         const cachedData = cached ? JSON.parse(cached).data : [];
-        const merged = new Map<string, Show>((Array.isArray(cachedData) ? cachedData : []).map((show: Show) => [show.id, show]));
+        const merged = new Map<string, Show>(mapPublicCatalogShows(cachedData).map((show) => [show.id, show]));
         for (const show of safeShows) merged.set(show.id, show);
         localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ data: [...merged.values()], timestamp: Date.now() }));
       } catch { /* cache is an optional optimization */ }
@@ -902,7 +1036,7 @@ export function App() {
       if (!response.ok) throw new Error(`TMDB género ${genreKey}: HTTP ${response.status}`);
       const data = await response.json();
       const list = Array.isArray(data) ? data : data.shows || [];
-      const safeShows: Show[] = Array.isArray(list) ? dedupeCatalogShows(list.map(mapCatalogShow)) : [];
+      const safeShows: Show[] = mapPublicCatalogShows(list);
       setShows((previous) => {
         const merged = new Map(previous.map((show) => [show.id, show]));
         for (const show of safeShows) merged.set(show.id, show);
@@ -961,18 +1095,17 @@ export function App() {
         const cached = localStorage.getItem(CATALOG_CACHE_KEY);
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);
-          const cachedKinds = new Set(
-            Array.isArray(data)
-              ? data.map((show: Show) => String(show.category || show.kind || '').toLowerCase())
-              : [],
+          const publicCachedData = mapPublicCatalogShows(data);
+          const publicCachedKinds = new Set(
+            publicCachedData.map((show) => String(show.category || show.kind || '').toLowerCase()),
           );
-          const cacheHasAllFamilies = PUBLIC_CATALOG_KINDS.every((kind) => cachedKinds.has(kind));
-          if (Date.now() - timestamp < CATALOG_CACHE_TTL && Array.isArray(data) && data.length > 0 && cacheHasAllFamilies) {
-            setShows(dedupeCatalogShows(data.map(mapCatalogShow)));
+          const publicCacheHasAllFamilies = PUBLIC_CATALOG_KINDS.every((kind) => publicCachedKinds.has(kind));
+          if (Date.now() - timestamp < CATALOG_CACHE_TTL && publicCachedData.length > 0 && publicCacheHasAllFamilies) {
+            setShows(publicCachedData);
             setPublicCatalogPage(1);
             setHasMorePublicCatalog(true);
             setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
-              const count = data.filter((show: Show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
+              const count = publicCachedData.filter((show: Show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
               return [kind, Math.max(1, Math.ceil(count / 20))];
             })) as Record<PublicCatalogKind, number>);
             setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
@@ -1013,12 +1146,12 @@ export function App() {
     }
   };
 
-  const handleSelectEpisode = async (episode: Episode, showTitle: string) => {
+  const handleSelectEpisode = async (episode: Episode, showTitle: string, showOverride?: Show) => {
     const showId = episode.show_id || selectedShowId || 'unknown';
     // La tarjeta de búsqueda puede proceder del lote server-side y no estar
     // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
     // subtítulos igual que una tarjeta del catálogo principal.
-    const currentShow = shows.find((s) => s.id === showId)
+    const currentShow = showOverride || shows.find((s) => s.id === showId)
       || serverSearchResults.find((s) => s.id === showId);
     const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id);
     const initialTime = existingProgress?.currentTime || 0;
@@ -1228,39 +1361,27 @@ export function App() {
   const showsCountByGenre = useMemo(() => {
     const counts: Record<string, number> = {};
     shows.forEach((s) => {
+      if (isShowHidden(s)) return;
       const genresStr = Array.isArray(s.genres) ? s.genres.join(', ') : String(s.genres || '');
       genresStr.split(',').forEach((g) => {
         const key = g.trim().toLowerCase();
-        if (key) {
+        if (key && !isGenreHidden(g)) {
           counts[key] = (counts[key] || 0) + 1;
         }
       });
     });
     return counts;
-  }, [shows]);
+  }, [isGenreHidden, isShowHidden, shows]);
 
   // Filtrado suave de catálogo por categorías y géneros
   const filteredShows = useMemo(() => {
-    let result = shows;
+    let result = shows.filter((show) => !isShowHidden(show));
 
-    // Si hay búsqueda activa, priorizar resultados server-side (PostgreSQL ts_rank sobre las 38,000+ obras)
+    // Si hay búsqueda activa, mostrar únicamente resultados canónicos de TMDB.
     if (searchQuery && searchQuery.trim().length >= 2) {
-      const qNorm = normalizeText(searchQuery);
-      const serverIds = new Set(serverSearchResults.map((s) => s.id));
-      const localMatches = shows.filter((s) => {
-        if (serverIds.has(s.id)) return false;
-        const t = normalizeText(s.title || '');
-        const e = normalizeText(s.english_title || '');
-        const o = normalizeText(s.original_title || '');
-        return t.includes(qNorm) || e.includes(qNorm) || o.includes(qNorm);
-      });
-      // Public TMDB search can return a related movie before the exact local
-      // anime/series title (for example, a franchise film before SPY x FAMILY).
-      // Apply the same title relevance scoring to the merged list so an exact
-      // match always opens first and does not look like a duplicate mismatch.
-      const scored = searchShows([...serverSearchResults, ...localMatches], searchQuery);
+      const visibleServerSearchResults = serverSearchResults.filter((show) => !isShowHidden(show));
       const seen = new Set<string>();
-      result = scored.filter((show) => {
+      result = visibleServerSearchResults.filter((show) => {
         const key = catalogIdentityKey(show);
         if (seen.has(key)) return false;
         seen.add(key);
@@ -1307,7 +1428,7 @@ export function App() {
     }
 
     return result;
-  }, [shows, serverSearchResults, activeFilter, searchQuery, yearFilter, sortBy]);
+  }, [isShowHidden, shows, serverSearchResults, activeFilter, searchQuery, yearFilter, sortBy]);
 
   // Años disponibles para el filtro (de más nuevo a más viejo)
   const availableYears = useMemo(() => {
@@ -1327,11 +1448,12 @@ export function App() {
       Array.isArray(g) ? g.map(String) : String(g || '').split(',');
     const counts = new Map<string, number>();
     for (const s of shows) {
+      if (isShowHidden(s)) continue;
       for (const g of toList(s.genres)) {
         const clean = g.trim();
         if (!clean) continue;
         const low = clean.toLowerCase();
-        if (low === 'multimedia' || low === 'anime' || low === 'película' || low === 'serie') continue;
+        if (low === 'multimedia' || low === 'anime' || low === 'película' || low === 'serie' || isGenreHidden(clean)) continue;
         counts.set(clean, (counts.get(clean) || 0) + 1);
       }
     }
@@ -1341,12 +1463,12 @@ export function App() {
       .map(([genre]) => ({
         genre,
         items: shows
-          .filter((s) => toList(s.genres).map((x) => x.trim()).includes(genre))
+          .filter((s) => !isShowHidden(s) && toList(s.genres).map((x) => x.trim()).includes(genre))
           .sort((a, b) => (b.rating || 0) - (a.rating || 0))
           .slice(0, 40),
       }))
       .filter((r) => r.items.length >= 8);
-  }, [shows]);
+  }, [isGenreHidden, isShowHidden, shows]);
 
 
 
@@ -1355,12 +1477,13 @@ export function App() {
     if (shows.length === 0) return null;
 
     const watchedIds = new Set(continueWatchingItems.map((item) => item.showId).filter(Boolean));
-    const unwatchedShows = shows.filter((show) => !watchedIds.has(show.id));
-    const heroPool = unwatchedShows.length > 0 ? unwatchedShows : shows;
+    const visibleShows = shows.filter((show) => !isShowHidden(show));
+    const unwatchedShows = visibleShows.filter((show) => !watchedIds.has(show.id));
+    const heroPool = unwatchedShows.length > 0 ? unwatchedShows : visibleShows;
 
     // 1. Si el servidor nos dio un Hero Pick personalizado con buena imagen, usarlo
     if (heroRecommendation) {
-      const matchInCatalog = shows.find((s) => s.id === heroRecommendation.id);
+      const matchInCatalog = visibleShows.find((s) => s.id === heroRecommendation.id);
       const target = matchInCatalog || heroRecommendation;
       const hasVisuals = Boolean((target as any).backdrop_path || (target as any).banner_url || target.poster_url);
       if (hasVisuals && (heroPool.includes(target) || heroPool.length === 0)) {
@@ -1372,7 +1495,7 @@ export function App() {
     const genreScore: Record<string, number> = {};
 
     continueWatchingItems.forEach((it, idx) => {
-      const show = shows.find((s) => s.id === it.showId);
+      const show = visibleShows.find((s) => s.id === it.showId);
       if (show && show.genres) {
         const weight = Math.max(1, 5 - idx);
         const list = Array.isArray(show.genres) ? show.genres : String(show.genres).split(/[,/|•]+/);
@@ -1444,7 +1567,7 @@ export function App() {
     }
 
     return bestShow || heroPool[0] || null;
-  }, [shows, heroRecommendation, continueWatchingItems]);
+  }, [shows, heroRecommendation, continueWatchingItems, isShowHidden]);
 
   // Inicio es una sola superficie editorial, aunque visualmente esté formada
   // por varias filas. Reservar cada identidad aquí evita que el mismo título
@@ -1454,15 +1577,16 @@ export function App() {
   const homeSections = useMemo(() => {
     const usedKeys = new Set<string>();
     const continueIds = new Set(continueWatchingItems.map((item) => item.showId).filter(Boolean));
+    const visibleHomeShows = shows.filter((show) => !isShowHidden(show));
 
     // "Seguir viendo" ya ocupa una tarjeta por obra; impedir que sus títulos
     // vuelvan a entrar en otra fila mantiene la diversidad de todo Inicio.
-    for (const show of shows) {
+    for (const show of visibleHomeShows) {
       if (continueIds.has(show.id)) usedKeys.add(homeIdentityKey(show));
     }
     if (featuredShow) usedKeys.add(homeIdentityKey(featuredShow));
 
-    const rankedCatalog = [...shows].sort((a, b) =>
+    const rankedCatalog = [...visibleHomeShows].sort((a, b) =>
       Number(b.popularity || 0) - Number(a.popularity || 0) ||
       Number(b.rating || 0) - Number(a.rating || 0) ||
       Number(b.year || 0) - Number(a.year || 0),
@@ -1503,9 +1627,9 @@ export function App() {
     const uniqueGenreRows = genreRows
       .map((row) => ({ ...row, items: takeUniqueHomeShows(row.items, usedKeys, HOME_GENRE_MAX_ITEMS) }))
       .filter((row) => row.items.length >= HOME_RAIL_MIN_ITEMS);
-    const recentShows = takeUniqueHomeShows(shows.slice(0, 50), usedKeys, 18);
+    const recentShows = takeUniqueHomeShows(visibleHomeShows.slice(0, 50), usedKeys, 18);
     const topRatedShows = takeUniqueHomeShows(
-      [...shows].sort((a, b) => (b.rating || 0) - (a.rating || 0) || Number(b.year || 0) - Number(a.year || 0)),
+      [...visibleHomeShows].sort((a, b) => (b.rating || 0) - (a.rating || 0) || Number(b.year || 0) - Number(a.year || 0)),
       usedKeys,
       8,
     );
@@ -1516,7 +1640,7 @@ export function App() {
       secondaryRails,
       genreRows: uniqueGenreRows,
     };
-  }, [continueWatchingItems, featuredShow, filteredShows, genreRows, recommendationRails, shows]);
+  }, [continueWatchingItems, featuredShow, filteredShows, genreRows, recommendationRails, shows, isShowHidden]);
 
   const activePublicKind = PUBLIC_CATALOG_KINDS.includes(activeFilter as PublicCatalogKind)
     ? activeFilter as PublicCatalogKind
@@ -1543,6 +1667,41 @@ export function App() {
     return exploreGenreId
       ? loadMorePublicGenre(exploreGenreKey)
       : loadMorePublicCatalog();
+  };
+
+  const handlePlayAdminShow = async (show: Show) => {
+    try {
+      let detail: any = null;
+      const localResponse = await fetch(`/api/v1/shows/${encodeURIComponent(show.id)}`);
+      if (localResponse.ok) detail = await localResponse.json();
+
+      if (!detail && show.tmdb_id) {
+        const rawKind = String(show.kind || show.category || 'series').toLowerCase();
+        const kind = rawKind.includes('movie') || rawKind.includes('pel') ? 'movie' : rawKind.includes('anime') ? 'anime' : 'series';
+        const publicResponse = await fetch(`/api/v1/catalog/public/${kind}/${show.tmdb_id}`);
+        if (publicResponse.ok) detail = await publicResponse.json();
+      }
+
+      const firstEpisode = Array.isArray(detail?.episodes) ? detail.episodes[0] : null;
+      const episode: Episode | null = firstEpisode || (show.tmdb_id ? {
+        id: `tmdb-${String(show.kind || show.category || 'series').toLowerCase()}-${show.tmdb_id}-s1-e1`,
+        show_id: show.id,
+        title: show.title,
+        episode_number: 1,
+        season_number: 1,
+        source_url: `tmdb://${String(show.kind || show.category || 'series').toLowerCase()}/${show.tmdb_id}/1/1`,
+      } : null);
+      if (!episode) throw new Error('Esta obra todavía no tiene un episodio o fuente reproducible.');
+      await handleSelectEpisode({ ...episode, show_id: show.id }, detail?.title || show.title, show);
+    } catch (error: any) {
+      setPlayingStreamData({
+        title: show.title,
+        streamUrl: '',
+        all_streams: [],
+        loadError: error?.message || 'No se pudo abrir esta obra.',
+        isLoading: false,
+      });
+    }
   };
   // Las pestañas de Anime/Películas/Series ya tienen un buffer local que se
   // muestra por bloques. Al llegar al final, primero revelamos el siguiente
@@ -1734,10 +1893,7 @@ export function App() {
                 <section className="space-y-10">
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
                     <div>
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-2">
-                        <Sparkles size={13} />
-                        <span>Selección MeriStream</span>
-                      </div>
+                      <p className="section-kicker">Selección MeriStream</p>
                       <h3 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight">
                         {isAuthenticated && user ? `Recomendaciones para ${user.username}` : 'Recomendaciones y Tendencias'}
                       </h3>
@@ -1771,7 +1927,7 @@ export function App() {
 
                   {recommendationRails.length === 0 && !isLoadingRecs && (
                     <div className="py-16 text-center space-y-3">
-                      <Sparkles size={36} className="mx-auto text-amber-400/50" />
+                      <Film size={36} className="mx-auto text-zinc-600" />
                       <p className="text-sm text-zinc-400 font-medium">
                         Mira tu primer título para descubrir recomendaciones para ti.
                       </p>
@@ -1851,34 +2007,10 @@ export function App() {
                           />
                         ))}
                       </div>
-                      {(filteredShows.length > gridPageSize || activeRemoteHasMore) && (
-                        <div className="catalog-loadmore flex flex-wrap justify-center gap-3 pt-6">
-                          {filteredShows.length > gridPageSize && (
-                          <button
-                            type="button"
-                            onClick={() => setGridPageSize(prev => prev + 100)}
-                            className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
-                          >
-                            Cargar más ({filteredShows.length - gridPageSize} restantes)
-                          </button>
-                          )}
-                          {activeRemoteHasMore && (
-                            <button
-                              type="button"
-                              onClick={() => activePublicKind
-                                ? loadMorePublicCatalogKind(activePublicKind)
-                                : loadMorePublicGenre(activePublicGenreKey)}
-                              disabled={activeRemoteLoading}
-                              className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
-                            >
-                              {activeRemoteLoading
-                                ? 'Cargando desde TMDB…'
-                                : activePublicKind
-                                  ? `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activePublicKind]}`
-                                  : `Cargar más de ${activeFilter}`}
-                            </button>
-                          )}
-                        </div>
+                      {activeRemoteLoading && (
+                        <p className="catalog-autoload-status" role="status" aria-live="polite">
+                          Cargando más títulos…
+                        </p>
                       )}
                     </>
                   )}
@@ -2181,6 +2313,7 @@ export function App() {
               playableCandidates.length > 0 ? playableCandidates : candidates,
           });
         }}
+        onPlayShow={handlePlayAdminShow}
       />
     </div>
   );

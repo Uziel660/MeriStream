@@ -115,6 +115,13 @@ model MediaItem {
   @@index([tmdb_id])
 }
 
+model CatalogVisibility {
+  id              String   @id @default("default")
+  hidden_genres   String   @default("[]") @db.Text
+  hidden_show_ids String   @default("[]") @db.Text
+  updated_at      DateTime @updatedAt
+}
+
 model SiteRating {
   id      String  @id @default(cuid())
   site    String  @unique

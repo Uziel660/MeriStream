@@ -4,6 +4,7 @@ import { SmartImage } from './SmartImage';
 import { contentLabel } from '../utils/labels';
 import { cardPosterCandidates, cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
 import { cleanDisplayTitle, cleanDisplayGenres } from '../utils/textCleaner';
+import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { Show } from '../types';
 
 interface MediaCardProps {
@@ -16,7 +17,8 @@ interface MediaCardProps {
 
 export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelectMedia, onHover, imageLoading = 'lazy' }) => {
   const title = cleanDisplayTitle(media.title);
-  const genre = cleanDisplayGenres(media.genres)[0] || contentLabel(media.category);
+  const { isGenreHidden } = useHiddenGenres();
+  const genre = cleanDisplayGenres(media.genres).find((item) => !isGenreHidden(item)) || contentLabel(media.category);
   const posterSources = cardPosterCandidates(media);
   return (
     <button

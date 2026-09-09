@@ -9,17 +9,25 @@ const args = new Set(process.argv.slice(2));
 const dry = args.has("--dry");
 const refresh = args.has("--refresh");
 const fast = args.has("--fast");
+const providerArgIndex = process.argv.indexOf("--providers");
+const selectedProviders = providerArgIndex >= 0
+  ? new Set(String(process.argv[providerArgIndex + 1] || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean))
+  : null;
 
 const settings = fast
   ? { delay: 0, maxJobs: 6 }
   : { delay: 750, maxJobs: 4 };
 
 async function main() {
-  const targets = getEnabledIngestionTargets();
+  const allTargets = getEnabledIngestionTargets();
+  const targets = selectedProviders
+    ? allTargets.filter((target) => selectedProviders.has(target.providerId))
+    : allTargets;
   if (targets.length === 0) throw new Error("No hay providers con targets de ingestión habilitados");
 
   console.log(`\n[MeriStream] ingest:all`);
   console.log(`Providers/targets: ${targets.length}`);
+  if (selectedProviders) console.log(`Filtro de providers: ${[...selectedProviders].join(", ")}`);
   console.log(`Modo: ${fast ? "FAST" : "SAFE"}${refresh ? " + REFRESH" : ""}${dry ? " + DRY" : ""}`);
 
   if (!dry) {

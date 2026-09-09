@@ -7,6 +7,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { findLocalAnimeIdentity } from "../server/localCatalogIndex";
+import { decodeHtmlEntities, normalizeTitleKey } from "../server/utils/titleNormalizer";
 
 type AnimeCandidate = {
   id: number;
@@ -16,12 +17,14 @@ type AnimeCandidate = {
   synonyms?: string[] | null;
   startDate?: { year?: number | null } | null;
   kitsuId?: string | null;
+  externalMatch?: "exact" | "contained";
 };
 
 type Result = {
   showId: string;
   title: string;
   matchedTitle?: string;
+  tmdbId?: number;
   anilistId?: string;
   malId?: number;
   score?: number;
@@ -34,6 +37,54 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let aniListUnavailable = false;
 const wikidataCache = new Map<number, { malId: number | null; anilistId: string | null } | null>();
 const malWikidataCache = new Map<number, { malId: number | null; anilistId: string | null } | null>();
+const kitsuResponseCache = new Map<string, any | null>();
+const PRIMARY_SOURCES = ["cinecalidad", "latanime", "gnula", "tioanime"];
+
+// Aliases de proveedores verificados contra los mappings MAL/AniList de Kitsu.
+// Se mantienen aquí solo cuando la traducción no es recuperable por búsqueda
+// automática y la obra/temporada es inequívoca.
+const CURATED_IDENTITIES: Record<string, { malId: number; anilistId: string }> = {
+  condenadoaserunheroe: { malId: 56009, anilistId: "167152" },
+  elsenorloboquieresercomido: { malId: 42517, anilistId: "121797" },
+  inuyasha4: { malId: 449, anilistId: "449" },
+  haikyuoad2elrivalsonlossuspensos: { malId: 35806, anilistId: "21348" },
+  natsumeyuujinchos3: { malId: 10379, anilistId: "10379" },
+  nanatsunotaizaimovie1: { malId: 35946, anilistId: "99540" },
+  azurlanebisokuzenshinespecial: { malId: 49487, anilistId: "139752" },
+  comicpartyespeciales: { malId: 707, anilistId: "707" },
+  thekingsavatarmovieforthegloryquanzhigaoshouzhidianfengrongyao: { malId: 40080, anilistId: "108981" },
+  doupocangqiongespecialesbattlethroughtheheavensespeciales: { malId: 36561, anilistId: "102462" },
+  codegeassleloucheldelarebellioniiniciacion: { malId: 34438, anilistId: "101811" },
+  codegeassleloucheldelarebelioniitransgresion: { malId: 34439, anilistId: "101812" },
+  codegeassleloucheldelarebelioniiiglorificacion: { malId: 34440, anilistId: "101813" },
+  elcantodelanoches2: { malId: 58390, anilistId: "175914" },
+  laeminenciaenlasombras2: { malId: 54595, anilistId: "161964" },
+  sakuracardcaptor2: { malId: 372, anilistId: "372" },
+  alyaavecesescondesussentimientosenruso: { malId: 54744, anilistId: "162804" },
+  dragonballzelrenacerdelafusiongokuyvegeta: { malId: 905, anilistId: "905" },
+  overflowdesbordandose: { malId: 40746, anilistId: "113417" },
+  zenkielguerreroguardian: { malId: 1573, anilistId: "1573" },
+  luchadorasdeleyendarayearthova: { malId: 1954, anilistId: "1954" },
+  sanshasanyouespeciales: { malId: 33173, anilistId: "21789" },
+  doupocangqiong2especialesbattlethroughtheheavens2songofdesert: { malId: 39178, anilistId: "109484" },
+  ulibyeolilhowaeollugsolachicasateliteyelchicovaca: { malId: 28251, anilistId: "102557" },
+  nisekoisegunda: { malId: 27787, anilistId: "20876" },
+  maiotomeespeciales: { malId: 1659, anilistId: "1659" },
+  akamegakillakakillgekijou: { malId: 25241, anilistId: "20775" },
+  hatarakusaibouespeciales: { malId: 39605, anilistId: "109085" },
+  sonobisquedollwakoiwosurus2: { malId: 53065, anilistId: "154768" },
+  freemovie4thefinalstroke: { malId: 38400, anilistId: "107203" },
+  nekoparaanime: { malId: 38924, anilistId: "106863" },
+  azurlaneminidrama: { malId: 38328, anilistId: "104159" },
+};
+
+// Algunas obras de catálogo oficial sí tienen ficha AniList, pero no una
+// referencia MAL. Se guardan aparte para no inventar un MAL ni bloquear la
+// reparación por la restricción única de esa columna.
+const CURATED_ANILIST_ONLY: Record<string, string> = {
+  "superchicamovil⅙": "104284",
+  starwarsvisions2: "184642",
+};
 
 function args() {
   const argv = process.argv.slice(2);
@@ -45,6 +96,8 @@ function args() {
   const concurrency = Number(value("--concurrency"));
   return {
     apply: argv.includes("--apply"),
+    onlyNone: argv.includes("--only-none"),
+    primaryOnly: argv.includes("--primary-only"),
     limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : undefined,
     concurrency: Math.min(6, Math.max(1, Number.isFinite(concurrency) ? Math.floor(concurrency) : 3)),
     delayMs: Math.max(250, Number(value("--delay-ms") || 600)),
@@ -54,12 +107,12 @@ function args() {
 }
 
 function clean(value: unknown): string {
-  return String(value || "")
+  return decodeHtmlEntities(String(value || ""))
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\b(?:season|temporada|part|cour|cour\s+\d+|s\s*\d+)\s*\d*\b/gi, " ")
-    .replace(/\b(?:tv|movie|film|ova|ona|special|recap)\b/gi, " ")
+    .replace(/\b(?:tv|movie|film|ova|ona|special|speciales|recap|netflix|amz|amazon|latino|castellano|catalan|catalán|bd|remaster|remastered|sin\s+censura|uncensored|live\s+action)\b/gi, " ")
     // A year belongs to the matching guard below, not to the title token set;
     // this lets "Ranma1/2" match the catalog title "Ranma 1/2 (2024)" while
     // still rejecting a sequel whose year differs materially.
@@ -174,9 +227,8 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
   const searchUrl = new URL("https://kitsu.io/api/edge/anime");
   searchUrl.searchParams.set("filter[text]", query);
   searchUrl.searchParams.set("page[limit]", "5");
-  const response = await fetch(searchUrl, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(4_000) });
-  if (!response.ok) return null;
-  const payload = await response.json() as any;
+  const payload = await fetchKitsuJson(searchUrl.toString());
+  if (!payload) return null;
   const rows = Array.isArray(payload?.data) ? payload.data : [];
   let best: AnimeCandidate | null = null;
   let bestScore = 0;
@@ -184,6 +236,18 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
     const attributes = row?.attributes || {};
     const titles = [attributes.canonicalTitle, attributes.titles?.canonical, ...Object.values(attributes.titles || {}), attributes.slug]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const queryClean = clean(query);
+    const collectionQuery = /\bmovies?\b/i.test(query) && !/\bmovie\s*\d+\b/i.test(query);
+    const miniDramaQuery = /\bmini\s+drama\b/i.test(query);
+    const exact = !collectionQuery && !miniDramaQuery && titles.some((title) => clean(title) === queryClean);
+    const contained = titles.some((title) => {
+      const titleClean = clean(title);
+      const candidateHasMiniDrama = /\bmini\s+drama\b/i.test(title);
+      const candidateHasMovieMarker = /\bmovie\b/i.test(title);
+      const structureCompatible = !collectionQuery && (!miniDramaQuery || candidateHasMiniDrama)
+        && (!/\bmovie\s+\d+\b/i.test(query) || candidateHasMovieMarker);
+      return structureCompatible && titleClean.length >= 6 && (queryClean.includes(titleClean) || titleClean.includes(queryClean));
+    });
     const score = Math.max(...titles.map((title) => similarity(query, title)), 0);
     if (score > bestScore) {
       bestScore = score;
@@ -195,18 +259,91 @@ async function searchKitsu(query: string): Promise<AnimeCandidate | null> {
         synonyms: titles,
         startDate: { year: Number(String(attributes.startDate || attributes.start_date || "").slice(0, 4)) || null },
         kitsuId: String(row.id || ""),
+        externalMatch: exact ? "exact" : contained ? "contained" : undefined,
       };
     }
   }
   if (!best?.kitsuId) return null;
-  const mappingsResponse = await fetch(`https://kitsu.io/api/edge/anime/${encodeURIComponent(best.kitsuId)}/mappings`, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(4_000) });
-  if (mappingsResponse.ok) {
-    const mappings = (await mappingsResponse.json() as any)?.data;
+  const mappingsPayload = await fetchKitsuJson(`https://kitsu.io/api/edge/anime/${encodeURIComponent(best.kitsuId)}/mappings`);
+  if (mappingsPayload) {
+    const mappings = mappingsPayload?.data;
     if (Array.isArray(mappings)) {
       const mal = mappings.find((entry: any) => entry?.attributes?.externalSite === "myanimelist/anime")?.attributes?.externalId;
       const anilist = mappings.find((entry: any) => entry?.attributes?.externalSite === "anilist/anime")?.attributes?.externalId;
       best.idMal = /^\d+$/.test(String(mal || "")) ? Number(mal) : null;
       if (anilist && /^\d+$/.test(String(anilist))) best.anilistId = String(anilist);
+    }
+  }
+  return best;
+}
+
+async function fetchKitsuJson(url: string): Promise<any | null> {
+  if (kitsuResponseCache.has(url)) return kitsuResponseCache.get(url) || null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(url, { headers: { accept: "application/vnd.api+json", "user-agent": "MeriStream/1.0" }, signal: AbortSignal.timeout(4_000) });
+      if (response.ok) {
+        const payload = await response.json() as any;
+        kitsuResponseCache.set(url, payload);
+        return payload;
+      }
+      if (response.status !== 429 && response.status < 500) break;
+      const retryAfter = Number(response.headers.get("retry-after") || 0);
+      await sleep(Math.min(6_000, Math.max(1_000, retryAfter * 1_000 || 1_500)));
+    } catch {
+      if (attempt < 2) await sleep(1_000);
+    }
+  }
+  kitsuResponseCache.set(url, null);
+  return null;
+}
+
+function reliableAnimeYear(value: unknown): number | null {
+  const year = Number(value);
+  // 1969/1912 are legacy importer defaults present in old source rows, not
+  // reliable air dates. Keeping them would reject otherwise exact MAL hits.
+  return Number.isInteger(year) && year >= 1930 && year <= 2100 && year !== 1969 ? year : null;
+}
+
+function providerNoiseVariant(value: unknown): string {
+  return String(value || "")
+    .replace(/\b(?:netflix|amz|amazon|amc|ia|latino|castellano|catalan|catalán|bd|remaster|remastered)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function searchJikan(query: string): Promise<AnimeCandidate | null> {
+  const url = new URL("https://api.jikan.moe/v4/anime");
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("sfw", "true");
+  const response = await fetch(url, {
+    headers: { accept: "application/json", "user-agent": "MeriStream/1.0 (identity repair)" },
+    signal: AbortSignal.timeout(4_000),
+  });
+  if (!response.ok) return null;
+  const rows = ((await response.json() as any)?.data || []) as any[];
+  let best: AnimeCandidate | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const titles = [
+      row?.title,
+      row?.title_english,
+      row?.title_japanese,
+      ...(Array.isArray(row?.titles) ? row.titles.map((item: any) => item?.title) : []),
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const score = Math.max(...titles.map((title) => similarity(query, title)), 0);
+    const year = Number(String(row?.aired?.from || row?.year || "").slice(0, 4)) || null;
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        id: 0,
+        idMal: Number(row?.mal_id) || null,
+        anilistId: null,
+        title: { romaji: row?.title, english: row?.title_english, native: row?.title_japanese },
+        synonyms: titles,
+        startDate: { year },
+      };
     }
   }
   return best;
@@ -234,13 +371,99 @@ async function resolve(row: any): Promise<Result> {
       };
     }
   }
+  if (!row.tmdb_id && !row.mal_id && !row.anilist_id) {
+    const curated = CURATED_IDENTITIES[normalizeTitleKey(row.title)];
+    if (curated) {
+      const existingMal = await prisma.show.findUnique({ where: { mal_id: curated.malId }, select: { id: true } });
+      const safeMalId = !existingMal || existingMal.id === row.id ? curated.malId : null;
+      const data = {
+        ...(safeMalId ? { mal_id: safeMalId } : {}),
+        anilist_id: curated.anilistId,
+      };
+      if (args().apply) await prisma.show.update({ where: { id: row.id }, data });
+      return {
+        showId: row.id,
+        title: row.title,
+        ...(safeMalId ? { malId: safeMalId } : {}),
+        anilistId: curated.anilistId,
+        score: 1,
+        status: "updated",
+        reason: safeMalId ? "curated_external_mapping" : "curated_anilist_duplicate_mal",
+      };
+    }
+    const curatedAniList = CURATED_ANILIST_ONLY[normalizeTitleKey(row.title)];
+    if (curatedAniList) {
+      if (args().apply) await prisma.show.update({ where: { id: row.id }, data: { anilist_id: curatedAniList } });
+      return {
+        showId: row.id,
+        title: row.title,
+        anilistId: curatedAniList,
+        score: 1,
+        status: "updated",
+        reason: "curated_anilist_only_mapping",
+      };
+    }
+  }
+  // Una misma obra puede haber entrado varias veces desde temporadas o
+  // proveedores distintos. Si otra fila anime comparte exactamente el título
+  // normalizado/base y tiene una única identidad externa, heredamos solo los
+  // campos que no contradicen la fila actual. No usamos una base compartida
+  // cuando aparecen dos MAL/AniList distintos (secuela/franquicia ambigua).
+  const providerKey = normalizeTitleKey(providerNoiseVariant(row.title));
+  const siblingKeys = [...new Set([row.normalized_title, row.base_normalized_title, providerKey])]
+    .filter((value: unknown): value is string => Boolean(value));
+  if (siblingKeys.length) {
+    const siblings = await prisma.show.findMany({
+      where: {
+        id: { not: row.id },
+        category: "anime",
+        OR: [
+          { normalized_title: { in: siblingKeys } },
+          { base_normalized_title: { in: siblingKeys } },
+        ],
+        AND: [{ OR: [{ tmdb_id: { not: null } }, { mal_id: { not: null } }, { anilist_id: { not: null } }] }],
+      },
+      select: { tmdb_id: true, mal_id: true, anilist_id: true },
+      take: 50,
+    });
+    const siblingTmdbIds = [...new Set(siblings.map((item) => item.tmdb_id).filter((value): value is number => Number.isInteger(value) && value > 0))];
+    const siblingMalIds = [...new Set(siblings.map((item) => item.mal_id).filter((value): value is number => Number.isInteger(value) && value > 0))];
+    const siblingAniIds = [...new Set(siblings.map((item) => item.anilist_id).filter((value): value is string => Boolean(value)))];
+    const siblingTmdbId = siblingTmdbIds.length === 1 ? siblingTmdbIds[0] : null;
+    const siblingMalId = siblingMalIds.length === 1 ? siblingMalIds[0] : null;
+    const siblingAniId = siblingAniIds.length === 1 ? siblingAniIds[0] : null;
+    const siblingAniData = siblingAniId && !row.anilist_id ? { anilist_id: siblingAniId } : {};
+    if (siblingTmdbId || siblingAniId || (siblingMalId && !row.mal_id)) {
+      const existingMal = siblingMalId
+        ? await prisma.show.findUnique({ where: { mal_id: siblingMalId }, select: { id: true } })
+        : null;
+      const safeMalId = siblingMalId && (!existingMal || existingMal.id === row.id) ? siblingMalId : null;
+      const data = {
+        ...(siblingTmdbId && !row.tmdb_id ? { tmdb_id: siblingTmdbId } : {}),
+        ...(safeMalId ? { mal_id: safeMalId } : {}),
+        ...siblingAniData,
+      };
+      if (Object.keys(data).length > 0) {
+        if (args().apply) await prisma.show.update({ where: { id: row.id }, data });
+        return {
+          showId: row.id,
+          title: row.title,
+          ...(safeMalId ? { malId: safeMalId } : {}),
+          ...(siblingAniId ? { anilistId: siblingAniId } : {}),
+          score: 1,
+          status: "updated",
+          reason: "sibling_identity_exact",
+        };
+      }
+    }
+  }
   // El índice local se consulta antes de tocar servicios remotos. Es una
   // relación exacta por título normalizado y año aproximado; nunca sustituye
   // un MAL ya existente.
-  const local = await findLocalAnimeIdentity(
-    [row.title, row.english_title, row.original_title, row.japanese_title].filter(Boolean),
-    row.year,
-  );
+  const localTitles = [row.title, row.english_title, row.original_title, row.japanese_title]
+    .filter(Boolean)
+    .flatMap((value) => [String(value), providerNoiseVariant(value)]);
+  const local = await findLocalAnimeIdentity(localTitles, reliableAnimeYear(row.year));
   if (local && (local.malId || local.anilistId)) {
     if (row.mal_id && local.malId && row.mal_id !== local.malId) {
       if (args().apply && !row.anilist_id && local.anilistId) {
@@ -248,22 +471,50 @@ async function resolve(row: any): Promise<Result> {
       }
       return { showId: row.id, title: row.title, status: "conflict", reason: `local_mal_conflict:${row.malId}` };
     }
+    const existingMal = local.malId
+      ? await prisma.show.findUnique({ where: { mal_id: local.malId }, select: { id: true } })
+      : null;
+    // MAL es único en Show. Si ya lo usa otra ficha exacta, no podemos
+    // copiarlo por la restricción de la columna, pero sí podemos heredar sus
+    // cruces TMDB/AniList cuando no hay valores contradictorios. Esto repara
+    // duplicados importados por proveedores distintos sin mover episodios.
+    const malLinkedRows = local.malId
+      ? await prisma.show.findMany({
+        where: { mal_id: local.malId, id: { not: row.id } },
+        select: { tmdb_id: true, anilist_id: true },
+      })
+      : [];
+    const malLinkedTmdbIds = [...new Set(malLinkedRows
+      .map((item) => item.tmdb_id)
+      .filter((value): value is number => Number.isInteger(value) && value > 0))];
+    const malLinkedAniListIds = [...new Set(malLinkedRows
+      .map((item) => item.anilist_id)
+      .filter((value): value is string => Boolean(value)))];
+    const inheritedTmdbId = malLinkedTmdbIds.length === 1 ? malLinkedTmdbIds[0] : null;
+    const inheritedAniListId = malLinkedAniListIds.length === 1 ? malLinkedAniListIds[0] : null;
+    const safeMalId = local.malId && (!existingMal || existingMal.id === row.id) ? local.malId : null;
+    const safeAniListId = !row.anilist_id ? local.anilistId || inheritedAniListId : null;
+    const safeTmdbId = !row.tmdb_id ? inheritedTmdbId : null;
     const result: Result = {
       showId: row.id,
       title: row.title,
       matchedTitle: local.canonicalTitle,
-      ...(local.anilistId && !row.anilist_id ? { anilistId: local.anilistId } : {}),
-      ...(local.malId && !row.mal_id ? { malId: local.malId } : {}),
+      ...(safeAniListId ? { anilistId: safeAniListId } : {}),
+      ...(safeMalId ? { malId: safeMalId } : {}),
+      ...(safeTmdbId ? { tmdbId: safeTmdbId } : {}),
       score: 1,
-      status: "updated",
-      reason: "local_index_exact",
+      status: safeMalId || safeAniListId || safeTmdbId ? "updated" : "conflict",
+      reason: safeMalId || safeAniListId || safeTmdbId
+        ? (existingMal ? "inherited_from_exact_mal_identity" : "local_index_exact")
+        : "local_mal_already_used",
     };
     if (args().apply) {
       await prisma.show.update({
         where: { id: row.id },
         data: {
-          ...(row.mal_id || !local.malId ? {} : { mal_id: local.malId }),
-          ...(row.anilist_id || !local.anilistId ? {} : { anilist_id: local.anilistId }),
+          ...(safeTmdbId ? { tmdb_id: safeTmdbId } : {}),
+          ...(row.mal_id || !safeMalId ? {} : { mal_id: safeMalId }),
+          ...(row.anilist_id || !safeAniListId ? {} : { anilist_id: safeAniListId }),
         },
       });
     }
@@ -334,34 +585,48 @@ async function resolve(row: any): Promise<Result> {
 
   let best: { candidate: AnimeCandidate; score: number; matchedTitle: string } | null = null;
   for (const alias of aliases) {
-    let candidate: AnimeCandidate | null = null;
-    try { candidate = await searchAniList(alias); } catch { candidate = null; }
-    if (!candidate) {
-      try { candidate = await searchKitsu(alias); } catch { candidate = null; }
+    const queries = [...new Set([alias, clean(alias)].filter((query) => query.length >= 2))];
+    for (const query of queries) {
+      let candidate: AnimeCandidate | null = null;
+      try { candidate = await searchAniList(query); } catch { candidate = null; }
+      if (!candidate || !candidate.idMal) {
+        try { candidate = await searchKitsu(query); } catch { candidate = null; }
+      }
+      if (!candidate || !candidate.idMal) {
+        try { candidate = await searchJikan(query); } catch { candidate = null; }
+      }
+      if (!candidate) continue;
+      const titles = candidateTitles(candidate);
+      const titleScore = Math.max(...titles.map((title) => similarity(alias, title)), 0);
+      const exact = titles.some((title) => clean(title) === clean(alias));
+      const rowYear = reliableAnimeYear(row.year);
+      const yearDelta = rowYear && candidate.startDate?.year ? Math.abs(rowYear - Number(candidate.startDate.year)) : 0;
+      // A sequel with a shared franchise title is not a safe identity match.
+      // When both sides have a year, reject gaps larger than two years instead of
+      // allowing a high token overlap to attach the wrong MAL ID.
+      if (rowYear && candidate.startDate?.year && yearDelta > 2) continue;
+      const yearBonus = yearDelta === 0 ? 0.08 : yearDelta === 1 ? 0.03 : yearDelta > 2 ? -0.12 : 0;
+      const score = Math.max(0, Math.min(1, titleScore + (exact ? 0.22 : 0) + yearBonus));
+      const matchedTitle = titles.sort((a, b) => similarity(alias, b) - similarity(alias, a))[0] || alias;
+      if (!best || score > best.score) best = { candidate, score, matchedTitle };
+      if (exact && yearDelta <= 1) break;
     }
-    if (!candidate) continue;
-    const titles = candidateTitles(candidate);
-    const titleScore = Math.max(...titles.map((title) => similarity(alias, title)), 0);
-    const exact = titles.some((title) => clean(title) === clean(alias));
-    const yearDelta = row.year && candidate.startDate?.year ? Math.abs(Number(row.year) - Number(candidate.startDate.year)) : 0;
-    // A sequel with a shared franchise title is not a safe identity match.
-    // When both sides have a year, reject gaps larger than two years instead of
-    // allowing a high token overlap to attach the wrong MAL ID.
-    if (row.year && candidate.startDate?.year && yearDelta > 2) continue;
-    const yearBonus = yearDelta === 0 ? 0.08 : yearDelta === 1 ? 0.03 : yearDelta > 2 ? -0.12 : 0;
-    const score = Math.max(0, Math.min(1, titleScore + (exact ? 0.22 : 0) + yearBonus));
-    const matchedTitle = titles.sort((a, b) => similarity(alias, b) - similarity(alias, a))[0] || alias;
-    if (!best || score > best.score) best = { candidate, score, matchedTitle };
-    if (exact && yearDelta <= 1) break;
+    if (best?.score && best.score >= 0.98) break;
   }
 
-  if (!best || best.score < 0.76 || !best.candidate.idMal) {
+  const strongKitsuMatch = Boolean(
+    best?.candidate.kitsuId &&
+    best.candidate.externalMatch &&
+    best.score >= 0.45 &&
+    (!row.year || !best.candidate.startDate?.year || Math.abs(row.year - Number(best.candidate.startDate.year)) <= 1),
+  );
+  if (!best || (!strongKitsuMatch && best.score < 0.76) || !best.candidate.idMal) {
     return { showId: row.id, title: row.title, status: "unresolved", score: best?.score, reason: !best ? "no_match" : !best.candidate.idMal ? "missing_mal" : "low_confidence" };
   }
   // AniList search returns its own numeric id. Kitsu's primary id is not an
   // AniList id; only use the explicit mapping when the fallback provider was
   // used, otherwise we would persist a Kitsu id in the anilist_id column.
-  const anilistId = best.candidate.anilistId || (best.candidate.id > 0 ? String(best.candidate.id) : null);
+  const anilistId = best.candidate.anilistId || (!best.candidate.kitsuId && best.candidate.id > 0 ? String(best.candidate.id) : null);
   const malId = Number(best.candidate.idMal);
   if (!Number.isInteger(malId) || malId <= 0) return { showId: row.id, title: row.title, status: "unresolved", reason: "invalid_mal" };
   if (row.mal_id && row.mal_id !== malId) return { showId: row.id, title: row.title, status: "conflict", reason: `existing_mal:${row.mal_id}` };
@@ -397,12 +662,15 @@ async function main() {
   const rows = await prisma.show.findMany({
     where: {
       category: "anime",
-      OR: [{ mal_id: null }, { anilist_id: null }],
+      ...(options.primaryOnly ? { source: { in: PRIMARY_SOURCES } } : {}),
+      ...(options.onlyNone
+        ? { tmdb_id: null, mal_id: null, anilist_id: null }
+        : { OR: [{ mal_id: null }, { anilist_id: null }] }),
       ...(options.afterId ? { id: { gt: options.afterId } } : {}),
     },
     orderBy: { id: "asc" },
     take: options.limit,
-    select: { id: true, title: true, original_title: true, english_title: true, japanese_title: true, year: true, tmdb_id: true, mal_id: true, anilist_id: true },
+    select: { id: true, title: true, original_title: true, english_title: true, japanese_title: true, normalized_title: true, base_normalized_title: true, year: true, tmdb_id: true, mal_id: true, anilist_id: true },
   });
   const results: Result[] = [];
   let cursor = 0;

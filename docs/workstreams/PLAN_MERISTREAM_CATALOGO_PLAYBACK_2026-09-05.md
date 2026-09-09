@@ -109,12 +109,22 @@ Esta matriz valida el resolver, el ranking y la agregación de enlaces almacenad
 4. Traducir solo cuando la descripción no sea española; conservar un placeholder español si TMDB/traductores fallan.
 5. Revisar duplicados y fusionar únicamente cuando título, año, tipo y evidencia de fuente coincidan.
 
+### Fase E.1 — Consolidación de fichas legacy duplicadas
+
+1. Detectar fichas que representan la misma obra entre `Show` legacy y `MediaItem` canónico, especialmente entradas de GNULA sin poster ni metadata.
+2. Conservar episodios, URLs y `source` de la ficha legacy antes de consolidar; no eliminar una ficha si sus fuentes no están migradas.
+3. Reutilizar la identidad TMDB/MAL/AniList únicamente cuando el tipo, título normalizado, año o evidencia de fuente coincidan de forma suficiente.
+4. Evitar que la proyección pública muestre una ficha enriquecida junto a otra tarjeta vacía de la misma obra.
+5. Registrar por separado los casos ambiguos, los packs/especiales y los eventos que no tienen una identidad externa única.
+6. Añadir una auditoría por proveedor para distinguir duplicado, ficha sin metadata, ficha sin fuente y obra realmente nueva.
+
 ### Fase F — Auditoría final de cobertura
 
 1. Generar el informe de cobertura por proveedor, tipo de contenido, páginas recorridas, obras, episodios y enlaces.
 2. Separar claramente `sin enlaces`, `sin TMDB`, `sin poster`, `sin backdrop` y `sin stream resoluble`.
 3. Comparar contra la línea base y explicar cada disminución o aumento.
 4. Confirmar que no queden tareas activas, fallidas inexplicadas ni marcadores auxiliares antiguos.
+5. Revisar manualmente las entradas sin identidad externa y separar las que sí pueden heredar una identidad de legacy de las que requieren una búsqueda específica.
 
 ### Fase G — Cierre
 

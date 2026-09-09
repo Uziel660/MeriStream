@@ -67,7 +67,9 @@
 /* Hero desktop: keep the image dominant but stop the title from swallowing the artwork. */
 .feature {
   min-height: clamp(34rem, 79vh, 56rem) !important;
-  margin-top: -5rem !important;
+  /* The header is two rows tall; let the artwork begin behind its first
+     pixel instead of leaving a 20–30px strip of empty background above it. */
+  margin-top: -6.625rem !important;
 }
 .feature-shade {
   background:
@@ -89,6 +91,35 @@
   margin-top: 0 !important;
   padding-top: clamp(1.25rem, 3vw, 2.5rem) !important;
   background: var(--ms-immersive-bg) !important;
+}
+
+/* Search is a workspace, not another rounded card around the results. */
+.search-results-panel {
+  padding-inline: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.search-results-heading {
+  padding-inline: 0 !important;
+}
+.search-filter-bar {
+  padding-inline: 0 !important;
+}
+.section-kicker {
+  margin: 0 0 .55rem;
+  color: var(--ms-accent);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.catalog-autoload-status {
+  min-height: 1.2rem;
+  margin-top: 1.15rem !important;
+  color: var(--ms-text-dim) !important;
+  font-size: .7rem !important;
 }
 
 /* Details body spans the viewport so there is no visible dark rectangle edge. */
@@ -118,6 +149,80 @@
     padding-right: max(5vw, calc((100vw - 74rem) / 2)) !important;
   }
 }
+
+/* A real inset outline survives poster zoom and keeps all four rounded
+   corners visible. The old border changed on the transformed element and
+   could disappear along the top edge on Chromium. */
+.media-poster::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border: 1.5px solid rgba(255,255,255,.96);
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.media-card:hover .media-poster::before,
+.media-card:focus-visible .media-poster::before {
+  opacity: 1;
+}
+.media-card:hover .media-poster,
+.media-card:focus-visible .media-poster {
+  border-color: transparent !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.34) !important;
+}
+
+/* Put the first action on the artwork, where a viewer expects it. */
+.details-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin-top: .85rem;
+}
+.details-hero-play {
+  min-height: 2.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .58rem .95rem;
+  border: 1px solid rgba(244,179,63,.72);
+  border-radius: .75rem;
+  background: var(--ms-accent);
+  color: var(--ms-accent-ink);
+  font-size: .76rem;
+  font-weight: 850;
+  box-shadow: 0 10px 24px rgba(0,0,0,.24);
+  transition: background .16s ease, transform .16s ease;
+}
+.details-hero-play:hover { background: var(--ms-accent-strong); transform: translateY(-1px); }
+.details-movie-progress {
+  max-width: 22rem;
+  padding-top: .15rem;
+}
+
+/* Admin overview should communicate progress while its live endpoint is
+   slow, instead of presenting a large empty panel. */
+.admin-overview-skeleton {
+  display: grid;
+  gap: 1rem;
+}
+.admin-overview-skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+}
+.admin-overview-skeleton-block {
+  min-height: 7rem;
+  border: 1px solid var(--ms-border);
+  border-radius: 1rem;
+  background: linear-gradient(110deg, rgba(255,255,255,.025) 30%, rgba(255,255,255,.065) 45%, rgba(255,255,255,.025) 60%);
+  background-size: 220% 100%;
+  animation: admin-overview-shimmer 1.25s linear infinite;
+}
+.admin-overview-skeleton-block.is-large { min-height: 14rem; }
+@keyframes admin-overview-shimmer { to { background-position: -220% 0; } }
 
 /* Phones: artwork and information should be one composition, not two stacked blocks. */
 @media (max-width: 640px) {
@@ -166,7 +271,7 @@
 
   .feature {
     min-height: clamp(29rem, 58svh, 34rem) !important;
-    margin-top: -4.25rem !important;
+    margin-top: -5.85rem !important;
   }
   .feature-image {
     object-position: 58% 17% !important;
@@ -233,6 +338,9 @@
     padding-block: .7rem !important;
     border-radius: .82rem !important;
   }
+  .details-hero-actions { margin-top: .7rem; }
+  .details-hero-play { min-height: 2.55rem; padding-inline: .8rem; font-size: .72rem; }
+  .admin-overview-skeleton-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 360px) {

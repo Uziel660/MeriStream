@@ -3,6 +3,7 @@ import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, ArrowUp, Slider
 import { useAuth } from '../contexts/AuthContext';
 import { PreferencesPanel } from './PreferencesPanel';
 import { APP_PREFERENCES_EVENT, applyAppPreferencesToDocument } from '../utils/appPreferences';
+import { useHiddenGenres } from '../hooks/useHiddenGenres';
 
 export interface FilterItem {
   id: string;
@@ -39,6 +40,7 @@ interface UnifiedHeaderProps {
 
 export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, activeFilter, onSelectCategory, searchQuery }) => {
   const { user, isAuthenticated, openAuthModal, logout, updateAvatar } = useAuth();
+  const { isGenreHidden } = useHiddenGenres();
   const [query, setQuery] = useState(searchQuery || '');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -135,7 +137,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   };
   const avatarBg = user?.avatar && AVATAR_BG_MAP[user.avatar] ? AVATAR_BG_MAP[user.avatar] : AVATAR_BG_MAP.amber;
   const coreTabs = MAIN_QUICK_FILTERS.slice(0, 4);
-  const quickGenres = MAIN_QUICK_FILTERS.slice(4, MAX_VISIBLE_TABS);
+  const quickGenres = MAIN_QUICK_FILTERS.slice(4, MAX_VISIBLE_TABS).filter((filter) => !isGenreHidden(filter.id));
   const exploreTab = MAIN_QUICK_FILTERS.find(f => f.id === 'explore')!;
 
   return (
@@ -149,7 +151,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
 
           <div ref={searchContainerRef} id="catalog-search" className={`header-search ${mobileSearchOpen ? 'is-mobile-open' : ''}`} role="search">
             <Search size={18} aria-hidden="true" />
-            <input ref={searchInputRef} type="search" value={query} onChange={e => setQuery(e.target.value)} aria-label="Buscar en el catálogo" placeholder="Buscar películas, series o anime" />
+            <input ref={searchInputRef} type="search" value={query} onChange={e => setQuery(e.target.value)} aria-label="Buscar en el catálogo" placeholder="Título, TMDB ID o IMDb ID" />
             {query && <button type="button" className="search-clear search-reset" onClick={() => setQuery('')} aria-label="Limpiar búsqueda"><X size={17} /></button>}
             <button type="button" className="search-clear search-close" onClick={() => closeMobileSearch()} aria-label="Cerrar búsqueda"><ArrowLeft size={17} /></button>
           </div>

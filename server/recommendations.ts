@@ -136,6 +136,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
     const personalizedShows = await prisma.show.findMany({
       where: {
         id: { notIn: watchedShowIds },
+        tmdb_id: { not: null },
         OR: [
           { genres: { contains: primaryGenre, mode: "insensitive" } },
           { genres: { contains: secondaryGenre, mode: "insensitive" } },
@@ -154,6 +155,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
       becauseYouWatchedShows = await prisma.show.findMany({
         where: {
           id: { notIn: [...watchedShowIds, lastWatchedShow.id] },
+          tmdb_id: { not: null },
           genres: { contains: matchGenre, mode: "insensitive" },
         },
         orderBy: [{ rating: "desc" }, { year: "desc" }],
@@ -165,6 +167,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
     const topRatedGenreShows = await prisma.show.findMany({
       where: {
         id: { notIn: watchedShowIds },
+        tmdb_id: { not: null },
         rating: { gte: 8.0 },
         OR: [
           { genres: { contains: primaryGenre, mode: "insensitive" } },
@@ -180,6 +183,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
     const discoveryShows = await prisma.show.findMany({
       where: {
         id: { notIn: watchedShowIds },
+        tmdb_id: { not: null },
         rating: { gte: 7.8 },
         NOT: {
           genres: {
@@ -277,6 +281,7 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
       prisma.show.findMany({
         where: {
           rating: { gte: 8.2 },
+          tmdb_id: { not: null },
           OR: [
             { backdrop_path: { not: null } },
             { banner_url: { not: null } },
@@ -286,19 +291,21 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
         take: 10,
       }),
       prisma.show.findMany({
-        where: { category: "anime", rating: { gte: 7.5 } },
+        where: { category: "anime", tmdb_id: { not: null }, rating: { gte: 7.5 } },
         orderBy: [{ rating: "desc" }, { year: "desc" }],
         take: 16,
       }),
       prisma.show.findMany({
         where: {
           category: { in: ["movie", "series", "pelicula", "peliculas", "serie"] },
+          tmdb_id: { not: null },
           rating: { gte: 7.5 },
         },
         orderBy: [{ rating: "desc" }, { year: "desc" }],
         take: 16,
       }),
       prisma.show.findMany({
+        where: { tmdb_id: { not: null } },
         orderBy: [{ year: "desc" }, { rating: "desc" }],
         take: 16,
       }),

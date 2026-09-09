@@ -13,8 +13,8 @@ import { getEnabledIngestionTargets } from "./ingestionRegistry";
 
 describe("provider policy v2", () => {
   it("keeps legacy anime providers ordered behind the active sources", () => {
+    expect(getProviderPriority("tioanime")).toBeLessThan(getProviderPriority("animeav1"));
     expect(getProviderPriority("animeav1")).toBeLessThan(getProviderPriority("animeflv"));
-    expect(getProviderPriority("animeflv")).toBeLessThan(getProviderPriority("tioanime"));
   });
 
   it("normalizes rotating subdomains to stable provider ids", () => {
@@ -41,11 +41,11 @@ describe("provider policy v2", () => {
 
   it("keeps the requested short active set and language roles", () => {
     expect(getProviderPolicy("cinecalidad")).toMatchObject({ role: "primary", lifecycle: "active" });
-    expect(getProviderPolicy("gnulahd.nu")).toMatchObject({ role: "secondary", lifecycle: "active" });
+    expect(getProviderPolicy("gnulahd.nu")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("latanime.org")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("zokoanime.video")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("doramasflix.io")).toMatchObject({ role: "secondary", lifecycle: "maintained", fallbackProvider: "vidsrc" });
-    expect(getProviderPolicy("tioanime")).toMatchObject({ role: "fallback", lifecycle: "legacy" });
+    expect(getProviderPolicy("tioanime")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("flixquest")).toMatchObject({ role: "fallback", lifecycle: "legacy" });
     expect(getProviderPriority("cinecalidad")).toBeLessThan(getProviderPriority("gnula"));
   });
@@ -56,7 +56,7 @@ describe("provider policy v2", () => {
     expect(normalizeProviderId("https://zokoanime.video/stream/mal/1/1/sub")).toBe("zokoanime");
   });
 
-  it("admits only active sources, with TioAnime as the anime fallback exception", () => {
+  it("admits only active sources and the configured primary providers", () => {
     expect(isProviderAllowedInMainPath("cinecalidad", "movie")).toBe(true);
     expect(isProviderAllowedInMainPath("gnula", "series")).toBe(true);
     expect(isProviderAllowedInMainPath("tioanime", "anime")).toBe(true);
@@ -78,8 +78,7 @@ describe("provider policy v2", () => {
 
   it("does not enqueue retired crawlers in the normal ingestion registry", () => {
     const ids = getEnabledIngestionTargets().map((target) => target.providerId);
-    expect(ids).toEqual(["cinecalidad", "latanime", "gnula", "gnula", "archive-org", "doramasflix", "doramasflix", "doramasflix"]);
-    expect(ids).not.toContain("tioanime");
+    expect(ids).toEqual(["cinecalidad", "latanime", "tioanime", "gnula", "gnula", "gnula", "archive-org", "doramasflix", "doramasflix", "doramasflix"]);
     expect(ids).not.toContain("lamovie");
   });
 });

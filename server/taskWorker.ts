@@ -922,7 +922,38 @@ class BackgroundCrawlerWorker {
     }
 
     // ── CONSUMIDORES (guardado): drenan la cola conforme el descubridor la llena ──
-    const concurrency = clampConcurrency(this.settings.item_concurrency, DEFAULT_SETTINGS.item_concurrency);
+    const configuredConcurrency = clampConcurrency(this.settings.item_concurrency, DEFAULT_SETTINGS.item_concurrency);
+    // Pool adaptativo por tarea: empieza con la configuración elegida, sube
+    // poco a poco hasta 8 cuando el proveedor responde bien y retrocede ante
+    // errores de red/anti-bot. El límite evita disparar la RAM del servidor.
+    const adaptivePool = {
+      limit: configuredConcurrency,
+      max: Math.min(8, Math.max(configuredConcurrency, 4)),
+      successes: 0,
+      cooldownUntil: 0,
+      waitForSlot: async (workerId: number) => {
+        while (!stopped && workerId >= adaptivePool.limit) await this.sleep(250);
+      },
+      waitForCooldown: async () => {
+        const remaining = adaptivePool.cooldownUntil - Date.now();
+        if (remaining > 0) await this.sleep(Math.min(remaining, 5000));
+      },
+      success: () => {
+        adaptivePool.successes++;
+        if (adaptivePool.successes < 25 || adaptivePool.limit >= adaptivePool.max) return;
+        adaptivePool.successes = 0;
+        adaptivePool.limit++;
+        void this.addLog(job.id, "info", `[Adaptive] ${siteOf(job.target_url)} estable: concurrencia ${adaptivePool.limit}/${adaptivePool.max}.`);
+      },
+      failure: (message: string) => {
+        if (!/(403|429|5\d\d|timeout|timed out|abort|fetch_failed|econn|cloudflare|challenge|bloqueo|deneg)/i.test(message)) return;
+        const next = Math.max(1, Math.ceil(adaptivePool.limit / 2));
+        adaptivePool.limit = next;
+        adaptivePool.successes = 0;
+        adaptivePool.cooldownUntil = Date.now() + 5000;
+        void this.addLog(job.id, "warn", `[Adaptive] ${siteOf(job.target_url)} redujo concurrencia a ${adaptivePool.limit}/${adaptivePool.max} por respuesta problemática.`);
+      },
+    };
     let cursor = 0;
     const claimNext = (): { index: number; item: QueueItem; position: number } | null => {
       while (cursor < queue.length) {
@@ -943,6 +974,9 @@ class BackgroundCrawlerWorker {
           stopped = true;
           return;
         }
+
+        await adaptivePool.waitForSlot(workerId);
+        await adaptivePool.waitForCooldown();
 
         const claimed = claimNext();
         if (!claimed) {
@@ -1003,26 +1037,67 @@ class BackgroundCrawlerWorker {
                 null
               : candidates[0] ?? null;
             if (knownShow) {
-              // Modo "detail": SOLO lista de episodios — sin extracción de streams
-              // (los nuevos se resuelven Just-In-Time al reproducir). Full fast.
-              const itemAnalysis = await analyzeUniversalUrl(item.url || item.title, "detail");
-              const eps = normalizeExtractedEpisodes(
-                itemAnalysis.episodes,
-                siteOf(item.url || job.target_url),
-              );
-              const itemKind = (itemAnalysis.content_type || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
+              const sourceSite = siteOf(item.url || job.target_url);
+              // La reconciliación legacy ya puede haber creado el SourceLink
+              // exacto para este proveedor. En una pasada completa no hay
+              // valor en descargar otra vez miles de fichas conocidas: si la
+              // fuente ya está enlazada al MediaItem, la obra ya está
+              // integrada y se puede continuar con la siguiente.
+              // Cinecalidad mezcla películas y series en el mismo índice, por
+              // eso no aplicamos un filtro de tipo en ese proveedor; para los
+              // catálogos separados sí evitamos colisiones entre categorías.
+              const sourceKindHint = /cinecalidad/i.test(job.target_url) ? null : kindHint;
+              const existingProviderLink = job.scope === "full_catalog"
+                ? await prisma.mediaItem.findFirst({
+                    where: {
+                      ...(sourceKindHint ? { kind: sourceKindHint } : {}),
+                      OR: [
+                        { base_normalized_title: titleKey },
+                        { normalized_title: titleKey },
+                      ],
+                      episodes: { some: { links: { some: { source_site: sourceSite } } } },
+                    },
+                    select: { id: true },
+                  })
+                : null;
+              if (existingProviderLink) {
+                item.status = "done";
+                job.shows_imported++;
+                await this.addLog(
+                  job.id,
+                  "info",
+                  `[${position}/${queue.length}] Ya vinculada '${knownShow.title}' con ${sourceSite}; se omite descarga repetida.`
+                );
+                if (position % 5 === 0 || position === queue.length) {
+                  await this.persistQueueThrottled(job.id, queue, position === queue.length);
+                }
+                await this.updateJobState(job.id, { shows_imported: job.shows_imported });
+                adaptivePool.success();
+                continue;
+              }
+              const itemKind = (item.kind || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
+              // Las películas ya traen su ficha recuperable en el listado: no
+              // hace falta descargar 23k fichas individuales. Series/anime sí
+              // necesitan detalle para descubrir sus episodios.
+              const itemAnalysis = itemKind === "movie"
+                ? null
+                : await analyzeUniversalUrl(item.url || item.title, "detail");
+              const eps = itemAnalysis
+                ? normalizeExtractedEpisodes(itemAnalysis.episodes, sourceSite)
+                : [];
+              if (itemKind !== "movie" && eps.length === 0) {
+                throw new Error(`No se encontró ningún localizador de episodio para '${item.title || knownShow.title}'`);
+              }
               const { added } = await quickSyncKnownShow(knownShow.id, {
-                title: itemAnalysis.title || item.title,
-                mal_id: (itemAnalysis as any).mal_id,
-                anilist_id: (itemAnalysis as any).anilist_id,
-                kitsu_id: (itemAnalysis as any).kitsu_id,
-                tmdb_id: (itemAnalysis as any).tmdb_id,
+                // Esta pasada solo conserva la existencia y los locators de
+                // episodios. Las identidades se resuelven después en lote.
+                title: item.title || knownShow.title,
                 // Algunos adaptadores quitan el sufijo de temporada del
                 // título normalizado; conservarlo desde título+slug evita
                 // mezclar fuentes de S2/S3 dentro de T1.
                 season: parseTitleQuery(`${item.title} ${item.url || ""}`).season,
                 episodes: eps,
-                source_site: siteOf(item.url || job.target_url),
+                source_site: sourceSite,
                 fallback_url: itemKind === "movie" && eps.length === 0 ? item.url : undefined,
               });
               item.status = "done";
@@ -1040,42 +1115,74 @@ class BackgroundCrawlerWorker {
                 shows_imported: job.shows_imported,
                 episodes_imported: job.episodes_imported,
               });
+              adaptivePool.success();
               continue;
             }
           }
 
-          const itemAnalysis = await analyzeUniversalUrl(item.url || item.title);
-
-          const parsedItemTitle = parseTitleQuery(itemAnalysis.title || item.title);
+          // En la pasada masiva de los cuatro proveedores principales primero
+          // importamos la ficha nativa y sus episodios. El enriquecimiento
+          // remoto se hace después, en lote, con los reparadores de identidad;
+          // hacerlo aquí multiplicaba las llamadas TMDB/MAL/AniList por cada
+          // tarjeta y convertía un rastreo de catálogo en una cola de horas.
+          const lightweightPrimaryCatalogImport =
+            job.scope === "full_catalog" &&
+            /cinecalidad|gnulahd|latanime|tioanime/i.test(job.target_url);
           const sourceSite = siteOf(item.url || job.target_url);
+          const catalogKindHint = item.kind || kindHintFromCatalogUrl(job.target_url);
+          const skipMovieDetail = lightweightPrimaryCatalogImport && catalogKindHint === "movie";
+          const itemAnalysis = skipMovieDetail
+            ? ({ episodes: [] } as UniversalAnalysisResult)
+            : await analyzeUniversalUrl(
+                item.url || item.title,
+                lightweightPrimaryCatalogImport ? "detail" : undefined,
+              );
+          const parsedItemTitle = parseTitleQuery(item.title || itemAnalysis.title);
+          const minimalTitle = item.title || itemAnalysis.title || parsedItemTitle.baseTitle || "Contenido indexado";
+          const minimalKind = (item.kind || itemAnalysis.content_type || kindHintFromCatalogUrl(job.target_url) || "anime") as "movie" | "series" | "anime";
+          const extractedEpisodes = lightweightPrimaryCatalogImport
+            ? normalizeExtractedEpisodes(itemAnalysis.episodes, sourceSite)
+            : itemAnalysis.episodes;
+          const episodes = extractedEpisodes.length > 0
+            ? extractedEpisodes
+            : lightweightPrimaryCatalogImport && minimalKind === "movie"
+              ? [{ number: 1, title: minimalTitle, url: item.url }]
+              : [];
 
-          // El adapter ya consultó APIs externas dentro de analyzeUniversalUrl.
-          // Se propaga la metadata como pre-enriquecida para que saveShowWithDeduplication
-          // no repita la cascada TMDB/AniList/TVMaze (ahorro ~40-70% por show).
+          if (lightweightPrimaryCatalogImport && minimalKind !== "movie" && episodes.length === 0) {
+            throw new Error(`No se encontró ningún localizador de episodio para '${minimalTitle}'`);
+          }
+
+          // En el barrido primario se persisten únicamente título/tipo y
+          // locators. La ficha se descarga solo para descubrir URLs de
+          // episodios; su descripción, portada, géneros e IDs se ignoran.
           const result = await saveShowWithDeduplication({
-            title: itemAnalysis.title || parsedItemTitle.baseTitle || item.title,
-            season: parsedItemTitle.season,
-            japanese_title: itemAnalysis.japanese_title,
-            english_title: itemAnalysis.english_title,
-            description: itemAnalysis.description,
-            poster_url: itemAnalysis.poster_url,
-            banner_url: itemAnalysis.banner_url,
-            content_type: itemAnalysis.content_type,
-            rating: itemAnalysis.rating,
-            year: itemAnalysis.year ?? parsedItemTitle.year ?? undefined,
-            status: itemAnalysis.status,
-            genres: itemAnalysis.genres,
+            title: lightweightPrimaryCatalogImport ? minimalTitle : itemAnalysis.title || parsedItemTitle.baseTitle || item.title,
+            season: lightweightPrimaryCatalogImport ? parseTitleQuery(`${item.title} ${item.url || ""}`).season : parsedItemTitle.season,
+            japanese_title: lightweightPrimaryCatalogImport ? undefined : itemAnalysis.japanese_title,
+            english_title: lightweightPrimaryCatalogImport ? undefined : itemAnalysis.english_title,
+            description: lightweightPrimaryCatalogImport ? "" : itemAnalysis.description,
+            poster_url: lightweightPrimaryCatalogImport ? null : itemAnalysis.poster_url,
+            banner_url: lightweightPrimaryCatalogImport ? null : itemAnalysis.banner_url,
+            content_type: lightweightPrimaryCatalogImport ? minimalKind : itemAnalysis.content_type,
+            rating: lightweightPrimaryCatalogImport ? 0 : itemAnalysis.rating,
+            year: lightweightPrimaryCatalogImport
+              ? (isPlausibleYear(item.year) ? item.year! : 0)
+              : itemAnalysis.year ?? parsedItemTitle.year ?? undefined,
+            status: lightweightPrimaryCatalogImport ? "Indexada" : itemAnalysis.status,
+            genres: lightweightPrimaryCatalogImport ? [] : itemAnalysis.genres,
             source_site: sourceSite,
-            episodes: itemAnalysis.episodes,
-            detected_streams: itemAnalysis.detected_streams,
-            original_title: (itemAnalysis as any).original_title,
-            mal_id: (itemAnalysis as any).mal_id,
-            anilist_id: (itemAnalysis as any).anilist_id,
-            kitsu_id: (itemAnalysis as any).kitsu_id,
-            tmdb_id: (itemAnalysis as any).tmdb_id,
+            episodes,
+            detected_streams: lightweightPrimaryCatalogImport ? undefined : itemAnalysis.detected_streams,
+            original_title: lightweightPrimaryCatalogImport ? undefined : (itemAnalysis as any).original_title,
+            mal_id: lightweightPrimaryCatalogImport ? undefined : (itemAnalysis as any).mal_id,
+            anilist_id: lightweightPrimaryCatalogImport ? undefined : (itemAnalysis as any).anilist_id,
+            kitsu_id: lightweightPrimaryCatalogImport ? undefined : (itemAnalysis as any).kitsu_id,
+            tmdb_id: lightweightPrimaryCatalogImport ? undefined : (itemAnalysis as any).tmdb_id,
+            _skipEnrichment: lightweightPrimaryCatalogImport,
             ...(() => {
               const extra = itemAnalysis as any;
-              return extra.poster_path || extra.backdrop_path
+              return !lightweightPrimaryCatalogImport && (extra.poster_path || extra.backdrop_path)
                 ? { poster_path: extra.poster_path, backdrop_path: extra.backdrop_path }
                 : {};
             })(),
@@ -1094,6 +1201,7 @@ class BackgroundCrawlerWorker {
             shows_imported: job.shows_imported,
             episodes_imported: job.episodes_imported,
           });
+          adaptivePool.success();
 
           if (result.isDuplicate) {
             await this.addLog(
@@ -1113,6 +1221,7 @@ class BackgroundCrawlerWorker {
           item.status = "error";
           item.error = err?.message || String(err);
           this.notePossibleAntiBot(job.id, item.url || job.target_url, item.error);
+          adaptivePool.failure(item.error);
           await this.updateJobState(job.id, { items_queue: queue });
           await this.addLog(job.id, "warn", `Error en '${item.title}': ${item.error}. Continuando con el siguiente...`);
         }
@@ -1125,7 +1234,7 @@ class BackgroundCrawlerWorker {
 
     // ── PRODUCTOR (descubrimiento): corre EN PARALELO con los savers ──
     const saversRunning = Promise.all(
-      Array.from({ length: concurrency }, (_, w) => worker(w))
+      Array.from({ length: adaptivePool.max }, (_, w) => worker(w))
     );
 
     if (!discoveryDone) {

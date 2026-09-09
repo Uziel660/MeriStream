@@ -27,7 +27,9 @@ import {
   XCircle,
   RotateCcw,
   Star,
-  ListFilter
+  ListFilter,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import type { Show, ScraperPreset, UniversalAnalysisResult, BackgroundWorkerJob, WorkerSettings } from '../types';
 import WorkerSettingsCard from './WorkerSettingsCard';
@@ -36,6 +38,8 @@ import VerificationPanel from './VerificationPanel';
 import ServerTesterCard from './ServerTesterCard';
 import { GenresManager } from './GenresManager';
 import AdminOverview, { type AdminTab } from './AdminOverview';
+import { useHiddenGenres } from '../hooks/useHiddenGenres';
+import { SmartImage } from './SmartImage';
 
 export interface AdminPlayStreamResult {
   title?: string;
@@ -50,12 +54,37 @@ interface AdminPanelProps {
   onPlayDirect?: (streamResult: AdminPlayStreamResult | UniversalAnalysisResult) => void;
   onPlay?: (streamResult: AdminPlayStreamResult | UniversalAnalysisResult) => void;
   onPlayStream?: (streamResult: AdminPlayStreamResult | UniversalAnalysisResult) => void;
+  onPlayShow?: (show: Show) => void;
   [key: string]: any;
+}
+
+function AdminLibraryPoster({ show }: { show: Show }) {
+  const title = String(show.title || 'Obra');
+  return (
+    <SmartImage
+      src={show.poster_url || show.banner_url || null}
+      alt=""
+      aria-label={`Portada de ${title}`}
+      className="w-10 h-14 object-cover rounded-lg border border-zinc-800 shrink-0"
+      loading="lazy"
+      decoding="async"
+      fallback={(
+        <span
+          className="w-10 h-14 rounded-lg border border-zinc-800 bg-zinc-950 flex items-center justify-center text-center px-1 text-[9px] leading-tight text-zinc-500 shrink-0"
+          title={`${title}: portada no disponible`}
+          aria-label={`${title}: portada no disponible`}
+        >
+          {title}
+        </span>
+      )}
+    />
+  );
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const { isOpen = true, onClose } = props;
   const onPlayHandler = props.onPlayDirect || props.onPlay || props.onPlayStream;
+  const { isShowHidden, toggleShow } = useHiddenGenres();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [editingShow, setEditingShow] = useState<any>(null);
@@ -618,7 +647,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             <div className="space-y-1">
               {[
                 { id: 'overview' as const, label: 'Resumen', icon: Activity, detail: 'Estado general' },
-                { id: 'library' as const, label: 'Catálogo', icon: Database, detail: libraryTotal ? `${libraryTotal.toLocaleString()} obras` : 'Gestionar obras' },
+                { id: 'library' as const, label: 'Catálogo', icon: Database, detail: libraryTotal ? `${libraryTotal.toLocaleString()} obras únicas` : 'Gestionar obras' },
                 { id: 'sources' as const, label: 'Fuentes', icon: Star, detail: 'Prioridad y salud' },
               ].map((item) => {
                 const Icon = item.icon;
@@ -641,7 +670,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           </div>
           <div>
             <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Configuración</p>
-            <button type="button" onClick={() => setActiveTab('genres')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === 'genres' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><ListFilter size={15} /><span><span className="block text-xs font-semibold">Géneros</span><span className="mt-0.5 block text-[10px] text-zinc-500">Visibilidad del catálogo</span></span></button>
+            <button type="button" onClick={() => setActiveTab('genres')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === 'genres' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><ListFilter size={15} /><span><span className="block text-xs font-semibold">Visibilidad</span><span className="mt-0.5 block text-[10px] text-zinc-500">Géneros y obras públicas</span></span></button>
           </div>
         </nav>
         <div className="border-t border-zinc-800/80 p-4"><button type="button" onClick={onClose} className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-900 hover:text-white"><X size={14} /> Salir del panel</button></div>
@@ -649,13 +678,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-20 items-center justify-between gap-4 border-b border-zinc-800/80 bg-[#0b0f14] px-4 sm:px-7">
-          <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300">MeriStream / Admin</p><h2 className="mt-1 truncate text-base font-semibold text-white">{activeTab === 'overview' ? 'Resumen operativo' : activeTab === 'library' ? 'Catálogo' : activeTab === 'sources' ? 'Fuentes y servidores' : activeTab === 'verification' ? 'Verificación' : activeTab === 'worker_tasks' ? 'Cola de tareas' : activeTab === 'genres' ? 'Géneros' : 'Importar contenido'}</h2></div>
+          <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300">MeriStream / Admin</p><h2 className="mt-1 truncate text-base font-semibold text-white">{activeTab === 'overview' ? 'Resumen operativo' : activeTab === 'library' ? 'Catálogo' : activeTab === 'sources' ? 'Fuentes y servidores' : activeTab === 'verification' ? 'Verificación' : activeTab === 'worker_tasks' ? 'Cola de tareas' : activeTab === 'genres' ? 'Visibilidad' : 'Importar contenido'}</h2></div>
           <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1.5 text-[10px] text-zinc-500 sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Sesión protegida</span><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white md:hidden" aria-label="Salir del panel"><X size={16} /></button></div>
         </header>
 
         <div className="flex gap-1 overflow-x-auto border-b border-zinc-800/80 bg-[#0b0f14] px-4 py-2 md:hidden">
           {[
-            { id: 'overview' as const, label: 'Resumen' }, { id: 'library' as const, label: 'Catálogo' }, { id: 'sources' as const, label: 'Fuentes' }, { id: 'verification' as const, label: 'Verificación' }, { id: 'worker_tasks' as const, label: 'Tareas' }, { id: 'smart' as const, label: 'Importar' }, { id: 'genres' as const, label: 'Géneros' },
+            { id: 'overview' as const, label: 'Resumen' }, { id: 'library' as const, label: 'Catálogo' }, { id: 'sources' as const, label: 'Fuentes' }, { id: 'verification' as const, label: 'Verificación' }, { id: 'worker_tasks' as const, label: 'Tareas' }, { id: 'smart' as const, label: 'Importar' }, { id: 'genres' as const, label: 'Visibilidad' },
           ].map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`whitespace-nowrap rounded-md px-3 py-2 text-[11px] font-semibold ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>{item.label}</button>)}
         </div>
 
@@ -1699,7 +1728,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         <Loader2 size={11} className="animate-spin" /> Buscando...
                       </span>
                     ) : (
-                      `${libraryShows.length} de ${libraryTotal.toLocaleString()} obras`
+                      `${libraryShows.length} de ${libraryTotal.toLocaleString()} obras únicas`
                     )}
                   </span>
                   <button
@@ -1737,12 +1766,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         className="flex items-center justify-between p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors group"
                       >
                         <div className="flex items-center gap-3 min-w-0 pr-4">
-                          <img
-                            src={show.poster_url || show.banner_url || ''}
-                            alt={show.title}
-                            className="w-10 h-14 object-cover rounded-lg border border-zinc-800 shrink-0"
-                            loading="lazy"
-                          />
+                          <AdminLibraryPoster show={show} />
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-white truncate">{show.title}</h4>
@@ -1757,6 +1781,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => props.onPlayShow?.(show)}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
+                            title="Reproducir esta obra"
+                            aria-label={`Reproducir ${show.title}`}
+                          >
+                            <Play size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleShow(show)}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                            title={isShowHidden(show) ? 'Mostrar al público' : 'Ocultar al público'}
+                            aria-label={`${isShowHidden(show) ? 'Mostrar' : 'Ocultar'} ${show.title} al público`}
+                          >
+                            {isShowHidden(show) ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
                           <button
                             type="button"
                             onClick={() => setEditingShow(show)}
@@ -1821,7 +1863,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           {/* PESTAÑA: GESTIÓN DE GÉNEROS — MOSTRAR / OCULTAR EN TODA LA PLATAFORMA */}
           {/* ========================================================================= */}
           {activeTab === 'genres' && (
-            <GenresManager shows={libraryShows} />
+            <GenresManager />
           )}
         </div>
       </main>

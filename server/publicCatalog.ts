@@ -105,6 +105,11 @@ type TmdbListResponse = {
   results?: TmdbItem[];
 };
 
+type TmdbFindResponse = {
+  movie_results?: TmdbItem[];
+  tv_results?: TmdbItem[];
+};
+
 type TmdbDetail = TmdbItem & {
   external_ids?: {
     imdb_id?: string | null;
@@ -724,6 +729,79 @@ function sortSearchShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
     if (ratingB !== ratingA) return ratingB - ratingA;
     return String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' });
   });
+}
+
+export function parsePublicCatalogIdentifier(value: unknown): { tmdbId?: number; imdbId?: string } | null {
+  const raw = String(value || '').trim().replace(/\s+/g, '');
+  const tmdbMatch = /^(?:tmdb[:#-]?)?(\d{1,10})$/i.exec(raw);
+  if (tmdbMatch) {
+    const tmdbId = Number(tmdbMatch[1]);
+    return Number.isInteger(tmdbId) && tmdbId > 0 ? { tmdbId } : null;
+  }
+
+  const imdbMatch = /^(?:imdb[:#-]?)?(tt\d{5,12})$/i.exec(raw);
+  return imdbMatch ? { imdbId: imdbMatch[1].toLowerCase() } : null;
+}
+
+/** Resolve an exact TMDB or IMDb identifier without consulting provider rows. */
+export async function getPublicCatalogByIdentifier(value: unknown, apiKey?: string): Promise<PublicCatalogResult | null> {
+  const identifier = parsePublicCatalogIdentifier(value);
+  if (!identifier) return null;
+
+  const shows: PublicCatalogShow[] = [];
+  if (identifier.tmdbId) {
+    const responses = await Promise.allSettled([
+      tmdbFetch<TmdbDetail>(`/movie/${identifier.tmdbId}`, {
+        language: 'es-419',
+        append_to_response: 'external_ids',
+      }, apiKey),
+      tmdbFetch<TmdbDetail>(`/tv/${identifier.tmdbId}`, {
+        language: 'es-419',
+        append_to_response: 'external_ids',
+      }, apiKey),
+    ]);
+    for (const [index, response] of responses.entries()) {
+      if (response.status !== 'fulfilled') continue;
+      const detail = applySpanishTranslation(response.value);
+      const kind: PublicCatalogKind = index === 0
+        ? (isAnimeItem(detail) ? 'anime' : 'movie')
+        : (isAnimeItem(detail) ? 'anime' : 'series');
+      const show = mapTmdbItem(detail, kind);
+      show.imdb_id = detail.external_ids?.imdb_id || null;
+      shows.push(show);
+    }
+  } else if (identifier.imdbId) {
+    const result = await tmdbFetch<TmdbFindResponse>(`/find/${identifier.imdbId}`, {
+      external_source: 'imdb_id',
+      language: 'es-419',
+    }, apiKey);
+    for (const item of result.movie_results || []) {
+      const show = mapTmdbItem(item, isAnimeItem(item) ? 'anime' : 'movie');
+      show.imdb_id = identifier.imdbId;
+      shows.push(show);
+    }
+    for (const item of result.tv_results || []) {
+      const show = mapTmdbItem(item, isAnimeItem(item) ? 'anime' : 'series');
+      show.imdb_id = identifier.imdbId;
+      shows.push(show);
+    }
+  }
+
+  const unique = new Map<string, PublicCatalogShow>();
+  for (const show of shows) {
+    const key = `${show.kind === 'movie' ? 'movie' : 'tv'}:${show.tmdb_id}`;
+    if (!unique.has(key)) unique.set(key, show);
+  }
+  const ordered = sortSearchShows([...unique.values()]);
+  return {
+    shows: ordered,
+    total: ordered.length,
+    page: 1,
+    pageSize: Math.max(1, ordered.length),
+    totalPages: 1,
+    nextPage: 2,
+    source: 'tmdb',
+  };
 }
 
 async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, genreId?: number | null, tvGenreId?: number | null, apiKey?: string): Promise<TmdbListResponse> {

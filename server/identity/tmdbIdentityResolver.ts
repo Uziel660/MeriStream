@@ -1,6 +1,6 @@
 import { lookupAnimeIdentityByTitle } from "../animeIdentity";
 import { readExternalApiCache, writeExternalApiCache } from "../externalApiCache";
-import { normalizeTitleKey } from "../utils/titleNormalizer";
+import { decodeHtmlEntities, normalizeTitleKey, parseRawTitle } from "../utils/titleNormalizer";
 
 export type IdentityKind = "movie" | "series" | "anime";
 export type IdentityConfidence = "high" | "medium" | "low";
@@ -57,7 +57,7 @@ function text(value: unknown): string {
 function uniqueAliases(input: TmdbIdentityInput, extras: string[] = []): string[] {
   const seen = new Set<string>();
   return [input.title, ...(input.aliases || []), ...extras]
-    .map((value) => text(value))
+    .map((value) => parseRawTitle(decodeHtmlEntities(text(value))).canonical)
     .filter((value) => {
       const key = normalizeTitleKey(value);
       if (key.length < 2 || seen.has(key)) return false;
@@ -292,6 +292,38 @@ async function searchAlias(input: TmdbIdentityInput, alias: string, apiKey: stri
     }
     if (results.some((item) => item.confidence === "high")) break;
   }
+  // Cuando el catálogo no trae año, un título exacto solo es automático si
+  // TMDB devolvió una única obra con ese nombre exacto. Esto evita elegir a
+  // ciegas entre remakes como "The End" o "The Return".
+  if (!input.year) {
+    const aliasKey = normalizeTitleKey(alias);
+    const exactIds = new Set(results
+      .filter((item) => normalizeTitleKey(item.title) === aliasKey || normalizeTitleKey(item.originalTitle || "") === aliasKey)
+      .map((item) => item.tmdbId));
+    if (exactIds.size === 1) {
+      return results.map((item) => item.tmdbId === [...exactIds][0]
+        ? { ...item, reasons: [...item.reasons, "unique_exact_title"], confidence: item.score >= 0.72 ? "high" : item.confidence }
+      : item);
+    }
+  }
+
+  // Los títulos localizados de los proveedores no siempre aparecen como
+  // título alternativo en TMDB (por ejemplo, una traducción latinoamericana).
+  // Si el año sí está disponible y la búsqueda devuelve una sola obra del tipo
+  // correcto en ese año, esa combinación es una señal suficientemente fuerte
+  // para no dejar la obra sin identidad. Si hay dos o más candidatos del mismo
+  // año, se mantiene como revisión y no se elige a ciegas.
+  if (input.year && input.year >= 1900) {
+    const sameYearIds = new Set(results
+      .filter((item) => item.year === input.year)
+      .map((item) => item.tmdbId));
+    if (sameYearIds.size === 1) {
+      const onlyId = [...sameYearIds][0];
+      return results.map((item) => item.tmdbId === onlyId
+        ? { ...item, reasons: [...item.reasons, "unique_exact_year"], confidence: "high" }
+        : item);
+    }
+  }
   return results;
 }
 
@@ -309,23 +341,28 @@ function better(a: TmdbIdentityResolution | null, b: TmdbIdentityResolution): Tm
  * Callers decide whether a confidence level is safe enough to persist.
  */
 export async function resolveTmdbIdentityCandidate(input: TmdbIdentityInput): Promise<TmdbIdentityResolution | null> {
-  const title = text(input.title);
+  const title = parseRawTitle(decodeHtmlEntities(text(input.title))).canonical;
   const apiKey = text(process.env.TMDB_API_KEY);
   if (!title || !apiKey) return null;
-  const cacheKey = JSON.stringify({ ...input, aliases: uniqueAliases(input) });
+  const cleanInput: TmdbIdentityInput = {
+    ...input,
+    title,
+    aliases: (input.aliases || []).map((alias) => parseRawTitle(decodeHtmlEntities(text(alias))).canonical),
+  };
+  const cacheKey = JSON.stringify({ ...cleanInput, aliases: uniqueAliases(cleanInput) });
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const imdb = await findByImdb(input, apiKey);
+  const imdb = await findByImdb(cleanInput, apiKey);
   if (imdb) {
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value: imdb });
     return imdb;
   }
 
   let best: TmdbIdentityResolution | null = null;
-  const aliases = uniqueAliases(input);
+  const aliases = uniqueAliases(cleanInput);
   for (const alias of aliases) {
-    const results = await searchAlias(input, alias, apiKey, "tmdb-search");
+    const results = await searchAlias(cleanInput, alias, apiKey, "tmdb-search");
     for (const candidate of results) best = better(best, candidate);
     if (best?.confidence === "high" && best.score >= 0.92) break;
   }
@@ -333,11 +370,11 @@ export async function resolveTmdbIdentityCandidate(input: TmdbIdentityInput): Pr
   // Anime suele llegar con títulos romaji/traducidos que TMDB no indexa igual.
   // Reutilizamos el bridge Kitsu existente para conseguir aliases oficiales;
   // no usamos MAL/AniList como conjetura de TMDB.
-  if (input.kind === "anime" && best?.confidence !== "high") {
+  if (cleanInput.kind === "anime" && best?.confidence !== "high") {
     const animeIdentity = await lookupAnimeIdentityByTitle(title);
-    const enrichedAliases = uniqueAliases(input, animeIdentity?.aliases || []).filter((alias) => !aliases.includes(alias));
+    const enrichedAliases = uniqueAliases(cleanInput, animeIdentity?.aliases || []).filter((alias) => !aliases.includes(alias));
     for (const alias of enrichedAliases) {
-      const results = await searchAlias(input, alias, apiKey, "anime-alias");
+      const results = await searchAlias(cleanInput, alias, apiKey, "anime-alias");
       for (const candidate of results) best = better(best, candidate);
       if (best?.confidence === "high" && best.score >= 0.92) break;
     }

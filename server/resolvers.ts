@@ -23,6 +23,7 @@ import {
   isLatAnimePageUrl,
   isGnulaPageUrl,
   isTioAnimePageUrl,
+  isAnimeAv1PageUrl,
   isVerAnimesPageUrl,
   isDoramasflixPageUrl,
   isTubePelisPageUrl,
@@ -35,6 +36,7 @@ import {
   resolveLatAnimePage,
   resolveGnulaPage,
   resolveTioAnimePage,
+  resolveAnimeAv1Page,
   resolveVerAnimesPage,
   resolveDoramasflixPage,
   resolveTubePelisPage,
@@ -1834,7 +1836,21 @@ export class ProviderResolverRegistry {
       resolve: async (locator) => resolveTioAnimePage(locator),
     });
 
-    // 26. VerAnimes Platform Pages
+    // 26. AnimeAV1 episode pages used as GNULA anime mirrors
+    this.register({
+      name: "AnimeAV1",
+      matches: (url) => isAnimeAv1PageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveAnimeAv1Page(locator),
+    });
+
+    // 27. VerAnimes Platform Pages
     this.register({
       name: "VerAnimes",
       matches: (url) => isVerAnimesPageUrl(url),

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getPublicCatalog,
+  getPublicCatalogByIdentifier,
   getPublicCatalogDetail,
   getPublicCatalogRelated,
   mapTmdbItem,
+  parsePublicCatalogIdentifier,
   parsePublicCatalogId,
   dedupePoorPublicDuplicates,
   resetPublicCatalogCache,
@@ -97,6 +99,54 @@ describe("TMDB public catalog", () => {
     expect(show.year).toBe(1999);
     expect(show.genres).toContain("Animación");
     expect(parsePublicCatalogId(show.id)).toEqual({ kind: "anime", tmdbId: 21 });
+  });
+
+  it("parses TMDB and IMDb identifiers without treating them as title searches", () => {
+    expect(parsePublicCatalogIdentifier("tmdb:550")).toEqual({ tmdbId: 550 });
+    expect(parsePublicCatalogIdentifier("550")).toEqual({ tmdbId: 550 });
+    expect(parsePublicCatalogIdentifier("imdb:tt0133093")).toEqual({ imdbId: "tt0133093" });
+    expect(parsePublicCatalogIdentifier("tt0133093")).toEqual({ imdbId: "tt0133093" });
+    expect(parsePublicCatalogIdentifier("the matrix")).toBeNull();
+  });
+
+  it("resolves a TMDB id against movie and TV namespaces", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/movie/550")) {
+        return new Response(JSON.stringify({
+          id: 550,
+          title: "Fight Club",
+          release_date: "1999-10-15",
+          overview: "Un empleado conoce a un misterioso vendedor de jabón.",
+          poster_path: "/fight-club.jpg",
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalogByIdentifier("tmdb:550");
+    expect(result?.source).toBe("tmdb");
+    expect(result?.shows).toHaveLength(1);
+    expect(result?.shows[0]).toMatchObject({ id: "tmdb-movie-550", tmdb_id: 550, title: "Fight Club" });
+  });
+
+  it("resolves an IMDb id through TMDB's external-id endpoint", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/find/tt0133093")) {
+        return new Response(JSON.stringify({
+          movie_results: [{ id: 603, title: "The Matrix", release_date: "1999-03-30", popularity: 90 }],
+          tv_results: [],
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalogByIdentifier("imdb:tt0133093");
+    expect(result?.shows).toHaveLength(1);
+    expect(result?.shows[0]).toMatchObject({ id: "tmdb-movie-603", tmdb_id: 603, imdb_id: "tt0133093" });
   });
 
   it("builds a public result without touching the provider database", async () => {

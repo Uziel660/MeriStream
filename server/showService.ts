@@ -772,6 +772,7 @@ async function mergeSequelIntoTwin(
  * and saves or merges into PostgreSQL.
  */
 export async function saveShowWithDeduplication(input: SaveShowInput) {
+  const locatorOnlyImport = (input as any)._skipEnrichment === true;
   const rawParsed = parseRawTitle(String(input.title ?? ""));
   const canonicalTitle = rawParsed.canonical || String(input.title ?? "").trim();
   const parsed = parseTitleQuery(canonicalTitle);
@@ -792,10 +793,14 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     originalTitle: input.original_title || null,
     japaneseTitle: input.japanese_title || null,
     englishTitle: input.english_title || null,
-    description: input.description || "",
+    description: locatorOnlyImport ? String(input.description ?? "") : input.description || "",
     posterUrl: input.poster_url || null,
     bannerUrl: input.banner_url || null,
-    rating: input.rating || 8.0,
+    // Las importaciones de catálogo solo prueban existencia/localizadores. No
+    // introducir un rating ficticio que parezca metadata de TMDB.
+    rating: locatorOnlyImport
+      ? (typeof input.rating === "number" && Number.isFinite(input.rating) ? input.rating : 0)
+      : input.rating || 8.0,
     year:
       input.year && isPlausibleYear(input.year)
         ? input.year
@@ -803,7 +808,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
           ? rawParsed.year
           : 0,
     status: input.status || "Finalizado",
-    genresStr: formatAndNormalizeGenres(input.genres, null)
+    genresStr: locatorOnlyImport ? String(input.genres ?? "") : formatAndNormalizeGenres(input.genres, null)
   };
 
   let enriched: any = null;
@@ -866,7 +871,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   // conserva el Show canónico y escribe las fuentes en la temporada correcta.
   if (existingByTmdb && season > 1) {
     const result = await mergeSequelIntoTwin(existingByTmdb, showData, normalizedEpisodes, input, kind, season);
-    enqueueBackfillIfIncomplete(result.show);
+    if (!locatorOnlyImport) enqueueBackfillIfIncomplete(result.show);
     return { ...result, season };
   }
 
@@ -884,7 +889,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   if (existingShow) {
     const result = await mergeShowEpisodes(existingShow, showData, normalizedEpisodes);
     const sourcesAdded = await syncMediaItemSources(input, kind, result.show.id, normalizedEpisodes, titleInfo);
-    enqueueBackfillIfIncomplete(result.show);
+    if (!locatorOnlyImport) enqueueBackfillIfIncomplete(result.show);
     return { ...result, sourcesAdded, season };
   }
 
@@ -895,7 +900,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     });
     if (twin) {
       const result = await mergeSequelIntoTwin(twin, showData, normalizedEpisodes, input, kind, season);
-      enqueueBackfillIfIncomplete(result.show);
+      if (!locatorOnlyImport) enqueueBackfillIfIncomplete(result.show);
       return { ...result, season: result.show ? season : season };
     }
   }
@@ -920,7 +925,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     base_normalized_title: baseNorm,
     poster_path: enriched?.poster_path || null,
     backdrop_path: enriched?.backdrop_path || null,
-    description: showData.description || "Obra multimedia indexada.",
+    description: showData.description || (locatorOnlyImport ? "" : "Obra multimedia indexada."),
     poster_url: showData.posterUrl,
     banner_url: showData.bannerUrl || showData.posterUrl,
     category: kind,
@@ -948,7 +953,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
     base_normalized_title: baseNorm,
     category: kind,
     year: showData.year > 0 ? showData.year : 0,
-    description: showData.description || "Obra multimedia indexada.",
+    description: showData.description || (locatorOnlyImport ? "" : "Obra multimedia indexada."),
     poster_url: showData.posterUrl || null,
     banner_url: showData.bannerUrl || null,
     genres: showData.genresStr,
@@ -966,7 +971,7 @@ export async function saveShowWithDeduplication(input: SaveShowInput) {
   };
 
   const sourcesAdded = await syncMediaItemSources(input, kind, createdShow.id, normalizedEpisodes, titleInfo);
-  enqueueBackfillIfIncomplete(createdShow);
+  if (!locatorOnlyImport) enqueueBackfillIfIncomplete(createdShow);
 
   return {
     show: createdShow as any,
@@ -1075,6 +1080,8 @@ export async function getShowsFromDb(search?: string, category?: string) {
 type LiteShowsOptions = {
   /** Public catalog mode: hide legacy-only rows without an active source. */
   onlyMainPath?: boolean;
+  /** Admin mode can include legacy rows without returning duplicate identities. */
+  dedupe?: boolean;
 };
 
 /**
@@ -1333,6 +1340,11 @@ export async function getShowsFromDbLite(
         prisma.$queryRawUnsafe(showsQuery, ...showsParams),
         prisma.$queryRawUnsafe(countQuery, ...countParams),
       ]);
+      if (options.dedupe) {
+        const uniqueShows = dedupeCatalogShows(shows as any[]);
+        const pagedShows = uniqueShows.slice(skip, skip + pageSize);
+        return { shows: pagedShows, total: uniqueShows.length, page: pageNum, pageSize, totalPages: Math.ceil(uniqueShows.length / pageSize) };
+      }
       const total = (countResult as any[])[0]?.total || 0;
       return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
     }
@@ -1458,6 +1470,11 @@ export async function getShowsFromDbLite(
       }),
       prisma.show.count({ where }),
     ]);
+    if (options.dedupe) {
+      const uniqueShows = dedupeCatalogShows(shows as any[]);
+      const pagedShows = uniqueShows.slice(skip, skip + pageSize);
+      return { shows: pagedShows, total: uniqueShows.length, page: pageNum, pageSize, totalPages: Math.ceil(uniqueShows.length / pageSize) };
+    }
     return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 

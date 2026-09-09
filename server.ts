@@ -96,13 +96,28 @@ import { resolveByTmdb } from "./server/providerGateway";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
-import { getPublicCatalog, getPublicCatalogDetail, getPublicCatalogRelated } from "./server/publicCatalog";
+import {
+  getPublicCatalog,
+  getPublicCatalogByIdentifier,
+  getPublicCatalogDetail,
+  getPublicCatalogRelated,
+} from "./server/publicCatalog";
+import {
+  getAdminCatalogVisibility,
+  getCatalogVisibility,
+  isCatalogItemHidden,
+  isGenreHidden,
+  saveCatalogVisibility,
+} from "./server/catalogVisibility";
 import {
   adminLogin,
   adminLogout,
   adminSession,
+  hasValidAdminSession,
   requireAdminForControlPlane,
 } from "./server/adminAuth";
+import { getUnifiedCatalogCounts } from "./server/catalogCounts";
+import { getIdentityRepairStatus } from "./server/identityRepairStatus";
 
 const deliveryPlanner = new DeliveryPlanner();
 const resolutionCoordinator = new ResolutionCoordinator(
@@ -128,6 +143,25 @@ const resolvePlaybackLocator = async (url: string) => {
     ? resolver.resolve(url)
     : resolutionCoordinator.resolve(url);
 };
+
+async function visibleCatalogShows<T extends { shows?: any[] }>(result: T): Promise<T> {
+  const visibility = await getCatalogVisibility();
+  if (!Array.isArray(result.shows)) return result;
+  return {
+    ...result,
+    shows: result.shows.filter((show) => !isCatalogItemHidden(show, visibility)),
+  };
+}
+
+function publicCatalogItem(kind: string, tmdbId: string, genres?: unknown) {
+  return {
+    id: `tmdb-${kind}-${tmdbId}`,
+    tmdb_id: Number(tmdbId),
+    kind,
+    category: kind,
+    genres,
+  };
+}
 
 // Stable browser-facing HLS sessions. Renewal uses the lightweight, single-flight
 // HTTP/static resolver only; Chromium is intentionally absent from production.
@@ -1373,14 +1407,23 @@ async function startServer() {
     if (query.length < 2) return res.status(400).json({ error: "La búsqueda requiere al menos 2 caracteres" });
     try {
       const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
-      const result = await getPublicCatalog({
+      const identifierResult = await getPublicCatalogByIdentifier(query, personalApiKey);
+      if (identifierResult) {
+        const result = await visibleCatalogShows(identifierResult);
+        res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=60");
+        res.setHeader("X-Catalog-Source", result.source);
+        res.setHeader("X-Catalog-Search", "tmdb");
+        res.setHeader("X-Catalog-Identifier", "true");
+        return res.json(result);
+      }
+      const result = await visibleCatalogShows(await getPublicCatalog({
         kind: "all",
         query,
         page: req.query.page ? Number(req.query.page) : 1,
         limit: req.query.limit ? Number(req.query.limit) : 100,
         mode: "search",
         apiKey: personalApiKey,
-      });
+      }));
       res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=60");
       res.setHeader("X-Catalog-Source", result.source);
       res.setHeader("X-Catalog-Search", "tmdb");
@@ -1396,7 +1439,7 @@ async function startServer() {
   app.get("/api/v1/catalog/public", async (req: Request, res: Response) => {
     try {
       const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
-      const result = await getPublicCatalog({
+      const result = await visibleCatalogShows(await getPublicCatalog({
         kind: req.query.kind,
         query: req.query.query || req.query.search,
         page: req.query.page ? Number(req.query.page) : 1,
@@ -1404,7 +1447,7 @@ async function startServer() {
         mode: typeof req.query.mode === "string" ? req.query.mode : "trending",
         genre: req.query.genre,
         apiKey: personalApiKey,
-      });
+      }));
       res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
       res.setHeader("X-Catalog-Source", result.source);
       return res.json(result);
@@ -1418,6 +1461,10 @@ async function startServer() {
       const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
       const detail = await getPublicCatalogDetail(req.params.kind, req.params.tmdbId, personalApiKey);
       if (!detail) return res.status(400).json({ error: "kind/tmdbId inválidos" });
+      const visibility = await getCatalogVisibility();
+      if (isCatalogItemHidden(publicCatalogItem(req.params.kind, req.params.tmdbId, detail.genres), visibility)) {
+        return res.status(404).json({ error: "Título no disponible" });
+      }
       res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=300");
       res.setHeader("X-Catalog-Source", "tmdb");
       return res.json(detail);
@@ -1431,17 +1478,55 @@ async function startServer() {
     try {
       const personalApiKey = String(req.get("x-tmdb-personal-key") || "").trim().slice(0, 128) || undefined;
       const related = await getPublicCatalogRelated(req.params.kind, req.params.tmdbId, personalApiKey);
+      const visibility = await getCatalogVisibility();
+      const visibleRelated = related.filter((show) => !isCatalogItemHidden(show, visibility));
       res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=300");
       res.setHeader("X-Catalog-Source", "tmdb");
-      return res.json({ shows: related });
+      return res.json({ shows: visibleRelated });
     } catch (error: any) {
       return res.status(502).json({ error: error?.message || "TMDB related titles unavailable" });
+    }
+  });
+
+  // Configuración pública de visibilidad. No expone datos de administración;
+  // solo permite que el frontend aplique el mismo filtro en memoria mientras
+  // las respuestas del catálogo llegan desde caché o desde TMDB.
+  app.get("/api/v1/catalog/visibility", async (_req: Request, res: Response) => {
+    try {
+      const visibility = await getCatalogVisibility();
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(visibility);
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || "No se pudo leer la visibilidad del catálogo" });
     }
   });
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.
   app.use("/api/v1", requireAdminForControlPlane);
+
+  app.get("/api/v1/admin/catalog/visibility", async (_req: Request, res: Response) => {
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(await getAdminCatalogVisibility());
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || "No se pudo leer la configuración del catálogo" });
+    }
+  });
+
+  app.put("/api/v1/admin/catalog/visibility", async (req: Request, res: Response) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const visibility = await saveCatalogVisibility({
+        hiddenGenres: Array.isArray(body.hiddenGenres) ? body.hiddenGenres : [],
+        hiddenShowIds: Array.isArray(body.hiddenShowIds) ? body.hiddenShowIds : [],
+      });
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ ok: true, ...visibility });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || "No se pudo guardar la configuración del catálogo" });
+    }
+  });
 
   // ==========================================
   // API Routes
@@ -1522,7 +1607,9 @@ async function startServer() {
     try {
       // Return cached if valid
       if (cachedGenres && Date.now() < genresCacheExpiry) {
-        return res.json(cachedGenres);
+        const visibility = await getCatalogVisibility();
+        const genres = cachedGenres.genres.filter((genre: string) => !isGenreHidden(genre, visibility));
+        return res.json({ ...cachedGenres, total: genres.length, genres });
       }
 
       const allGenres = new Set<string>();
@@ -1595,7 +1682,10 @@ async function startServer() {
         }
       } catch {}
 
-      const sorted = Array.from(allGenres).sort((a, b) => a.localeCompare(b, "es"));
+      const visibility = await getCatalogVisibility();
+      const sorted = Array.from(allGenres)
+        .filter((genre) => !isGenreHidden(genre, visibility))
+        .sort((a, b) => a.localeCompare(b, "es"));
       const result = {
         status: "ok",
         total: sorted.length,
@@ -1623,26 +1713,33 @@ async function startServer() {
       const isLite = req.query.lite === "true";
       const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const isAdminRequest = hasValidAdminSession(req);
 
       if (isLite) {
-        const includeLegacy = req.query.include_legacy === "true";
+        const includeLegacy = req.query.include_legacy === "true" && isAdminRequest;
         const result = await getShowsFromDbLite(search, category, page, limit, {
           onlyMainPath: !includeLegacy,
+          dedupe: isAdminRequest,
         });
+        const visibility = isAdminRequest ? null : await getCatalogVisibility();
+        const shows = visibility
+          ? (result.shows as any[]).filter((show) => !isCatalogItemHidden(show, visibility))
+          : result.shows;
         // Cache for 5 minutes, allow stale while revalidating
-        res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+        res.setHeader('Cache-Control', isAdminRequest ? 'private, no-store' : 'public, max-age=300, stale-while-revalidate=60');
         res.setHeader('X-Catalog-Count', String(result.total || 0));
-        res.json(result);
+        res.json({ ...result, shows });
       } else {
         const showsList = await getShowsFromDb(search, category);
         // The non-lite endpoint is kept for older clients, but it is still a
         // public catalog route.  Legacy Show/Episode rows must not bypass the
         // main-path policy simply because the caller omitted `lite=true`.
-        if (req.query.include_legacy === "true") {
+        if (req.query.include_legacy === "true" && isAdminRequest) {
           res.json(showsList);
           return;
         }
         const playableShows = await filterShowsToMainPath(showsList as any[]);
+        const visibility = await getCatalogVisibility();
         const publicShows = playableShows.map((show: any) => {
           const playbackKind = playbackKindForCategory(show.category);
           const episodes = Array.isArray(show.episodes)
@@ -1655,7 +1752,7 @@ async function startServer() {
             : [];
           return { ...show, episodes };
         });
-        res.json(publicShows);
+        res.json(publicShows.filter((show: any) => !isCatalogItemHidden(show, visibility)));
       }
     } catch (e: any) {
       res.status(500).json({ error: `Error leyendo catÃ¡logo: ${e.message}` });
@@ -1668,6 +1765,9 @@ async function startServer() {
       const showId = req.params.show_id;
       const show = await getShowByIdFromDb(showId);
       if (!show) {
+        return res.status(404).json({ detail: "Serie no encontrada" });
+      }
+      if (!hasValidAdminSession(req) && isCatalogItemHidden(show, await getCatalogVisibility())) {
         return res.status(404).json({ detail: "Serie no encontrada" });
       }
       const playbackKind = playbackKindForCategory((show as any).category);
@@ -3812,13 +3912,19 @@ async function startServer() {
   app.get("/api/v1/admin/session", adminSession);
   app.post("/api/v1/admin/logout", adminLogout);
 
+  // Estado de la reparación externa de identidades. Es solo lectura: el
+  // proceso se ejecuta fuera del worker interno y no se controla desde aquí.
+  app.get("/api/v1/admin/identity-repair/status", async (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "private, max-age=3, stale-while-revalidate=5");
+    res.json(await getIdentityRepairStatus());
+  });
+
   // Resumen operativo del panel: una sola consulta protegida para no hacer
   // que la interfaz dispare una batería de peticiones al abrirse.
   app.get("/api/v1/admin/overview", async (_req: Request, res: Response) => {
     try {
       const [
-        showCount,
-        mediaCount,
+        catalogCounts,
         episodeCount,
         mediaEpisodeCount,
         sourceLinkCount,
@@ -3833,8 +3939,7 @@ async function startServer() {
         jobs,
         recentWorks,
       ] = await Promise.all([
-        prisma.show.count(),
-        prisma.mediaItem.count(),
+        getUnifiedCatalogCounts(),
         prisma.episode.count(),
         prisma.mediaEpisode.count(),
         prisma.sourceLink.count(),
@@ -3876,8 +3981,10 @@ async function startServer() {
       res.json({
         generated_at: new Date().toISOString(),
         catalog: {
-          shows: showCount,
-          media_items: mediaCount,
+          shows: catalogCounts.shows,
+          media_items: catalogCounts.media_items,
+          unique_works: catalogCounts.unique_works,
+          duplicate_records: catalogCounts.duplicate_records,
           episodes: episodeCount + mediaEpisodeCount,
           source_links: sourceLinkCount,
           missing_tmdb: missingShowTmdb + missingMediaTmdb,

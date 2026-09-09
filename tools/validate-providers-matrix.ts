@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { EmbedResolvers } from '../server/resolvers.js';
+import { EmbedResolvers, providerResolverRegistry } from '../server/resolvers.js';
 import { isPlatformPageUrl, resolvePlatformPage } from '../server/platformPageResolvers.js';
 import { ScraperManager } from '../server/scrapers/ScraperManager.js';
 import * as fs from 'fs';
@@ -17,11 +17,11 @@ const PROVIDER_CONFIGS: Record<string, { showSources: string[]; sourceSites: str
   },
   tioanime: {
     showSources: ['tioanime'],
-    sourceSites: ['tioanime.com'],
+    sourceSites: ['tioanime', 'tioanime.com'],
   },
   latanime: {
     showSources: ['latanime'],
-    sourceSites: ['latanime.org', 'latanime'],
+    sourceSites: ['latanime', 'latanime.org'],
   },
   veranimes: {
     showSources: ['veranimes', 'wwv'],
@@ -33,7 +33,7 @@ const PROVIDER_CONFIGS: Record<string, { showSources: string[]; sourceSites: str
   },
   cinecalidad: {
     showSources: ['cinecalidad'],
-    sourceSites: ['cinecalidad.am'],
+    sourceSites: ['cinecalidad', 'cinecalidad.am'],
   },
   tubepelis: {
     showSources: ['tubepelis'],
@@ -49,7 +49,7 @@ const PROVIDER_CONFIGS: Record<string, { showSources: string[]; sourceSites: str
   },
   gnula: {
     showSources: ['gnula_movies', 'gnula_series', 'gnula_anime'],
-    sourceSites: ['ww3.gnulahd.nu', 'player.gnulahd.nu'],
+    sourceSites: ['gnula', 'ww3.gnulahd.nu', 'player.gnulahd.nu'],
   },
   doramasflix: {
     showSources: ['doramasflix', 'doramasflix_variedades', 'doramasflix_peliculas'],
@@ -57,7 +57,14 @@ const PROVIDER_CONFIGS: Record<string, { showSources: string[]; sourceSites: str
   },
 };
 
-const PROVIDERS = Object.keys(PROVIDER_CONFIGS);
+const requestedProviders = process.argv
+  .slice(2)
+  .flatMap((value) => value.split(","))
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+const PROVIDERS = requestedProviders.length > 0
+  ? requestedProviders.filter((provider) => PROVIDER_CONFIGS[provider])
+  : Object.keys(PROVIDER_CONFIGS);
 
 interface ServerTestResult {
   rawUrl: string;
@@ -257,13 +264,34 @@ async function findDistinctWorksForProvider(providerKey: string, count = 5): Pro
       take: 10,
     });
 
+    // La tabla conserva enlaces históricos de embeds que pueden seguir
+    // apareciendo antes que la ficha canónica. La reproducción real ya
+    // prefiere la ficha estable porque puede obtener un stream nuevo; la
+    // auditoría debe medir exactamente ese mismo camino.
+    const isSameProviderLink = (candidate: (typeof siblings)[number]) => {
+      const sourceSite = String(candidate.source_site || "").toLowerCase();
+      return config.sourceSites.some((site) => sourceSite === site.toLowerCase() || sourceSite.includes(site.toLowerCase()))
+        || sourceSite.includes(providerKey.toLowerCase());
+    };
+    const canonicalSibling = siblings.find((candidate) =>
+      isSameProviderLink(candidate)
+      && String(candidate.link_type || "").toLowerCase() !== "embed"
+      && isPlatformPageUrl(candidate.canonical_locator || candidate.url),
+    );
+    const preferredLocator = canonicalSibling?.canonical_locator || canonicalSibling?.url;
+
     seenTitles.add(media.title.toLowerCase());
     results.push({
       id: media.id,
       title: media.title,
       category: media.kind || 'movie',
-      locator: link.canonical_locator || link.url,
-      allCandidateUrls: Array.from(new Set([link.url, ...siblings.map((s) => s.url)].filter(Boolean))),
+      locator: preferredLocator || link.canonical_locator || link.url,
+      allCandidateUrls: Array.from(new Set([
+        preferredLocator,
+        link.canonical_locator,
+        link.url,
+        ...siblings.map((s) => s.url),
+      ].filter(Boolean))),
     });
   }
 
@@ -332,11 +360,16 @@ async function validateProvider(provider: string): Promise<ProviderSummary> {
     if (isPlatformPageUrl(work.locator)) {
       try {
         console.log(`  Resolviendo pagina canonica...`);
-        const canonical = await resolvePlatformPage(work.locator);
-        if (canonical.ranked_streams && canonical.ranked_streams.length > 0) {
-          candidateUrls = canonical.ranked_streams.map((s) => s.url);
-        } else if (canonical.stream_url && canonical.stream_url !== work.locator) {
-          candidateUrls = [canonical.stream_url];
+        // Usar exactamente el registro que usa el runtime. Antes esta
+        // auditoría llamaba al resolutor genérico incluso para GNULA, lo que
+        // podía ocultar mejoras del adaptador específico y producir un falso
+        // negativo distinto al flujo real de reproducción.
+        const resolver = providerResolverRegistry.findResolver(work.locator);
+        const canonical = resolver
+          ? await resolver.resolve(work.locator)
+          : await resolvePlatformPage(work.locator);
+        if (canonical?.resolved && canonical.url && canonical.url !== work.locator) {
+          candidateUrls = [canonical.url];
         }
       } catch (err: any) {
         console.log(`  Fallo al resolver plataforma: ${err?.message}`);

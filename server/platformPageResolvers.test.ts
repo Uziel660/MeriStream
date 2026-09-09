@@ -10,6 +10,7 @@ import {
   resolveTioPlusPage,
   checkExpiredDirectStream,
   isDoramasflixPageUrl,
+  isAnimeAv1PageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
 
@@ -33,6 +34,12 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(isTioPlusPageUrl("https://tioplus.app/pelicula/avatar/")).toBe(true);
       expect(isTioPlusPageUrl("https://www.tioplus.app/peliculas/sonic-3/")).toBe(true);
       expect(isPlatformPageUrl("https://tioplus.app/pelicula/avatar/")).toBe(true);
+    });
+
+    it("identifies AnimeAV1 episode pages used by GNULA mirrors", () => {
+      expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
+      expect(isPlatformPageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
+      expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen")).toBe(false);
     });
 
     it("does not classify direct media URLs as platform pages", () => {

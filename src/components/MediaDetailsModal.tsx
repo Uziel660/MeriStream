@@ -472,6 +472,20 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         {cleanDisplayTitle(show.title)}
                       </h2>
                     )}
+
+                    {isMovie && !hasNoSources && (
+                      <div className="details-hero-actions">
+                        <button
+                          type="button"
+                          onClick={() => onSelectEpisode(movieEpisode, cleanDisplayTitle(show.title))}
+                          className="details-hero-play"
+                          aria-label={`${moviePercent > 0 ? 'Continuar' : 'Reproducir'} ${cleanDisplayTitle(show.title)}`}
+                        >
+                          {isMovieCompleted ? <RotateCcw size={15} /> : <Play size={15} className="fill-current" />}
+                          <span>{isMovieCompleted ? 'Volver a ver' : moviePercent > 0 ? 'Continuar' : 'Reproducir'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -526,49 +540,24 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
                   {/* BOTÓN DE REPRODUCIR PARA PELÍCULAS O LISTA DE EPISODIOS */}
                   {isMovie ? (
-                    <div className="pt-4 flex flex-col items-center gap-3 pb-8">
-                      <button
-                        type="button"
-                        onClick={() => onSelectEpisode(movieEpisode, cleanDisplayTitle(show.title))}
-                        className="details-play group relative flex items-center justify-center gap-3 w-full sm:w-auto px-12 py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-display font-bold text-base transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] cursor-pointer"
-                      >
-                        {isMovieCompleted ? (
-                          <>
-                            <RotateCcw size={20} className="stroke-[2.5]" />
-                            Volver a ver película
-                          </>
-                        ) : moviePercent > 0 ? (
-                          <>
-                            <Play size={20} className="fill-black" />
-                            Continuar película ({moviePercent}%)
-                          </>
-                        ) : (
-                          <>
-                            <Play size={20} className="fill-black" />
-                            Reproducir película
-                          </>
-                        )}
-                      </button>
-
-                      {moviePercent > 0 && (
-                        <div className="w-full sm:w-72 space-y-1">
-                          <div className="flex justify-between text-[11px] font-mono text-zinc-400">
-                            <span>{isMovieCompleted ? 'Completada' : 'Progreso de reproducción'}</span>
-                            <span className={isMovieCompleted ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                              {moviePercent}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all duration-300 ${
-                                isMovieCompleted ? 'bg-emerald-500' : 'bg-amber-500'
-                              }`}
-                              style={{ width: `${moviePercent}%` }}
-                            />
-                          </div>
+                    moviePercent > 0 && (
+                      <div className="details-movie-progress w-full sm:w-72 space-y-1">
+                        <div className="flex justify-between text-[11px] font-mono text-zinc-400">
+                          <span>{isMovieCompleted ? 'Completada' : 'Progreso de reproducción'}</span>
+                          <span className={isMovieCompleted ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+                            {moviePercent}%
+                          </span>
                         </div>
-                      )}
-                    </div>
+                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              isMovieCompleted ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${moviePercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
                   ) : (
                     <div className="space-y-4 pt-2">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">

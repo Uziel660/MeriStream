@@ -97,6 +97,8 @@ export function isAdminControlPlaneRequest(path: string, method: string): boolea
   const normalizedPath = (path || "/").replace(/\/+$/, "") || "/";
   const normalizedMethod = method.toUpperCase();
   const protectedPrefixes = [
+    "/admin/catalog",
+    "/admin/identity-repair",
     "/verification",
     "/worker",
     "/tasks",

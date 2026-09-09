@@ -27,6 +27,7 @@ import {
   type VerificationProgress,
   type VerificationRunMode,
   type VerificationStatus,
+  type IdentityRepairStatus,
 } from "../api/client";
 import type { ApiError } from "../types";
 
@@ -99,6 +100,7 @@ function Metric({ label, value, icon, hint }: { label: string; value: number | s
 
 const VerificationPanel: React.FC = () => {
   const [status, setStatus] = useState<VerificationStatus | null>(null);
+  const [identityRepair, setIdentityRepair] = useState<IdentityRepairStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [runningMode, setRunningMode] = useState<VerificationRunMode | null>(null);
@@ -147,11 +149,25 @@ const VerificationPanel: React.FC = () => {
     }
   }, [applyConfig]);
 
+  const loadIdentityRepairStatus = useCallback(async () => {
+    try {
+      setIdentityRepair(await api.getIdentityRepairStatus());
+    } catch {
+      // Este proceso auxiliar no debe ocultar ni romper el worker interno.
+    }
+  }, []);
+
   useEffect(() => {
     void loadStatus();
     const timer = window.setInterval(() => void loadStatus(), 3000);
     return () => window.clearInterval(timer);
   }, [loadStatus]);
+
+  useEffect(() => {
+    void loadIdentityRepairStatus();
+    const timer = window.setInterval(() => void loadIdentityRepairStatus(), 5000);
+    return () => window.clearInterval(timer);
+  }, [loadIdentityRepairStatus]);
 
   const runVerification = async (mode: VerificationRunMode) => {
     setActionFeedback(null);
@@ -311,6 +327,21 @@ const VerificationPanel: React.FC = () => {
     }
     return "Listo para verificar";
   }, [loading, isPaused, isRunning, status?.phase]);
+
+  const identityPhaseLabel = identityRepair?.phase === "shows"
+    ? "series y películas"
+    : identityRepair?.phase === "media"
+    ? "películas/medios"
+    : identityRepair?.phase === "anime"
+    ? "anime"
+    : "sin fase informada";
+  const identityStateLabel = identityRepair?.state === "running"
+    ? "EN CURSO"
+    : identityRepair?.state === "completed"
+    ? "COMPLETADO"
+    : identityRepair?.state === "failed"
+    ? "CON ERROR"
+    : "SIN SEGUIMIENTO EN VIVO";
 
   return (
     <div className="space-y-4">
@@ -495,6 +526,60 @@ const VerificationPanel: React.FC = () => {
               <AlertCircle size={14} />
             </span>
             Error de conexión: {pollError}
+          </div>
+        )}
+      </section>
+
+      {/* El saneamiento se ejecuta fuera del worker interno; aquí solo se observa. */}
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white">Saneamiento de identidades</h3>
+              {identityRepair && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    identityRepair.state === "running"
+                      ? "bg-emerald-500/15 text-emerald-300"
+                      : identityRepair.state === "completed"
+                      ? "bg-sky-500/15 text-sky-300"
+                      : identityRepair.state === "failed"
+                      ? "bg-red-500/15 text-red-300"
+                      : "bg-zinc-700/60 text-zinc-300"
+                  }`}
+                >
+                  {identityStateLabel}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 max-w-2xl text-[11px] text-zinc-400">
+              Reparación de TMDB/MAL/AniList ejecutada como proceso externo. Este bloque lee sus reportes y no lo pausa ni lo detiene.
+            </p>
+          </div>
+          <div className="text-left text-[10px] text-zinc-500 sm:text-right">
+            {identityRepair?.phase ? `Fase: ${identityPhaseLabel}` : "Esperando reportes"}
+            {identityRepair?.pass ? ` · pasada ${identityRepair.pass}` : ""}
+            {identityRepair?.batch ? ` · lote ${identityRepair.batch}` : ""}
+          </div>
+        </div>
+
+        {identityRepair ? (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Metric label="Analizadas" value={identityRepair.considered} icon={<Database size={11} />} hint="Acumulado de reportes" />
+              <Metric label="Aplicadas" value={identityRepair.applied} icon={<CheckCircle2 size={11} />} />
+              <Metric label="Sin coincidencia" value={identityRepair.unresolved} icon={<AlertTriangle size={11} />} />
+              <Metric label="Conflictos" value={identityRepair.conflicts} icon={<Layers size={11} />} />
+              <Metric label="Errores" value={identityRepair.errors} icon={<AlertCircle size={11} />} />
+            </div>
+            <div className="mt-3 flex flex-col gap-1 text-[10px] text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+              <span>{identityRepair.message}</span>
+              <span>{identityRepair.updated_at ? `Actualizado: ${formatDate(identityRepair.updated_at)}` : "Sin actualización"}</span>
+            </div>
+          </>
+        ) : (
+          <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500">
+            No se pudo consultar todavía el reporte externo.
           </div>
         )}
       </section>

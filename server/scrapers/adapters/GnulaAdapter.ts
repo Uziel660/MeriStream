@@ -57,9 +57,24 @@ function isGnulaDetailUrl(value: string | undefined | null): boolean {
   if (!value) return false;
   try {
     const parsed = new URL(value);
-    return /(^|\.)gnulahd\.nu$/i.test(parsed.hostname) &&
-      /^\/ver\/[^/]+\/?$/i.test(parsed.pathname) &&
-      !isGnulaCatalogUrl(value);
+    if (!/(^|\.)gnulahd\.nu$/i.test(parsed.hostname) || isGnulaCatalogUrl(value)) return false;
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    // Fichas de serie/anime antiguas: /ver/<slug>/
+    if (/^\/ver\/[^/]+$/i.test(pathname)) return true;
+    // Episodios actuales: /<slug>-1x02/ (y fichas de película en raíz).
+    return /^\/(?!nuevo(?:\/|$)|wp-json(?:\/|$))[^/]+$/i.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isGnulaOverviewUrl(value: string | undefined | null): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return /(^|\.)gnulahd\.nu$/i.test(parsed.hostname)
+      && /^\/ver\/[^/]+\/?$/i.test(parsed.pathname)
+      && !isGnulaCatalogUrl(value);
   } catch {
     return false;
   }
@@ -124,9 +139,18 @@ export class GnulaAdapter extends GenericAdapter {
       for (let i = 0; i < packed.length; i += 1) packed[i] ^= key[i % key.length];
       const decoded = JSON.parse(packed.toString("utf8")) as {
         t?: unknown;
-        langs?: Array<{ servers?: Array<{ src?: unknown }> }>;
+        langs?:
+          | Array<{ servers?: Array<{ src?: unknown }> }>
+          | Record<string, { servers?: Array<{ src?: unknown }> }>;
       };
-      const streams = (decoded.langs || [])
+      // GNULA ha servido dos formas del mismo payload: una lista de idiomas
+      // en versiones antiguas y un objeto indexado por `lat`, `sub`, etc. en
+      // la versión actual. Aceptar ambas evita perder todos los servidores de
+      // una ficha válida y caer de vuelta en la URL HTML de GNULA.
+      const languages = Array.isArray(decoded.langs)
+        ? decoded.langs
+        : Object.values(decoded.langs || {});
+      const streams = languages
         .flatMap((language) => language?.servers || [])
         .map((server) => (typeof server?.src === "string" ? server.src.trim() : ""))
         .filter((src) => /^https?:\/\//i.test(src));
@@ -155,7 +179,9 @@ export class GnulaAdapter extends GenericAdapter {
       if (!href) return;
       let url = href;
       try { url = new URL(href, pageUrl).toString(); } catch { return; }
-      if (isGnulaCatalogUrl(url) || isGnulaDetailUrl(url)) return;
+      // Una ficha de serie enlaza a episodios raíz (/serie-1x02/). Solo se
+      // descartan índices y fichas overview; los episodios sí deben entrar.
+      if (isGnulaCatalogUrl(url) || isGnulaOverviewUrl(url)) return;
       if (seen.has(url)) return;
 
       const seasonAttr = Number($(element).attr("data-s"));

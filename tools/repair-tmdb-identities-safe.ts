@@ -12,7 +12,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { resolveTmdbIdentityCandidate, type IdentityKind, type TmdbIdentityResolution } from "../server/identity/tmdbIdentityResolver";
-import { normalizeTitleKey } from "../server/utils/titleNormalizer";
+import { decodeHtmlEntities, normalizeTitleKey, parseRawTitle } from "../server/utils/titleNormalizer";
 
 interface ReportEntry {
   model: "Show" | "MediaItem";
@@ -38,6 +38,67 @@ interface Summary {
   nextAfterMediaId: string | null;
 }
 
+const PRIMARY_SOURCE_SITES = ["cinecalidad", "latanime", "gnula", "tioanime"];
+const CURATED_TMDB_IDS: Record<string, number> = {
+  corredoresdeljuego: 1263532,
+  unaestrellarebeldeenelinfierno: 804252,
+  juegodeterror: 72508,
+  elsanador2: 1219548,
+  lacaceriafinal: 1309770,
+  laidentidaddeunnecio: 1466302,
+  senalacustica: 1146910,
+  cuandoelamoraparece: 1067821,
+  gataodetalpalotalastilla: 1303236,
+  girlsdorms1s2: 199315,
+  freemovie4thefinalstroke: 738091,
+  nekoparaanime: 95317,
+  azurlaneminidrama: 91455,
+  lasllamadas: 914243,
+  undesenfrenadofindesemana: 13991,
+  lamaestradelasbromastakagisanliveaction: 235913,
+  doctorwhorescatedenochebuena: 239770,
+  doctorwhorisitas: 239770,
+  harleyquinnespecialdeunmuyproblematicosanvalentin: 74440,
+  elhobbit3labatalladeloscincoejercitos: 122917,
+  unicornwarsla: 587092,
+  noesloquepiensas: 308402,
+  alkhallatla: 318188,
+  unatiendaparaasesinos: 215072,
+  unavenidadealtura: 81044,
+  ellayyoenelbanodemujeres: 88090,
+  bakihanmas1s2: 129600,
+  vecinosbarbaros: 1001736,
+  coradale: 976226,
+  enbuscadelanilloperdido: 911252,
+  miradaasesina: 1200320,
+  elpaseo8lalunadehiel: 1586841,
+  shakerattleandroll17elorigendelmal: 1510795,
+  suenosdecampeon: 1448170,
+  unachicaenausten: 1221678,
+  mentirasdeunninero: 1155123,
+  ojosdeextrano: 948184,
+  mensajesalsenordarcy: 1221673,
+  quierotuamor2: 1214835,
+  quierotuamor: 590401,
+  cartassicilianas: 1148663,
+  kantaraunaleyenda: 858485,
+  elmisteriodelafamiliacarmen: 1363282,
+  unapizcadeportugal: 1093765,
+  juegodoloryamor: 1077902,
+  loquehacemospordinero: 678416,
+  noodiaras: 665139,
+  rwbychibi2: 68415,
+  rwbychibi3: 68415,
+};
+
+const CURATED_CATEGORY_OVERRIDES: Record<string, "movie" | "series" | "anime"> = {
+  unaestrellarebeldeenelinfierno: "movie",
+  lamaestradelasbromastakagisanliveaction: "series",
+  doctorwhorescatedenochebuena: "series",
+  doctorwhorisitas: "series",
+  harleyquinnespecialdeunmuyproblematicosanvalentin: "series",
+};
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const value = (name: string): string | undefined => {
@@ -48,6 +109,10 @@ function parseArgs() {
   const concurrencyRaw = Number(value("--concurrency"));
   return {
     apply: args.includes("--apply"),
+    onlyNone: args.includes("--only-none"),
+    mediaOnly: args.includes("--media-only"),
+    showsOnly: args.includes("--shows-only"),
+    primaryOnly: args.includes("--primary-only"),
     limit: Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : undefined,
     concurrency: Math.min(8, Math.max(1, Number.isFinite(concurrencyRaw) ? Math.floor(concurrencyRaw) : 3)),
     afterShowId: value("--after-show-id"),
@@ -85,16 +150,41 @@ function compatibleShowCategories(kind: IdentityKind): string[] {
   return ["movie", "pelicula", "película"];
 }
 
+function compatibleMediaKinds(kind: IdentityKind): string[] {
+  if (kind === "anime") return ["anime", "series"];
+  return [kind];
+}
+
+function compatibleYear(value: number | null, expected: number | null): boolean {
+  if (!value || !expected) return true;
+  return Math.abs(value - expected) <= 1;
+}
+
+function uniqueConfirmedTmdbIds(rows: Array<{ tmdb_id: number | null; title: string; normalized_title: string; base_normalized_title: string | null; year: number | null }>, titleKeys: string[], title: string, year: number | null): number[] {
+  const requested = normalizeTitleKey(title);
+  const exact = rows.filter((row) =>
+    compatibleYear(row.year, year) &&
+    (normalizeTitleKey(row.title) === requested || titleKeys.includes(row.normalized_title) || Boolean(row.base_normalized_title && titleKeys.includes(row.base_normalized_title))),
+  );
+  return [...new Set(exact.map((row) => row.tmdb_id).filter((id): id is number => Number.isInteger(id) && id > 0))];
+}
+
 /**
  * Las aliases de proveedores pueden estar contaminadas (por ejemplo, el
  * título visible pertenece a una obra y el alias japonés a otra). Una
  * coincidencia HIGH solo se puede aplicar automáticamente si coincide con el
  * título canónico del registro o proviene de un IMDb existente.
  */
-function isSafeHighMatch(title: string, resolution: TmdbIdentityResolution): boolean {
+function isSafeHighMatch(title: string, aliases: string[], resolution: TmdbIdentityResolution): boolean {
+  const identityAliasKey = (value: string): string => normalizeTitleKey(
+    parseRawTitle(decodeHtmlEntities(value)).canonical,
+  );
+  const allowedAliases = new Set([title, ...aliases].map(identityAliasKey));
   return resolution.confidence === "high" && (
     resolution.source === "imdb" ||
-    normalizeTitleKey(title) === normalizeTitleKey(resolution.matchedAlias)
+    (allowedAliases.has(identityAliasKey(resolution.matchedAlias)) && (
+      resolution.reasons.includes("exact_title") || resolution.reasons.includes("unique_exact_year") || resolution.reasons.includes("unique_exact_title")
+    ))
   );
 }
 
@@ -137,9 +227,11 @@ async function main(): Promise<void> {
   };
 
   try {
-    const shows = await prisma.show.findMany({
+    const shows = opts.mediaOnly ? [] : await prisma.show.findMany({
       where: {
         tmdb_id: null,
+        ...(opts.primaryOnly ? { source: { in: PRIMARY_SOURCE_SITES } } : {}),
+        ...(opts.onlyNone ? { mal_id: null, anilist_id: null } : {}),
         ...(opts.afterShowId ? { id: { gt: opts.afterShowId } } : {}),
       },
       orderBy: { id: "asc" },
@@ -163,6 +255,33 @@ async function main(): Promise<void> {
       const kind = normalizeKind(show.category);
       const year = validYear(show.year);
       try {
+        const curatedTmdbId = CURATED_TMDB_IDS[normalizeTitleKey(show.title)];
+        if (curatedTmdbId) {
+          summary.highConfidence++;
+          const curatedCategory = CURATED_CATEGORY_OVERRIDES[normalizeTitleKey(show.title)];
+          if (opts.apply) {
+            const updated = await prisma.show.updateMany({
+              where: { id: show.id, tmdb_id: null },
+              data: { tmdb_id: curatedTmdbId, ...(curatedCategory ? { category: curatedCategory } : {}) },
+            });
+            if (updated.count > 0) summary.applied++;
+          }
+          report.push({
+            model: "Show", id: show.id, title: show.title, year, kind, resolution: {
+              tmdbId: curatedTmdbId,
+              mediaType: "movie",
+              title: show.title,
+              originalTitle: show.original_title,
+              year,
+              score: 1,
+              confidence: "high",
+              matchedAlias: show.title,
+              reasons: ["curated_external_mapping"],
+              source: "tmdb-search",
+            }, action: opts.apply ? "applied" : "would_apply",
+          });
+          return;
+        }
         const titleKeys = uniqueAliases([
           show.title,
           show.normalized_title,
@@ -204,13 +323,53 @@ async function main(): Promise<void> {
           });
           return;
         }
+
+        // El catálogo canónico también puede contener la identidad que falta
+        // en una fila Show legacy. Solo heredamos cuando el conjunto filtrado
+        // deja un único TMDB; varias secuelas con el mismo nombre se revisan.
+        const mediaCandidates = await prisma.mediaItem.findMany({
+          where: {
+            tmdb_id: { not: null },
+            kind: { in: compatibleMediaKinds(kind) },
+            OR: [
+              { normalized_title: { in: titleKeys } },
+              { base_normalized_title: { in: titleKeys } },
+            ],
+          },
+          select: { tmdb_id: true, title: true, normalized_title: true, base_normalized_title: true, year: true },
+          take: 20,
+        });
+        const mediaTmdbIds = uniqueConfirmedTmdbIds(mediaCandidates, titleKeys, show.title, year);
+        if (mediaTmdbIds.length === 1) {
+          const tmdbId = mediaTmdbIds[0];
+          summary.inherited++;
+          if (opts.apply) {
+            const updated = await prisma.show.updateMany({ where: { id: show.id, tmdb_id: null }, data: { tmdb_id: tmdbId } });
+            if (updated.count > 0) summary.applied++;
+          }
+          report.push({
+            model: "Show", id: show.id, title: show.title, year, kind, resolution: {
+              tmdbId,
+              mediaType: kind === "movie" ? "movie" : "tv",
+              title: show.title,
+              originalTitle: show.original_title,
+              year,
+              score: 1,
+              confidence: "high",
+              matchedAlias: show.title,
+              reasons: ["inherited_from_confirmed_media_item"],
+              source: "tmdb-search",
+            }, action: opts.apply ? "inherited" : "would_inherit",
+          });
+          return;
+        }
         const resolution = await resolveTmdbIdentityCandidate({
           title: show.title,
           aliases: uniqueAliases([show.original_title, show.english_title, show.japanese_title]),
           year,
           kind,
         });
-        if (resolution && isSafeHighMatch(show.title, resolution)) {
+        if (resolution && isSafeHighMatch(show.title, uniqueAliases([show.original_title, show.english_title, show.japanese_title]), resolution)) {
           summary.highConfidence++;
           if (opts.apply) {
             const updated = await prisma.show.updateMany({ where: { id: show.id, tmdb_id: null }, data: { tmdb_id: resolution.tmdbId } });
@@ -238,9 +397,12 @@ async function main(): Promise<void> {
     });
 
     const remaining = opts.limit ? Math.max(0, opts.limit - shows.length) : undefined;
-    const mediaItems = remaining === 0 ? [] : await prisma.mediaItem.findMany({
+    const mediaItems = opts.showsOnly || remaining === 0 ? [] : await prisma.mediaItem.findMany({
       where: {
         tmdb_id: null,
+        ...(opts.primaryOnly ? {
+          episodes: { some: { links: { some: { source_site: { in: PRIMARY_SOURCE_SITES } } } } },
+        } : {}),
         ...(opts.afterMediaId ? { id: { gt: opts.afterMediaId } } : {}),
       },
       orderBy: { id: "asc" },
@@ -263,7 +425,7 @@ async function main(): Promise<void> {
       const year = validYear(item.year);
       try {
         const titleKeys = [item.base_normalized_title, item.normalized_title].filter((value): value is string => Boolean(value));
-        const linked = titleKeys.length > 0 ? await prisma.show.findFirst({
+        const linkedRows = titleKeys.length > 0 ? await prisma.show.findMany({
           where: {
             tmdb_id: { not: null },
             category: { in: compatibleShowCategories(kind) },
@@ -273,19 +435,21 @@ async function main(): Promise<void> {
               { normalized_title: { in: titleKeys } },
             ],
           },
-          select: { tmdb_id: true },
-          orderBy: { created_at: "asc" },
-        }) : null;
+          select: { tmdb_id: true, title: true, normalized_title: true, base_normalized_title: true, year: true },
+          take: 20,
+        }) : [];
+        const linkedIds = uniqueConfirmedTmdbIds(linkedRows, titleKeys, item.title, year);
 
-        if (linked?.tmdb_id) {
+        if (linkedIds.length === 1) {
+          const linkedTmdbId = linkedIds[0];
           summary.inherited++;
           if (opts.apply) {
-            const updated = await prisma.mediaItem.updateMany({ where: { id: item.id, tmdb_id: null }, data: { tmdb_id: linked.tmdb_id } });
+            const updated = await prisma.mediaItem.updateMany({ where: { id: item.id, tmdb_id: null }, data: { tmdb_id: linkedTmdbId } });
             if (updated.count > 0) summary.applied++;
           }
           report.push({
             model: "MediaItem", id: item.id, title: item.title, year, kind, resolution: {
-              tmdbId: linked.tmdb_id,
+              tmdbId: linkedTmdbId,
               mediaType: kind === "movie" ? "movie" : "tv",
               title: item.title,
               originalTitle: item.original_title,
@@ -306,7 +470,7 @@ async function main(): Promise<void> {
           year,
           kind,
         });
-        if (resolution && isSafeHighMatch(item.title, resolution)) {
+        if (resolution && isSafeHighMatch(item.title, uniqueAliases([item.original_title]), resolution)) {
           summary.highConfidence++;
           if (opts.apply) {
             const updated = await prisma.mediaItem.updateMany({ where: { id: item.id, tmdb_id: null }, data: { tmdb_id: resolution.tmdbId } });

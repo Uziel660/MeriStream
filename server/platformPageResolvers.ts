@@ -153,6 +153,23 @@ export function isTioAnimePageUrl(rawUrl: string | URL): boolean {
 }
 
 /**
+ * Detecta una página de episodio de AnimeAV1. GNULA usa estas páginas como
+ * espejo para parte de su catálogo de anime; tratarlas como un proveedor
+ * canónico permite que el adaptador obtenga el HLS de Zilla en vez de dejar
+ * la página HTML como un embed sin resolver.
+ */
+export function isAnimeAv1PageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)animeav1\.com$/i.test(host)
+      && /^\/media\/[^/]+\/\d+(?:\.\d+)?\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Detecta si la URL corresponde a una página canónica de VerAnimes (veranimes.net, wwv.veranimes.net).
  */
 export function isVerAnimesPageUrl(rawUrl: string | URL): boolean {
@@ -206,6 +223,7 @@ export function isPlatformPageUrl(rawUrl: string | URL): boolean {
     isLatAnimePageUrl(rawUrl) ||
     isGnulaPageUrl(rawUrl) ||
     isTioAnimePageUrl(rawUrl) ||
+    isAnimeAv1PageUrl(rawUrl) ||
     isVerAnimesPageUrl(rawUrl) ||
     isDoramasflixPageUrl(rawUrl) ||
     isTubePelisPageUrl(rawUrl)
@@ -224,6 +242,7 @@ export function getPlatformProviderName(rawUrl: string | URL): string {
   if (isLatAnimePageUrl(rawUrl)) return "LatAnime";
   if (isGnulaPageUrl(rawUrl)) return "Gnula";
   if (isTioAnimePageUrl(rawUrl)) return "TioAnime";
+  if (isAnimeAv1PageUrl(rawUrl)) return "AnimeAV1";
   if (isVerAnimesPageUrl(rawUrl)) return "VerAnimes";
   if (isDoramasflixPageUrl(rawUrl)) return "Doramasflix";
   if (isTubePelisPageUrl(rawUrl)) return "TubePelis";
@@ -442,6 +461,22 @@ export async function resolvePlatformPage(
           }
           break;
         }
+
+        // `EmbedResolvers` intentionally keeps MEGA `/embed/#!...` locators
+        // as embeds. In a platform-page flow we can safely turn a healthy
+        // public file into MeriStream's internal relay, which keeps the
+        // frontend native and avoids asking it to load a third-party iframe.
+        if (!subMeta.resolved || subMeta.type !== "direct") {
+          const mega = parseMegaUrl(cand.url);
+          if (mega?.kind === "file") {
+            const megaHealthy = await (options.megaHealthCheck || defaultMegaHealthCheck)(cand.url);
+            if (megaHealthy) {
+              resolvedStreamUrl = `/api/v1/stream/mega?url=${encodeURIComponent(mega.canonicalUrl)}`;
+              isDirect = true;
+              break;
+            }
+          }
+        }
       } catch {}
     }
   }
@@ -562,6 +597,14 @@ export async function resolveGnulaPage(
 
 /** Resolutor específico para tioanime.com */
 export async function resolveTioAnimePage(
+  locator: string,
+  options?: PlatformPageResolveOptions
+): Promise<PlatformPlaybackResolution> {
+  return resolvePlatformPage(locator, options);
+}
+
+/** Resolutor específico para páginas de episodio AnimeAV1. */
+export async function resolveAnimeAv1Page(
   locator: string,
   options?: PlatformPageResolveOptions
 ): Promise<PlatformPlaybackResolution> {

@@ -138,6 +138,25 @@ export interface VerificationRunResponse {
   status: VerificationStatus;
 }
 
+export interface IdentityRepairStatus {
+  state: "running" | "completed" | "failed" | "unknown";
+  phase: "anime" | "shows" | "media" | null;
+  pass: number | null;
+  batch: number | null;
+  considered: number;
+  applied: number;
+  unresolved: number;
+  conflicts: number;
+  errors: number;
+  batches: number;
+  started_at: string | null;
+  updated_at: string | null;
+  completed_at: string | null;
+  latest_report: string | null;
+  report_dir: string;
+  message: string;
+}
+
 export function getAuthToken(): string | null {
   try {
     return localStorage.getItem(AUTH_TOKEN_KEY);
@@ -246,6 +265,10 @@ export interface PlaybackResolution {
 }
 
 export const api = {
+  async getIdentityRepairStatus(): Promise<IdentityRepairStatus> {
+    return request<IdentityRepairStatus>("/admin/identity-repair/status");
+  },
+
   async getVerificationStatus(): Promise<VerificationStatus> {
     return request<VerificationStatus>("/verification");
   },

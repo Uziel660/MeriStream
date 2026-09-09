@@ -1,0 +1,879 @@
+{
+  "generated_at": "2026-09-09T06:52:52.555Z",
+  "totals": {
+    "media_items": 19665,
+    "media_episodes": 346473,
+    "episodes_without_links": 155601,
+    "episodes_with_multiple_sites": 72469
+  },
+  "by_kind": {
+    "movie": {
+      "items": 9850,
+      "episodes": 8999,
+      "linked": 8498
+    },
+    "series": {
+      "items": 4142,
+      "episodes": 190433,
+      "linked": 86419
+    },
+    "anime": {
+      "items": 5673,
+      "episodes": 147041,
+      "linked": 95955
+    }
+  },
+  "providers": [
+    {
+      "provider": "tioplus",
+      "links": 78059,
+      "episodes": 55512
+    },
+    {
+      "provider": "wwv",
+      "links": 67546,
+      "episodes": 54334
+    },
+    {
+      "provider": "latanime",
+      "links": 59056,
+      "episodes": 45260
+    },
+    {
+      "provider": "lamovie",
+      "links": 54644,
+      "episodes": 54313
+    },
+    {
+      "provider": "cinecalidad",
+      "links": 27140,
+      "episodes": 25471
+    },
+    {
+      "provider": "veranimes",
+      "links": 23265,
+      "episodes": 23225
+    },
+    {
+      "provider": "gnula",
+      "links": 17324,
+      "episodes": 15078
+    },
+    {
+      "provider": "megaplay.buzz",
+      "links": 12058,
+      "episodes": 7590
+    },
+    {
+      "provider": "animeav1",
+      "links": 8875,
+      "episodes": 7852
+    },
+    {
+      "provider": "hianimes",
+      "links": 8638,
+      "episodes": 8307
+    },
+    {
+      "provider": "tioanime",
+      "links": 7740,
+      "episodes": 7650
+    },
+    {
+      "provider": "doramasflix",
+      "links": 6559,
+      "episodes": 6498
+    },
+    {
+      "provider": "zokoanime",
+      "links": 3561,
+      "episodes": 1910
+    },
+    {
+      "provider": "animeplay.cfd",
+      "links": 820,
+      "episodes": 595
+    },
+    {
+      "provider": "animeflv",
+      "links": 617,
+      "episodes": 617
+    },
+    {
+      "provider": "vidmoly.net",
+      "links": 171,
+      "episodes": 171
+    },
+    {
+      "provider": "bysesayeveum.com",
+      "links": 85,
+      "episodes": 85
+    },
+    {
+      "provider": "vidmoly.biz",
+      "links": 63,
+      "episodes": 63
+    },
+    {
+      "provider": "sbfull.com",
+      "links": 14,
+      "episodes": 14
+    },
+    {
+      "provider": "sbbrisk.com",
+      "links": 9,
+      "episodes": 9
+    },
+    {
+      "provider": "vtbe.to",
+      "links": 6,
+      "episodes": 6
+    },
+    {
+      "provider": "sbspeed.com",
+      "links": 5,
+      "episodes": 5
+    },
+    {
+      "provider": "sbthe.com",
+      "links": 4,
+      "episodes": 4
+    },
+    {
+      "provider": "sblanh.com",
+      "links": 3,
+      "episodes": 3
+    },
+    {
+      "provider": "sbchill.com",
+      "links": 3,
+      "episodes": 3
+    },
+    {
+      "provider": "vtube.to",
+      "links": 2,
+      "episodes": 2
+    },
+    {
+      "provider": "sbface.com",
+      "links": 2,
+      "episodes": 2
+    },
+    {
+      "provider": "sbhight.com",
+      "links": 2,
+      "episodes": 2
+    },
+    {
+      "provider": "waaw.to",
+      "links": 2,
+      "episodes": 2
+    },
+    {
+      "provider": "wishfast.top",
+      "links": 1,
+      "episodes": 1
+    },
+    {
+      "provider": "sblongvu.com",
+      "links": 1,
+      "episodes": 1
+    }
+  ],
+  "duplicate_media_item_groups": 169,
+  "duplicate_media_item_examples": [
+    [
+      {
+        "id": "mtrgfq60d7cs8adm",
+        "title": "Monster Portal",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgfq94ubxr6q6e",
+        "title": "Monster Portal",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrgg59fkp6v0v3e",
+        "title": "Hidden Family Secrets",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgg5azannpo6qk",
+        "title": "Hidden Family Secrets",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrgg72snb0oxky1",
+        "title": "Hasta nunca",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      },
+      {
+        "id": "mtrgg77m1dgvrafz",
+        "title": "Hasta nunca",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrggcfdn4xdn92b",
+        "title": "Mi primo",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrggcfe4expdi14",
+        "title": "Mi primo",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrgge6f4osenowq",
+        "title": "Supercool: Una Noche de Locura",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgge6jl2r2bi7o",
+        "title": "Supercool: Una Noche de Locura",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrggqm5e9ddnrtw",
+        "title": "Plan A, Plan B",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrggqr9afv5t9ob",
+        "title": "Plan A, Plan B",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrggzft1zbktv9c",
+        "title": "Montana Story",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      },
+      {
+        "id": "mtrggziimbgtdeky",
+        "title": "Montana Story",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrgi5w1yf6piqm3",
+        "title": "Extraviado",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgi5wr6mh0zcit",
+        "title": "Extraviado",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrgirnbybrdbyth",
+        "title": "Locked In",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgirotll5hm4ae",
+        "title": "Locked In",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrgix4s24qwnc5m",
+        "title": "Shark Huntress",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrgix9o49347flu",
+        "title": "Shark Huntress",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhen0sbfyq07b0",
+        "title": "Royal New Year's Eve",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      },
+      {
+        "id": "mtrhen0soeci04lq",
+        "title": "Royal New Year's Eve",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      }
+    ],
+    [
+      {
+        "id": "mtrhf8r3ll0g1o40",
+        "title": "El Hotel",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhf8soegmy490w",
+        "title": "El Hotel",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhfdru7uibu0fn",
+        "title": "Barbie en El Cascanueces",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhfdxj2fmjf8uu",
+        "title": "Barbie en El Cascanueces",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhfw984hi91hlm",
+        "title": "Sonic: La",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhfw9b92y4zryh",
+        "title": "Sonic: La",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhfxwek19sa8zz",
+        "title": "Sonic 2: La",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhfxysprimuj0q",
+        "title": "Sonic 2: La",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhfzumtv87sie0",
+        "title": "Peter Pan 2: El regreso al país de Nunca Jamás",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      },
+      {
+        "id": "mtrhfzuoqj7clzjc",
+        "title": "Peter Pan 2: El regreso al país de Nunca Jamás",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhg2xuu2l46i6n",
+        "title": "La hora del silencio",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhg303elgjk04c",
+        "title": "La hora del silencio",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhg4wlvkdeokpy",
+        "title": "Hachiko 2: Siempre a tu Lado",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhg50j22p52x7c",
+        "title": "Hachiko 2: Siempre a tu Lado",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhge8lqwp9a3ve",
+        "title": "Los tipos malos: ¿Truco o atraco?",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhge8o3c9wtvdr",
+        "title": "Los tipos malos: ¿Truco o atraco?",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhglslk5rs8kj1",
+        "title": "The End",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      },
+      {
+        "id": "mtrhglsuuvuhxpv8",
+        "title": "The End",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhgnrw2xje9ojg",
+        "title": "Year 10",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      },
+      {
+        "id": "mtrhgnrws6rm1qc1",
+        "title": "Year 10",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhgsbnkyfhhg5j",
+        "title": "Werewolves",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhgsbxkwm4wz2r",
+        "title": "Werewolves",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhgu7rpex1pxva",
+        "title": "What Happened at 625 River Road?",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhgu8tjazrrty4",
+        "title": "What Happened at 625 River Road?",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      }
+    ],
+    [
+      {
+        "id": "mtrhgy26mfmboerb",
+        "title": "37 l'ombre et la proie",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 2
+      },
+      {
+        "id": "mtrhgy3tuze8zjux",
+        "title": "37 l'ombre et la proie",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhhbfjw15d90ia",
+        "title": "Cascanueces",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhhbfqxlya90br",
+        "title": "Cascanueces",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      }
+    ],
+    [
+      {
+        "id": "mtrhhkei4l7flnzy",
+        "title": "The Best Christmas Pageant Ever",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhhkjl04bbchud",
+        "title": "The Best Christmas Pageant Ever",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhhmghocibq9sj",
+        "title": "Ciudad de asfalto",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhhmgsfv9bl5wv",
+        "title": "Ciudad de asfalto",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhi15cj93heob9",
+        "title": "María Antonieta",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhi1704btuwjg7",
+        "title": "María Antonieta",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhi2psvnb2rt8q",
+        "title": "Filadelfia",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [],
+        "links": 0
+      },
+      {
+        "id": "mtrhi2sjh685hous",
+        "title": "Filadelfia",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ],
+    [
+      {
+        "id": "mtrhis2z5l4vf7r4",
+        "title": "Alerta Amber",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      },
+      {
+        "id": "mtrhis3ftzppsowk",
+        "title": "Alerta Amber",
+        "year": null,
+        "kind": "movie",
+        "episodes": 1,
+        "providers": [
+          "cinecalidad"
+        ],
+        "links": 1
+      }
+    ]
+  ],
+  "note": "Los enlaces descubiertos no son prueba de reproducción; source_status debe avanzar mediante resolución JIT y validación del reproductor."
+}

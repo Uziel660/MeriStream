@@ -50,7 +50,7 @@ export interface GatewayFallbackCandidate {
 }
 
 const SPANISH_LOCAL = new Set([
-  "cinecalidad", "gnula", "latanime",
+  "cinecalidad", "gnula", "latanime", "tioanime",
 ]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
 const cache = new Map<string, {
@@ -240,12 +240,24 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
 
   const direct: GatewaySource[] = [];
   const seen = new Set<string>();
-  for (const episode of episodes) for (const link of episode.links) {
+  for (const episode of episodes) {
+    const canonicalPageProviders = new Set(
+      episode.links
+        .filter((candidate) => String(candidate.link_type).toLowerCase() !== "embed")
+        .map((candidate) => normalizeProviderId(candidate.source_site)),
+    );
+
+    for (const link of episode.links) {
     const provider = normalizeProviderId(link.source_site);
     // Database rows from retired crawlers remain useful for explicit recovery,
     // but they must not leak into the normal gateway response. TioAnime is the
     // only legacy exception and is handled below as ZokoAnime fallback.
     if (!isProviderAllowedInMainPath(provider, req.kind)) continue;
+    // Some crawls persisted both the provider's canonical page and an older
+    // embed from that same provider. The page is the refreshable identity and
+    // can generate a fresh server; keeping the stale embed ahead of it causes
+    // needless failures (especially after Vimeos/VOE rotations).
+    if (String(link.link_type).toLowerCase() === "embed" && canonicalPageProviders.has(provider)) continue;
     const linkKey = `${provider}|${link.url}`;
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
@@ -289,6 +301,7 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
       score: score + (providerGroup === "spanish-local" ? 50 : 0),
       sourceStatus: link.source_status,
     });
+    }
   }
   return { direct, fallbackCandidates };
 }

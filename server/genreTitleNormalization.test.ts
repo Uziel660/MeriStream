@@ -66,6 +66,14 @@ describe("Title Slug Detection & Normalization (titleNormalizer)", () => {
     expect(cleanSlugToWords("templedeacero")).toBe("Temple De Acero");
     expect(cleanSlugToWords("eltestigo")).toBe("El Testigo");
   });
+
+  it("decodes HTML entities emitted by legacy anime scrapers before matching", () => {
+    expect(normalizeTitleKey("Knight&#039;s &amp; Magic")).toBe("knightsmagic");
+    expect(normalizeTitleKey("Ch&amp;auml;oS;Child")).toBe("chaoschild");
+    expect(normalizeTitleKey("Pokemon Pel&amp;iacute;cula 19")).toBe("pokemon19");
+    expect(normalizeTitleKey("xxxHOLiC&amp;middot;Rou")).toBe("xxxholicrou");
+    expect(normalizeTitleKey("Wei&amp;szlig; Survive")).toBe("weißsurvive");
+  });
 });
 
 describe("Metadata Gap Fill (metadataMerge)", () => {

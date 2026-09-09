@@ -55,4 +55,31 @@ describe("GnulaAdapter player endpoint", () => {
       title: "Batman: Knightfall Part 1: Knightfall",
     });
   });
+
+  it("acepta el payload actual indexado por idioma", async () => {
+    const pageUrl = "https://ww3.gnulahd.nu/linternas-1x02/";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === pageUrl) {
+        return new Response('<script>var _gnrdPid=212462,_gnrdTok="token-2";</script>', { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        p: pack({
+          t: "Linternas 1×02",
+          langs: {
+            lat: { servers: [{ src: "https://bysevepoin.com/e/latino" }] },
+            sub: { servers: [{ src: "https://voe.sx/e/sub" }] },
+          },
+        }),
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new GnulaAdapter().extractStream(pageUrl);
+    expect(result.stream_url).toBe("https://bysevepoin.com/e/latino");
+    expect(result.all_available_streams).toEqual([
+      "https://bysevepoin.com/e/latino",
+      "https://voe.sx/e/sub",
+    ]);
+  });
 });

@@ -17,6 +17,7 @@ import path from "node:path";
 import { prisma, normalizeBaseTitle } from "../server/db";
 import { classifySourceKind } from "../server/resolutionMetadata";
 import { normalizeTitleKey, parseRawTitle } from "../server/utils/titleNormalizer";
+import { normalizeProviderId } from "../server/providers/providerPolicy";
 
 type LegacyKind = "movie" | "tv";
 
@@ -401,7 +402,8 @@ async function main(): Promise<void> {
           return;
         }
         const linkType = sourceKind === "embed" ? "embed" : sourceKind === "page" ? "page" : "direct";
-        const sourceSite = siteFromUrl(rawUrl);
+        const sourceHost = siteFromUrl(rawUrl);
+        const sourceSite = sourceHost === "unknown" ? "unknown" : normalizeProviderId(sourceHost);
         if (sourceSite === "unknown") {
           report.errors++;
           return;

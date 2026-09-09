@@ -30,7 +30,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
   sortBy, onSortBy, catalogPageSize, onLoadMore, hasMore = false, isLoadingMore = false,
   availableYears, onSelectMedia, onHoverMedia,
 }) => {
-  const { isGenreHidden } = useHiddenGenres();
+  const { isGenreHidden, isShowHidden } = useHiddenGenres();
   const autoLoadSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const validGenres = useMemo(() => allGenresList
@@ -46,7 +46,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
 
   // Shows filtrados por género y año
   const filteredShows = useMemo(() => {
-    let result = shows;
+    let result = shows.filter((show) => !isShowHidden(show));
 
     if (genreFilter) {
       const gf = genreFilter.toLowerCase();
@@ -61,7 +61,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
     else if (sortBy === 'az') result = [...result].sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'es'));
 
     return result;
-  }, [shows, genreFilter, yearFilter, sortBy]);
+  }, [isShowHidden, shows, genreFilter, yearFilter, sortBy]);
 
   const resetFilters = () => { onGenreFilter(null); onYearFilter(null); onSortBy('recientes'); };
 

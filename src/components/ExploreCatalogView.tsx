@@ -1,12 +1,10 @@
-import React, { useMemo } from 'react';
-import { Grid3X3, Film, ListFilter } from 'lucide-react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Film, ListFilter } from 'lucide-react';
 import type { Show } from '../types';
 import { MediaCard } from './MediaCard';
 import { CatalogFilters, type SortMode } from './CatalogFilters';
 import { FilterMenu } from './FilterMenu';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
-
-type PublicCatalogKind = 'movie' | 'series' | 'anime';
 
 interface ExploreCatalogViewProps {
   shows: Show[];
@@ -19,12 +17,9 @@ interface ExploreCatalogViewProps {
   sortBy: SortMode;
   onSortBy: (s: SortMode) => void;
   catalogPageSize: number;
-  onLoadMore: () => void;
+  onLoadMore: (hasHiddenItems?: boolean) => void | Promise<void>;
   hasMore?: boolean;
   isLoadingMore?: boolean;
-  onLoadMoreByKind?: (kind: PublicCatalogKind) => void;
-  hasMoreByKind?: Record<PublicCatalogKind, boolean>;
-  isLoadingMoreByKind?: Record<PublicCatalogKind, boolean>;
   availableYears: number[];
   onSelectMedia: (m: Show) => void;
   onHoverMedia?: (m: Show | null) => void;
@@ -33,11 +28,10 @@ interface ExploreCatalogViewProps {
 export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
   shows, allGenresList, showsCountByGenre, genreFilter, onGenreFilter, yearFilter, onYearFilter,
   sortBy, onSortBy, catalogPageSize, onLoadMore, hasMore = false, isLoadingMore = false,
-  availableYears, onSelectMedia, onHoverMedia, onLoadMoreByKind,
-  hasMoreByKind = { movie: false, series: false, anime: false },
-  isLoadingMoreByKind = { movie: false, series: false, anime: false },
+  availableYears, onSelectMedia, onHoverMedia,
 }) => {
   const { isGenreHidden } = useHiddenGenres();
+  const autoLoadSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const validGenres = useMemo(() => allGenresList
     .filter((genre) => {
@@ -71,40 +65,34 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
 
   const resetFilters = () => { onGenreFilter(null); onYearFilter(null); onSortBy('recientes'); };
 
+  // Explorar no necesita botones de paginación: primero revela el buffer ya
+  // disponible y, cuando se agota, pide otra página al catálogo remoto.
+  useEffect(() => {
+    const sentinel = autoLoadSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    const hasHiddenItems = filteredShows.length > catalogPageSize;
+    if (!hasHiddenItems && !hasMore) return;
+    if (isLoadingMore) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting || isLoadingMore) return;
+      void Promise.resolve(onLoadMore(filteredShows.length > catalogPageSize));
+    }, { rootMargin: '0px 0px 500px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [catalogPageSize, filteredShows.length, hasMore, isLoadingMore, onLoadMore]);
+
   return (
     <section className="catalog-shell" aria-labelledby="catalog-title">
       <div className="catalog-titlebar">
-        <div className="catalog-kicker">
-          <span className="catalog-kicker-icon" aria-hidden="true"><Grid3X3 size={17} /></span>
-          <div>
-            <h2 id="catalog-title">Explorar catálogo</h2>
-            <p>Películas, series y anime en una biblioteca unificada.</p>
-          </div>
+        <div>
+          <h2 id="catalog-title">Explorar catálogo</h2>
+          <p>Películas, series y anime en una biblioteca unificada.</p>
         </div>
         <span className="catalog-count" aria-live="polite">{filteredShows.length} {filteredShows.length === 1 ? 'título' : 'títulos'}</span>
       </div>
 
-      {onLoadMoreByKind && (
-        <div className="catalog-category-loadmore" aria-label="Cargar más por categoría">
-          {([
-            ['movie', 'Películas'],
-            ['series', 'Series'],
-            ['anime', 'Anime'],
-          ] as Array<[PublicCatalogKind, string]>).map(([kind, label]) => (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => onLoadMoreByKind(kind)}
-              disabled={isLoadingMoreByKind[kind] || !hasMoreByKind[kind]}
-              className="catalog-loadmore-kind"
-            >
-              {isLoadingMoreByKind[kind] ? 'Cargando…' : hasMoreByKind[kind] ? `Cargar más ${label}` : `${label} completas`}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="catalog-toolbar" aria-label="Filtros del catálogo">
+      <div className="catalog-toolbar catalog-toolbar--explore" aria-label="Filtros del catálogo">
         <FilterMenu
           ariaLabel="Filtrar por género"
           icon={<ListFilter size={14} />}
@@ -133,15 +121,8 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
               <MediaCard key={item.id} media={item} onSelectMedia={onSelectMedia} onHover={onHoverMedia} />
             ))}
           </div>
-          {(filteredShows.length > catalogPageSize || hasMore) && (
-            <div className="catalog-loadmore">
-              <button type="button" onClick={onLoadMore} disabled={isLoadingMore}>
-                {isLoadingMore ? 'Cargando catálogo…' : filteredShows.length > catalogPageSize
-                  ? `Mostrar más · ${filteredShows.length - catalogPageSize} restantes`
-                  : 'Cargar más desde TMDB'}
-              </button>
-            </div>
-          )}
+          <div ref={autoLoadSentinelRef} className="catalog-autoload-sentinel" aria-hidden="true" />
+          {isLoadingMore && <p className="catalog-autoload-status" role="status" aria-live="polite">Cargando más títulos…</p>}
         </>
       )}
     </section>

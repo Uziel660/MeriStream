@@ -1540,9 +1540,13 @@ export function App() {
   const exploreIsLoadingMore = Boolean(exploreGenreId
     ? isLoadingMorePublicGenre[exploreGenreKey]
     : isLoadingMoreCatalog);
-  const loadMoreExploreCatalog = () => exploreGenreId
-    ? loadMorePublicGenre(exploreGenreKey)
-    : loadMorePublicCatalog();
+  const loadMoreExploreCatalog = (hasHiddenItems = false) => {
+    setCatalogPageSize((previous) => previous + HOME_GRID_INITIAL_SIZE);
+    if (hasHiddenItems) return Promise.resolve();
+    return exploreGenreId
+      ? loadMorePublicGenre(exploreGenreKey)
+      : loadMorePublicCatalog();
+  };
   // Las pestañas de Anime/Películas/Series ya tienen un buffer local que se
   // muestra por bloques. Al llegar al final, primero revelamos el siguiente
   // bloque; solo cuando ese buffer queda cerca de agotarse pedimos otra página
@@ -1563,6 +1567,9 @@ export function App() {
     const sentinel = autoLoadSentinelRef.current;
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
     if (searchQuery.trim().length >= 2 || activeFilter === 'recommendations') return;
+    // Explore owns a local sentinel because it has its own genre/year slice;
+    // the global sentinel cannot know how many filtered cards are hidden.
+    if (activeFilter === 'explore') return;
 
     const mode = activeFilter === 'all'
       ? 'catalog:all'
@@ -1790,9 +1797,6 @@ export function App() {
                   onLoadMore={loadMoreExploreCatalog}
                   hasMore={exploreHasMore}
                   isLoadingMore={exploreIsLoadingMore}
-                  onLoadMoreByKind={loadMorePublicCatalogKind}
-                  hasMoreByKind={hasMorePublicCatalogByKind}
-                  isLoadingMoreByKind={isLoadingMoreCatalogByKind}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
                 />

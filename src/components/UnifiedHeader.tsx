@@ -150,7 +150,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
           <div ref={searchContainerRef} id="catalog-search" className={`header-search ${mobileSearchOpen ? 'is-mobile-open' : ''}`} role="search">
             <Search size={18} aria-hidden="true" />
             <input ref={searchInputRef} type="search" value={query} onChange={e => setQuery(e.target.value)} aria-label="Buscar en el catálogo" placeholder="Buscar películas, series o anime" />
-            {query && <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="Limpiar búsqueda"><X size={17} /></button>}
+            {query && <button type="button" className="search-clear search-reset" onClick={() => setQuery('')} aria-label="Limpiar búsqueda"><X size={17} /></button>}
             <button type="button" className="search-clear search-close" onClick={() => closeMobileSearch()} aria-label="Cerrar búsqueda"><ArrowLeft size={17} /></button>
           </div>
 

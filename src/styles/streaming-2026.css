@@ -134,6 +134,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .header-search input:focus-visible { outline:none !important; outline-offset:0; box-shadow:none; }
 .header-search input::placeholder { color:#697386; }
 .search-clear { display:grid; place-items:center; width:2rem; height:2rem; border-radius:999px; color:var(--ms-text-dim); }
+.header-search .search-reset { position:static; flex:0 0 auto; }
 .search-close { position:static !important; flex:0 0 auto; }
 .search-clear:hover { background:rgba(255,255,255,.07); color:white; }
 .header-account { position:relative; justify-self:end; }
@@ -159,6 +160,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .mobile-search-trigger { display:inline-flex; margin-left:auto; }
 .site-header.has-search-open .brand { opacity:0; transform:translateX(-.8rem); pointer-events:none; }
 .site-header.has-search-open .mobile-search-trigger,
+.site-header.has-search-open .preferences-trigger,
 .site-header.has-search-open .header-account { opacity:0; pointer-events:none; }
 
 /* ---------- hero ---------- */

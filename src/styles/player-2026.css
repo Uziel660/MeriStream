@@ -13,7 +13,9 @@
 [data-player-topbar],
 [data-player-controls] {
   -webkit-tap-highlight-color: transparent;
-  contain: layout paint;
+  /* Do not use paint containment here: the server, subtitle, audio and
+   * quality menus intentionally escape the control bars. */
+  contain: layout;
 }
 
 [data-player-topbar] {

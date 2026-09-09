@@ -2072,7 +2072,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     >
       <div
         ref={containerRef}
-        className={`relative flex h-full w-full flex-col justify-between bg-black sm:h-[92vh] sm:w-[96vw] sm:rounded-2xl sm:border sm:border-zinc-800/80 shadow-2xl overflow-hidden ${
+        className={`relative isolate flex h-full w-full flex-col justify-between bg-black sm:h-[92vh] sm:w-[96vw] sm:rounded-2xl sm:border sm:border-zinc-800/80 shadow-2xl overflow-hidden ${
           !controlsVisible && isPlaying ? 'cursor-none' : ''
         }`}
       >
@@ -2081,7 +2081,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         {/* ========================================================================= */}
         <div
           data-player-topbar
-          className={`absolute top-0 inset-x-0 z-40 flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-300 ${
+          className={`absolute top-0 inset-x-0 z-50 flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-300 ${
             controlsVisible || !isPlaying || Boolean(playbackError) ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
@@ -2145,7 +2145,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                 {/* MENÚ FLOTANTE DE SERVIDORES */}
                 {activeMenu === 'servers' && (
-                  <div className="absolute right-0 top-11 w-64 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-2 shadow-2xl backdrop-blur-xl z-50">
+                  <div className="absolute right-0 top-11 z-[100] w-64 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-2 shadow-2xl backdrop-blur-xl">
                     <div className="px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
                       <span>Servidores Disponibles</span>
                       <span className="text-[10px] text-emerald-400 font-normal">Auto-ordenados por calidad</span>
@@ -2446,7 +2446,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         {/* ========================================================================= */}
         <div
           data-player-controls
-          className={`absolute bottom-0 inset-x-0 z-40 flex flex-col bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 sm:px-6 pt-6 pb-4 transition-opacity duration-300 ${
+          className={`absolute bottom-0 inset-x-0 z-50 flex flex-col bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 sm:px-6 pt-6 pb-4 transition-opacity duration-300 ${
             controlsVisible || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()}
@@ -2590,7 +2590,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         <Languages size={17} />
                       </button>
                       {activeMenu === 'audio' && (
-                        <div className="absolute bottom-10 right-0 w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                        <div className="absolute bottom-10 right-0 z-[100] w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                           <span className="block px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase">
                             Idioma de Audio
                           </span>
@@ -2700,7 +2700,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         <Captions size={17} />
                       </button>
                       {activeMenu === 'subtitles' && (
-                        <div className="absolute bottom-10 right-0 w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                        <div className="absolute bottom-10 right-0 z-[100] w-56 max-w-[min(90vw,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                           <button
                             type="button"
                             onClick={() => selectSubtitle('off')}
@@ -2767,7 +2767,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       {playbackRate}x
                     </button>
                     {activeMenu === 'speed' && (
-                      <div className="absolute bottom-10 right-0 w-32 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                      <div className="absolute bottom-10 right-0 z-[100] w-32 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                         <span className="block px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase">
                           Velocidad
                         </span>
@@ -2803,7 +2803,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       <Settings size={17} />
                     </button>
                     {activeMenu === 'quality' && (
-                      <div className="absolute bottom-10 right-0 w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl z-50">
+                      <div className="absolute bottom-10 right-0 z-[100] w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                         {/* ACCESO RÁPIDO: cambio de servidor desde la tuerquita de configuración */}
                         {showServerSelector && servers.length > 1 && (
                           <button

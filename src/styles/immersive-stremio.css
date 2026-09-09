@@ -183,6 +183,13 @@ body {
   margin: 0 !important;
   padding: 0 !important;
 }
+/* Give each catalog rail room to breathe without changing the card density. */
+.catalog-content > .continue-section + .media-row,
+.catalog-content > .media-row + .media-row,
+.catalog-content > .media-row + .spotlight-section,
+.catalog-content > .spotlight-section + .media-row {
+  margin-top: clamp(3rem, 5vw, 4.5rem) !important;
+}
 .section-heading { margin-bottom: .85rem !important; align-items: center !important; }
 .section-heading h3 {
   font-size: clamp(1.1rem, 1.55vw, 1.45rem) !important;

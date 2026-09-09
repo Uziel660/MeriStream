@@ -1402,6 +1402,7 @@ async function startServer() {
         page: req.query.page ? Number(req.query.page) : 1,
         limit: req.query.limit ? Number(req.query.limit) : 40,
         mode: typeof req.query.mode === "string" ? req.query.mode : "trending",
+        genre: req.query.genre,
         apiKey: personalApiKey,
       });
       res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");

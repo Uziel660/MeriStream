@@ -35,6 +35,34 @@ const PUBLIC_CATALOG_BATCH_SIZE = 60;
 const PUBLIC_CATALOG_PAGE_STEP = 3;
 type PublicCatalogKind = 'movie' | 'series' | 'anime';
 const PUBLIC_CATALOG_KINDS: PublicCatalogKind[] = ['movie', 'series', 'anime'];
+const PUBLIC_GENRE_IDS: Record<string, number> = {
+  aventura: 12,
+  fantasia: 14,
+  animacion: 16,
+  drama: 18,
+  terror: 27,
+  accion: 28,
+  comedia: 35,
+  historia: 36,
+  western: 37,
+  suspenso: 53,
+  crimen: 80,
+  documental: 99,
+  'ciencia ficcion': 878,
+  misterio: 9648,
+  musica: 10402,
+  romance: 10749,
+  familia: 10751,
+  belica: 10752,
+  'accion y aventura': 10759,
+  infantil: 10762,
+  'ciencia ficcion y fantasia': 10765,
+  guerra: 10768,
+};
+
+function publicGenreKey(value: string): string {
+  return normalizeText(value).replace(/\s+/g, ' ');
+}
 
 /** Nunca renderizar "Episodio undefined" (#2): fallback al número de episodio. */
 function safeEpisodeTitle(episode: { title?: string; episode_number?: number }): string {
@@ -226,8 +254,12 @@ export function App() {
   // Cada familia de TMDB lleva su propio cursor. Así un botón de Películas no
   // consume páginas de Series o Anime ni deja una categoría sin resultados.
   const [publicCatalogPages, setPublicCatalogPages] = useState<Record<PublicCatalogKind, number>>({ movie: 1, series: 1, anime: 1 });
+  const [publicCatalogKindLoaded, setPublicCatalogKindLoaded] = useState<Record<PublicCatalogKind, boolean>>({ movie: false, series: false, anime: false });
   const [hasMorePublicCatalogByKind, setHasMorePublicCatalogByKind] = useState<Record<PublicCatalogKind, boolean>>({ movie: true, series: true, anime: true });
   const [isLoadingMoreCatalogByKind, setIsLoadingMoreCatalogByKind] = useState<Record<PublicCatalogKind, boolean>>({ movie: false, series: false, anime: false });
+  const [publicGenrePages, setPublicGenrePages] = useState<Record<string, number>>({});
+  const [hasMorePublicGenre, setHasMorePublicGenre] = useState<Record<string, boolean>>({});
+  const [isLoadingMorePublicGenre, setIsLoadingMorePublicGenre] = useState<Record<string, boolean>>({});
   const [allGenresList, setAllGenresList] = useState<string[]>([]);
   const [exploreGenreFilter, setExploreGenreFilter] = useState<string | null>(null);
 
@@ -663,6 +695,15 @@ export function App() {
         const list = Array.isArray(data) ? data : data.shows || [];
         if (Array.isArray(list)) {
           const safeShows: Show[] = dedupeCatalogShows(list.map(mapCatalogShow));
+          // The endpoint aggregates three TMDB pages into one 60-item batch.
+          // Keep the real upstream cursor so the next request starts after the
+          // whole batch instead of repeating pages 2 and 3.
+          const lastFetchedPage = Array.isArray(data)
+            ? page
+            : Math.max(page, Number(data?.nextPage || page + PUBLIC_CATALOG_PAGE_STEP) - 1);
+          const hasMore = safeShows.length > 0 && (
+            Array.isArray(data) || !data?.totalPages || lastFetchedPage < Number(data.totalPages)
+          );
 
           if (append) {
             // Merge by the namespaced TMDB id so loading the next public batch
@@ -672,16 +713,12 @@ export function App() {
               for (const show of safeShows) merged.set(show.id, show);
               return [...merged.values()];
             });
-            setPublicCatalogPage(page);
-            setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
-            const fetchedByKind = Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
-              const count = safeShows.filter((show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
-              return [kind, Math.max(1, Math.ceil(count / 20))];
-            })) as Record<PublicCatalogKind, number>;
+            setPublicCatalogPage(lastFetchedPage);
+            setHasMorePublicCatalog(hasMore);
             setPublicCatalogPages((previous) => ({
-              movie: Math.max(previous.movie, page + Math.max(0, fetchedByKind.movie - 1)),
-              series: Math.max(previous.series, page + Math.max(0, fetchedByKind.series - 1)),
-              anime: Math.max(previous.anime, page + Math.max(0, fetchedByKind.anime - 1)),
+              movie: Math.max(previous.movie, lastFetchedPage),
+              series: Math.max(previous.series, lastFetchedPage),
+              anime: Math.max(previous.anime, lastFetchedPage),
             }));
             try {
               const cached = localStorage.getItem(CATALOG_CACHE_KEY);
@@ -695,6 +732,10 @@ export function App() {
             return;
           }
 
+          setPublicCatalogPage(lastFetchedPage);
+          setHasMorePublicCatalog(hasMore);
+          setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, lastFetchedPage])) as Record<PublicCatalogKind, number>);
+
           // Only re-render if catalog actually changed (avoids SmartImage reset)
           if (isBackground) {
             const currentIds = shows.map(s => s.id).join(',');
@@ -703,12 +744,6 @@ export function App() {
           }
 
           setShows(safeShows);
-          setPublicCatalogPage(page);
-          setHasMorePublicCatalog(safeShows.length >= PUBLIC_CATALOG_BATCH_SIZE);
-          setPublicCatalogPages(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => {
-            const count = safeShows.filter((show) => String(show.category || show.kind || '').toLowerCase() === kind).length;
-            return [kind, Math.max(1, Math.ceil(count / 20))];
-          })) as Record<PublicCatalogKind, number>);
           setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
 
           // Save to cache
@@ -729,24 +764,24 @@ export function App() {
     if (isLoadingMoreCatalog || !hasMorePublicCatalog) return;
     setIsLoadingMoreCatalog(true);
     try {
-      // `kind=all&limit=60` consumes three TMDB pages per request. Start the
-      // next batch immediately after the pages already shown.
-      await fetchFreshCatalog(true, publicCatalogPage + PUBLIC_CATALOG_PAGE_STEP, true);
+      // `kind=all&limit=60` consumes three TMDB pages per request. The state
+      // stores the last page already consumed, so continue at the next one.
+      await fetchFreshCatalog(true, publicCatalogPage + 1, true);
       setCatalogPageSize((previous) => previous + PUBLIC_CATALOG_BATCH_SIZE);
     } finally {
       setIsLoadingMoreCatalog(false);
     }
   };
 
-  const loadMorePublicCatalogKind = async (kind: PublicCatalogKind) => {
-    if (isLoadingMoreCatalogByKind[kind] || !hasMorePublicCatalogByKind[kind]) return;
+  const loadMorePublicCatalogKind = async (kind: PublicCatalogKind, reset = false) => {
+    if (isLoadingMoreCatalogByKind[kind] || (!reset && !hasMorePublicCatalogByKind[kind])) return;
     setIsLoadingMoreCatalogByKind((previous) => ({ ...previous, [kind]: true }));
     // El cursor guarda la última página de TMDB realmente incluida en el lote.
     // El endpoint agrega tres páginas por llamada, así que la siguiente debe
     // comenzar en la página contigua y nunca saltarse 4/5.
-    const nextPage = publicCatalogPages[kind] + 1;
+    const nextPage = reset ? 1 : publicCatalogPages[kind] + 1;
     try {
-      const response = await fetch(`/api/v1/catalog/public?kind=${kind}&mode=trending&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`, tmdbRequestInit());
+      const response = await fetch(`/api/v1/catalog/public?kind=${kind}&mode=discover&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`, tmdbRequestInit());
       if (!response.ok) throw new Error(`TMDB ${kind}: HTTP ${response.status}`);
       const data = await response.json();
       const list = Array.isArray(data) ? data : data.shows || [];
@@ -758,8 +793,9 @@ export function App() {
       });
       const totalPages = Number(data?.totalPages || 0);
       const consumedPages = Math.max(1, Math.min(PUBLIC_CATALOG_PAGE_STEP, Math.ceil(safeShows.length / 20)));
-      const lastFetchedPage = nextPage + consumedPages - 1;
+      const lastFetchedPage = Math.max(nextPage, Number(data?.nextPage || nextPage + consumedPages) - 1);
       setPublicCatalogPages((previous) => ({ ...previous, [kind]: lastFetchedPage }));
+      setPublicCatalogKindLoaded((previous) => ({ ...previous, [kind]: true }));
       setHasMorePublicCatalogByKind((previous) => ({
         ...previous,
         [kind]: safeShows.length > 0 && (!totalPages || lastFetchedPage < totalPages),
@@ -775,6 +811,63 @@ export function App() {
       console.warn(`No se pudo cargar más ${kind} desde TMDB`, error);
     } finally {
       setIsLoadingMoreCatalogByKind((previous) => ({ ...previous, [kind]: false }));
+    }
+  };
+
+  const loadMorePublicGenre = async (genre: string, reset = false) => {
+    const genreKey = publicGenreKey(genre);
+    const genreId = PUBLIC_GENRE_IDS[genreKey];
+    if (!genreId || isLoadingMorePublicGenre[genreKey] || (!reset && hasMorePublicGenre[genreKey] === false)) return;
+
+    setIsLoadingMorePublicGenre((previous) => ({ ...previous, [genreKey]: true }));
+    const nextPage = reset ? 1 : (publicGenrePages[genreKey] || 0) + 1;
+    try {
+      const response = await fetch(`/api/v1/catalog/public?kind=all&genre=${genreId}&mode=discover&limit=${PUBLIC_CATALOG_BATCH_SIZE}&page=${nextPage}`, tmdbRequestInit());
+      if (!response.ok) throw new Error(`TMDB género ${genreKey}: HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : data.shows || [];
+      const safeShows: Show[] = Array.isArray(list) ? dedupeCatalogShows(list.map(mapCatalogShow)) : [];
+      setShows((previous) => {
+        const merged = new Map(previous.map((show) => [show.id, show]));
+        for (const show of safeShows) merged.set(show.id, show);
+        return [...merged.values()];
+      });
+
+      const consumedPages = Math.max(1, Math.min(PUBLIC_CATALOG_PAGE_STEP, Math.ceil(safeShows.length / 20)));
+      const lastFetchedPage = Math.max(nextPage, Number(data?.nextPage || nextPage + consumedPages) - 1);
+      const totalPages = Number(data?.totalPages || 0);
+      setPublicGenrePages((previous) => ({ ...previous, [genreKey]: lastFetchedPage }));
+      setHasMorePublicGenre((previous) => ({
+        ...previous,
+        [genreKey]: safeShows.length > 0 && (!totalPages || lastFetchedPage < totalPages),
+      }));
+    } catch (error) {
+      console.warn(`No se pudo cargar más del género ${genreKey} desde TMDB`, error);
+    } finally {
+      setIsLoadingMorePublicGenre((previous) => ({ ...previous, [genreKey]: false }));
+    }
+  };
+
+  const handleSelectCategory = (filter: string) => {
+    setActiveFilter(filter);
+    setGridPageSize(100);
+
+    const kind = PUBLIC_CATALOG_KINDS.includes(filter as PublicCatalogKind) ? filter as PublicCatalogKind : null;
+    if (kind && !publicCatalogKindLoaded[kind]) void loadMorePublicCatalogKind(kind, true);
+
+    const genreKey = publicGenreKey(filter);
+    if (PUBLIC_GENRE_IDS[genreKey] && !Object.prototype.hasOwnProperty.call(publicGenrePages, genreKey)) {
+      void loadMorePublicGenre(genreKey, true);
+    }
+  };
+
+  const handleExploreGenreFilter = (genre: string | null) => {
+    setExploreGenreFilter(genre);
+    setCatalogPageSize(100);
+    if (!genre) return;
+    const genreKey = publicGenreKey(genre);
+    if (PUBLIC_GENRE_IDS[genreKey] && !Object.prototype.hasOwnProperty.call(publicGenrePages, genreKey)) {
+      void loadMorePublicGenre(genreKey, true);
     }
   };
 
@@ -1108,8 +1201,8 @@ export function App() {
           if (filterKey === 'anime') return cat === 'anime' || (cat !== 'movie' && cat !== 'series' && genresStr.includes('anime'));
           if (filterKey === 'movie') return cat.includes('pel') || cat.includes('movie');
           if (filterKey === 'series') return cat.includes('serie') || cat.includes('tv');
-          if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror');
-          if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror');
+          if (filterKey === 'terror') return genresStr.includes('terror') || genresStr.includes('horror') || genresStr.includes('misterio');
+          if (filterKey === 'horror') return genresStr.includes('terror') || genresStr.includes('horror') || genresStr.includes('misterio');
           if (filterKey === 'acción' || filterKey === 'accion') return genresStr.includes('acci') || genresStr.includes('action');
           if (filterKey === 'fantasía' || filterKey === 'fantasia') return genresStr.includes('fantas') || genresStr.includes('fantasy');
           if (filterKey === 'ciencia ficción' || filterKey === 'sci-fi' || filterKey === 'scifi') return genresStr.includes('sci-fi') || genresStr.includes('ciencia') || genresStr.includes('futuro');
@@ -1279,6 +1372,30 @@ export function App() {
     return bestShow || shows[0] || null;
   }, [shows, heroRecommendation, continueWatchingItems]);
 
+  const activePublicKind = PUBLIC_CATALOG_KINDS.includes(activeFilter as PublicCatalogKind)
+    ? activeFilter as PublicCatalogKind
+    : null;
+  const activePublicGenreKey = publicGenreKey(activeFilter);
+  const activePublicGenreId = PUBLIC_GENRE_IDS[activePublicGenreKey];
+  const activeRemoteLoading = activePublicKind
+    ? isLoadingMoreCatalogByKind[activePublicKind]
+    : Boolean(activePublicGenreId && isLoadingMorePublicGenre[activePublicGenreKey]);
+  const activeRemoteHasMore = activePublicKind
+    ? hasMorePublicCatalogByKind[activePublicKind]
+    : Boolean(activePublicGenreId && hasMorePublicGenre[activePublicGenreKey] !== false);
+  const exploreGenreKey = publicGenreKey(exploreGenreFilter || '');
+  const exploreGenreId = PUBLIC_GENRE_IDS[exploreGenreKey];
+  const exploreHasMore = Boolean(exploreGenreId
+    ? hasMorePublicGenre[exploreGenreKey] !== false
+    : hasMorePublicCatalog);
+  const exploreIsLoadingMore = Boolean(exploreGenreId
+    ? isLoadingMorePublicGenre[exploreGenreKey]
+    : isLoadingMoreCatalog);
+  const loadMoreExploreCatalog = () => {
+    if (exploreGenreId) void loadMorePublicGenre(exploreGenreKey);
+    else void loadMorePublicCatalog();
+  };
+
   return (
     <div className="app-shell relative min-h-screen text-zinc-100 flex flex-col">
       {/* 1. DYNAMIC AMBIENT GLOW (RESPONDE AL COLOR DOMINANTE DEL CONTENIDO EN FOCO) */}
@@ -1289,7 +1406,7 @@ export function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         activeFilter={activeFilter}
-        onSelectCategory={(f) => { setActiveFilter(f); setGridPageSize(100); }}
+        onSelectCategory={handleSelectCategory}
       />
 
       <main id="main-content" tabIndex={-1} className="relative z-10 flex-1 pb-24">
@@ -1445,15 +1562,15 @@ export function App() {
                   allGenresList={allGenresList}
                   showsCountByGenre={showsCountByGenre}
                   genreFilter={exploreGenreFilter}
-                  onGenreFilter={setExploreGenreFilter}
+                  onGenreFilter={handleExploreGenreFilter}
                   yearFilter={yearFilter}
                   onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
                   sortBy={sortBy}
                   onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
                   catalogPageSize={catalogPageSize}
-                  onLoadMore={loadMorePublicCatalog}
-                  hasMore={hasMorePublicCatalog}
-                  isLoadingMore={isLoadingMoreCatalog}
+                  onLoadMore={loadMoreExploreCatalog}
+                  hasMore={exploreHasMore}
+                  isLoadingMore={exploreIsLoadingMore}
                   onLoadMoreByKind={loadMorePublicCatalogKind}
                   hasMoreByKind={hasMorePublicCatalogByKind}
                   isLoadingMoreByKind={isLoadingMoreCatalogByKind}
@@ -1479,7 +1596,13 @@ export function App() {
                     onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
                   />
 
-                  {filteredShows.length === 0 ? (
+                  {filteredShows.length === 0 && activeRemoteLoading ? (
+                    <div className="py-20 text-center space-y-3" role="status" aria-live="polite">
+                      <Film size={36} className="mx-auto text-amber-400/70 animate-pulse" />
+                      <p className="text-sm text-zinc-300 font-medium">Cargando títulos populares desde TMDB…</p>
+                      <p className="text-xs text-zinc-500">Este filtro está preparando su primer lote.</p>
+                    </div>
+                  ) : filteredShows.length === 0 ? (
                     <div className="py-20 text-center space-y-3">
                       <Film size={36} className="mx-auto text-zinc-600" />
                       <p className="text-sm text-zinc-400 font-medium">
@@ -1508,8 +1631,9 @@ export function App() {
                           />
                         ))}
                       </div>
-                      {filteredShows.length > gridPageSize && (
-                        <div className="flex justify-center pt-6">
+                      {(filteredShows.length > gridPageSize || activeRemoteHasMore) && (
+                        <div className="catalog-loadmore flex flex-wrap justify-center gap-3 pt-6">
+                          {filteredShows.length > gridPageSize && (
                           <button
                             type="button"
                             onClick={() => setGridPageSize(prev => prev + 100)}
@@ -1517,20 +1641,23 @@ export function App() {
                           >
                             Cargar más ({filteredShows.length - gridPageSize} restantes)
                           </button>
-                        </div>
-                      )}
-                      {(['movie', 'series', 'anime'] as const).includes(activeFilter as any) && hasMorePublicCatalogByKind[activeFilter as PublicCatalogKind] && (
-                        <div className="flex justify-center pt-3">
-                          <button
-                            type="button"
-                            onClick={() => loadMorePublicCatalogKind(activeFilter as PublicCatalogKind)}
-                            disabled={isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]}
-                            className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
-                          >
-                            {isLoadingMoreCatalogByKind[activeFilter as PublicCatalogKind]
-                              ? 'Cargando desde TMDB…'
-                              : `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activeFilter as PublicCatalogKind]}`}
-                          </button>
+                          )}
+                          {activeRemoteHasMore && (
+                            <button
+                              type="button"
+                              onClick={() => activePublicKind
+                                ? loadMorePublicCatalogKind(activePublicKind)
+                                : loadMorePublicGenre(activePublicGenreKey)}
+                              disabled={activeRemoteLoading}
+                              className="px-6 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-sm font-medium text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60"
+                            >
+                              {activeRemoteLoading
+                                ? 'Cargando desde TMDB…'
+                                : activePublicKind
+                                  ? `Cargar más de ${{ movie: 'Películas', series: 'Series', anime: 'Anime' }[activePublicKind]}`
+                                  : `Cargar más de ${activeFilter}`}
+                            </button>
+                          )}
                         </div>
                       )}
                     </>

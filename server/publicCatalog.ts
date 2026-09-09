@@ -70,6 +70,8 @@ export interface PublicCatalogResult {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** First TMDB page that has not been requested by this response. */
+  nextPage: number;
   source: "tmdb";
 }
 
@@ -145,6 +147,35 @@ const GENRE_NAMES: Record<number, string> = {
   10759: "Acción y aventura", 10762: "Infantil", 10763: "Noticias", 10764: "Reality",
   10765: "Ciencia ficción y fantasía", 10766: "Telenovela", 10767: "Talk",
   10768: "Guerra y política",
+};
+
+// TMDB does not use exactly the same genre dictionary for movies and TV.
+// Keep the public filter's movie id as the canonical key, then translate it
+// only for the /discover/tv request so a genre such as Terror still returns
+// a useful series bucket instead of an empty response.
+const TV_GENRE_IDS_BY_MOVIE_GENRE: Record<number, number> = {
+  12: 10759,
+  14: 10765,
+  16: 16,
+  18: 18,
+  27: 9648,
+  28: 10759,
+  35: 35,
+  36: 18,
+  37: 37,
+  53: 9648,
+  80: 80,
+  99: 99,
+  878: 10765,
+  9648: 9648,
+  10402: 18,
+  10749: 18,
+  10751: 10751,
+  10752: 10768,
+  10759: 10759,
+  10762: 10762,
+  10765: 10765,
+  10768: 10768,
 };
 
 function imageUrl(
@@ -685,7 +716,7 @@ function sortSearchShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
   });
 }
 
-async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, apiKey?: string): Promise<TmdbListResponse> {
+async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, genreId?: number | null, tvGenreId?: number | null, apiKey?: string): Promise<TmdbListResponse> {
   const language = "es-419";
   if (query) {
     const path = kind === "movie" ? "/search/movie" : "/search/tv";
@@ -693,7 +724,7 @@ async function fetchList(kind: PublicCatalogKind, query: string, page: number, m
   }
   if (kind === "movie") {
     return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/movie" : "/trending/movie/week", mode === "discover"
-      ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
+      ? { page, language, sort_by: "popularity.desc", include_adult: "false", ...(genreId ? { with_genres: genreId } : {}) }
       : { page, language }, apiKey);
   }
   if (kind === "anime") {
@@ -701,13 +732,13 @@ async function fetchList(kind: PublicCatalogKind, query: string, page: number, m
       page,
       language,
       sort_by: "popularity.desc",
-      with_genres: "16",
+      with_genres: tvGenreId && tvGenreId !== 16 ? `16,${tvGenreId}` : "16",
       with_original_language: "ja",
       include_adult: "false",
     }, apiKey);
   }
   return tmdbFetch<TmdbListResponse>(mode === "discover" ? "/discover/tv" : "/trending/tv/week", mode === "discover"
-    ? { page, language, sort_by: "popularity.desc", include_adult: "false" }
+    ? { page, language, sort_by: "popularity.desc", include_adult: "false", ...(tvGenreId ? { with_genres: tvGenreId } : {}) }
     : { page, language }, apiKey);
 }
 
@@ -717,13 +748,19 @@ export async function getPublicCatalog(options: {
   page?: number;
   limit?: number;
   mode?: string;
+  genre?: unknown;
   apiKey?: string;
 } = {}): Promise<PublicCatalogResult> {
   const kind = parseKind(options.kind);
   const query = String(options.query || "").trim().slice(0, 120);
   const page = Math.max(1, Math.min(500, Number(options.page || 1)));
   const pageSize = Math.max(1, Math.min(100, Number(options.limit || 40)));
-  const mode = options.mode === "discover" ? "discover" : "trending";
+  const parsedGenre = Number(options.genre);
+  const genreId = Number.isInteger(parsedGenre) && parsedGenre > 0 ? parsedGenre : null;
+  const tvGenreId = genreId ? TV_GENRE_IDS_BY_MOVIE_GENRE[genreId] || genreId : null;
+  // A genre is a TMDB discover constraint. Ignore trending when one is
+  // present so the selected category can be paginated beyond the weekly rail.
+  const mode = genreId ? "discover" : options.mode === "discover" ? "discover" : "trending";
   const kinds: PublicCatalogKind[] = kind === "all" ? ["movie", "series", "anime"] : [kind];
   // TMDB currently returns 20 rows per page even when the UI asks for 40–100.
   // Fetch just enough adjacent pages to fill the requested rail; otherwise the
@@ -733,7 +770,7 @@ export async function getPublicCatalog(options: {
   const groupedResponses = await Promise.all(kinds.map(async (entry) => ({
     kind: entry,
     pages: await Promise.all(Array.from({ length: pagesNeeded }, (_unused, offset) =>
-      fetchList(entry, query, page + offset, mode, options.apiKey))),
+      fetchList(entry, query, page + offset, mode, genreId, tvGenreId, options.apiKey))),
   })));
   const mappedShows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
     const results = response.results || [];
@@ -782,6 +819,7 @@ export async function getPublicCatalog(options: {
     page,
     pageSize,
     totalPages: upstreamTotalPages,
+    nextPage: page + pagesNeeded,
     source: "tmdb",
   };
 }

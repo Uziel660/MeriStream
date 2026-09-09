@@ -115,6 +115,38 @@ describe("TMDB public catalog", () => {
     expect(result.shows[39]?.tmdb_id).toBe(2019);
   });
 
+  it("discovers a genre across movies, series and anime with a real next cursor", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    const calls: URL[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      calls.push(url);
+      const page = Number(url.searchParams.get("page") || 1);
+      const path = url.pathname;
+      if (path.endsWith("/discover/movie")) {
+        return new Response(JSON.stringify({ page, total_results: 80, total_pages: 4, results: [{ id: page * 10, title: `Horror Movie ${page}`, poster_path: "/poster.jpg", genre_ids: [27] }] }), { status: 200 });
+      }
+      if (path.endsWith("/discover/tv") && url.searchParams.get("with_genres") === "9648") {
+        return new Response(JSON.stringify({ page, total_results: 80, total_pages: 4, results: [{ id: page * 20, name: `Horror Series ${page}`, poster_path: "/poster.jpg", original_language: "en", genre_ids: [27] }] }), { status: 200 });
+      }
+      if (path.endsWith("/discover/tv")) {
+        return new Response(JSON.stringify({ page, total_results: 80, total_pages: 4, results: [{ id: page * 30, name: `Horror Anime ${page}`, poster_path: "/poster.jpg", original_language: "ja", genre_ids: [16, 27] }] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", genre: 27, limit: 60 });
+    expect(result.source).toBe("tmdb");
+    expect(result.nextPage).toBe(4);
+    expect(result.shows.some((show) => show.kind === "movie")).toBe(true);
+    expect(result.shows.some((show) => show.kind === "series")).toBe(true);
+    expect(result.shows.some((show) => show.kind === "anime")).toBe(true);
+    expect(calls.every((url) => url.pathname.includes("/discover/"))).toBe(true);
+    expect(calls.filter((url) => url.pathname.endsWith("/discover/movie")).every((url) => url.searchParams.get("with_genres") === "27")).toBe(true);
+    expect(calls.filter((url) => url.pathname.endsWith("/discover/tv") && url.searchParams.get("with_genres") === "9648").length).toBeGreaterThan(0);
+    expect(calls.filter((url) => url.pathname.endsWith("/discover/tv") && url.searchParams.get("with_genres") === "16,9648").length).toBeGreaterThan(0);
+  });
+
   it("searches TMDB globally for a query instead of reusing the trending batch", async () => {
     process.env.TMDB_API_KEY = "test-key";
     const calls: string[] = [];

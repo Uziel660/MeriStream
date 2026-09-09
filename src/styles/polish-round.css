@@ -85,6 +85,13 @@
   line-height: .9 !important;
   letter-spacing: -.055em !important;
 }
+/* Keep metadata visually separate from the oversized title. The genre line
+   is supporting information, so it needs its own breathing room rather than
+   reading as a continuation of the last title line. */
+.feature-genres {
+  margin-top: clamp(1.15rem, 1.8vw, 1.45rem) !important;
+  line-height: 1.45;
+}
 .catalog-content { margin-top: -4.15rem !important; }
 /* Browse/category pages sit below the sticky header; only home may overlap the hero. */
 .catalog-content-browse {

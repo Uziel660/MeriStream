@@ -34,6 +34,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - **Búsqueda multilingüe:** la búsqueda consulta TMDB en `es-419` y `en-US`, fusiona títulos bajo el mismo TMDB ID, conserva aliases y ordena por relevancia antes de popularidad (`server/publicCatalog.ts`). Esto cubre muchos desacuerdos TMDB/IMDb, pero todavía no es una consulta directa a la base de títulos de IMDb.
 - **Lectura de preferencias:** `useHiddenGenres` ya no lee `localStorage` durante el inicializador síncrono; hidrata después del primer paint y luego sincroniza servidor/pestañas.
 - **Recuperación HLS:** ante un `mediaError` fatal se intenta una recuperación in-place una vez por intento antes de escalar a proxy/failover; se registra el motivo.
+- **Prioridad de imágenes:** `SmartImage` conserva `fetchPriority="high"` para el hero; antes el wrapper lo eliminaba y anulaba la pista LCP.
+- **Pruebas E2E nuevas:** regresión VidSrc para TMDB `1465063` y auditoría móvil de home, ficha y login `/admin` (`e2e/provider-identity-guards.spec.ts`, `e2e/mobile-layout.spec.ts`).
 
 ### Evidencia de validación de esta revisión
 
@@ -43,14 +45,16 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
 - Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
 - Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
-- La suite completa tuvo un fallo transitorio de la integración viva de Cinecalidad (**807/810**); al repetir ese archivo inmediatamente terminó **12/12** correcto. La suite previa también había pasado 809/809 antes de esta validación.
+- La suite completa terminó **810/810** correcta en la última ejecución.
+- E2E dirigido móvil + identidad VidSrc: **4/4** correctos.
+- Medición automatizada de imagen hero: `loading=eager`, `fetchPriority=high`, sin overflow horizontal en 390 px; `/admin` conserva campos y botón de 44 px.
 
 ### Aún pendiente
 
 - Validación de identidad del vídeo servido más allá del idioma: comparar título/alias/año/duración o metadatos del proveedor cuando estén disponibles, y registrar con mayor detalle por qué se acepta/descarta cada candidato.
-- Estrategia segura de preload del hero/LCP dinámico y medición en perfil de navegador limpio.
-- Auditoría visual completa con capturas de todas las rutas, especialmente `/admin`, y pruebas táctiles en dispositivos reales.
-- E2E final de reproducción con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
+- Estrategia segura de preload del hero/LCP dinámico y medición con DevTools en un perfil de navegador limpio (la prioridad alta ya está aplicada y comprobada).
+- Auditoría visual completa de todas las rutas y estados autenticados, especialmente el panel `/admin`; home, ficha y login móvil ya tienen evidencia automatizada.
+- E2E final de reproducción prolongada con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
 - Informe visual/E2E final y revisión de identidad por título/duración siguen pendientes; los cambios de esta revisión ya están publicados en `lastversion`.
 
 ## Prioridad P0 — integridad de reproducción
@@ -120,8 +124,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 
 ### 7. LCP y carga inicial
 
-- Confirmar el elemento LCP real en una sesión limpia. El diagnóstico observó `img.feature-image` descubierto después de ejecutar un chunk, con aproximadamente 516 ms de espera de descubrimiento dentro de un LCP total de ~733 ms.
-- Preconstruir o inyectar de forma segura el preload de la imagen hero solo cuando se conozca el recurso correcto; no precargar una imagen dinámica equivocada.
+- Confirmar el elemento LCP real en una sesión limpia. El diagnóstico original observó `img.feature-image` descubierto después de ejecutar un chunk, con aproximadamente 516 ms de espera de descubrimiento dentro de un LCP total de ~733 ms; la medición automatizada actual confirma `fetchPriority=high` y descubrimiento de la imagen antes del resto de tarjetas.
+- Preconstruir o inyectar de forma segura el preload de la imagen hero solo cuando se conozca el recurso correcto; no precargar una imagen dinámica equivocada. Sigue pendiente por esa condición dinámica.
 - Renderizar cuanto antes la estructura y los metadatos críticos del hero, dejando interacciones no críticas para después.
 - Mover la lectura síncrona de `localStorage` de `useHiddenGenres.tsx` fuera del camino crítico (efecto o inicialización diferida) sin provocar parpadeos ni perder preferencias.
 - Dividir/cargar bajo demanda componentes no críticos (admin, modales pesados, reproductor y herramientas secundarias), verificando que las rutas profundas sigan funcionando.

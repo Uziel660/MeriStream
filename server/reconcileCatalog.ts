@@ -597,7 +597,10 @@ export async function mergeTwoShows(
   if (!dry) {
     const mBase = merge.base_normalized_title || merge.normalized_title;
     const mergeItem = await prisma.mediaItem.findFirst({
-      where: { OR: [{ base_normalized_title: mBase, kind }, { normalized_title: merge.normalized_title, kind }] },
+      where: {
+        ...(canonicalItem ? { id: { not: canonicalItem.id } } : {}),
+        OR: [{ base_normalized_title: mBase, kind }, { normalized_title: merge.normalized_title, kind }],
+      },
     });
     if (!canonicalItem && mergeItem) {
       // Si la ficha que se conserva todavía no tiene espejo canónico, créalo

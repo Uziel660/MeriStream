@@ -29,7 +29,8 @@ import {
   Star,
   ListFilter,
   Eye,
-  EyeOff
+  EyeOff,
+  Flag
 } from 'lucide-react';
 import type { Show, ScraperPreset, UniversalAnalysisResult, BackgroundWorkerJob, WorkerSettings } from '../types';
 import WorkerSettingsCard from './WorkerSettingsCard';
@@ -38,6 +39,7 @@ import VerificationPanel from './VerificationPanel';
 import ServerTesterCard from './ServerTesterCard';
 import { GenresManager } from './GenresManager';
 import AdminOverview, { type AdminTab } from './AdminOverview';
+import AdminReports from './AdminReports';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import { SmartImage } from './SmartImage';
 
@@ -649,6 +651,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 { id: 'overview' as const, label: 'Resumen', icon: Activity, detail: 'Estado general' },
                 { id: 'library' as const, label: 'Catálogo', icon: Database, detail: libraryTotal ? `${libraryTotal.toLocaleString()} obras únicas` : 'Gestionar obras' },
                 { id: 'sources' as const, label: 'Fuentes', icon: Star, detail: 'Prioridad y salud' },
+                { id: 'reports' as const, label: 'Reportes', icon: Flag, detail: 'Avisos del público' },
               ].map((item) => {
                 const Icon = item.icon;
                 return <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}><Icon size={15} /><span className="min-w-0"><span className="block text-xs font-semibold">{item.label}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{item.detail}</span></span></button>;
@@ -678,13 +681,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-20 items-center justify-between gap-4 border-b border-zinc-800/80 bg-[#0b0f14] px-4 sm:px-7">
-          <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300">MeriStream / Admin</p><h2 className="mt-1 truncate text-base font-semibold text-white">{activeTab === 'overview' ? 'Resumen operativo' : activeTab === 'library' ? 'Catálogo' : activeTab === 'sources' ? 'Fuentes y servidores' : activeTab === 'verification' ? 'Verificación' : activeTab === 'worker_tasks' ? 'Cola de tareas' : activeTab === 'genres' ? 'Visibilidad' : 'Importar contenido'}</h2></div>
+          <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300">MeriStream / Admin</p><h2 className="mt-1 truncate text-base font-semibold text-white">{activeTab === 'overview' ? 'Resumen operativo' : activeTab === 'library' ? 'Catálogo' : activeTab === 'sources' ? 'Fuentes y servidores' : activeTab === 'reports' ? 'Reportes del catálogo' : activeTab === 'verification' ? 'Verificación' : activeTab === 'worker_tasks' ? 'Cola de tareas' : activeTab === 'genres' ? 'Visibilidad' : 'Importar contenido'}</h2></div>
           <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1.5 text-[10px] text-zinc-500 sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Sesión protegida</span><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white md:hidden" aria-label="Salir del panel"><X size={16} /></button></div>
         </header>
 
         <div className="flex gap-1 overflow-x-auto border-b border-zinc-800/80 bg-[#0b0f14] px-4 py-2 md:hidden">
           {[
-            { id: 'overview' as const, label: 'Resumen' }, { id: 'library' as const, label: 'Catálogo' }, { id: 'sources' as const, label: 'Fuentes' }, { id: 'verification' as const, label: 'Verificación' }, { id: 'worker_tasks' as const, label: 'Tareas' }, { id: 'smart' as const, label: 'Importar' }, { id: 'genres' as const, label: 'Visibilidad' },
+            { id: 'overview' as const, label: 'Resumen' }, { id: 'library' as const, label: 'Catálogo' }, { id: 'sources' as const, label: 'Fuentes' }, { id: 'reports' as const, label: 'Reportes' }, { id: 'verification' as const, label: 'Verificación' }, { id: 'worker_tasks' as const, label: 'Tareas' }, { id: 'smart' as const, label: 'Importar' }, { id: 'genres' as const, label: 'Visibilidad' },
           ].map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`whitespace-nowrap rounded-md px-3 py-2 text-[11px] font-semibold ${activeTab === item.id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>{item.label}</button>)}
         </div>
 
@@ -704,6 +707,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         {/* Contenido Principal con Scroll */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {activeTab === 'overview' && <AdminOverview onNavigate={setActiveTab} />}
+          {activeTab === 'reports' && <AdminReports onEditShow={(show) => setEditingShow(show)} />}
 
           {/* ========================================================================= */}
           {/* PESTAÑA 1: EXTRACTOR UNIVERSAL Y FICHA INTELIGENTE */}

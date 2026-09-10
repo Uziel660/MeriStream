@@ -98,6 +98,10 @@ export function isAdminControlPlaneRequest(path: string, method: string): boolea
   const normalizedMethod = method.toUpperCase();
   const protectedPrefixes = [
     "/admin/catalog",
+    "/admin/reports",
+    "/admin/media-items",
+    "/admin/source-links",
+    "/admin/shows",
     "/admin/identity-repair",
     "/verification",
     "/worker",

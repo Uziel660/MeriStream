@@ -68,6 +68,7 @@ import {
   MSG_NO_SERVERS,
   type DeliveryState,
 } from '../utils/playerDelivery';
+import ReportControl from './ReportControl';
 
 export interface HLSPlayerMedia {
   id?: string;
@@ -98,6 +99,11 @@ interface HLSPlayerModalProps {
   onProgressUpdate?: (currentTime: number, duration: number) => void;
   onNextEpisode?: () => void;
   userId?: string | null;
+  showId?: string | null;
+  tmdbId?: number | null;
+  kind?: string | null;
+  episodeId?: string | null;
+  episodeNumber?: number | null;
   [key: string]: any;
 }
 
@@ -2213,6 +2219,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           {/* ACCIONES SUPERIORES: CAMBIO RÁPIDO DE SERVIDORES Y APERTURA EXTERNA */}
           <div className="flex items-center gap-2 shrink-0">
+            <ReportControl
+              title={props.title || media?.title || 'esta obra'}
+              showId={props.showId || null}
+              tmdbId={props.tmdbId || null}
+              kind={props.kind || null}
+              episodeId={props.episodeId || null}
+              episodeNumber={props.episodeNumber || null}
+              sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+              sourceUrl={activeServer?.canonical_locator || null}
+              compact
+            />
             {/* La cascada selecciona automáticamente, pero el selector queda
                 disponible cuando existen varias fuentes. */}
             {showServerSelector && servers.length > 1 && (

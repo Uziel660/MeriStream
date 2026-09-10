@@ -14,6 +14,7 @@ import type { Show, ShowDetail, Episode } from '../types';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { WatchProgress } from './ContinueWatching';
 import { getAppPreferences } from '../utils/appPreferences';
+import ReportControl from './ReportControl';
 
 function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anime'; tmdbId: number } | null {
   const match = /^tmdb-(movie|series|anime)-(\d+)$/.exec(String(value || ''));
@@ -484,6 +485,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                           {isMovieCompleted ? <RotateCcw size={15} /> : <Play size={15} className="fill-current" />}
                           <span>{isMovieCompleted ? 'Volver a ver' : moviePercent > 0 ? 'Continuar' : 'Reproducir'}</span>
                         </button>
+                        <ReportControl
+                          title={cleanDisplayTitle(show.title)}
+                          showId={show.id}
+                          tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                          kind={show.kind || show.category}
+                          compact
+                          className="bg-black/45"
+                        />
                       </div>
                     )}
                   </div>
@@ -535,6 +544,19 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         fuentes de video reproducibles. Puedes explorar su ficha y episodios,
                         pero la reproducción no está disponible.
                       </span>
+                    </div>
+                  )}
+
+                  {/* Reportar también queda disponible cuando una ficha aún no
+                      tiene fuentes, justo el caso donde más útil resulta. */}
+                  {(!isMovie || hasNoSources) && (
+                    <div className="flex justify-end">
+                      <ReportControl
+                        title={cleanDisplayTitle(show.title)}
+                        showId={show.id}
+                        tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                        kind={show.kind || show.category}
+                      />
                     </div>
                   )}
 

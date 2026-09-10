@@ -41,6 +41,34 @@ model Show {
   @@index([tmdb_id])
 }
 
+/// User-submitted catalog quality reports. The identity fields are copied at
+/// submission time so a report remains useful even if a catalog row is later
+/// merged, renamed, or removed.
+model CatalogReport {
+  id                String   @id @default(cuid())
+  show_id           String?
+  tmdb_id           Int?
+  kind              String?
+  title             String
+  episode_id        String?
+  episode_number    Float?
+  report_type       String
+  details           String?  @db.Text
+  source_provider   String?
+  source_url        String?  @db.Text
+  status            String   @default("open")
+  admin_note        String?  @db.Text
+  resolution_action String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  resolved_at       DateTime?
+
+  @@index([status, created_at])
+  @@index([show_id])
+  @@index([tmdb_id, kind])
+  @@index([report_type])
+}
+
 model Episode {
   id             String   @id @default(cuid())
   show_id        String

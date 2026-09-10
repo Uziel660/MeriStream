@@ -193,3 +193,12 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Comprobar `git diff`, eliminar artefactos temporales y dejar el worktree limpio con solo la última versión solicitada.
 - No incluir `.env`, tokens, dumps ni capturas temporales en el commit.
 - Actualizar este documento marcando cada punto completado y enlazando el informe final.
+
+## Funcionalidad de moderación y gestión manual (aplicada en la revisión actual)
+
+- **Reportes públicos no intrusivos:** el detalle de una obra y el reproductor muestran un botón `Reportar` que abre un diálogo accesible sin pausar ni reiniciar el vídeo. Incluye contenido inapropiado, clasificación incorrecta, obra/título equivocado, metadatos, subtítulos, idioma, fuente caída y opción libre.
+- **Buzón administrativo:** `/admin` incorpora la pestaña `Reportes`, filtros por estado, contadores, actualización periódica, detalle de episodio/proveedor, notas internas y acciones `Pendiente`, `En revisión`, `Resuelto` y `Descartado`. Cuando existe una ficha local, `Abrir editor de obra` lleva directamente a su edición.
+- **Identidad TMDB manual:** el editor comprueba conflictos antes de asignar un ID, pide confirmación explícita para fusionar duplicados y pregunta por separado si debe regenerar título, sinopsis, artwork, géneros, año y rating desde TMDB. La identidad se sincroniza con las filas canónicas relacionadas.
+- **Inventario de streams:** el editor consulta `MediaEpisode`/`SourceLink` con temporada, episodio, plataforma, URL/locator, idioma, estado y prioridad; permite corregir URL/plataforma/estado, eliminar fuentes y añadir una fuente manual. Las mutaciones están protegidas por la sesión administrativa.
+- **Persistencia:** se añadió `CatalogReport` al esquema Prisma y se aplicó con `prisma db push`; `.env` continúa fuera de Git.
+- **Guardas:** las nuevas rutas administrativas (`/admin/reports`, `/admin/shows`, `/admin/media-items`, `/admin/source-links`) quedan protegidas por `requireAdminForControlPlane`; los reportes públicos solo aceptan tipos y campos acotados.

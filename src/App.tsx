@@ -1208,6 +1208,8 @@ export function App() {
       episodeId: episode.id,
       episodeNumber: episode.episode_number,
       episodeTitle: safeEpisodeTitle(episode),
+      tmdbId: currentShow?.tmdb_id ?? null,
+      kind: currentShow?.kind || currentShow?.category || null,
       isLoading: true,
     });
 
@@ -2253,6 +2255,11 @@ export function App() {
           isOpen={Boolean(playingStreamData)}
           onClose={() => setPlayingStreamData(null)}
           userId={user?.id}
+          showId={playingStreamData.showId}
+          tmdbId={playingStreamData.tmdbId}
+          kind={playingStreamData.kind}
+          episodeId={playingStreamData.episodeId}
+          episodeNumber={playingStreamData.episodeNumber}
           title={playingStreamData.title}
           streamUrl={playingStreamData.streamUrl}
           all_streams={playingStreamData.all_streams}

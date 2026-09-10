@@ -118,6 +118,12 @@ import {
 } from "./server/adminAuth";
 import { getUnifiedCatalogCounts } from "./server/catalogCounts";
 import { getIdentityRepairStatus } from "./server/identityRepairStatus";
+import {
+  createCatalogReport,
+  getCatalogReportSummary,
+  listCatalogReports,
+  updateCatalogReport,
+} from "./server/catalogReports";
 
 const deliveryPlanner = new DeliveryPlanner();
 const resolutionCoordinator = new ResolutionCoordinator(
@@ -1501,6 +1507,31 @@ async function startServer() {
     }
   });
 
+  // Los reportes de calidad son públicos y deliberadamente ligeros: no abren
+  // ningún flujo de reproducción ni obligan a iniciar sesión. El panel admin
+  // es el único lugar donde se exponen y modifican después.
+  app.post("/api/v1/reports", async (req: Request, res: Response) => {
+    try {
+      const report = await createCatalogReport({
+        showId: req.body?.show_id,
+        tmdbId: req.body?.tmdb_id,
+        kind: req.body?.kind,
+        title: req.body?.title,
+        episodeId: req.body?.episode_id,
+        episodeNumber: req.body?.episode_number,
+        reportType: req.body?.report_type,
+        details: req.body?.details,
+        sourceProvider: req.body?.source_provider,
+        sourceUrl: req.body?.source_url,
+      });
+      res.status(201).json({ ok: true, report_id: report.id });
+    } catch (error: any) {
+      const message = error?.message || "No se pudo registrar el reporte.";
+      const status = /obligatorio|no válido/i.test(message) ? 400 : 500;
+      res.status(status).json({ error: message });
+    }
+  });
+
   // Protege el plano de control sin interceptar reproducción, catálogo público
   // ni las resoluciones Just-In-Time que necesita el reproductor.
   app.use("/api/v1", requireAdminForControlPlane);
@@ -1525,6 +1556,42 @@ async function startServer() {
       return res.json({ ok: true, ...visibility });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || "No se pudo guardar la configuración del catálogo" });
+    }
+  });
+
+  app.get("/api/v1/admin/reports/summary", async (_req: Request, res: Response) => {
+    try {
+      res.setHeader("Cache-Control", "private, max-age=5, stale-while-revalidate=10");
+      res.json(await getCatalogReportSummary());
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "No se pudo cargar el resumen de reportes." });
+    }
+  });
+
+  app.get("/api/v1/admin/reports", async (req: Request, res: Response) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json(await listCatalogReports({
+        status: req.query.status,
+        limit: req.query.limit,
+        offset: req.query.offset,
+      }));
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "No se pudieron cargar los reportes." });
+    }
+  });
+
+  app.patch("/api/v1/admin/reports/:reportId", async (req: Request, res: Response) => {
+    try {
+      const report = await updateCatalogReport(req.params.reportId, {
+        status: req.body?.status,
+        adminNote: req.body?.admin_note,
+        resolutionAction: req.body?.resolution_action,
+      });
+      res.json({ ok: true, report });
+    } catch (error: any) {
+      const message = error?.message || "No se pudo actualizar el reporte.";
+      res.status(/no válido/i.test(message) ? 400 : 404).json({ error: message });
     }
   });
 
@@ -1873,6 +1940,227 @@ async function startServer() {
       res.json({ ...(show as any), episodes, media_item_id, episode_platforms });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Identidad TMDB manual para moderación. Primero devuelve los conflictos y
+  // solo fusiona cuando el panel envía explícitamente merge_show_id; así un ID
+  // pegado por accidente nunca absorbe otra obra silenciosamente.
+  app.get("/api/v1/admin/shows/:show_id/identity-check", async (req: Request, res: Response) => {
+    try {
+      const tmdbId = Number(req.query.tmdb_id);
+      if (!Number.isInteger(tmdbId) || tmdbId <= 0) return res.status(400).json({ error: "tmdb_id inválido." });
+      const show = await prisma.show.findUnique({ where: { id: req.params.show_id }, select: { id: true, category: true, title: true } });
+      if (!show) return res.status(404).json({ error: "Obra no encontrada." });
+      const isMovie = String(show.category || "").toLowerCase() === "movie";
+      const categories = isMovie ? ["movie"] : ["anime", "series"];
+      const [shows, mediaItems] = await Promise.all([
+        prisma.show.findMany({
+          where: { tmdb_id: tmdbId, category: { in: categories }, id: { not: show.id } },
+          select: { id: true, title: true, category: true, tmdb_id: true, poster_url: true, year: true },
+          orderBy: { updated_at: "desc" },
+        }),
+        prisma.mediaItem.findMany({
+          where: { tmdb_id: tmdbId, kind: { in: isMovie ? ["movie"] : ["anime", "series"] } },
+          select: { id: true, title: true, kind: true, tmdb_id: true, poster_url: true, year: true },
+          orderBy: { updated_at: "desc" },
+        }),
+      ]);
+      res.json({ ok: true, requested_tmdb_id: tmdbId, conflicts: { shows, media_items: mediaItems } });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "No se pudo comprobar la identidad." });
+    }
+  });
+
+  app.post("/api/v1/admin/shows/:show_id/identity", async (req: Request, res: Response) => {
+    try {
+      const showId = req.params.show_id;
+      const show = await prisma.show.findUnique({ where: { id: showId } });
+      if (!show) return res.status(404).json({ error: "Obra no encontrada." });
+      const rawTmdbId = req.body?.tmdb_id;
+      const tmdbId = rawTmdbId === null || rawTmdbId === "" ? null : Number(rawTmdbId);
+      if (tmdbId !== null && (!Number.isInteger(tmdbId) || tmdbId <= 0)) return res.status(400).json({ error: "tmdb_id inválido." });
+
+      const isMovie = String(show.category || "").toLowerCase() === "movie";
+      const categories = isMovie ? ["movie"] : ["anime", "series"];
+      const conflicts = tmdbId === null ? [] : await prisma.show.findMany({
+        where: { tmdb_id: tmdbId, category: { in: categories }, id: { not: showId } },
+        select: { id: true, title: true, category: true, tmdb_id: true, poster_url: true, year: true },
+        orderBy: { updated_at: "desc" },
+      });
+      const requestedMergeId = typeof req.body?.merge_show_id === "string" ? req.body.merge_show_id : undefined;
+      if (conflicts.length > 0 && !requestedMergeId) {
+        return res.status(409).json({
+          code: "TMDB_CONFLICT",
+          error: "Ya existe otra obra con ese TMDB ID.",
+          conflicts,
+          requires_confirmation: true,
+        });
+      }
+      if (requestedMergeId && !conflicts.some((item) => item.id === requestedMergeId)) {
+        return res.status(400).json({ error: "La obra elegida para fusionar no coincide con el conflicto comprobado." });
+      }
+      if (requestedMergeId) {
+        const merged = await mergeTwoShows(showId, requestedMergeId, { dryRun: false });
+        if (!merged.ok) return res.status(400).json({ error: merged.detail });
+      }
+
+      const category = isMovie ? "movie" : String(show.category || "anime").toLowerCase() === "series" ? "series" : "anime";
+      let metadata: any = null;
+      if (req.body?.regenerate_metadata && tmdbId !== null) {
+        metadata = await getPublicCatalogDetail(category, String(tmdbId));
+        if (!metadata) return res.status(502).json({ error: "TMDB no devolvió metadatos para ese ID." });
+      }
+
+      const title = typeof metadata?.title === "string" && metadata.title.trim() ? metadata.title.trim() : show.title;
+      const normalized = normalizeTitle(title);
+      const baseNormalized = normalizeBaseTitle(title) || normalized;
+      const showData: any = {
+        tmdb_id: tmdbId,
+        ...(metadata ? {
+          title,
+          normalized_title: normalized,
+          base_normalized_title: baseNormalized,
+          original_title: metadata.original_title ?? show.original_title,
+          description: metadata.description ?? show.description,
+          poster_url: metadata.poster_url ?? show.poster_url,
+          banner_url: metadata.banner_url ?? metadata.backdrop_url ?? show.banner_url,
+          genres: Array.isArray(metadata.genres) ? metadata.genres.join(", ") : metadata.genres ?? show.genres,
+          year: Number.isFinite(Number(metadata.year)) ? Number(metadata.year) : show.year,
+          rating: Number.isFinite(Number(metadata.rating)) ? Number(metadata.rating) : show.rating,
+        } : {}),
+      };
+      const updated = await prisma.$transaction(async (tx) => {
+        const result = await tx.show.update({ where: { id: showId }, data: showData });
+        const itemKind = isMovie ? "movie" : { in: ["anime", "series"] };
+        const mediaItems = await tx.mediaItem.findMany({
+          where: {
+            kind: itemKind as any,
+            OR: [
+              ...(show.tmdb_id ? [{ tmdb_id: show.tmdb_id }] : []),
+              { normalized_title: show.normalized_title },
+              ...(show.base_normalized_title ? [{ base_normalized_title: show.base_normalized_title }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        if (mediaItems.length > 0) {
+          await tx.mediaItem.updateMany({
+            where: { id: { in: mediaItems.map((item) => item.id) } },
+            data: {
+              tmdb_id: tmdbId,
+              ...(metadata ? {
+                title,
+                normalized_title: normalized,
+                base_normalized_title: baseNormalized,
+                original_title: metadata.original_title ?? undefined,
+                description: metadata.description ?? undefined,
+                poster_url: metadata.poster_url ?? undefined,
+                backdrop_path: metadata.backdrop_path ?? undefined,
+                year: Number.isFinite(Number(metadata.year)) ? Number(metadata.year) : undefined,
+                rating: Number.isFinite(Number(metadata.rating)) ? Number(metadata.rating) : undefined,
+              } : {}),
+            },
+          });
+        }
+        return result;
+      });
+      res.json({ ok: true, show: updated, merged_show_id: requestedMergeId || null, metadata_regenerated: Boolean(metadata) });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "No se pudo actualizar la identidad TMDB." });
+    }
+  });
+
+  // Inventario administrativo de fuentes: muestra el locator persistente y
+  // toda la evidencia del resolver, sin exponerlo en el catálogo público.
+  app.get("/api/v1/admin/media-items/:media_item_id/streams", async (req: Request, res: Response) => {
+    try {
+      const item = await prisma.mediaItem.findUnique({
+        where: { id: req.params.media_item_id },
+        select: {
+          id: true, title: true, kind: true, tmdb_id: true,
+          episodes: {
+            orderBy: [{ season_number: "asc" }, { episode_number: "asc" }],
+            include: { links: { orderBy: [{ source_site: "asc" }, { priority_tier: "asc" }] } },
+          },
+        },
+      });
+      if (!item) return res.status(404).json({ error: "MediaItem no encontrado." });
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "No se pudieron cargar las fuentes." });
+    }
+  });
+
+  app.post("/api/v1/admin/media-items/:media_item_id/streams", async (req: Request, res: Response) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const season = Math.max(1, Math.round(Number(body.season_number) || 1));
+      const episode = Number(body.episode_number);
+      const url = typeof body.url === "string" ? body.url.trim().slice(0, 2000) : "";
+      const sourceSite = typeof body.source_site === "string" ? body.source_site.trim().slice(0, 120) : "";
+      if (!Number.isFinite(episode) || episode < 0 || !url || !sourceSite) return res.status(400).json({ error: "episode_number, source_site y url son obligatorios." });
+      const item = await prisma.mediaItem.findUnique({ where: { id: req.params.media_item_id }, select: { id: true } });
+      if (!item) return res.status(404).json({ error: "MediaItem no encontrado." });
+      const rawPriority = body.priority_tier === undefined || body.priority_tier === "" || body.priority_tier === null ? null : Number(body.priority_tier);
+      if (rawPriority !== null && !Number.isFinite(rawPriority)) return res.status(400).json({ error: "priority_tier inválido." });
+      const mediaEpisode = await prisma.mediaEpisode.upsert({
+        where: { media_item_id_season_number_episode_number: { media_item_id: item.id, season_number: season, episode_number: episode } },
+        create: { media_item_id: item.id, season_number: season, episode_number: episode },
+        update: {},
+      });
+      const link = await prisma.sourceLink.create({
+        data: {
+          media_episode_id: mediaEpisode.id,
+          source_site: sourceSite,
+          url,
+          link_type: typeof body.link_type === "string" ? body.link_type.trim().slice(0, 40) || "direct" : "direct",
+          language: typeof body.language === "string" ? body.language.trim().slice(0, 40) || null : null,
+          audio_language: typeof body.audio_language === "string" ? body.audio_language.trim().slice(0, 40) || null : null,
+          subtitle_language: typeof body.subtitle_language === "string" ? body.subtitle_language.trim().slice(0, 40) || null : null,
+          canonical_locator: typeof body.canonical_locator === "string" ? body.canonical_locator.trim().slice(0, 2000) || null : null,
+          source_status: typeof body.source_status === "string" ? body.source_status.trim().slice(0, 40) || "discovered" : "discovered",
+          priority_tier: rawPriority === null ? null : Math.max(0, Math.min(99, Math.round(rawPriority))),
+        },
+      });
+      res.status(201).json({ ok: true, link });
+    } catch (error: any) {
+      res.status(error?.code === "P2002" ? 409 : 400).json({ error: error?.message || "No se pudo crear la fuente." });
+    }
+  });
+
+  app.patch("/api/v1/admin/source-links/:link_id", async (req: Request, res: Response) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const data: any = {};
+      for (const key of ["source_site", "url", "link_type", "language", "audio_language", "subtitle_language", "host", "canonical_locator", "external_id", "extraction_method", "resolver_version", "failure_reason", "source_status"]) {
+        if (body[key] !== undefined) data[key] = body[key] === null ? null : String(body[key]).trim().slice(0, 2000);
+      }
+      for (const key of ["priority_tier"]) {
+        if (body[key] !== undefined) {
+          if (body[key] === null || body[key] === "") data[key] = null;
+          else {
+            const parsedPriority = Number(body[key]);
+            if (!Number.isFinite(parsedPriority)) return res.status(400).json({ error: "priority_tier inválido." });
+            data[key] = Math.max(0, Math.min(99, Math.round(parsedPriority)));
+          }
+        }
+      }
+      if (body.is_verified !== undefined) data.is_verified = Boolean(body.is_verified);
+      if (data.url !== undefined && !data.url) return res.status(400).json({ error: "La URL de la fuente no puede quedar vacía." });
+      const updated = await prisma.sourceLink.update({ where: { id: req.params.link_id }, data });
+      res.json({ ok: true, link: updated });
+    } catch (error: any) {
+      res.status(error?.code === "P2025" ? 404 : 400).json({ error: error?.message || "No se pudo actualizar la fuente." });
+    }
+  });
+
+  app.delete("/api/v1/admin/source-links/:link_id", async (req: Request, res: Response) => {
+    try {
+      await prisma.sourceLink.delete({ where: { id: req.params.link_id } });
+      res.status(204).end();
+    } catch (error: any) {
+      res.status(error?.code === "P2025" ? 404 : 400).json({ error: error?.message || "No se pudo eliminar la fuente." });
     }
   });
 
@@ -3997,6 +4285,7 @@ async function startServer() {
         ratings,
         jobs,
         recentWorks,
+        reportSummary,
       ] = await Promise.all([
         getUnifiedCatalogCounts(),
         prisma.episode.count(),
@@ -4021,6 +4310,7 @@ async function startServer() {
           take: 6,
           select: { id: true, title: true, category: true, poster_url: true, created_at: true },
         }),
+        getCatalogReportSummary(),
       ]);
 
       const verification = getVerificationStatus();
@@ -4064,6 +4354,7 @@ async function startServer() {
           failing_links: failingLinks,
           provider_health: providerHealth,
         },
+        reports: reportSummary,
         users,
         recent_works: recentWorks,
       });

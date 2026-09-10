@@ -13,9 +13,10 @@ import {
   Sparkles,
   Tv,
   Users,
+  Flag,
 } from "lucide-react";
 
-export type AdminTab = "overview" | "smart" | "worker_tasks" | "sources" | "library" | "verification" | "genres";
+export type AdminTab = "overview" | "smart" | "worker_tasks" | "sources" | "reports" | "library" | "verification" | "genres";
 
 interface AdminOverviewProps {
   onNavigate: (tab: AdminTab) => void;
@@ -50,6 +51,7 @@ interface OverviewData {
   };
   users: number;
   recent_works: Array<{ id: string; title: string; category: string; poster_url?: string | null; created_at?: string }>;
+  reports?: { open: number; in_review: number; resolved: number; dismissed: number; actionable: number };
 }
 
 const EMPTY: OverviewData = {
@@ -59,6 +61,7 @@ const EMPTY: OverviewData = {
   sources: { enabled_sites: 0, total_sites: 0, failing_links: 0, provider_health: [] },
   users: 0,
   recent_works: [],
+  reports: { open: 0, in_review: 0, resolved: 0, dismissed: 0, actionable: 0 },
 };
 
 function number(value: number): string {
@@ -201,6 +204,10 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigate }) => {
                 <button type="button" onClick={() => onNavigate("verification")} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-3 text-left transition-colors hover:border-zinc-600">
                   <span><span className="block text-xs font-semibold text-zinc-200">Verificación</span><span className="mt-1 block text-[10px] text-zinc-500">{data.operations.verification_running ? `Ejecutando · ${data.operations.verification_phase}` : "Sin ejecución activa"}</span></span>
                   {data.operations.verification_running ? <Loader2 size={18} className="animate-spin text-emerald-300" /> : <CheckCircle2 size={18} className="text-zinc-600" />}
+                </button>
+                <button type="button" onClick={() => onNavigate("reports")} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-3 text-left transition-colors hover:border-zinc-600 sm:col-span-2">
+                  <span className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${data.reports?.actionable ? "bg-amber-400/10 text-amber-300" : "bg-zinc-800 text-zinc-500"}`}><Flag size={14} /></span><span><span className="block text-xs font-semibold text-zinc-200">Reportes del catálogo</span><span className="mt-1 block text-[10px] text-zinc-500">{data.reports?.open || 0} pendientes · {data.reports?.in_review || 0} en revisión</span></span></span>
+                  <span className={`text-lg font-semibold ${data.reports?.actionable ? "text-amber-200" : "text-zinc-500"}`}>{data.reports?.actionable || 0}</span>
                 </button>
               </div>
               {data.operations.failed_jobs > 0 && <button type="button" onClick={() => onNavigate("worker_tasks")} className="mt-3 flex w-full items-center gap-2 rounded-lg border border-red-500/25 bg-red-950/20 px-3 py-2 text-left text-[11px] text-red-300"><AlertTriangle size={14} />{data.operations.failed_jobs} tareas fallidas requieren revisión</button>}

@@ -43,7 +43,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
 - Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
 - Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
-- La suite completa terminó con **807/810** pruebas correctas; las 3 fallidas pertenecen a la integración viva de Cinecalidad, que respondió una página sin poster/episodios, no a los módulos modificados. La suite previa había pasado 809/809 antes de esta validación.
+- La suite completa tuvo un fallo transitorio de la integración viva de Cinecalidad (**807/810**); al repetir ese archivo inmediatamente terminó **12/12** correcto. La suite previa también había pasado 809/809 antes de esta validación.
 
 ### Aún pendiente
 

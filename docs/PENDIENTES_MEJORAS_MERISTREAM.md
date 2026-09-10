@@ -5,11 +5,53 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Estado de partida
 
 - Rama de trabajo: `lastversion`.
-- Último commit conocido: `c2a2014 fix: separate hero genres from title`.
+- Último commit de esta revisión: `b2d2a3c fix: validate VidSrc language and improve catalog search`.
 - El worktree estaba limpio al crear esta lista.
 - El `.env` de `E:\merinuevo\.env` ya se copió al proyecto local. Mantenerlo ignorado por Git y no exponer sus valores.
 - El servidor local de desarrollo se probó en `http://localhost:3010/`.
-- En este turno no se ha cambiado código: solo se ha creado este documento.
+- Esta lista se conserva como hoja de ruta; el estado de cada punto se actualiza con evidencia y commits.
+
+## Auditoría de avance (2026-09-09)
+
+### Ya aplicado y verificable
+
+- **Separación visual del género y el título del hero:** commit `c2a2014`.
+- **Panel `/admin` independiente y carga diferida del panel:** `src/main.tsx`, `AdminGate` lazy; commit `b6a60d8` y consolidación `88c3299`.
+- **Responsive de catálogo, preferencias y navegación móvil:** commits `eaf2d68`, `d3b02db` y ajustes posteriores de estilos.
+- **Imágenes adaptativas:** `src/utils/imageSizes.ts`, `SmartImage`, `srcset`/`sizes`, lazy loading en tarjetas y resolución TMDB por contexto; commits `5cda255`, `68ca1ec` y `88c3299`.
+- **Carga diferida de overlays, modales y administración:** `src/components/lazy/DeferredOverlays.tsx` y `src/main.tsx`.
+- **Cachés, índices locales, paginación y eliminación de solicitudes duplicadas:** commits `e57134c`, `c01a153`, `318124d` y `cfc9e93`.
+- **Búsqueda existente:** debounce/cancelación en el header, búsqueda TMDB separada de trending, deduplicación, ranking base por popularidad y aliases locales; identificadores exactos TMDB/IMDb (`tt...`) ya funcionan.
+- **Subtítulos fuera del camino crítico de reproducción:** el bootstrap los solicita en paralelo y los anexa sin reiniciar el vídeo (`src/utils/playbackBootstrap.ts`, `src/App.tsx`).
+- **Protecciones parciales del fallback:** retirada de niveles HLS obsoletos, watchdog de congelación de 20 s y failover acotado; `PlyrPlayerModal` ya intenta `recoverMediaError`.
+
+### Aplicado y verificado en `b2d2a3c`
+
+- **VidSrc/NXSHA:** detección de etiquetas multidioma, preferencia de audio propagada al resolver, búsqueda acotada de mejores candidatos, subtítulos ordenados por preferencia y eliminación del falso valor por defecto `"en"` (`server/providers/api/vidsrcClient.ts`).
+- **Filtro de identidad conservador:** el idioma original TMDB viaja hasta el gateway y una etiqueta VidSrc explícitamente incompatible se descarta salvo que el manifiesto exponga una pista esperada (caso `La isla olvidada`/`[Korean]`). La caché también separa las preferencias de idioma.
+- **Idiomas indios y variantes:** aliases en `server/utils/languageDetector.ts`, normalización de provider policy y etiquetas de subtítulos.
+- **SubtitleCat:** rechazo de resultados con año visible incompatible y pruebas de regresión para `La isla olvidada`.
+- **Búsqueda multilingüe:** la búsqueda consulta TMDB en `es-419` y `en-US`, fusiona títulos bajo el mismo TMDB ID, conserva aliases y ordena por relevancia antes de popularidad (`server/publicCatalog.ts`). Esto cubre muchos desacuerdos TMDB/IMDb, pero todavía no es una consulta directa a la base de títulos de IMDb.
+- **Lectura de preferencias:** `useHiddenGenres` ya no lee `localStorage` durante el inicializador síncrono; hidrata después del primer paint y luego sincroniza servidor/pestañas.
+- **Recuperación HLS:** ante un `mediaError` fatal se intenta una recuperación in-place una vez por intento antes de escalar a proxy/failover; se registra el motivo.
+
+### Evidencia de validación de esta revisión
+
+- `npm run lint`: correcto (`tsc --noEmit`).
+- Pruebas dirigidas de VidSrc, catálogo, subtítulos e idiomas: **54/54** correctas.
+- `npm run build`: correcto; los avisos de chunks grandes corresponden al reproductor HLS/dash cargado bajo demanda.
+- Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
+- Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
+- Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
+- La suite completa terminó con **807/810** pruebas correctas; las 3 fallidas pertenecen a la integración viva de Cinecalidad, que respondió una página sin poster/episodios, no a los módulos modificados. La suite previa había pasado 809/809 antes de esta validación.
+
+### Aún pendiente
+
+- Validación de identidad del vídeo servido más allá del idioma: comparar título/alias/año/duración o metadatos del proveedor cuando estén disponibles, y registrar con mayor detalle por qué se acepta/descarta cada candidato.
+- Estrategia segura de preload del hero/LCP dinámico y medición en perfil de navegador limpio.
+- Auditoría visual completa con capturas de todas las rutas, especialmente `/admin`, y pruebas táctiles en dispositivos reales.
+- E2E final de reproducción con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
+- Push de `b2d2a3c` y actualización final de esta lista con enlaces al informe.
 
 ## Prioridad P0 — integridad de reproducción
 
@@ -24,11 +66,11 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Exponer la etiqueta/idioma detectado en la fuente para que el selector no afirme “inglés” cuando el stream es coreano o indio.
 - Añadir pruebas unitarias para el parseo de etiquetas, el ranking con preferencia `en`/`es` y el comportamiento sin pistas HLS.
 
-### 2. Evitar contenido equivocado (caso `La isla olvidada`)
+### 2. Evitar contenido equivocado (caso `La isla olvidada`) — filtro de idioma aplicado; identidad completa pendiente
 
-- El resolver actual acepta el primer HLS técnicamente reproducible y no comprueba identidad de contenido.
-- Investigar una validación segura antes de aceptar VidSrc: título/alias/año de TMDB frente a metadatos disponibles del proveedor, nombre de archivo, duración y/o respuesta del reproductor.
-- Si una fuente tiene una etiqueta de idioma incompatible o señales claras de otra obra, no seleccionarla automáticamente; continuar con otro candidato/proveedor o mostrar que no hay fuente fiable.
+- El resolver ya no acepta una etiqueta de idioma explícitamente incompatible cuando se conoce el idioma original TMDB y no hay una pista doblada válida. En la prueba real de TMDB `1465063`, la fuente `[Korean]` dejó `sources: []` en vez de presentarse como inglés.
+- Falta una validación de identidad independiente del idioma: título/alias/año de TMDB frente a metadatos disponibles del proveedor, nombre de archivo, duración y/o respuesta del reproductor.
+- Si una fuente tiene señales claras de otra obra, no seleccionarla automáticamente; continuar con otro candidato/proveedor o mostrar que no hay fuente fiable.
 - Nunca ocultar la incertidumbre: registrar por qué se descartó o aceptó cada candidato.
 - Añadir una prueba de regresión para TMDB `1465063` que impida presentar como inglés una fuente etiquetada `[Korean]`.
 - Validar también una obra coreana legítima para no romper títulos cuyo audio original no es inglés.
@@ -56,7 +98,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ### 5. No cambiar de servidor durante una reproducción sana
 
 - Auditar los eventos HLS `fatal`, `waiting`, `stalled`, `mediaError` y `networkError`.
-- Separar errores recuperables de fallos reales: intentar recuperación HLS (`recoverMediaError`/reintento acotado) antes de cambiar de servidor cuando proceda.
+- Separar errores recuperables de fallos reales: `HLSPlayerModal` intenta `recoverMediaError` una vez por intento antes de cambiar de servidor cuando procede.
 - Conservar el intento de proxy como segunda oportunidad, pero no saltar de servidor por un evento transitorio.
 - Mantener el watchdog de congelación de 20 s solo cuando el playhead no avanza de verdad; comprobar que no se dispara durante pausas, cambios de pestaña o buffering normal.
 - Registrar en cada failover: servidor, URL, evento HLS, estado `readyState`, tiempo sin avance y destino elegido.
@@ -123,4 +165,3 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Comprobar `git diff`, eliminar artefactos temporales y dejar el worktree limpio con solo la última versión solicitada.
 - No incluir `.env`, tokens, dumps ni capturas temporales en el commit.
 - Actualizar este documento marcando cada punto completado y enlazando el informe final.
-

@@ -221,7 +221,9 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
         id: "for-you",
         title: "Recomendados para ti",
         reason: "top_affinity",
-        shows: shuffle(visiblePersonalized).slice(0, 16),
+        // Keep the database ranking stable. Randomizing on every request made
+        // the home screen reorder cards after a reload or a background fetch.
+        shows: visiblePersonalized.slice(0, 16),
       });
     }
 
@@ -248,7 +250,7 @@ recommendationsRouter.get("/", optionalAuth, async (req: AuthRequest, res: Respo
         id: "discovery",
         title: "Descubre algo nuevo",
         reason: "discovery",
-        shows: shuffle(visibleDiscovery).slice(0, 16),
+        shows: visibleDiscovery.slice(0, 16),
       });
     }
 
@@ -328,9 +330,9 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
     const visibleAnime = visible(popularAnime);
     const visibleMovies = visible(topMoviesSeries);
     const visibleTrending = visible(trendingAll);
-    const heroPick = visibleHeroPicks.length > 0
-      ? visibleHeroPicks[Math.floor(Math.random() * Math.min(5, visibleHeroPicks.length))]
-      : visibleTrending[0] || null;
+    // A recommendation response is a snapshot. Pick the ranked first item so
+    // a page reload does not silently swap the large hero artwork.
+    const heroPick = visibleHeroPicks[0] || visibleTrending[0] || null;
 
     return {
       hero: heroPick,
@@ -355,18 +357,6 @@ async function getGuestRecommendations(): Promise<{ hero: any | null; rails: Rec
   } catch {
     return { hero: null, rails: [] };
   }
-}
-
-/**
- * Mezcla aleatoria leve para dar dinamismo a las recomendaciones
- */
-function shuffle<T>(array: T[]): T[] {
-  const arr = [...array];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 export { recommendationsRouter };

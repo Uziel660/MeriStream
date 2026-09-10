@@ -25,6 +25,41 @@ function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anim
     : null;
 }
 
+async function fetchDetailJson(url: string, init?: RequestInit): Promise<ShowDetail> {
+  let lastError: unknown;
+  // Cloudflared can briefly reset an idle connection while the app is being
+  // opened on mobile. A short retry avoids turning that transient reset into
+  // the browser's unhelpful generic “Failed to fetch” message.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = payload && typeof payload === 'object' && 'error' in payload
+          ? String((payload as { error?: unknown }).error || '')
+          : '';
+        throw new Error(message || `No se pudo cargar la ficha (HTTP ${response.status}).`);
+      }
+      return payload as ShowDetail;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 350));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  if (lastError instanceof Error && lastError.name === 'AbortError') {
+    throw new Error('El servidor tardó demasiado en responder. Vuelve a intentarlo.');
+  }
+  if (lastError instanceof TypeError) {
+    throw new Error('No se pudo conectar con MeriStream. Comprueba el túnel e inténtalo de nuevo.');
+  }
+  throw lastError instanceof Error ? lastError : new Error('No se pudo cargar la información del título.');
+}
+
 interface MediaDetailsModalProps {
   showId: string | null;
   isOpen?: boolean;
@@ -73,13 +108,12 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const publicIdentity = parsePublicCatalogId(showId);
     const detailUrl = publicIdentity
       ? `/api/v1/catalog/public/${publicIdentity.kind}/${publicIdentity.tmdbId}`
-      : `/api/v1/shows/${showId}`;
+      : `/api/v1/shows/${encodeURIComponent(showId)}`;
 
     const personalKey = getAppPreferences(userId).tmdbApiKey.trim();
-    fetch(detailUrl, personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined)
-      .then(async (res) => {
-        if (!res.ok) throw new Error('No se pudo cargar la información del título.');
-        const localData = await res.json() as ShowDetail;
+    const requestInit = personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined;
+    fetchDetailJson(detailUrl, requestInit)
+      .then(async (localData) => {
         // Las tarjetas locales conservan los links reproducibles, pero algunas
         // fueron importadas con el título del proveedor en inglés. Cuando hay
         // TMDB ID, hidratar solo la presentación con la ficha es-419 canónica;
@@ -92,7 +126,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               ? 'anime'
               : 'series';
           try {
-            const localizedResponse = await fetch(`/api/v1/catalog/public/${publicKind}/${localData.tmdb_id}`, personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined);
+            const localizedResponse = await fetch(`/api/v1/catalog/public/${publicKind}/${localData.tmdb_id}`, requestInit);
             if (localizedResponse.ok) {
               const localized = await localizedResponse.json() as Partial<ShowDetail>;
               return {

@@ -612,6 +612,13 @@ body {
     min-height: 0 !important;
     margin-top: -4.8rem !important;
   }
+  /* The legacy mobile stylesheet changes the art wrapper to a short,
+     in-flow block. Restore the full-bleed layer here so the hero artwork
+     continues behind the title/actions instead of ending halfway down. */
+  .feature-art {
+    position: absolute !important;
+    height: auto !important;
+  }
   .feature-image { object-position: 58% 20% !important; }
   .feature-shade {
     background:

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Eye, EyeOff, Gauge, Palette, Server, X } from 'lucide-react';
 import {
   APP_PREFERENCES_EVENT,
@@ -58,6 +59,18 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, userId]);
 
+  // The header is sticky and uses backdrop-filter. Rendering the dialog inside
+  // it makes `position: fixed` inherit the header's containing block in some
+  // browsers, leaving the panel pinned to the top of the page. Keep the modal
+  // in the document root and lock the page behind it while it is open.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   const toggleLanguage = (field: 'preferredLanguages' | 'preferredSubtitleLanguages', language: string) => {
     setPreferences((current) => {
       const values = current[field].includes(language)
@@ -87,7 +100,7 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
     document.documentElement.dataset.msStyle = DEFAULT_APP_PREFERENCES.interfaceStyle;
   };
 
-  return (
+  return createPortal((
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
       role="dialog"
@@ -95,7 +108,7 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
       aria-labelledby="preferences-title"
       onMouseDown={(event) => { if (event.target === event.currentTarget) closeWithoutSaving(); }}
     >
-      <section className="w-full max-w-xl max-h-[min(94vh,46rem)] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
+      <section className="my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">MeriStream</p>
@@ -237,5 +250,5 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
         </div>
       </section>
     </div>
-  );
+  ), document.body);
 }

@@ -45,6 +45,26 @@ const HOME_GENRE_MAX_ITEMS = 12;
 // de recomendaciones varias veces sin cambiar el resultado visible.
 type RecommendationsResponse = Awaited<ReturnType<typeof api.getRecommendations>>;
 const recommendationInFlight = new Map<string, Promise<RecommendationsResponse>>();
+const RECOMMENDATION_CACHE_PREFIX = 'meristream_recommendations_v1:';
+
+function readRecommendationCache(userKey: string): RecommendationsResponse | null {
+  try {
+    const raw = sessionStorage.getItem(`${RECOMMENDATION_CACHE_PREFIX}${userKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RecommendationsResponse;
+    return parsed && Array.isArray(parsed.rails) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRecommendationCache(userKey: string, value: RecommendationsResponse): void {
+  try {
+    sessionStorage.setItem(`${RECOMMENDATION_CACHE_PREFIX}${userKey}`, JSON.stringify(value));
+  } catch {
+    // A full/private browsing storage must never block the catalog.
+  }
+}
 
 function requestRecommendationsOnce(userKey: string): Promise<RecommendationsResponse> {
   const existing = recommendationInFlight.get(userKey);
@@ -56,11 +76,10 @@ function requestRecommendationsOnce(userKey: string): Promise<RecommendationsRes
   recommendationInFlight.set(userKey, next);
   return next;
 }
-// Inicio mantiene más metadata disponible para repartirla entre sus secciones,
+// Inicio mantiene suficiente metadata para repartirla entre sus secciones,
 // pero las imágenes siguen siendo lazy y solo las cercanas al viewport se
-// descargan. Dos lotes respetan el límite seguro de 100 del endpoint público.
+// descargan. La primera respuesta es un snapshot estable de 100 resultados.
 const HOME_CATALOG_FIRST_BATCH_SIZE = 100;
-const HOME_CATALOG_REMAINING_BATCH_SIZE = 50;
 // The unified backend batch spans three TMDB pages per kind (20 rows each).
 // Advance by that width when loading the next batch so pages do not overlap.
 const PUBLIC_CATALOG_PAGE_STEP = 3;
@@ -710,11 +729,16 @@ export function App() {
   }, [isAuthenticated, user]);
 
   // Cargar rieles de recomendación personalizadas del algoritmo y el Hero Pick
-  const fetchRecommendations = useCallback(async () => {
+  const fetchRecommendations = useCallback(async (forceRefresh = false) => {
     setIsLoadingRecs(true);
     try {
       const recommendationKey = user?.id ? String(user.id) : 'anonymous';
-      const res = await requestRecommendationsOnce(recommendationKey);
+      // Keep one recommendation snapshot for the browser session. The user
+      // can explicitly request a new snapshot with “Actualizar”; routine
+      // remounts/reloads must not reshuffle visible cards.
+      const cached = forceRefresh ? null : readRecommendationCache(recommendationKey);
+      const res = cached || await requestRecommendationsOnce(recommendationKey);
+      if (!cached) writeRecommendationCache(recommendationKey, res);
       const mappedHero = res?.hero ? mapRecommendationShow(res.hero) : null;
       // TMDB is the only public identity. Provider-only/local rows stay out
       // of the home hero even if an older recommendation response contains one.
@@ -989,24 +1013,20 @@ export function App() {
     return null;
   };
 
-  const preloadHomeCatalog = async (isBackground: boolean) => {
+  const preloadHomeCatalog = async () => {
     const firstBatch = await fetchFreshCatalog(
-      isBackground,
+      false,
       1,
       false,
       HOME_CATALOG_FIRST_BATCH_SIZE,
     );
     if (!firstBatch?.usedPublicCatalog || !firstBatch.hasMore) return;
 
-    // La primera respuesta ya deja Inicio usable. El segundo lote se añade en
-    // segundo plano para que el usuario no tenga que esperar 150 títulos antes
-    // de ver la pantalla, y solo contiene metadata sin precargar imágenes.
-    void fetchFreshCatalog(
-      true,
-      firstBatch.lastFetchedPage + 1,
-      true,
-      HOME_CATALOG_REMAINING_BATCH_SIZE,
-    );
+    // The first response is the complete initial snapshot for Inicio. Do not
+    // append a second batch in the background: changing `shows` after the
+    // screen is visible makes the hero and recommendation fallbacks move.
+    // Additional catalog pages are still loaded explicitly by the catalog's
+    // “Cargar más” controls.
   };
 
   const loadMorePublicCatalog = async () => {
@@ -1149,15 +1169,15 @@ export function App() {
             })) as Record<PublicCatalogKind, number>);
             setHasMorePublicCatalogByKind(Object.fromEntries(PUBLIC_CATALOG_KINDS.map((kind) => [kind, true])) as Record<PublicCatalogKind, boolean>);
             setIsLoading(false);
-            // Still fetch fresh in background
-            void preloadHomeCatalog(true);
+            // Keep the cached snapshot stable. A manual catalog refresh (or
+            // an explicit “Cargar más”) is what should replace/extend it.
             return;
           }
         }
       } catch {}
 
       // 2. No cache or expired: fetch normally
-      await preloadHomeCatalog(false);
+      await preloadHomeCatalog();
     } catch (e) {
       console.error('Error cargando catálogo:', e);
     } finally {
@@ -1771,6 +1791,10 @@ export function App() {
   useEffect(() => {
     const sentinel = autoLoadSentinelRef.current;
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    // During the initial render the sentinel is at the top of the empty
+    // document, so its generous root margin would otherwise request page 2
+    // before page 1 has even arrived.
+    if (isLoading || shows.length === 0) return;
     if (searchQuery.trim().length >= 2 || activeFilter === 'recommendations') return;
     // Explore owns a local sentinel because it has its own genre/year slice;
     // the global sentinel cannot know how many filtered cards are hidden.
@@ -1825,7 +1849,7 @@ export function App() {
     // The loader functions are intentionally read from the active render;
     // state changes above recreate the observer with the next cursor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategoryHasHiddenLocal, activeFilter, activePublicGenreId, activePublicGenreKey, activePublicKind, activeRemoteHasMore, activeRemoteLoading, exploreGenreId, exploreHasMore, exploreIsLoadingMore, filteredShows.length, gridPageSize, hasMorePublicCatalog, isLoadingMoreCatalog, searchQuery]);
+  }, [activeCategoryHasHiddenLocal, activeFilter, activePublicGenreId, activePublicGenreKey, activePublicKind, activeRemoteHasMore, activeRemoteLoading, exploreGenreId, exploreHasMore, exploreIsLoadingMore, filteredShows.length, gridPageSize, hasMorePublicCatalog, isLoading, isLoadingMoreCatalog, searchQuery, shows.length]);
 
   return (
     <div className="app-shell relative min-h-screen text-zinc-100 flex flex-col">
@@ -1954,7 +1978,7 @@ export function App() {
                     </div>
                     <button
                       type="button"
-                      onClick={fetchRecommendations}
+                      onClick={() => fetchRecommendations(true)}
                       className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-xs font-medium text-zinc-300 border border-zinc-800 transition shadow-sm hover:border-zinc-700"
                     >
                       <RefreshCw size={13} className={isLoadingRecs ? 'animate-spin text-amber-400' : ''} />

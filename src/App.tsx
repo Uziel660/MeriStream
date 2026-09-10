@@ -303,8 +303,46 @@ function takeUniqueHomeShows(items: Show[], usedKeys: Set<string>, limit = Numbe
   return selected;
 }
 
-function sortSearchResults(items: Show[]): Show[] {
+function searchRelevanceScore(show: Show, query: string): number {
+  const needle = normalizeTextStrict(query);
+  if (!needle) return 0;
+  const fields = [
+    { value: show.title, weight: 1000 },
+    ...(show.title_aliases || []).map((value) => ({ value, weight: 920 })),
+    { value: show.english_title, weight: 880 },
+    { value: show.original_title, weight: 840 },
+    { value: show.japanese_title, weight: 800 },
+  ];
+  let best = 0;
+  for (const field of fields) {
+    const value = normalizeTextStrict(String(field.value || ''));
+    if (!value) continue;
+    if (value === needle) best = Math.max(best, field.weight);
+    else if (value.startsWith(needle)) best = Math.max(best, field.weight - 100);
+    else if (value.includes(needle)) best = Math.max(best, field.weight - 220);
+  }
+  return best;
+}
+
+export function searchShowMatchesQuery(show: Show, query: string): boolean {
+  const needle = normalizeTextStrict(query);
+  if (!needle) return false;
+  return [
+    show.title,
+    ...(show.title_aliases || []),
+    show.english_title,
+    show.original_title,
+    show.japanese_title,
+  ].some((value) => normalizeTextStrict(String(value || '')).includes(needle));
+}
+
+function sortSearchResults(items: Show[], query = ''): Show[] {
   return [...items].sort((a, b) => {
+    if (query) {
+      const relevanceA = searchRelevanceScore(a, query);
+      const relevanceB = searchRelevanceScore(b, query);
+      if (relevanceB !== relevanceA) return relevanceB - relevanceA;
+    }
     const popularityA = Number.isFinite(Number(a.popularity)) ? Number(a.popularity) : -1;
     const popularityB = Number.isFinite(Number(b.popularity)) ? Number(b.popularity) : -1;
     if (popularityB !== popularityA) return popularityB - popularityA;
@@ -774,7 +812,7 @@ export function App() {
         const data = await publicRes.json();
         const list = Array.isArray(data) ? data : data.shows || [];
         const publicShows = mapPublicCatalogShows(list);
-        const sorted = sortSearchResults(publicShows);
+        const sorted = sortSearchResults(publicShows, query);
         writeTmdbSearchCache(query, sorted);
         setServerSearchResults(sorted);
       } catch (e: any) {
@@ -1381,13 +1419,21 @@ export function App() {
     // Si hay búsqueda activa, mostrar únicamente resultados canónicos de TMDB.
     if (searchQuery && searchQuery.trim().length >= 2) {
       const visibleServerSearchResults = serverSearchResults.filter((show) => !isShowHidden(show));
+      // Keep the canonical TMDB response authoritative, but let a locally
+      // imported row be found by its stored/IMDb-era aliases as well. The
+      // identity bridge only joins an unambiguous TMDB match; otherwise the
+      // local row remains a separate candidate instead of being guessed away.
+      const localSearchResults = result
+        .filter((show) => searchShowMatchesQuery(show, searchQuery))
+        .slice(0, 200);
       const seen = new Set<string>();
-      result = visibleServerSearchResults.filter((show) => {
+      result = mergeSearchCatalogRows(localSearchResults, visibleServerSearchResults).filter((show) => {
         const key = catalogIdentityKey(show);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
+      result = sortSearchResults(result, searchQuery.trim());
     } else {
       // Filtro por categoría únicamente cuando no hay búsqueda activa
       if (activeFilter !== 'all') {

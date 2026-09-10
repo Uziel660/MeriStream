@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeSearchCatalogRows } from "../App";
+import { mergeSearchCatalogRows, searchShowMatchesQuery } from "../App";
 
 const localBareMovie = {
   id: "legacy-larry",
@@ -30,6 +30,15 @@ const publicMovie = (id: number) => ({
 }) as any;
 
 describe("search catalog identity bridge", () => {
+  it("matches stored aliases and titles from another locale", () => {
+    expect(searchShowMatchesQuery({
+      ...localBareMovie,
+      title: "La isla olvidada",
+      title_aliases: ["Forgotten Island", "섬"],
+    }, "forgotten island")).toBe(true);
+    expect(searchShowMatchesQuery({ ...localBareMovie, title: "La isla olvidada" }, "fight club")).toBe(false);
+  });
+
   it("joins a bare legacy card to its unique public TMDB result", () => {
     const result = mergeSearchCatalogRows([localBareMovie], [publicMovie(59861)]);
 

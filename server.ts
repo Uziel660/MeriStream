@@ -1988,12 +1988,26 @@ async function startServer() {
         select: { id: true, title: true, category: true, tmdb_id: true, poster_url: true, year: true },
         orderBy: { updated_at: "desc" },
       });
+      const mediaConflicts = tmdbId === null || show.tmdb_id === tmdbId ? [] : await prisma.mediaItem.findMany({
+        where: { tmdb_id: tmdbId, kind: { in: isMovie ? ["movie"] : ["anime", "series"] } },
+        select: { id: true, title: true, kind: true, tmdb_id: true, poster_url: true, year: true },
+        orderBy: { updated_at: "desc" },
+      });
       const requestedMergeId = typeof req.body?.merge_show_id === "string" ? req.body.merge_show_id : undefined;
       if (conflicts.length > 0 && !requestedMergeId) {
         return res.status(409).json({
           code: "TMDB_CONFLICT",
           error: "Ya existe otra obra con ese TMDB ID.",
           conflicts,
+          requires_confirmation: true,
+        });
+      }
+      if (conflicts.length === 0 && mediaConflicts.length > 0 && !req.body?.allow_media_conflict) {
+        return res.status(409).json({
+          code: "TMDB_MEDIA_CONFLICT",
+          error: "Ya existe un registro canónico con ese TMDB ID.",
+          conflicts: [],
+          media_conflicts: mediaConflicts,
           requires_confirmation: true,
         });
       }

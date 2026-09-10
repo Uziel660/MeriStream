@@ -490,7 +490,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                           showId={show.id}
                           tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
                           kind={show.kind || show.category}
-                          compact
                           className="bg-black/45"
                         />
                       </div>

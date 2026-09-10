@@ -235,6 +235,28 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   const showServerSelector = servers.length > 1 || serverSelectorAlways || Boolean(playbackError) || deliveryState === 'error';
 
+  // Una respuesta lenta no es un fallo fatal. En ese caso detenemos el intento
+  // actual y dejamos que la persona decida si quiere reintentar esta fuente o
+  // probar otra, sin cambiar de servidor por su cuenta.
+  const requestManualServerChoice = useCallback((message: string) => {
+    if (directWatchdogRef.current) {
+      clearTimeout(directWatchdogRef.current);
+      directWatchdogRef.current = null;
+    }
+    if (blackScreenTimerRef.current) {
+      clearTimeout(blackScreenTimerRef.current);
+      blackScreenTimerRef.current = null;
+    }
+    if (stallFailoverTimerRef.current) {
+      clearTimeout(stallFailoverTimerRef.current);
+      stallFailoverTimerRef.current = null;
+    }
+    videoRef.current?.pause();
+    setFailoverNotice(null);
+    setPlaybackError(message);
+    setDeliveryState('awaiting_manual_choice');
+  }, []);
+
   // SELECTOR MANUAL: visible con >1 candidato para permitir elegir otra fuente
   // nativa cuando el watchdog o la resolución JIT marcan una fuente como caída.
 
@@ -1037,8 +1059,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     playbackConfirmedRef.current = false;
     loadStartMsRef.current = Date.now();
 
-    // Watchdog de pantalla negra: si tras 6.5s no arranca frames ni playback,
-    // registrar el fallo y avanzar al siguiente candidato nativo.
+    // Watchdog de pantalla negra: una espera larga no se considera un error
+    // fatal. Se pide una decisión explícita antes de probar otra fuente.
     blackScreenTimerRef.current = setTimeout(() => {
       if (attemptId !== attemptIdRef.current) return;
       if (!playbackConfirmedRef.current && activeServer) {
@@ -1050,13 +1072,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
           details: "El reproductor esperó >6.5s sin recibir frames ni iniciar reproducción (pantalla negra)",
         });
-        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
-        if (activeServerIndex < servers.length - 1) {
-          handleServerChange(activeServerIndex + 1, true);
-        } else {
-          setDeliveryState('error');
-          setPlaybackError(MSG_NO_SERVERS);
-        }
+        requestManualServerChoice('Este servidor está tardando en responder. ¿Quieres probar otro servidor?');
       }
     }, DIRECT_BLACK_SCREEN_MS);
 
@@ -1301,6 +1317,23 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             return;
           }
 
+          // HLS puede marcar como "fatal" un timeout de manifiesto o segmento.
+          // La espera prolongada sigue siendo una decisión manual, igual que
+          // el watchdog del directo; solo los errores fatales reales cambian de
+          // servidor automáticamente.
+          const hlsErrorText = `${String(data?.details || '')} ${String(data?.error?.message || '')}`;
+          if (data.type === 'networkError' && /timeout|timed[ -]?out/i.test(hlsErrorText)) {
+            api.reportPlayerEvent({
+              eventType: "playback_buffering",
+              provider: activeServer?.provider || "Servidor",
+              serverUrl: activeServer?.url || url,
+              mediaTitle: currentTitle,
+              details: `HLS tardó demasiado en responder (${data.details || 'timeout'}); se solicita decisión manual`,
+            });
+            requestManualServerChoice('Este servidor está tardando en responder. ¿Quieres probar otro servidor?');
+            return;
+          }
+
           if (recoverUnavailableLevel(data)) {
             console.warn('HLS variant unavailable; continuing with a lower quality level', data.level);
             return;
@@ -1485,29 +1518,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     directWatchdogRef.current = setTimeout(() => {
       if (attemptId !== attemptIdRef.current) return;
-      // Solo si el directo no produjo progreso ni manifest parsed.
+      // Solo si el directo no produjo progreso ni manifest parsed. La demora
+      // por sí sola no es fatal: no escalar a proxy ni cambiar de servidor.
       if (!playbackConfirmedRef.current) {
         directWatchdogRef.current = null;
-        if (canEscalateToProxy(activeServer) && !hasAttemptedMode(attemptedModesRef.current, activeServer.id, 'proxy')) {
-          console.warn("Direct stream sin confirmar, solicitando proxy...");
-          setDeliveryCapability(url, 'proxy_required', activeServer.provider);
-          setServers((prev) => {
-            const copy = [...prev];
-            if (copy[activeServerIndex]) {
-              copy[activeServerIndex] = { ...copy[activeServerIndex], delivery_mode: 'proxy_required' };
-            }
-            return copy;
-          });
-          attachSource(url);
-        } else {
-          // No es proxyable o ya se intentó proxy: avanzar al siguiente servidor si existe
-          if (activeServerIndex < servers.length - 1) {
-            handleServerChange(activeServerIndex + 1, true);
-          } else {
-            setDeliveryState('error');
-            setPlaybackError(MSG_NO_SERVERS);
-          }
-        }
+        requestManualServerChoice('Este servidor está tardando en responder. ¿Quieres probar otro servidor?');
       }
     }, DIRECT_WATCHDOG_MS);
 
@@ -1546,7 +1561,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       setDeliveryState('error');
       setPlaybackError(MSG_NO_SERVERS);
     }
-  }, [activeServer, activeServerIndex, servers.length, props.initialTime, props.title, media?.title]);
+  }, [activeServer, activeServerIndex, servers.length, props.initialTime, props.title, media?.title, requestManualServerChoice]);
 
   // CLAVE DE CONEXIÓN (punto 8): detecta cambios REALES de URL/generación/delivery,
   // no solo el índice. Una URL nueva en el mismo índice reconecta HLS.js.
@@ -1694,10 +1709,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       const stalledAtTime = video.currentTime;
       stallFailoverTimerRef.current = setTimeout(() => {
         stallFailoverTimerRef.current = null;
-        // Waiting is normal during a slow segment. Only move providers when the
-        // playhead has not advanced at all during the grace window and the
-        // element is still genuinely starved; a transient buffer gap must not
-        // restart the whole source cascade.
+        // Waiting is normal during a slow segment. Aunque el playhead siga
+        // detenido, no cambiamos de proveedor automáticamente: la decisión es
+        // del usuario cuando la espera supera la ventana de cortesía.
         if (
           listenerAttemptId !== attemptIdRef.current ||
           video.paused ||
@@ -1710,15 +1724,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           serverUrl: activeServer.url,
           mediaTitle: props.title || media?.title,
           durationBeforeErrorMs: Date.now() - loadStartMsRef.current,
-          details: "El stream quedó detenido durante la reproducción; se activa failover automático",
+          details: "El stream quedó detenido durante la reproducción; se solicita decisión manual",
         });
-        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
-        if (activeServerIndex < servers.length - 1) {
-          handleServerChange(activeServerIndex + 1, true);
-        } else {
-          setDeliveryState('error');
-          setPlaybackError(MSG_NO_SERVERS);
-        }
+        requestManualServerChoice('La reproducción lleva demasiado tiempo detenida. ¿Quieres probar otro servidor?');
       }, 20000);
     };
 
@@ -1872,7 +1880,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
       if (nativeListenersCleanupRef.current) nativeListenersCleanupRef.current = null;
     };
-  }, [activeServer, activeServerIndex, servers.length, props.title, media?.title]);
+  }, [activeServer, activeServerIndex, servers.length, props.title, media?.title, requestManualServerChoice]);
 
   // 5. ATAJOS DE TECLADO Y FULLSCREEN
   useEffect(() => {

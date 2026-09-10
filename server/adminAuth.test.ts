@@ -77,6 +77,11 @@ describe("adminAuth", () => {
     expect((res.cookie as any)).not.toHaveBeenCalled();
   });
 
+  it("tolera espacios o saltos de línea accidentales al pegar las credenciales", () => {
+    setAdminEnv();
+    expect(verifyAdminCredentials("  admin-test ", "\ncorrect-password\r\n")).toBe(true);
+  });
+
   it("emite una cookie HttpOnly de sesión al iniciar correctamente", () => {
     setAdminEnv();
     process.env.NODE_ENV = "production";

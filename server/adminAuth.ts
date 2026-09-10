@@ -11,7 +11,10 @@ interface AdminSessionPayload {
 
 function adminConfig() {
   const user = process.env.ADMIN_USER?.trim() || "";
-  const password = process.env.ADMIN_PASS || "";
+  // Environment files and clipboard pastes can carry an accidental newline
+  // around the secret. Credentials are entered as a single-line value in the
+  // admin form, so normalize the configured value once at the boundary.
+  const password = process.env.ADMIN_PASS?.trim() || "";
   const secret = process.env.ADMIN_SESSION_SECRET || "";
   return { user, password, secret };
 }
@@ -69,7 +72,7 @@ function safeEquals(left: string, right: string): boolean {
 export function verifyAdminCredentials(user: unknown, password: unknown): boolean {
   if (!isAdminConfigured() || typeof user !== "string" || typeof password !== "string") return false;
   const configured = adminConfig();
-  return safeEquals(user, configured.user) && safeEquals(password, configured.password);
+  return safeEquals(user.trim(), configured.user) && safeEquals(password.trim(), configured.password);
 }
 
 export function issueAdminSession(): string {

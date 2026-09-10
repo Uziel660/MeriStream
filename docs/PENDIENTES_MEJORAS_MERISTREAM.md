@@ -5,7 +5,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Estado de partida
 
 - Rama de trabajo: `lastversion`.
-- Último commit publicado de esta revisión: `072a10a perf: reduce VidSrc and LatAnime playback startup` (incluye la optimización más reciente de identidad, reproducción, responsive y rendimiento).
+- Último commit publicado de esta revisión: `6d1d833 perf: parallelize provider fallbacks and bound slow APIs` (incluye la optimización común de servidores y el presupuesto no bloqueante para VidSrc).
 - El worktree estaba limpio al crear esta lista.
 - El `.env` de `E:\merinuevo\.env` ya se copió al proyecto local. Mantenerlo ignorado por Git y no exponer sus valores.
 - El servidor local de desarrollo se probó en `http://localhost:3010/`.

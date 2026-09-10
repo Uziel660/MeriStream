@@ -31,3 +31,23 @@ test('TMDB identity prevents legacy duplicate links from leaking into Overflow',
   const cascade = await cascadeResponse.json();
   expect(cascade.media_item_ids).toEqual(['cmtqj6jwe25b8butggh2297ae']);
 });
+
+test('VidSrc no publica como inglés una fuente etiquetada coreana para TMDB 1465063', async ({ page }) => {
+  test.setTimeout(90_000);
+  const detailResponse = await page.request.get(`${BASE_URL}/api/v1/catalog/public/movie/1465063`);
+  expect(detailResponse.ok()).toBeTruthy();
+  const detail = await detailResponse.json();
+  expect(detail.tmdb_id).toBe(1465063);
+  expect(detail.original_language).toBe('en');
+
+  const gatewayResponse = await page.request.get(
+    `${BASE_URL}/api/v1/providers/movie/1465063?audio=en&subtitles=es,en&originalLanguage=en`,
+  );
+  expect(gatewayResponse.ok()).toBeTruthy();
+  const gateway = await gatewayResponse.json();
+  const vidsrc = (gateway.sources || []).filter((source: any) => source.provider === 'vidsrc');
+  // A legitimate English/dubbed source may still appear when mirrors change;
+  // the regression is that a concrete Korean-only source must never be exposed
+  // as the selected English stream.
+  expect(vidsrc.every((source: any) => source.audioLanguage !== 'ko')).toBeTruthy();
+});

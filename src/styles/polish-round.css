@@ -64,6 +64,11 @@
   background: linear-gradient(180deg, rgba(7,8,13,.86) 0%, rgba(7,8,13,.48) 58%, rgba(7,8,13,.08) 88%, transparent 100%) !important;
 }
 
+/* Admin login is also a mobile surface: keep fields and the primary action
+   comfortably tappable without changing the compact desktop composition. */
+.admin-login-input { min-height: 44px; }
+.admin-login-submit { min-height: 44px; }
+
 /* Hero desktop: keep the image dominant but stop the title from swallowing the artwork. */
 .feature {
   min-height: clamp(34rem, 79vh, 56rem) !important;

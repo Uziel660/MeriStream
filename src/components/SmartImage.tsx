@@ -19,12 +19,10 @@ export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
   ({ src, sources = [], alt, fallback = null, onError, srcSet, ...rest }, ref) => {
     const [failed, setFailed] = useState(false);
     const [sourceIndex, setSourceIndex] = useState(0);
-    // React 19 warns when `fetchPriority` is forwarded to the DOM by this
-    // wrapper. Keep the hint for callers' type compatibility while omitting
-    // it from the rendered element; lazy loading/decoding provide the same
-    // low-end-device behaviour without a console warning.
+    // Preserve the browser's priority hint. The hero relies on
+    // `fetchPriority="high"` to make its LCP image discoverable immediately;
+    // dropping it inside this resilience wrapper silently defeated that hint.
     const { fetchPriority, ...safeRest } = rest;
-    void fetchPriority;
 
     const sourceSignature = [src || '', ...sources].join('\u0001');
     const candidateSources = useMemo(() => {
@@ -58,6 +56,7 @@ export const SmartImage = React.forwardRef<HTMLImageElement, SmartImageProps>(
         alt={alt}
         loading={safeRest.loading ?? 'lazy'}
         decoding={safeRest.decoding ?? 'async'}
+        fetchPriority={fetchPriority}
         srcSet={sourceIndex === 0 ? srcSet : undefined}
         onError={(event) => {
           if (sourceIndex < candidateSources.length - 1) {

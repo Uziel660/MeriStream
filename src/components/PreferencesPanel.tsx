@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Check, Eye, EyeOff, Gauge, Server, X } from 'lucide-react';
+import { Check, Eye, EyeOff, Gauge, Palette, Server, X } from 'lucide-react';
 import {
   APP_PREFERENCES_EVENT,
   DEFAULT_APP_PREFERENCES,
   getAppPreferences,
   saveAppPreferences,
   type AppPreferences,
+  type InterfaceStyle,
   type PerformanceMode,
   type PreferredQuality,
   type SubtitlePosition,
@@ -27,6 +28,13 @@ const LANGUAGE_OPTIONS = [
   ['pt', 'Portugués'],
 ] as const;
 
+const INTERFACE_STYLES: Array<{ value: InterfaceStyle; label: string; description: string }> = [
+  { value: 'cinematic', label: 'Cinemático', description: 'La identidad actual de MeriStream: oscura, cálida y enfocada en el contenido.' },
+  { value: 'glass', label: 'Glass', description: 'Cristal suave, superficies flotantes y una sensación más ligera y moderna.' },
+  { value: 'noir', label: 'Noir', description: 'Minimalista y editorial: menos brillo, líneas más rectas y máximo foco.' },
+  { value: 'aurora', label: 'Aurora', description: 'Cian y violeta, más profundidad y acentos luminosos sin perder legibilidad.' },
+];
+
 export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
   const [preferences, setPreferences] = useState<AppPreferences>(() => getAppPreferences(userId));
   const [showTmdbKey, setShowTmdbKey] = useState(false);
@@ -40,6 +48,16 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
     return () => window.removeEventListener(APP_PREFERENCES_EVENT, sync);
   }, [userId]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      document.documentElement.dataset.msStyle = getAppPreferences(userId).interfaceStyle;
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, userId]);
+
   const toggleLanguage = (field: 'preferredLanguages' | 'preferredSubtitleLanguages', language: string) => {
     setPreferences((current) => {
       const values = current[field].includes(language)
@@ -49,9 +67,24 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
     });
   };
 
+  const previewInterfaceStyle = (style: InterfaceStyle) => {
+    setPreferences((current) => ({ ...current, interfaceStyle: style }));
+    document.documentElement.dataset.msStyle = style;
+  };
+
+  const closeWithoutSaving = () => {
+    document.documentElement.dataset.msStyle = getAppPreferences(userId).interfaceStyle;
+    onClose();
+  };
+
   const save = () => {
     saveAppPreferences(userId, preferences);
     onClose();
+  };
+
+  const restoreDefaults = () => {
+    setPreferences({ ...DEFAULT_APP_PREFERENCES });
+    document.documentElement.dataset.msStyle = DEFAULT_APP_PREFERENCES.interfaceStyle;
   };
 
   return (
@@ -60,19 +93,44 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-title"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) closeWithoutSaving(); }}
     >
       <section className="w-full max-w-xl max-h-[min(94vh,46rem)] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">MeriStream</p>
             <h2 id="preferences-title" className="mt-1 text-xl font-semibold">Preferencias</h2>
-            <p className="mt-1 text-xs text-zinc-400">Tu reproducción, idiomas y rendimiento. Se guardan por perfil en este dispositivo.</p>
+            <p className="mt-1 text-xs text-zinc-400">Apariencia, reproducción, idiomas y rendimiento. Se guardan por perfil en este dispositivo.</p>
           </div>
-          <button type="button" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" onClick={onClose} aria-label="Cerrar preferencias"><X size={18} /></button>
+          <button type="button" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" onClick={closeWithoutSaving} aria-label="Cerrar preferencias"><X size={18} /></button>
         </div>
 
         <div className="mt-6 space-y-7">
+          <fieldset>
+            <legend className="flex items-center gap-2 text-sm font-semibold"><Palette size={16} className="text-amber-400" />Estilo de interfaz</legend>
+            <p className="mt-1 text-xs text-zinc-500">Cambia la apariencia completa de MeriStream al instante. Se guarda solo al pulsar “Guardar preferencias”.</p>
+            <div className="interface-style-grid">
+              {INTERFACE_STYLES.map((style) => {
+                const checked = preferences.interfaceStyle === style.value;
+                return (
+                  <button
+                    key={style.value}
+                    type="button"
+                    className="interface-style-choice"
+                    aria-pressed={checked}
+                    onClick={() => previewInterfaceStyle(style.value)}
+                  >
+                    <span className="interface-style-preview" data-preview={style.value} aria-hidden="true"><span /></span>
+                    <span className="interface-style-copy">
+                      <span><strong>{style.label}</strong><small>{style.description}</small></span>
+                      {checked && <Check size={15} className="interface-style-check" aria-hidden="true" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
           <fieldset>
             <legend className="text-sm font-semibold">Idiomas de audio prioritarios</legend>
             <p className="mt-1 text-xs text-zinc-500">MeriStream ordenará primero estas pistas y fuentes cuando estén disponibles.</p>
@@ -115,30 +173,12 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-xs font-medium text-zinc-300">
                   Horizontal: {preferences.subtitlePositionX}%
-                  <input
-                    type="range"
-                    min="8"
-                    max="92"
-                    step="1"
-                    value={preferences.subtitlePositionX}
-                    onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionX: Number(event.target.value) }))}
-                    className="mt-2 w-full accent-emerald-400"
-                    aria-label="Posición horizontal de subtítulos"
-                  />
+                  <input type="range" min="8" max="92" step="1" value={preferences.subtitlePositionX} onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionX: Number(event.target.value) }))} className="mt-2 w-full accent-emerald-400" aria-label="Posición horizontal de subtítulos" />
                   <span className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Izquierda</span><span>Derecha</span></span>
                 </label>
                 <label className="text-xs font-medium text-zinc-300">
                   Vertical: {preferences.subtitlePositionY}%
-                  <input
-                    type="range"
-                    min="8"
-                    max="92"
-                    step="1"
-                    value={preferences.subtitlePositionY}
-                    onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionY: Number(event.target.value) }))}
-                    className="mt-2 w-full accent-emerald-400"
-                    aria-label="Posición vertical de subtítulos"
-                  />
+                  <input type="range" min="8" max="92" step="1" value={preferences.subtitlePositionY} onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionY: Number(event.target.value) }))} className="mt-2 w-full accent-emerald-400" aria-label="Posición vertical de subtítulos" />
                   <span className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Arriba</span><span>Abajo</span></span>
                 </label>
               </div>
@@ -155,10 +195,7 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
               <span className="relative mt-2 block">
                 <Gauge size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                 <select value={preferences.performanceMode} onChange={(event) => setPreferences((current) => ({ ...current, performanceMode: event.target.value as PerformanceMode }))} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 py-2.5 pl-9 pr-3 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400">
-                  <option value="auto">Automático</option>
-                  <option value="quality">Calidad visual</option>
-                  <option value="balanced">Equilibrado</option>
-                  <option value="low">Dispositivo de gama baja</option>
+                  <option value="auto">Automático</option><option value="quality">Calidad visual</option><option value="balanced">Equilibrado</option><option value="low">Dispositivo de gama baja</option>
                 </select>
               </span>
             </label>
@@ -185,19 +222,8 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
               </label>
               <label className="text-sm font-semibold">Clave personal de TMDB
                 <span className="relative mt-2 block">
-                  <input
-                    type={showTmdbKey ? 'text' : 'password'}
-                    value={preferences.tmdbApiKey}
-                    onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKey: event.target.value.slice(0, 128) }))}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="Opcional"
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 pr-10 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400"
-                    aria-describedby="tmdb-key-help"
-                  />
-                  <button type="button" onClick={() => setShowTmdbKey((value) => !value)} className="absolute inset-y-0 right-1 grid w-8 place-items-center text-zinc-400 hover:text-white" aria-label={showTmdbKey ? 'Ocultar clave de TMDB' : 'Mostrar clave de TMDB'}>
-                    {showTmdbKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+                  <input type={showTmdbKey ? 'text' : 'password'} value={preferences.tmdbApiKey} onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKey: event.target.value.slice(0, 128) }))} autoComplete="off" spellCheck={false} placeholder="Opcional" className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 pr-10 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400" aria-describedby="tmdb-key-help" />
+                  <button type="button" onClick={() => setShowTmdbKey((value) => !value)} className="absolute inset-y-0 right-1 grid w-8 place-items-center text-zinc-400 hover:text-white" aria-label={showTmdbKey ? 'Ocultar clave de TMDB' : 'Mostrar clave de TMDB'}>{showTmdbKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                 </span>
                 <span id="tmdb-key-help" className="mt-1 block text-[10px] font-normal leading-relaxed text-zinc-500">Solo se envía a endpoints de catálogo de MeriStream. Vacío = configuración del servidor.</span>
               </label>
@@ -206,7 +232,7 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
         </div>
 
         <div className="sticky bottom-0 -mx-5 mt-7 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-950/95 px-5 pt-4 pb-[max(0rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:-mx-6 sm:px-6">
-          <button type="button" onClick={() => { setPreferences({ ...DEFAULT_APP_PREFERENCES }); }} className="rounded-lg px-3 py-2.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white">Restaurar</button>
+          <button type="button" onClick={restoreDefaults} className="rounded-lg px-3 py-2.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white">Restaurar</button>
           <button type="button" onClick={save} className="rounded-lg bg-amber-400 px-4 py-2.5 text-xs font-semibold text-zinc-950 hover:bg-amber-300">Guardar preferencias</button>
         </div>
       </section>

@@ -2,6 +2,8 @@
 
 Esta rama incluye todo el código y un paquete cifrado con el `.env`, un dump fresco de PostgreSQL y los datos operativos locales. No hay secretos legibles en GitHub: el paquete usa AES-256 y su contraseña se transmite por separado.
 
+Para la migración completa, sigue [la guía 1 a 1](GUIA-1-A-1-RESTAURAR-OTRA-PC.md).
+
 ## En la nueva PC
 
 1. Instala Git, Node.js LTS y Docker Desktop.

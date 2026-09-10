@@ -26,7 +26,9 @@ function Get-SevenZip {
     if (-not $candidates) {
         throw 'No se encontró 7-Zip. Instala Docker Desktop o 7-Zip y vuelve a ejecutar el script.'
     }
-    return $candidates[0]
+    # A single pipeline result is unwrapped to a string by PowerShell. Wrap it
+    # again before indexing so the full executable path is returned.
+    return @($candidates)[0]
 }
 
 if (-not (Test-Path -LiteralPath $BundlePath -PathType Leaf)) {

@@ -67,3 +67,14 @@ Esta lista reúne las mejoras solicitadas y sirve como checklist persistente del
 - [x] Integrar PR #60 (tests de géneros ocultos y dependencias jsdom/testing-library).
 - [x] Integrar PR #63 (casos límite de etiquetas de episodios).
 - [x] Integrar PR #64 (refactor del verificador, conservando el modo de identidad del catálogo).
+
+## Control administrativo — ampliación solicitada
+
+- [x] Editor único para todos los identificadores persistidos (TMDB, IMDb, MAL, AniList, Kitsu, AniDB y TVDB cuando exista).
+- [x] Buscar una obra por cualquier identificador y mostrar la ficha externa antes de guardar.
+- [x] Completar automáticamente los demás identificadores a partir del ID elegido, con confirmación explícita.
+- [x] Mostrar conflictos exactos y coincidencias de título para decidir fusionar o conservar ambas obras.
+- [x] Fusión manual forzada desde el catálogo, con selección de obra origen/destino y confirmación.
+- [x] Gestión visible por temporadas y edición de coordenadas de episodio/fuente desde el editor.
+- [x] Mantener sincronizados los identificadores entre `Show` y `MediaItem`.
+- [ ] Añadir edición de títulos, reordenación y eliminación de episodios canónicos sin depender de una fuente.

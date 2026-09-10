@@ -1105,6 +1105,8 @@ type LiteShowsOptions = {
   sort?: "recientes" | "rating" | "anio" | "az";
   /** Admin identity queue: only works that still lack a TMDB id. */
   missingTmdb?: boolean;
+  /** Admin identity queue for any selected external namespace. */
+  identity?: "missing_tmdb" | "missing_any" | "missing_imdb" | "missing_mal" | "missing_anilist" | "missing_kitsu" | "missing_anidb" | "missing_tvdb";
 };
 
 /**
@@ -1301,6 +1303,10 @@ export async function getShowsFromDbLite(
         Prisma.sql`LOWER("japanese_title") LIKE ${pattern}`,
         Prisma.sql`LOWER("original_title") LIKE ${pattern}`,
         Prisma.sql`LOWER(genres) LIKE ${pattern}`,
+        Prisma.sql`LOWER(COALESCE(imdb_id, '')) LIKE ${pattern}`,
+        Prisma.sql`LOWER(COALESCE(anilist_id, '')) LIKE ${pattern}`,
+        Prisma.sql`LOWER(COALESCE(kitsu_id, '')) LIKE ${pattern}`,
+        Prisma.sql`LOWER(COALESCE(anidb_id, '')) LIKE ${pattern}`,
         ...titleFields.map((field) => Prisma.sql`${field} LIKE ${pattern}`),
       ];
       return Prisma.sql`(${Prisma.join(fields, " OR ")})`;
@@ -1309,6 +1315,10 @@ export async function getShowsFromDbLite(
     const numericTmdbId = /^\d+$/.test(s) ? Number(s) : null;
     if (numericTmdbId && Number.isInteger(numericTmdbId) && numericTmdbId > 0) {
       likeConditions.push(Prisma.sql`tmdb_id = ${numericTmdbId}`);
+      likeConditions.push(Prisma.sql`tvdb_id = ${numericTmdbId}`);
+      likeConditions.push(Prisma.sql`mal_id = ${numericTmdbId}`);
+      likeConditions.push(Prisma.sql`anilist_id = ${String(numericTmdbId)}`);
+      likeConditions.push(Prisma.sql`anidb_id = ${String(numericTmdbId)}`);
     }
     const orLikeSql = Prisma.join(likeConditions, " OR ");
     const categoryFilter = category
@@ -1320,7 +1330,14 @@ export async function getShowsFromDbLite(
     const yearFilter = Number.isInteger(options.year) && Number(options.year) > 0
       ? Prisma.sql`AND year = ${Number(options.year)}`
       : Prisma.empty;
-    const missingTmdbFilter = options.missingTmdb ? Prisma.sql`AND tmdb_id IS NULL` : Prisma.empty;
+    const missingIdentityField = options.identity?.startsWith("missing_") ? options.identity.slice("missing_".length) : null;
+    const missingTmdbFilter = options.missingTmdb || options.identity === "missing_tmdb"
+      ? Prisma.sql`AND tmdb_id IS NULL`
+      : options.identity === "missing_any"
+        ? Prisma.sql`AND tmdb_id IS NULL AND imdb_id IS NULL AND tvdb_id IS NULL AND mal_id IS NULL AND anilist_id IS NULL AND kitsu_id IS NULL AND anidb_id IS NULL`
+        : missingIdentityField && ["imdb", "mal", "anilist", "kitsu", "anidb", "tvdb"].includes(missingIdentityField)
+          ? Prisma.sql`AND ${Prisma.raw(`"${missingIdentityField}_id"`)} IS NULL`
+          : Prisma.empty;
     const limitOffset = onlyMainPath || options.dedupe
       ? Prisma.empty
       : Prisma.sql`LIMIT ${pageSize} OFFSET ${skip}`;
@@ -1345,7 +1362,7 @@ export async function getShowsFromDbLite(
     const showsQuery = Prisma.sql`
       SELECT
         "id", "title", "original_title", "japanese_title", "english_title",
-        "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
+        "normalized_title", "base_normalized_title", "tmdb_id", "imdb_id", "tvdb_id", "mal_id", "anilist_id", "kitsu_id", "anidb_id", "description", "poster_url", "banner_url",
         "poster_path", "backdrop_path", "category", "rating", "year",
         "status", "genres", "created_at",
         ts_rank(search_vector, plainto_tsquery('simple', ${tsQuery})) AS rank
@@ -1419,7 +1436,7 @@ export async function getShowsFromDbLite(
           fuzzyShows = await prisma.$queryRaw(Prisma.sql`
             SELECT
               "id", "title", "original_title", "japanese_title", "english_title",
-              "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
+              "normalized_title", "base_normalized_title", "tmdb_id", "imdb_id", "tvdb_id", "mal_id", "anilist_id", "kitsu_id", "anidb_id", "description", "poster_url", "banner_url",
               "poster_path", "backdrop_path", "category", "rating", "year",
               "status", "genres", "created_at", ${similarityScore} AS rank
             FROM "Show"
@@ -1449,7 +1466,7 @@ export async function getShowsFromDbLite(
           fuzzyShows = await prisma.$queryRaw(Prisma.sql`
             SELECT
               "id", "title", "original_title", "japanese_title", "english_title",
-              "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
+              "normalized_title", "base_normalized_title", "tmdb_id", "imdb_id", "tvdb_id", "mal_id", "anilist_id", "kitsu_id", "anidb_id", "description", "poster_url", "banner_url",
               "poster_path", "backdrop_path", "category", "rating", "year",
               "status", "genres", "created_at", 0 AS rank
             FROM "Show"
@@ -1483,7 +1500,12 @@ export async function getShowsFromDbLite(
   if (Number.isInteger(options.year) && Number(options.year) > 0) {
     where.year = Number(options.year);
   }
-  if (options.missingTmdb) where.tmdb_id = null;
+  if (options.missingTmdb || options.identity === "missing_tmdb") where.tmdb_id = null;
+  if (options.identity === "missing_any") {
+    where = { ...where, tmdb_id: null, imdb_id: null, tvdb_id: null, mal_id: null, anilist_id: null, kitsu_id: null, anidb_id: null };
+  }
+  const selectedIdentity = options.identity?.startsWith("missing_") ? options.identity.slice("missing_".length) : null;
+  if (selectedIdentity && ["imdb", "mal", "anilist", "kitsu", "anidb", "tvdb"].includes(selectedIdentity)) where[`${selectedIdentity}_id`] = null;
 
   if (!onlyMainPath) {
     // Igual que en la búsqueda: la deduplicación debe ver todas las filas para
@@ -1505,6 +1527,12 @@ export async function getShowsFromDbLite(
           normalized_title: true,
           base_normalized_title: true,
           tmdb_id: true,
+          imdb_id: true,
+          tvdb_id: true,
+          mal_id: true,
+          anilist_id: true,
+          kitsu_id: true,
+          anidb_id: true,
           poster_url: true,
           banner_url: true,
           category: true,
@@ -1538,6 +1566,12 @@ export async function getShowsFromDbLite(
       normalized_title: true,
       base_normalized_title: true,
       tmdb_id: true,
+      imdb_id: true,
+      tvdb_id: true,
+      mal_id: true,
+      anilist_id: true,
+      kitsu_id: true,
+      anidb_id: true,
       description: true,
       poster_url: true,
       banner_url: true,
@@ -1607,6 +1641,10 @@ export interface UpdateShowPatch {
   mal_id?: number | string | null;
   anilist_id?: string | number | null;
   kitsu_id?: string | number | null;
+  anidb_id?: string | number | null;
+  imdb_id?: string | null;
+  tvdb_id?: number | string | null;
+  tmdb_id?: number | string | null;
   main_path_overrides?: unknown;
 }
 
@@ -1652,10 +1690,34 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
     }
     data.mal_id = raw;
   }
-  for (const key of ["anilist_id", "kitsu_id"] as const) {
+  if (patch.tmdb_id !== undefined) {
+    const raw = patch.tmdb_id === null || patch.tmdb_id === "" ? null : Number(patch.tmdb_id);
+    if (raw !== null && (!Number.isInteger(raw) || raw <= 0)) throw new Error("tmdb_id debe ser un entero positivo o vacío.");
+    if (raw !== null && raw !== existing.tmdb_id) {
+      const conflict = await prisma.show.findFirst({ where: { tmdb_id: raw, id: { not: showId } }, select: { id: true, title: true } });
+      if (conflict) throw new Error(`El TMDB ID ${raw} ya está asignado a “${conflict.title}”. Usa la revisión de identidad para decidir la fusión.`);
+    }
+    data.tmdb_id = raw;
+  }
+  for (const key of ["anilist_id", "kitsu_id", "anidb_id", "imdb_id"] as const) {
     if (patch[key] === undefined) continue;
     const raw = patch[key] === null || patch[key] === "" ? null : String(patch[key]).trim().slice(0, 120);
+    if (raw && key === "imdb_id" && !/^tt\d{5,12}$/i.test(raw)) throw new Error("imdb_id debe tener el formato tt1234567.");
+    if (raw && key === "anidb_id" && !/^\d+$/.test(raw)) throw new Error("anidb_id debe ser numérico.");
+    if (raw) {
+      const conflict = await prisma.show.findFirst({ where: { [key]: raw, id: { not: showId } } as any, select: { id: true, title: true } });
+      if (conflict) throw new Error(`El ${key} ${raw} ya está asignado a “${conflict.title}”.`);
+    }
     data[key] = raw || null;
+  }
+  if (patch.tvdb_id !== undefined) {
+    const raw = patch.tvdb_id === null || patch.tvdb_id === "" ? null : Number(patch.tvdb_id);
+    if (raw !== null && (!Number.isInteger(raw) || raw <= 0)) throw new Error("tvdb_id debe ser un entero positivo o vacío.");
+    if (raw !== null) {
+      const conflict = await prisma.show.findFirst({ where: { tvdb_id: raw, id: { not: showId } }, select: { id: true, title: true } });
+      if (conflict) throw new Error(`El TVDB ID ${raw} ya está asignado a “${conflict.title}”.`);
+    }
+    data.tvdb_id = raw;
   }
   if (patch.main_path_overrides !== undefined) {
     const overrides = normalizeShowProviderOverrides(patch.main_path_overrides);
@@ -1664,7 +1726,7 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
 
   // Cada cambio explícito desde el panel queda marcado para que los refrescos
   // automáticos de TMDB solo completen lo que el administrador no fijó.
-  const overrideKeys = ["title", "description", "genres", "year", "rating", "status", "category", "poster_url", "banner_url", "japanese_title", "english_title", "mal_id", "anilist_id", "kitsu_id", "main_path_overrides"];
+  const overrideKeys = ["title", "description", "genres", "year", "rating", "status", "category", "poster_url", "banner_url", "japanese_title", "english_title", "mal_id", "anilist_id", "kitsu_id", "anidb_id", "imdb_id", "tvdb_id", "tmdb_id", "main_path_overrides"];
   for (const key of overrideKeys) {
     if (Object.prototype.hasOwnProperty.call(data, key)) manualOverrides[key] = data[key];
   }
@@ -1675,6 +1737,28 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   }
 
   enqueueShowUpdate(showId, data);
+
+  // La ficha legacy y el índice canónico comparten identidad. Mantener ambos
+  // al editar desde administración evita que una búsqueda por MAL/IMDb/etc.
+  // vuelva a mostrar datos antiguos en el reproductor multi-fuente.
+  const identityFields = ["tmdb_id", "imdb_id", "tvdb_id", "mal_id", "anilist_id", "kitsu_id", "anidb_id"] as const;
+  const identityData: Record<string, unknown> = {};
+  for (const field of identityFields) {
+    if (Object.prototype.hasOwnProperty.call(data, field)) identityData[field] = data[field];
+  }
+  if (Object.keys(identityData).length > 0) {
+    const identityOr = identityFields.flatMap((field) => {
+      const value = existing[field];
+      return value === null || value === undefined ? [] : [{ [field]: value }];
+    });
+    const mediaItem = identityOr.length > 0
+      ? await prisma.mediaItem.findFirst({ where: { OR: identityOr as any }, orderBy: { created_at: "asc" } })
+      : await prisma.mediaItem.findFirst({
+          where: { OR: [{ normalized_title: existing.normalized_title }, ...(existing.base_normalized_title ? [{ base_normalized_title: existing.base_normalized_title }] : [])], kind: existing.category },
+          orderBy: { created_at: "asc" },
+        });
+    if (mediaItem) enqueueMediaItemUpdate(mediaItem.id, identityData);
+  }
   return getShowByIdFromDb(showId);
 }
 

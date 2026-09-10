@@ -338,6 +338,13 @@ export const api = {
       banner_url: string | null;
       japanese_title: string | null;
       english_title: string | null;
+      tmdb_id: number | string | null;
+      imdb_id: string | null;
+      tvdb_id: number | string | null;
+      mal_id: number | string | null;
+      anilist_id: string | number | null;
+      kitsu_id: string | number | null;
+      anidb_id: string | number | null;
     }>
   ): Promise<Show> {
     return request<Show>(`/shows/${encodeURIComponent(showId)}`, {

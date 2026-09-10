@@ -793,8 +793,13 @@ function mergePublicCatalogShow(existing: PublicCatalogShow, incoming: PublicCat
   };
 }
 
-export function parsePublicCatalogIdentifier(value: unknown): { tmdbId?: number; imdbId?: string } | null {
+export function parsePublicCatalogIdentifier(value: unknown): { tmdbId?: number; imdbId?: string; tvdbId?: number } | null {
   const raw = String(value || '').trim().replace(/\s+/g, '');
+  const tvdbMatch = /^(?:tvdb[:#-])([0-9]{1,12})$/i.exec(raw);
+  if (tvdbMatch) {
+    const tvdbId = Number(tvdbMatch[1]);
+    return Number.isInteger(tvdbId) && tvdbId > 0 ? { tvdbId } : null;
+  }
   const tmdbMatch = /^(?:tmdb[:#-]?)?(\d{1,10})$/i.exec(raw);
   if (tmdbMatch) {
     const tmdbId = Number(tmdbMatch[1]);
@@ -832,19 +837,21 @@ export async function getPublicCatalogByIdentifier(value: unknown, apiKey?: stri
       show.imdb_id = detail.external_ids?.imdb_id || null;
       shows.push(show);
     }
-  } else if (identifier.imdbId) {
-    const result = await tmdbFetch<TmdbFindResponse>(`/find/${identifier.imdbId}`, {
-      external_source: 'imdb_id',
+  } else if (identifier.imdbId || identifier.tvdbId) {
+    const externalId = identifier.imdbId || String(identifier.tvdbId);
+    const externalSource = identifier.imdbId ? 'imdb_id' : 'tvdb_id';
+    const result = await tmdbFetch<TmdbFindResponse>(`/find/${externalId}`, {
+      external_source: externalSource,
       language: 'es-419',
     }, apiKey);
     for (const item of result.movie_results || []) {
       const show = mapTmdbItem(item, isAnimeItem(item) ? 'anime' : 'movie');
-      show.imdb_id = identifier.imdbId;
+      show.imdb_id = identifier.imdbId || null;
       shows.push(show);
     }
     for (const item of result.tv_results || []) {
       const show = mapTmdbItem(item, isAnimeItem(item) ? 'anime' : 'series');
-      show.imdb_id = identifier.imdbId;
+      show.imdb_id = identifier.imdbId || null;
       shows.push(show);
     }
   }

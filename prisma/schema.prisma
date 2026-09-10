@@ -13,6 +13,9 @@ model Show {
   mal_id               Int?      @unique
   anilist_id           String?
   kitsu_id             String?
+  anidb_id             String?
+  imdb_id              String?
+  tvdb_id              Int?
   tmdb_id              Int?
   title                String
   original_title       String?
@@ -43,6 +46,9 @@ model Show {
   @@index([normalized_title])
   @@index([base_normalized_title])
   @@index([tmdb_id])
+  @@index([imdb_id])
+  @@index([tvdb_id])
+  @@index([anidb_id])
 }
 
 /// User-submitted catalog quality reports. The identity fields are copied at
@@ -132,6 +138,12 @@ model MediaItem {
   rating                Float    @default(0)
   genres                String   @default("")
   tmdb_id               Int?
+  mal_id                Int?
+  anilist_id            String?
+  kitsu_id              String?
+  anidb_id              String?
+  imdb_id               String?
+  tvdb_id               Int?
   kind                  String   @default("movie")
   year                  Int?
   poster_url            String?
@@ -146,6 +158,12 @@ model MediaItem {
   @@index([normalized_title])
   @@index([base_normalized_title])
   @@index([tmdb_id])
+  @@index([mal_id])
+  @@index([anilist_id])
+  @@index([kitsu_id])
+  @@index([anidb_id])
+  @@index([imdb_id])
+  @@index([tvdb_id])
 }
 
 /// Índice de referencias externas mantenido en el servidor. No se expone al

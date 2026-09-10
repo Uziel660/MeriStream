@@ -3,7 +3,7 @@
 // refresh de streams JIT y plataformas donde está disponible ese título.
 
 import React, { useEffect, useState } from 'react';
-import { X, Save, RefreshCw, Globe, Loader2, AlertTriangle, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { X, Save, RefreshCw, Globe, Loader2, AlertTriangle, Plus, Trash2, ExternalLink, Search, GitMerge, CheckCircle2 } from 'lucide-react';
 import { api } from '../api/client';
 
 interface ShowEditModalProps {
@@ -30,6 +30,14 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
   const [newStream, setNewStream] = useState({ season_number: '1', episode_number: '1', source_site: '', url: '', link_type: 'direct', language: '', source_status: 'discovered', priority_tier: '' });
   const [streamBusy, setStreamBusy] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [identitySource, setIdentitySource] = useState('tmdb');
+  const [identityLookupValue, setIdentityLookupValue] = useState('');
+  const [identityLookupBusy, setIdentityLookupBusy] = useState(false);
+  const [identityPreview, setIdentityPreview] = useState<any | null>(null);
+  const [mergeQuery, setMergeQuery] = useState('');
+  const [mergeCandidates, setMergeCandidates] = useState<any[]>([]);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +48,7 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
         const fresh = await res.json();
         if (!alive) return;
         setForm((f: any) => ({ ...f, ...fresh }));
+        setTmdbInput(fresh.tmdb_id ? String(fresh.tmdb_id) : '');
         setEpisodePlatforms(Array.isArray(fresh.episode_platforms) ? fresh.episode_platforms : []);
         const mid = fresh.media_item_id ?? null;
         if (mid) {
@@ -102,6 +111,13 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
         banner_url: form.banner_url,
         japanese_title: form.japanese_title,
         english_title: form.english_title,
+        tmdb_id: form.tmdb_id === '' || form.tmdb_id == null ? null : Number(form.tmdb_id),
+        imdb_id: form.imdb_id || null,
+        tvdb_id: form.tvdb_id === '' || form.tvdb_id == null ? null : Number(form.tvdb_id),
+        mal_id: form.mal_id === '' || form.mal_id == null ? null : Number(form.mal_id),
+        anilist_id: form.anilist_id || null,
+        kitsu_id: form.kitsu_id || null,
+        anidb_id: form.anidb_id || null,
       });
       setSavedMsg('Cambios guardados');
       onSaved(updated);
@@ -149,6 +165,81 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
       setIdentityBusy(false);
     }
   };
+
+  const lookupIdentity = async () => {
+    if (!identityLookupValue.trim()) {
+      setIdentityPreview(null);
+      return;
+    }
+    setIdentityLookupBusy(true);
+    setIdentityPreview(null);
+    try {
+      const response = await fetch(`/api/v1/admin/shows/${encodeURIComponent(show.id)}/identity-match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: identitySource, value: identityLookupValue.trim() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'No se pudo consultar el identificador.');
+      setIdentityPreview(payload);
+    } catch (e: any) {
+      setIdentityMsg(e?.message || 'No se pudo consultar el identificador.');
+    } finally {
+      setIdentityLookupBusy(false);
+    }
+  };
+
+  const applyIdentityProposal = () => {
+    if (!identityPreview?.proposed) return;
+    setForm((current: any) => {
+      const next = { ...current };
+      for (const key of ['tmdb_id', 'imdb_id', 'tvdb_id', 'mal_id', 'anilist_id', 'kitsu_id', 'anidb_id']) {
+        if (identityPreview.proposed[key] !== undefined && identityPreview.proposed[key] !== null) next[key] = identityPreview.proposed[key];
+      }
+      if (identityPreview.title && window.confirm(`Encontré “${identityPreview.title}”. ¿También quieres usar ese título?`)) next.title = identityPreview.title;
+      return next;
+    });
+    setIdentityMsg('Propuesta aplicada al formulario. Pulsa “Guardar cambios” para persistirla.');
+  };
+
+  const searchMergeCandidates = async () => {
+    if (!mergeQuery.trim()) { setMergeCandidates([]); return; }
+    setMergeBusy(true);
+    try {
+      const response = await fetch(`/api/v1/shows?lite=true&include_legacy=true&limit=20&search=${encodeURIComponent(mergeQuery.trim())}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'No se pudieron buscar obras.');
+      const rows = Array.isArray(payload) ? payload : payload.shows || payload.items || payload.results || [];
+      setMergeCandidates(rows.filter((candidate: any) => candidate.id !== show.id));
+    } catch (e: any) {
+      setStreamError(e?.message || 'No se pudieron buscar obras.');
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
+  const forceMerge = async (candidate: any) => {
+    if (!window.confirm(`¿Fusionar FORZADAMENTE “${candidate.title}” dentro de “${form.title}”? La obra elegida se eliminará y sus fuentes pasarán a esta ficha.`)) return;
+    setMergeBusy(true);
+    try {
+      const response = await fetch('/api/v1/catalog/merge-works', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep_id: show.id, merge_id: candidate.id, dry_run: false }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || payload.error || 'No se pudo fusionar la obra.');
+      setSavedMsg(`Fusión completada: ${candidate.title}`);
+      setMergeCandidates([]);
+      onSaved({ ...form, ...payload.show, id: show.id });
+    } catch (e: any) {
+      setSavedMsg(e?.message || 'No se pudo fusionar la obra.');
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
+  const seasonNumbers = Array.from(new Set(managedStreams.map((stream: any) => Number(stream.season_number) || 1))).sort((a, b) => a - b);
+  const visibleStreams = selectedSeason === 'all' ? managedStreams : managedStreams.filter((stream: any) => (Number(stream.season_number) || 1) === selectedSeason);
 
   const identityShows = Array.isArray(identityConflict?.conflicts) ? identityConflict.conflicts : [];
   const identityMediaItems = Array.isArray(identityConflict?.media_conflicts) ? identityConflict.media_conflicts : [];
@@ -374,6 +465,28 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
           {hasIdentityReview && <div className={`mt-3 rounded-lg border p-3 ${identitySimilar.length > 0 && identityShows.length === 0 && identityMediaItems.length === 0 ? 'border-amber-500/30 bg-amber-500/10' : 'border-rose-500/30 bg-rose-500/10'}`}><div className="flex items-start gap-2"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-300" /><div><p className="text-xs font-semibold text-amber-100">{identityShows.length > 0 ? 'Ya existe una obra con ese TMDB ID' : identityMediaItems.length > 0 ? 'Ya existe un registro canónico con ese TMDB ID' : 'Encontré títulos parecidos'}</p><p className="mt-1 text-[10px] leading-relaxed text-amber-100/70">Fusiona solo cuando ambas fichas representan la misma obra. Si no, puedes conservarlas por separado.</p></div></div>{identityShows.length > 0 && <div className="mt-3 space-y-2">{identityShows.map((candidate: any) => <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-rose-500/20 bg-zinc-950/50 p-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category} · {candidate.year || 'año desconocido'}</p></div><button type="button" onClick={() => { if (window.confirm(`¿Fusionar “${candidate.title}” dentro de “${form.title}”?`)) void applyIdentity(candidate.id); }} disabled={identityBusy} className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-500/15 px-3 text-[11px] font-semibold text-rose-100 ring-1 ring-rose-500/30 hover:bg-rose-500/25 disabled:opacity-50"><AlertTriangle size={12} /> Fusionar y aplicar</button></div>)}</div>}{identityMediaItems.length > 0 && <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3"><p className="text-[10px] text-amber-100">Registro canónico detectado: {identityMediaItems[0]?.title || 'sin título'}.</p><button type="button" onClick={() => { if (window.confirm('¿Aplicar el ID conservando este registro canónico?')) void applyIdentity(undefined, true, identitySimilar.length === 0); }} disabled={identityBusy} className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-[11px] font-bold text-zinc-950 hover:bg-amber-300 disabled:opacity-50"><Globe size={12} /> Aplicar conservando el registro</button></div>}{identitySimilar.length > 0 && <div className="mt-3 space-y-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-amber-200/80">Posibles coincidencias por título</p>{identitySimilar.map((candidate: any) => <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/50 p-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category} · {candidate.year || 'año desconocido'} · similitud {Math.round(Number(candidate.similarity || 0) * 100)}%</p></div><button type="button" onClick={() => { if (window.confirm(`¿Fusionar “${candidate.title}” dentro de “${form.title}”?`)) void applyIdentity(candidate.id); }} disabled={identityBusy} className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 px-3 text-[11px] font-semibold text-amber-100 ring-1 ring-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50"><AlertTriangle size={12} /> Fusionar y aplicar</button></div>)}{identityShows.length === 0 && <button type="button" onClick={() => { if (window.confirm('¿Aplicar el ID sin fusionar estas fichas?')) void applyIdentity(undefined, identityMediaItems.length > 0, true); }} disabled={identityBusy} className="inline-flex min-h-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[11px] font-semibold text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Aplicar sin fusionar</button>}</div>}</div>}
         </div>
 
+        <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-xs font-bold text-violet-200">Identificadores de la obra</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-500">Edita cualquier ID que exista en la base. Las búsquedas externas solo preparan una propuesta; nada se guarda hasta que confirmes.</p></div>
+            <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[10px] text-violet-200">7 fuentes</span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['tmdb_id', 'TMDB', 'Número'], ['imdb_id', 'IMDb', 'tt1234567'], ['tvdb_id', 'TVDB', 'Número'],
+              ['mal_id', 'MAL', 'Número'], ['anilist_id', 'AniList', 'Número'], ['kitsu_id', 'Kitsu', 'ID'], ['anidb_id', 'AniDB', 'Número'],
+            ].map(([key, label, placeholder]) => <label key={key} className="text-[10px] text-zinc-500">{label}<input value={form[key] ?? ''} onChange={(event) => set(key, event.target.value)} placeholder={placeholder} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-violet-400/60" /></label>)}
+          </div>
+          <div className="mt-3 rounded-lg border border-dashed border-violet-500/30 bg-zinc-950/40 p-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200/80">Buscar y completar desde un ID</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-[8rem_1fr_auto]">
+              <select value={identitySource} onChange={(event) => setIdentitySource(event.target.value)} className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none"><option value="tmdb">TMDB</option><option value="imdb">IMDb</option><option value="mal">MAL</option><option value="anilist">AniList</option><option value="kitsu">Kitsu</option><option value="anidb">AniDB</option><option value="tvdb">TVDB</option></select>
+              <input value={identityLookupValue} onChange={(event) => setIdentityLookupValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void lookupIdentity(); }} placeholder="Pega el identificador y consulta la ficha externa" className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none focus:border-violet-400/60" />
+              <button type="button" onClick={() => void lookupIdentity()} disabled={identityLookupBusy} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-violet-500/20 px-3 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-500/30 hover:bg-violet-500/30 disabled:opacity-50">{identityLookupBusy ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />} Buscar</button>
+            </div>
+            {identityPreview && <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/70 p-2.5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-zinc-100">{identityPreview.title || (identityPreview.found ? 'Coincidencia local' : 'Sin coincidencia externa')}</p><p className="mt-1 text-[10px] text-zinc-500">{identityPreview.found ? 'Revisa los valores propuestos antes de aplicarlos.' : 'Puedes guardar el ID manualmente si es una referencia privada.'}</p></div>{identityPreview.found && <button type="button" onClick={applyIdentityProposal} className="inline-flex min-h-8 items-center gap-1 rounded-md bg-emerald-500/20 px-2.5 text-[10px] font-semibold text-emerald-100 ring-1 ring-emerald-500/30"><CheckCircle2 size={12} /> Aplicar propuesta</button>}</div>{Object.keys(identityPreview.proposed || {}).length > 0 && <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">{Object.entries(identityPreview.proposed).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <span key={key} className="rounded bg-zinc-900 px-2 py-1 text-[10px] text-zinc-300"><b className="text-violet-200">{key.replace('_id', '').toUpperCase()}</b>: {String(value)}</span>)}</div>}{(identityPreview.conflicts?.shows?.length > 0 || identityPreview.conflicts?.media_items?.length > 0) && <p className="mt-2 text-[10px] text-amber-200">Hay registros locales que comparten uno de estos IDs. Decide la fusión manualmente antes de guardar.</p>}</div>}
+          </div>
+        </div>
+
         {/* Plataformas disponibles para ESTE título */}
         <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800">
           <div className="flex items-center gap-2 text-xs font-bold text-zinc-300 mb-2">
@@ -435,14 +548,33 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
           )}
         </div>
 
+        <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-3">
+          <div className="flex items-start gap-2"><GitMerge size={15} className="mt-0.5 text-rose-300" /><div><p className="text-xs font-bold text-rose-200">Fusión manual forzada</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-500">Busca otra ficha por título o ID y elige cuál se conserva. La obra seleccionada se absorbe con sus episodios y fuentes.</p></div></div>
+          <div className="mt-3 flex gap-2"><input value={mergeQuery} onChange={(event) => setMergeQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchMergeCandidates(); }} placeholder="Título, TMDB, IMDb, MAL…" className="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2 text-[11px] text-zinc-200 outline-none focus:border-rose-400/60" /><button type="button" onClick={() => void searchMergeCandidates()} disabled={mergeBusy} className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-rose-500/20 px-3 text-[11px] font-semibold text-rose-100 ring-1 ring-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50">{mergeBusy ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />} Buscar</button></div>
+          {mergeCandidates.length > 0 && <div className="mt-2 space-y-1.5">{mergeCandidates.map((candidate: any) => <div key={candidate.id} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-2"><div className="min-w-0"><p className="truncate text-[11px] font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category || candidate.kind || 'obra'} · TMDB {candidate.tmdb_id || 'sin ID'} · {candidate.year || 'sin año'}</p></div><button type="button" onClick={() => void forceMerge(candidate)} disabled={mergeBusy} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md bg-rose-500/20 px-2.5 text-[10px] font-semibold text-rose-100 ring-1 ring-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50"><GitMerge size={12} /> Fusionar aquí</button></div>)}</div>}
+        </div>
+
         <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs font-bold text-sky-200">Inventario de streams</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-500">Aquí ves la temporada, episodio, plataforma, locator, idioma y estado persistido. Edita una fila sin alterar las demás.</p></div>
             <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-[10px] font-mono text-sky-200">{managedStreams.length} fuentes</span>
           </div>
           {streamError && <p className="mt-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">{streamError}</p>}
-          <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
-            {managedStreams.length === 0 ? <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-5 text-center text-[11px] text-zinc-500">No hay SourceLinks canónicos visibles para esta obra.</p> : managedStreams.map((stream: any) => <div key={stream.id} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5"><div className="grid gap-2 sm:grid-cols-[5.5rem_1fr_7rem]"><label className="text-[10px] text-zinc-500">Plataforma<input value={stream.source_site || ''} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, source_site: event.target.value } : item))} onBlur={() => void updateStream(stream, { source_site: stream.source_site })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60" /></label><label className="min-w-0 text-[10px] text-zinc-500">URL / locator<input value={stream.url || ''} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, url: event.target.value } : item))} onBlur={() => void updateStream(stream, { url: stream.url })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-[10px] text-zinc-300 outline-none focus:border-sky-400/60" /></label><label className="text-[10px] text-zinc-500">Estado<select value={stream.source_status || 'discovered'} onChange={(event) => { const value = event.target.value; setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, source_status: value } : item)); void updateStream(stream, { source_status: value }); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60"><option value="discovered">Descubierto</option><option value="verified">Verificado</option><option value="failed">Fallido</option><option value="dead">Muerto</option><option value="disabled">Desactivado</option></select></label></div><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-zinc-500">T{stream.season_number || 1} · E{stream.episode_number || 1} · {stream.language || stream.audio_language || 'idioma no detectado'}{stream.subtitle_language ? ` · subs ${stream.subtitle_language}` : ''}{stream.priority_tier != null ? ` · prioridad ${stream.priority_tier}` : ''}</span><span className="flex items-center gap-1">{stream.url && /^https?:/i.test(stream.url) && <a href={stream.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-sky-300" title="Abrir locator en otra pestaña"><ExternalLink size={13} /></a>}<button type="button" onClick={() => void deleteStream(stream)} disabled={streamBusy === stream.id} className="rounded-md p-1.5 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-50" title="Eliminar fuente"><Trash2 size={13} /></button>{streamBusy === stream.id && <Loader2 size={12} className="animate-spin text-sky-300" />}</span></div></div>)}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => setSelectedSeason('all')} className={`rounded-md px-2.5 py-1 text-[10px] font-semibold ${selectedSeason === 'all' ? 'bg-sky-500/25 text-sky-100 ring-1 ring-sky-500/40' : 'bg-zinc-900 text-zinc-400 ring-1 ring-zinc-800'}`}>Todas ({managedStreams.length})</button>
+            {seasonNumbers.map((season) => <button type="button" key={season} onClick={() => setSelectedSeason(season)} className={`rounded-md px-2.5 py-1 text-[10px] font-semibold ${selectedSeason === season ? 'bg-sky-500/25 text-sky-100 ring-1 ring-sky-500/40' : 'bg-zinc-900 text-zinc-400 ring-1 ring-zinc-800'}`}>Temporada {season} ({managedStreams.filter((stream: any) => (Number(stream.season_number) || 1) === season).length})</button>)}
+          </div>
+          <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
+            {managedStreams.length === 0 ? <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-5 text-center text-[11px] text-zinc-500">No hay SourceLinks canónicos visibles para esta obra.</p> : visibleStreams.map((stream: any) => <div key={stream.id} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5">
+              <div className="grid gap-2 sm:grid-cols-[4.5rem_4.5rem_6.5rem_1fr_7rem]">
+                <label className="text-[10px] text-zinc-500">Temporada<input type="number" min="1" value={stream.season_number || 1} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, season_number: event.target.value } : item))} onBlur={() => void updateStream(stream, { season_number: Number(stream.season_number) || 1 })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60" /></label>
+                <label className="text-[10px] text-zinc-500">Episodio<input type="number" min="0" step="0.1" value={stream.episode_number ?? 1} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, episode_number: event.target.value } : item))} onBlur={() => void updateStream(stream, { episode_number: Number(stream.episode_number) || 0 })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60" /></label>
+                <label className="text-[10px] text-zinc-500">Plataforma<input value={stream.source_site || ''} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, source_site: event.target.value } : item))} onBlur={() => void updateStream(stream, { source_site: stream.source_site })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60" /></label>
+                <label className="min-w-0 text-[10px] text-zinc-500">URL / locator<input value={stream.url || ''} onChange={(event) => setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, url: event.target.value } : item))} onBlur={() => void updateStream(stream, { url: stream.url })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-[10px] text-zinc-300 outline-none focus:border-sky-400/60" /></label>
+                <label className="text-[10px] text-zinc-500">Estado<select value={stream.source_status || 'discovered'} onChange={(event) => { const value = event.target.value; setManagedStreams((current) => current.map((item) => item.id === stream.id ? { ...item, source_status: value } : item)); void updateStream(stream, { source_status: value }); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-sky-400/60"><option value="discovered">Descubierto</option><option value="verified">Verificado</option><option value="failed">Fallido</option><option value="dead">Muerto</option><option value="disabled">Desactivado</option></select></label>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-zinc-500">{stream.language || stream.audio_language || 'idioma no detectado'}{stream.subtitle_language ? ' · subs ' + stream.subtitle_language : ''}{stream.priority_tier != null ? ' · prioridad ' + stream.priority_tier : ''}</span><span className="flex items-center gap-1">{stream.url && /^https?:/i.test(stream.url) && <a href={stream.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-sky-300" title="Abrir locator en otra pestaña"><ExternalLink size={13} /></a>}<button type="button" onClick={() => void deleteStream(stream)} disabled={streamBusy === stream.id} className="rounded-md p-1.5 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-50" title="Eliminar fuente"><Trash2 size={13} /></button>{streamBusy === stream.id && <Loader2 size={12} className="animate-spin text-sky-300" />}</span></div>
+            </div>)}
           </div>
           <div className="mt-3 rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 p-2.5"><p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Añadir fuente manual</p><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><input value={newStream.season_number} onChange={(event) => setNewStream((current) => ({ ...current, season_number: event.target.value }))} placeholder="Temporada" className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none" /><input value={newStream.episode_number} onChange={(event) => setNewStream((current) => ({ ...current, episode_number: event.target.value }))} placeholder="Episodio" className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none" /><input value={newStream.source_site} onChange={(event) => setNewStream((current) => ({ ...current, source_site: event.target.value }))} placeholder="Plataforma (cinecalidad…)" className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none" /><input value={newStream.url} onChange={(event) => setNewStream((current) => ({ ...current, url: event.target.value }))} placeholder="URL estable del resolver" className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-2 text-[11px] text-zinc-200 outline-none sm:col-span-2 lg:col-span-3" /><button type="button" onClick={() => void addStream()} disabled={streamBusy === 'new'} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-sky-500/20 px-3 text-[11px] font-semibold text-sky-100 ring-1 ring-sky-500/30 hover:bg-sky-500/30 disabled:opacity-50">{streamBusy === 'new' ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Añadir</button></div></div>
         </div>

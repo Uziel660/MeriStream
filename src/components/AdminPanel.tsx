@@ -276,6 +276,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   // --- Biblioteca & Catálogo ---
   const [libraryShows, setLibraryShows] = useState<Show[]>([]);
   const [librarySearch, setLibrarySearch] = useState('');
+  const [libraryIdentityFilter, setLibraryIdentityFilter] = useState('all');
   const [libraryTotal, setLibraryTotal] = useState(0);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -367,7 +368,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setIsLoadingLibrary(true);
       const q = searchQuery.trim();
       const searchParam = q ? `&search=${encodeURIComponent(q)}` : '';
-      const res = await fetch(`/api/v1/shows?lite=true&include_legacy=true${searchParam}&page=${page}&limit=${LIBRARY_PAGE_SIZE}`);
+      const identityParam = libraryIdentityFilter !== 'all' ? `&identity=${encodeURIComponent(libraryIdentityFilter)}` : '';
+      const res = await fetch(`/api/v1/shows?lite=true&include_legacy=true${searchParam}${identityParam}&page=${page}&limit=${LIBRARY_PAGE_SIZE}`);
       if (res.ok) {
         const data = await res.json();
         const list: Show[] = Array.isArray(data) ? data : data.shows || [];
@@ -390,7 +392,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       }, 250);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, librarySearch]);
+  }, [activeTab, librarySearch, libraryIdentityFilter]);
 
   if (isOpen === false) return null;
 
@@ -1724,6 +1726,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     </button>
                   )}
                 </div>
+
+                <select
+                  value={libraryIdentityFilter}
+                  onChange={(e) => { setLibraryIdentityFilter(e.target.value); setLibraryPage(1); }}
+                  className="rounded-xl bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-300 focus:outline-none focus:border-amber-500/60"
+                  aria-label="Filtrar por identificadores"
+                >
+                  <option value="all">Todas las identidades</option>
+                  <option value="missing_any">Sin ningún ID</option>
+                  <option value="missing_tmdb">Sin TMDB</option>
+                  <option value="missing_imdb">Sin IMDb</option>
+                  <option value="missing_tvdb">Sin TVDB</option>
+                  <option value="missing_mal">Sin MAL</option>
+                  <option value="missing_anilist">Sin AniList</option>
+                  <option value="missing_kitsu">Sin Kitsu</option>
+                  <option value="missing_anidb">Sin AniDB</option>
+                </select>
 
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-zinc-500 font-mono">

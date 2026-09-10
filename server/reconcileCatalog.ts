@@ -599,6 +599,34 @@ export async function mergeTwoShows(
     const mergeItem = await prisma.mediaItem.findFirst({
       where: { OR: [{ base_normalized_title: mBase, kind }, { normalized_title: merge.normalized_title, kind }] },
     });
+    if (!canonicalItem && mergeItem) {
+      // Si la ficha que se conserva todavía no tiene espejo canónico, créalo
+      // antes de mover las temporadas para que la fusión forzada no deje
+      // fuentes huérfanas.
+      canonicalItem = await prisma.mediaItem.create({
+        data: {
+          normalized_title: keep.normalized_title,
+          base_normalized_title: keep.base_normalized_title || keep.normalized_title,
+          title: keep.title,
+          original_title: keep.original_title,
+          description: keep.description,
+          rating: keep.rating,
+          genres: keep.genres,
+          tmdb_id: keep.tmdb_id,
+          imdb_id: keep.imdb_id,
+          tvdb_id: keep.tvdb_id,
+          mal_id: keep.mal_id,
+          anilist_id: keep.anilist_id,
+          kitsu_id: keep.kitsu_id,
+          anidb_id: keep.anidb_id,
+          kind,
+          year: keep.year,
+          poster_url: keep.poster_url,
+          poster_path: keep.poster_path,
+          backdrop_path: keep.backdrop_path,
+        },
+      });
+    }
     if (canonicalItem && mergeItem) {
       const seqMediaEps = await prisma.mediaEpisode.findMany({
         where: { media_item_id: mergeItem.id },

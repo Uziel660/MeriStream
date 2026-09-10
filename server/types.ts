@@ -40,9 +40,11 @@ export interface UniversalAnalysisResult {
   mal_id?: number | null;
   anilist_id?: number | null;
   kitsu_id?: string | null;
+  anidb_id?: string | null;
   tmdb_id?: number | null;
   /** Identificador IMDb cuando TMDB lo expone; se usa para matching externo. */
   imdb_id?: string | null;
+  tvdb_id?: number | null;
   japanese_title?: string | null;
   english_title?: string | null;
   description: string;

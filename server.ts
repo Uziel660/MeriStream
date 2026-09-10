@@ -119,6 +119,7 @@ import {
 } from "./server/adminAuth";
 import { getUnifiedCatalogCounts } from "./server/catalogCounts";
 import { getIdentityRepairStatus } from "./server/identityRepairStatus";
+import { previewAdminIdentity, type AdminIdentitySource } from "./server/adminIdentity";
 import {
   getCatalogPolicy,
   getCatalogPolicyProviders,
@@ -1864,6 +1865,10 @@ async function startServer() {
          ? requestedSort
          : undefined;
        const missingTmdb = req.query.identity === "missing_tmdb" || req.query.missing_tmdb === "true";
+      const identityValue = typeof req.query.identity === "string" ? req.query.identity : undefined;
+      const identity = ["missing_tmdb", "missing_any", "missing_imdb", "missing_mal", "missing_anilist", "missing_kitsu", "missing_anidb", "missing_tvdb"].includes(identityValue || "")
+        ? identityValue as any
+        : undefined;
       const isLite = req.query.lite === "true";
       const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
@@ -1878,6 +1883,7 @@ async function startServer() {
            year,
            sort,
            missingTmdb,
+           identity,
          });
         const visibility = isAdminRequest ? null : await getCatalogVisibility();
         const shows = visibility
@@ -2067,6 +2073,31 @@ async function startServer() {
     }
   });
 
+  // Busca una obra por cualquier identificador externo y devuelve una
+  // propuesta revisable. Nunca escribe ni fusiona por sí sola.
+  app.post("/api/v1/admin/shows/:show_id/identity-match", async (req: Request, res: Response) => {
+    try {
+      const show = await prisma.show.findUnique({
+        where: { id: req.params.show_id },
+        select: { id: true, category: true },
+      });
+      if (!show) return res.status(404).json({ error: "Obra no encontrada." });
+      const source = String(req.body?.source || "").trim().toLowerCase() as AdminIdentitySource;
+      const allowed: AdminIdentitySource[] = ["tmdb", "imdb", "mal", "anilist", "kitsu", "anidb", "tvdb"];
+      if (!allowed.includes(source)) return res.status(400).json({ error: "Fuente de identidad no soportada." });
+      const preview = await previewAdminIdentity({
+        showId: show.id,
+        category: show.category,
+        source,
+        value: req.body?.value,
+      });
+      return res.json({ ok: true, ...preview });
+    } catch (error: any) {
+      const message = error?.message || "No se pudo consultar el identificador.";
+      return res.status(/formato válido|requerido/i.test(message) ? 400 : 502).json({ error: message });
+    }
+  });
+
   app.post("/api/v1/admin/shows/:show_id/identity", async (req: Request, res: Response) => {
     try {
       const showId = req.params.show_id;
@@ -2142,8 +2173,17 @@ async function startServer() {
       const manualOverrides: Record<string, unknown> = show.manual_overrides && typeof show.manual_overrides === "object" && !Array.isArray(show.manual_overrides)
         ? { ...(show.manual_overrides as Record<string, unknown>) }
         : {};
+      const resolvedIdentity = {
+        imdb_id: metadata?.imdb_id ?? metadata?.external_ids?.imdb_id ?? show.imdb_id ?? null,
+        tvdb_id: metadata?.tvdb_id ?? metadata?.external_ids?.tvdb_id ?? show.tvdb_id ?? null,
+        mal_id: metadata?.mal_id ?? show.mal_id ?? null,
+        anilist_id: metadata?.anilist_id ?? show.anilist_id ?? null,
+        kitsu_id: metadata?.kitsu_id ?? show.kitsu_id ?? null,
+        anidb_id: metadata?.anidb_id ?? show.anidb_id ?? null,
+      };
       const showData: any = {
         tmdb_id: tmdbId,
+        ...resolvedIdentity,
         ...(metadata ? {
           title,
           normalized_title: normalized,
@@ -2183,6 +2223,7 @@ async function startServer() {
         if (mediaItems.length > 0) {
           const mediaData: any = {
             tmdb_id: tmdbId,
+            ...resolvedIdentity,
             ...(metadata ? {
               title,
               normalized_title: normalized,
@@ -2424,7 +2465,45 @@ async function startServer() {
         data.main_path_override = body.main_path_override === true ? true : body.main_path_override === false ? false : null;
       }
       if (data.url !== undefined && !data.url) return res.status(400).json({ error: "La URL de la fuente no puede quedar vacía." });
-      const updated = await prisma.sourceLink.update({ where: { id: req.params.link_id }, data });
+      const hasSeason = body.season_number !== undefined;
+      const hasEpisode = body.episode_number !== undefined;
+      let requestedSeason: number | undefined;
+      let requestedEpisode: number | undefined;
+      if (hasSeason) {
+        const parsed = Number(body.season_number);
+        if (!Number.isInteger(parsed) || parsed < 1) return res.status(400).json({ error: "season_number debe ser un entero mayor o igual a 1." });
+        requestedSeason = parsed;
+      }
+      if (hasEpisode) {
+        const parsed = Number(body.episode_number);
+        if (!Number.isFinite(parsed) || parsed < 0) return res.status(400).json({ error: "episode_number debe ser un número mayor o igual a 0." });
+        requestedEpisode = parsed;
+      }
+      const currentLink = (hasSeason || hasEpisode)
+        ? await prisma.sourceLink.findUnique({ where: { id: req.params.link_id }, include: { media_episode: true } })
+        : null;
+      if ((hasSeason || hasEpisode) && !currentLink) return res.status(404).json({ error: "Fuente no encontrada." });
+      let updated;
+      const coordinatesChanged = Boolean(currentLink && ((requestedSeason !== undefined && requestedSeason !== currentLink.media_episode.season_number) || (requestedEpisode !== undefined && requestedEpisode !== currentLink.media_episode.episode_number)));
+      if (currentLink && coordinatesChanged) {
+        const targetSeason = requestedSeason ?? currentLink.media_episode.season_number;
+        const targetEpisode = requestedEpisode ?? currentLink.media_episode.episode_number;
+        updated = await prisma.$transaction(async (tx) => {
+          const target = await tx.mediaEpisode.upsert({
+            where: { media_item_id_season_number_episode_number: { media_item_id: currentLink.media_episode.media_item_id, season_number: targetSeason, episode_number: targetEpisode } },
+            create: { media_item_id: currentLink.media_episode.media_item_id, season_number: targetSeason, episode_number: targetEpisode },
+            update: {},
+          });
+          const moved = await tx.sourceLink.update({ where: { id: currentLink.id }, data: { ...data, media_episode_id: target.id } });
+          if (target.id !== currentLink.media_episode_id) {
+            const remaining = await tx.sourceLink.count({ where: { media_episode_id: currentLink.media_episode_id } });
+            if (remaining === 0) await tx.mediaEpisode.delete({ where: { id: currentLink.media_episode_id } });
+          }
+          return moved;
+        });
+      } else {
+        updated = await prisma.sourceLink.update({ where: { id: req.params.link_id }, data });
+      }
       res.json({ ok: true, link: updated });
     } catch (error: any) {
       res.status(error?.code === "P2025" ? 404 : 400).json({ error: error?.message || "No se pudo actualizar la fuente." });

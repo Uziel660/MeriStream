@@ -5,7 +5,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Estado de partida
 
 - Rama de trabajo: `lastversion`.
-- Último commit de esta revisión: `b2d2a3c fix: validate VidSrc language and improve catalog search`.
+- Último commit publicado de esta revisión: `f7e9890 docs: record transient integration test result` (incluye `b2d2a3c` con los cambios de código).
 - El worktree estaba limpio al crear esta lista.
 - El `.env` de `E:\merinuevo\.env` ya se copió al proyecto local. Mantenerlo ignorado por Git y no exponer sus valores.
 - El servidor local de desarrollo se probó en `http://localhost:3010/`.

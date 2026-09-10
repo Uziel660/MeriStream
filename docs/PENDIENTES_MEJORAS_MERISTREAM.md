@@ -5,7 +5,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Estado de partida
 
 - Rama de trabajo: `lastversion`.
-- Último commit publicado de esta revisión: `f7e9890 docs: record transient integration test result` (incluye `b2d2a3c` con los cambios de código).
+- Último commit publicado de esta revisión: `804bee7 fix: rank and bridge multilingual catalog search` (incluye los cambios de identidad, reproducción, responsive y rendimiento de esta revisión).
 - El worktree estaba limpio al crear esta lista.
 - El `.env` de `E:\merinuevo\.env` ya se copió al proyecto local. Mantenerlo ignorado por Git y no exponer sus valores.
 - El servidor local de desarrollo se probó en `http://localhost:3010/`.
@@ -32,6 +32,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - **Idiomas indios y variantes:** aliases en `server/utils/languageDetector.ts`, normalización de provider policy y etiquetas de subtítulos.
 - **SubtitleCat:** rechazo de resultados con año visible incompatible y pruebas de regresión para `La isla olvidada`.
 - **Búsqueda multilingüe:** la búsqueda consulta TMDB en `es-419` y `en-US`, fusiona títulos bajo el mismo TMDB ID, conserva aliases y ordena por relevancia antes de popularidad (`server/publicCatalog.ts`). Esto cubre muchos desacuerdos TMDB/IMDb, pero todavía no es una consulta directa a la base de títulos de IMDb.
+- **Puente local de títulos/aliases:** las fichas ya cargadas también se comparan por título localizado, alias almacenado, título inglés, original y japonés; los resultados locales y TMDB se fusionan solo cuando la identidad es inequívoca y se vuelven a ordenar por coincidencia (`src/App.tsx`). Así una búsqueda tipo `Forgotten Island` puede encontrar una ficha guardada como `La isla olvidada` sin adivinar entre candidatos ambiguos.
 - **Lectura de preferencias:** `useHiddenGenres` ya no lee `localStorage` durante el inicializador síncrono; hidrata después del primer paint y luego sincroniza servidor/pestañas.
 - **Recuperación HLS:** ante un `mediaError` fatal se intenta una recuperación in-place una vez por intento antes de escalar a proxy/failover; se registra el motivo.
 - **Prioridad de imágenes:** `SmartImage` conserva `fetchPriority="high"` para el hero; antes el wrapper lo eliminaba y anulaba la pista LCP.
@@ -42,10 +43,11 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - `npm run lint`: correcto (`tsc --noEmit`).
 - Pruebas dirigidas de VidSrc, catálogo, subtítulos e idiomas: **54/54** correctas.
 - `npm run build`: correcto; los avisos de chunks grandes corresponden al reproductor HLS/dash cargado bajo demanda.
+- Pruebas unitarias dirigidas tras el puente de búsqueda: **27/27** correctas (`searchCatalogMerge`, `publicCatalog`).
 - Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
 - Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
 - Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
-- La suite completa terminó **810/810** correcta en la última ejecución.
+- La suite completa de Vitest terminó **810/810** correcta antes del último cambio; las pruebas dirigidas posteriores siguen verdes. La ejecución E2E conjunta terminó **14/18**: los cuatro fallos restantes son expectativas antiguas del test (fallback local y botón de paginación que ya fue sustituido por autoload, más una etiqueta accesible antigua), no errores del puente de búsqueda; los cinco E2E de búsqueda y los cuatro de móvil/identidad sí pasaron.
 - E2E dirigido móvil + identidad VidSrc: **4/4** correctos.
 - Medición automatizada de imagen hero: `loading=eager`, `fetchPriority=high`, sin overflow horizontal en 390 px; `/admin` conserva campos y botón de 44 px.
 
@@ -55,11 +57,13 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Estrategia segura de preload del hero/LCP dinámico y medición con DevTools en un perfil de navegador limpio (la prioridad alta ya está aplicada y comprobada).
 - Auditoría visual completa de todas las rutas y estados autenticados, especialmente el panel `/admin`; home, ficha y login móvil ya tienen evidencia automatizada.
 - E2E final de reproducción prolongada con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
-- Informe visual/E2E final y revisión de identidad por título/duración siguen pendientes; los cambios de esta revisión ya están publicados en `lastversion`.
+- Informe visual/E2E final y revisión de identidad por título/duración siguen pendientes; los cambios de esta revisión están publicados en `lastversion`.
 
 ## Prioridad P0 — integridad de reproducción
 
 ### 1. VidSrc/NXSHA debe respetar el idioma elegido
+
+**Estado: aplicado.** La detección, el ranking y el filtro conservador ya están en producción local y cubiertos por pruebas; queda ampliar la observabilidad si aparecen nuevos formatos de etiqueta.
 
 - Analizar las etiquetas de NXSHA (`[English]`, `[Korean]`, `Hindi`, `Multi-Lang`, etc.) antes de elegir el HLS.
 - Pasar el idioma preferido del selector hasta `resolveVidSrcEmbed`/`resolveNxshaMultiLang`.
@@ -76,12 +80,14 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Falta una validación de identidad independiente del idioma: título/alias/año de TMDB frente a metadatos disponibles del proveedor, nombre de archivo, duración y/o respuesta del reproductor.
 - Si una fuente tiene señales claras de otra obra, no seleccionarla automáticamente; continuar con otro candidato/proveedor o mostrar que no hay fuente fiable.
 - Nunca ocultar la incertidumbre: registrar por qué se descartó o aceptó cada candidato.
-- Añadir una prueba de regresión para TMDB `1465063` que impida presentar como inglés una fuente etiquetada `[Korean]`.
+- La prueba de regresión para TMDB `1465063` ya está en `e2e/provider-identity-guards.spec.ts` y evita presentar como inglés una fuente etiquetada `[Korean]`.
 - Validar también una obra coreana legítima para no romper títulos cuyo audio original no es inglés.
 
 ## Prioridad P0 — subtítulos
 
 ### 3. Evitar falsos positivos
+
+**Estado: aplicado para el año/título que se observó.** `SubtitleCatProvider` rechaza años visibles incompatibles y hay pruebas de regresión; queda ampliar la cobertura HTML a más proveedores.
 
 - Fortalecer `SubtitleCatProvider` para que una búsqueda con año no acepte páginas cuyo título/URL contiene otro año (caso observado: una entrada de `Fantasy Island 1977` para `La isla olvidada`).
 - Mantener coincidencia por título/alias, pero exigir compatibilidad de año cuando el proveedor lo expone.
@@ -89,6 +95,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Crear pruebas con HTML simulado: rechazar año conflictivo y aceptar título/año correcto.
 
 ### 4. Mejorar detección y cobertura
+
+**Estado: parcial.** La normalización, orden por preferencia y fallback existentes se conservaron; falta medir sistemáticamente las obras que aún no tienen pista y añadir casos de integración de cada proveedor.
 
 - Normalizar correctamente códigos y nombres de idiomas de VidSrc, OpenSubtitles, YIFY y SubtitleCat, incluidos idiomas indios y variantes regionales.
 - Ordenar las pistas por los idiomas seleccionados por el usuario sin eliminar innecesariamente alternativas válidas.
@@ -112,6 +120,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Prioridad P1 — búsqueda y selección de candidatos
 
 ### 6. Buscar por títulos TMDB e IMDb
+
+**Estado: parcial aplicado.** La barra usa títulos TMDB en español/inglés, originales/localizados y aliases guardados (incluidos aliases importados de la era IMDb), fusiona por identidad y ordena por relevancia. Sigue pendiente una consulta directa a un índice de títulos IMDb, porque el proyecto no dispone actualmente de esa fuente y no se ha inventado una integración.
 
 - Al buscar desde la barra, consultar/usar el título principal de TMDB, títulos alternativos/localizados y el título asociado al IMDb ID.
 - Resolver el IMDb ID desde TMDB cuando sea posible y consultar sus aliases/títulos sin bloquear la primera respuesta.

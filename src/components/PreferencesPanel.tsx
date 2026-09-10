@@ -34,6 +34,7 @@ const INTERFACE_STYLES: Array<{ value: InterfaceStyle; label: string; descriptio
   { value: 'glass', label: 'Glass', description: 'Cristal suave, superficies flotantes y una sensación más ligera y moderna.' },
   { value: 'noir', label: 'Noir', description: 'Minimalista y editorial: menos brillo, líneas más rectas y máximo foco.' },
   { value: 'aurora', label: 'Aurora', description: 'Cian y violeta, más profundidad y acentos luminosos sin perder legibilidad.' },
+  { value: 'light', label: 'Claro', description: 'Fondos luminosos, superficies blancas y contraste suave manteniendo la esencia de MeriStream.' },
 ];
 
 export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
@@ -102,13 +103,13 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
 
   return createPortal((
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
+      className="preferences-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-title"
       onMouseDown={(event) => { if (event.target === event.currentTarget) closeWithoutSaving(); }}
     >
-      <section className="my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
+      <section className="preferences-panel my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">MeriStream</p>
@@ -254,7 +255,7 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
           </fieldset>
         </div>
 
-        <div className="sticky bottom-0 -mx-5 mt-7 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-950/95 px-5 pt-4 pb-[max(0rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:-mx-6 sm:px-6">
+        <div className="preferences-footer sticky bottom-0 -mx-5 mt-7 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-950/95 px-5 pt-4 pb-[max(0rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:-mx-6 sm:px-6">
           <button type="button" onClick={restoreDefaults} className="rounded-lg px-3 py-2.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white">Restaurar</button>
           <button type="button" onClick={save} className="rounded-lg bg-amber-400 px-4 py-2.5 text-xs font-semibold text-zinc-950 hover:bg-amber-300">Guardar preferencias</button>
         </div>

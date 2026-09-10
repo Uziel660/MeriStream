@@ -2,7 +2,7 @@ export type PreferredQuality = 'auto' | '1080p' | '720p' | '480p';
 export type SubtitlePosition = 'bottom' | 'center' | 'top' | 'custom';
 export type ContrastMode = 'standard' | 'high';
 export type PerformanceMode = 'auto' | 'quality' | 'balanced' | 'low';
-export type InterfaceStyle = 'cinematic' | 'glass' | 'noir' | 'aurora';
+export type InterfaceStyle = 'cinematic' | 'glass' | 'noir' | 'aurora' | 'light';
 
 export interface AppPreferences {
   preferredLanguages: string[];
@@ -61,7 +61,7 @@ function normalizePerformanceMode(value: unknown): PerformanceMode {
 }
 
 function normalizeInterfaceStyle(value: unknown): InterfaceStyle {
-  return value === 'glass' || value === 'noir' || value === 'aurora' ? value : 'cinematic';
+  return value === 'glass' || value === 'noir' || value === 'aurora' || value === 'light' ? value : 'cinematic';
 }
 
 function clampPosition(value: unknown, fallback: number): number {

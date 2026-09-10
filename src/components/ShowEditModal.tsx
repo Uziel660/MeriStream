@@ -112,7 +112,7 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
     }
   };
 
-  const applyIdentity = async (mergeShowId?: string, allowMediaConflict = false) => {
+  const applyIdentity = async (mergeShowId?: string, allowMediaConflict = false, allowSimilar = false) => {
     const parsed = tmdbInput.trim() === '' ? null : Number(tmdbInput);
     if (parsed !== null && (!Number.isInteger(parsed) || parsed <= 0)) {
       setIdentityMsg('Introduce un TMDB ID entero positivo o deja el campo vacío para quitarlo.');
@@ -125,12 +125,16 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
       const response = await fetch(`/api/v1/admin/shows/${encodeURIComponent(show.id)}/identity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tmdb_id: parsed, merge_show_id: mergeShowId, allow_media_conflict: allowMediaConflict, regenerate_metadata: regenerate }),
+        body: JSON.stringify({ tmdb_id: parsed, merge_show_id: mergeShowId, allow_media_conflict: allowMediaConflict, allow_similar: allowSimilar, regenerate_metadata: regenerate }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (response.status === 409 && payload.code === 'TMDB_CONFLICT') {
+      if (response.status === 409 && ['TMDB_CONFLICT', 'TMDB_MEDIA_CONFLICT', 'TMDB_SIMILAR'].includes(payload.code)) {
         setIdentityConflict(payload);
-        setIdentityMsg('Este ID ya existe en otra obra. Confirma la fusión solo si ambas fichas representan la misma obra.');
+        setIdentityMsg(
+          payload.code === 'TMDB_SIMILAR'
+            ? 'Encontré títulos parecidos. Revisa las coincidencias y decide si quieres fusionar o conservar ambas fichas.'
+            : 'Este ID ya está relacionado con otra información. Revisa las coincidencias antes de continuar.',
+        );
         return;
       }
       if (!response.ok) throw new Error(payload.error || 'No se pudo actualizar la identidad.');
@@ -145,6 +149,11 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
       setIdentityBusy(false);
     }
   };
+
+  const identityShows = Array.isArray(identityConflict?.conflicts) ? identityConflict.conflicts : [];
+  const identityMediaItems = Array.isArray(identityConflict?.media_conflicts) ? identityConflict.media_conflicts : [];
+  const identitySimilar = Array.isArray(identityConflict?.similar_candidates) ? identityConflict.similar_candidates : [];
+  const hasIdentityReview = identityShows.length > 0 || identityMediaItems.length > 0 || identitySimilar.length > 0;
 
   const updateStream = async (stream: any, patch: Record<string, unknown>) => {
     setStreamBusy(stream.id);
@@ -362,7 +371,7 @@ const ShowEditModal: React.FC<ShowEditModalProps> = ({ show, onClose, onSaved })
             <button type="button" onClick={() => void applyIdentity()} disabled={identityBusy} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-amber-500/20 px-3 text-xs font-semibold text-amber-100 ring-1 ring-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50"><Globe size={14} />{identityBusy ? 'Comprobando…' : 'Comprobar y aplicar'}</button>
           </div>
           {identityMsg && <p className="mt-2 text-[11px] leading-relaxed text-amber-200">{identityMsg}</p>}
-          {(identityConflict?.conflicts?.length > 0 || identityConflict?.media_conflicts?.length > 0) && <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3"><div className="flex items-start gap-2"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-rose-300" /><div><p className="text-xs font-semibold text-rose-100">Ya existe información con ese ID</p><p className="mt-1 text-[10px] leading-relaxed text-rose-200/80">Si es otra ficha visible, fusiona sus episodios y fuentes. Si solo es un registro canónico sin ficha, confirma conservar ambos registros antes de aplicar.</p></div></div>{identityConflict.conflicts?.length > 0 ? <div className="mt-3 space-y-2">{identityConflict.conflicts.map((candidate: any) => <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-rose-500/20 bg-zinc-950/50 p-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category} · {candidate.year || 'año desconocido'}</p></div><button type="button" onClick={() => { if (window.confirm(`¿Fusionar “${candidate.title}” dentro de “${form.title}”?`)) void applyIdentity(candidate.id); }} disabled={identityBusy} className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-500/15 px-3 text-[11px] font-semibold text-rose-100 ring-1 ring-rose-500/30 hover:bg-rose-500/25 disabled:opacity-50"><AlertTriangle size={12} /> Fusionar y aplicar</button></div>)}</div> : <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3"><p className="text-[10px] text-amber-100">Registro canónico detectado: {identityConflict.media_conflicts?.[0]?.title || 'sin título'}.</p><button type="button" onClick={() => { if (window.confirm('¿Aplicar el ID conservando este registro canónico?')) void applyIdentity(undefined, true); }} disabled={identityBusy} className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-400 px-3 text-[11px] font-bold text-zinc-950 hover:bg-amber-300 disabled:opacity-50"><Globe size={12} /> Aplicar conservando el registro</button></div>}</div>}
+          {hasIdentityReview && <div className={`mt-3 rounded-lg border p-3 ${identitySimilar.length > 0 && identityShows.length === 0 && identityMediaItems.length === 0 ? 'border-amber-500/30 bg-amber-500/10' : 'border-rose-500/30 bg-rose-500/10'}`}><div className="flex items-start gap-2"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-300" /><div><p className="text-xs font-semibold text-amber-100">{identityShows.length > 0 ? 'Ya existe una obra con ese TMDB ID' : identityMediaItems.length > 0 ? 'Ya existe un registro canónico con ese TMDB ID' : 'Encontré títulos parecidos'}</p><p className="mt-1 text-[10px] leading-relaxed text-amber-100/70">Fusiona solo cuando ambas fichas representan la misma obra. Si no, puedes conservarlas por separado.</p></div></div>{identityShows.length > 0 && <div className="mt-3 space-y-2">{identityShows.map((candidate: any) => <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-rose-500/20 bg-zinc-950/50 p-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category} · {candidate.year || 'año desconocido'}</p></div><button type="button" onClick={() => { if (window.confirm(`¿Fusionar “${candidate.title}” dentro de “${form.title}”?`)) void applyIdentity(candidate.id); }} disabled={identityBusy} className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-500/15 px-3 text-[11px] font-semibold text-rose-100 ring-1 ring-rose-500/30 hover:bg-rose-500/25 disabled:opacity-50"><AlertTriangle size={12} /> Fusionar y aplicar</button></div>)}</div>}{identityMediaItems.length > 0 && <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3"><p className="text-[10px] text-amber-100">Registro canónico detectado: {identityMediaItems[0]?.title || 'sin título'}.</p><button type="button" onClick={() => { if (window.confirm('¿Aplicar el ID conservando este registro canónico?')) void applyIdentity(undefined, true, identitySimilar.length === 0); }} disabled={identityBusy} className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-[11px] font-bold text-zinc-950 hover:bg-amber-300 disabled:opacity-50"><Globe size={12} /> Aplicar conservando el registro</button></div>}{identitySimilar.length > 0 && <div className="mt-3 space-y-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-amber-200/80">Posibles coincidencias por título</p>{identitySimilar.map((candidate: any) => <div key={candidate.id} className="flex flex-col gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/50 p-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-xs font-semibold text-zinc-100">{candidate.title}</p><p className="text-[10px] text-zinc-500">{candidate.category} · {candidate.year || 'año desconocido'} · similitud {Math.round(Number(candidate.similarity || 0) * 100)}%</p></div><button type="button" onClick={() => { if (window.confirm(`¿Fusionar “${candidate.title}” dentro de “${form.title}”?`)) void applyIdentity(candidate.id); }} disabled={identityBusy} className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 px-3 text-[11px] font-semibold text-amber-100 ring-1 ring-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50"><AlertTriangle size={12} /> Fusionar y aplicar</button></div>)}{identityShows.length === 0 && <button type="button" onClick={() => { if (window.confirm('¿Aplicar el ID sin fusionar estas fichas?')) void applyIdentity(undefined, identityMediaItems.length > 0, true); }} disabled={identityBusy} className="inline-flex min-h-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[11px] font-semibold text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Aplicar sin fusionar</button>}</div>}</div>}
         </div>
 
         {/* Plataformas disponibles para ESTE título */}

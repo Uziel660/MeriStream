@@ -47,7 +47,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
 - Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
 - Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
-- La suite completa de Vitest terminó **810/810** correcta antes del último cambio; las pruebas dirigidas posteriores siguen verdes. La ejecución E2E conjunta terminó **14/18**: los cuatro fallos restantes son expectativas antiguas del test (fallback local y botón de paginación que ya fue sustituido por autoload, más una etiqueta accesible antigua), no errores del puente de búsqueda; los cinco E2E de búsqueda y los cuatro de móvil/identidad sí pasaron.
+- La suite completa de Vitest terminó **811/811** correcta tras el último cambio. La ejecución E2E conjunta terminó **14/18**: los cuatro fallos restantes son expectativas antiguas del test (fallback local y botón de paginación que ya fue sustituido por autoload, más una etiqueta accesible antigua), no errores del puente de búsqueda; los cinco E2E de búsqueda y los cuatro de móvil/identidad sí pasaron.
 - E2E dirigido móvil + identidad VidSrc: **4/4** correctos.
 - Medición automatizada de imagen hero: `loading=eager`, `fetchPriority=high`, sin overflow horizontal en 390 px; `/admin` conserva campos y botón de 44 px.
 

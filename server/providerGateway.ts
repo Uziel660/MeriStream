@@ -55,6 +55,10 @@ const SPANISH_LOCAL = new Set([
   "cinecalidad", "gnula", "latanime", "tioanime",
 ]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
+// Cuando ya existe una fuente local recuperable, un API externo lento no debe
+// bloquear la primera interacción. Sin fallback local esperamos al API completo
+// para no convertir la única posibilidad de reproducción en un falso vacío.
+const PRIMARY_API_BUDGET_MS = 1_200;
 const cache = new Map<string, {
   expires: number;
   sources: GatewaySource[];
@@ -447,30 +451,69 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
   // Primary direct APIs and local DB are queried in parallel. Primary API results
   // win ties; local Spanish embeds/pages are returned separately for the legacy
   // resolver cascade and can never leak into the internal player as media URLs.
-  const [apiSources, database] = await Promise.all([
-    resolvePrimaryApis(req),
-    sourcesFromDatabase(req),
-  ]);
+  const apiPromise = resolvePrimaryApis(req);
+  const database = await sourcesFromDatabase(req);
+  const hasLocalRecovery = database.direct.length > 0 || database.fallbackCandidates.length > 0;
 
-  const ranked = dedupeAndRank([...apiSources, ...database.direct], req);
-  const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
-    .some((source) => normalizeProviderId(source.provider) === "zokoanime");
-  const fallbackCandidates = rankFallbacks(
-    database.fallbackCandidates.filter((source) => {
-      const provider = normalizeProviderId(source.provider);
-      return provider !== "tioanime" || hasZokoCandidate;
-    }),
-  );
-  cache.set(key, {
-    expires: Date.now() + CACHE_TTL_MS,
-    sources: ranked,
-    fallbackCandidates,
-  });
+  let apiSources: GatewaySource[] = [];
+  let apiTimedOut = false;
+  if (hasLocalRecovery) {
+    const result = await Promise.race([
+      apiPromise
+        .then((sources) => ({ sources, timedOut: false as const }))
+        .catch(() => ({ sources: [] as GatewaySource[], timedOut: false as const })),
+      new Promise<{ sources: GatewaySource[]; timedOut: true }>((resolve) => {
+        setTimeout(() => resolve({ sources: [], timedOut: true }), PRIMARY_API_BUDGET_MS);
+      }),
+    ]);
+    apiSources = result.sources;
+    apiTimedOut = result.timedOut;
+  } else {
+    // Sin DB no hay un camino local que pueda arrancar el reproductor. Esperar
+    // el API evita convertir una obra sin fallback en un falso "sin fuentes".
+    apiSources = await apiPromise.catch(() => []);
+  }
 
-  const persisted = req.persist ? await persistApiSources(req, apiSources) : 0;
+  const compose = (sources: GatewaySource[]) => {
+    const ranked = dedupeAndRank([...sources, ...database.direct], req);
+    const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
+      .some((source) => normalizeProviderId(source.provider) === "zokoanime");
+    const fallbackCandidates = rankFallbacks(
+      database.fallbackCandidates.filter((source) => {
+        const provider = normalizeProviderId(source.provider);
+        return provider !== "tioanime" || hasZokoCandidate;
+      }),
+    );
+    return { ranked, fallbackCandidates };
+  };
+
+  const composed = compose(apiSources);
+
+  if (!apiTimedOut) {
+    cache.set(key, {
+      expires: Date.now() + CACHE_TTL_MS,
+      sources: composed.ranked,
+      fallbackCandidates: composed.fallbackCandidates,
+    });
+  } else {
+    // La respuesta rápida usa DB; el API lento sigue vivo y actualiza la cache
+    // al terminar. Así las siguientes reproducciones reciben VidSrc sin hacer
+    // pagar su latencia de resolución en la primera interacción.
+    void apiPromise.then(async (lateSources) => {
+      const late = compose(lateSources);
+      cache.set(key, {
+        expires: Date.now() + CACHE_TTL_MS,
+        sources: late.ranked,
+        fallbackCandidates: late.fallbackCandidates,
+      });
+      if (req.persist) await persistApiSources(req, lateSources).catch(() => 0);
+    }).catch(() => undefined);
+  }
+
+  const persisted = !apiTimedOut && req.persist ? await persistApiSources(req, apiSources) : 0;
   return {
-    sources: ranked,
-    fallbackCandidates,
+    sources: composed.ranked,
+    fallbackCandidates: composed.fallbackCandidates,
     persisted,
     elapsedMs: Date.now() - started,
   };

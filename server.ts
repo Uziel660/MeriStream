@@ -2951,58 +2951,60 @@ async function startServer() {
         expires_at?: number;
         resolved_at?: number;
       }>();
-      // LatAnime can publish several embeds in one episode. Trying only the
-      // first three made a healthy fourth/fifth server unreachable whenever
-      // the early Uqload/MP4Upload entries were stale.
-      for (const cand of rankedBase.slice(0, 5)) {
-        // Las URLs directas de Vimeos también necesitan su perfil de cabeceras:
-        // el CDN acepta el GET del backend, pero rechaza el navegador sin pasar
-        // por la sesión proxy. Releer su metadata aquí conserva ese requisito.
+      // LatAnime, TioAnime, Gnula y Cinecalidad pueden publicar varios
+      // servidores. Antes se resolvían en serie (hasta 5 × 3 s), por lo que
+      // un embed caído retrasaba todos los demás y hacía saltar el fallback
+      // antes de que existiera una fuente usable. Resolverlos en paralelo
+      // conserva el ranking para elegir el mejor, pero limita la espera al
+      // candidato más lento. Zoko mantiene su contrato especial: solo relee
+      // la metadata del locator estable para no perder Referer/subtítulos.
+      const upgradeCandidates = rankedBase.slice(0, 5);
+      await Promise.all(upgradeCandidates.map(async (cand) => {
         const needsDirectHostMetadata = /vimeos\.[a-z]+|p\d+\.vimeos\.zip/i.test(cand.url) ||
           /zokoanime\.video\/stream\//i.test(url);
-        if (!isDirectMedia(cand.url) || needsDirectHostMetadata) {
-          try {
-            // Zoko's subtitles live on the stable `/stream/...` locator, not
-            // on the extracted CDN URL. Other hosts can be inspected from
-            // the candidate itself.
-            const metadataLocator = /zokoanime\.video\/stream\//i.test(url) ? url : cand.url;
-            const subMeta = await Promise.race([
-              EmbedResolvers.resolveWithMeta(metadataLocator),
-              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout (3s)")), 3000)),
-            ]);
-            if (subMeta.resolved && subMeta.url && (subMeta.type === "direct" || isDirectMedia(subMeta.url))) {
-              let directUrl = subMeta.url;
-              // CDNs con validación de IP de origen o bloqueo de CORS en navegador (ej. okcdn.ru):
-              // deben servirse a través del proxy para reescribir segmentos y evitar CORS/400.
-              if (directUrl.includes("okcdn.ru") || cand.url.includes("ok.ru")) {
-                directUrl = `/api/v1/proxy/stream?referer=https%3A%2F%2Fok.ru%2F&url=${encodeURIComponent(subMeta.url)}`;
-              }
-              const remembered = resolutionCoordinator.rememberResolved({
-                ...subMeta,
-                url: subMeta.url,
-                original_url: url,
-                canonical_locator: url,
-                is_proxyable: true,
-                is_refreshable: true,
-              }, url);
-              upgradedMap.set(cand.url, {
-                url: directUrl,
-                requiredHeaders: remembered.requiredHeaders,
-                subtitles: remembered.subtitles,
-                subtitle_mode: remembered.subtitle_mode,
-                resolution_id: remembered.resolution_id,
-                generation: remembered.generation,
-                delivery_mode: deliveryPlanner.classify(remembered),
-                is_proxyable: remembered.is_proxyable,
-                is_refreshable: remembered.is_refreshable,
-                refresh_after: remembered.refresh_after,
-                expires_at: remembered.expires_at,
-                resolved_at: remembered.resolved_at,
-              });
+        if (isDirectMedia(cand.url) && !needsDirectHostMetadata) return;
+
+        try {
+          // Zoko's subtitles live on the stable `/stream/...` locator, not
+          // on the extracted CDN URL. Other hosts can be inspected from
+          // the candidate itself.
+          const metadataLocator = /zokoanime\.video\/stream\//i.test(url) ? url : cand.url;
+          const subMeta = await Promise.race([
+            EmbedResolvers.resolveWithMeta(metadataLocator),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout (3s)")), 3000)),
+          ]);
+          if (subMeta.resolved && subMeta.url && (subMeta.type === "direct" || isDirectMedia(subMeta.url))) {
+            let directUrl = subMeta.url;
+            // CDNs con validación de IP de origen o bloqueo de CORS en navegador (ej. okcdn.ru):
+            // deben servirse a través del proxy para reescribir segmentos y evitar CORS/400.
+            if (directUrl.includes("okcdn.ru") || cand.url.includes("ok.ru")) {
+              directUrl = `/api/v1/proxy/stream?referer=https%3A%2F%2Fok.ru%2F&url=${encodeURIComponent(subMeta.url)}`;
             }
-          } catch {}
-        }
-      }
+            const remembered = resolutionCoordinator.rememberResolved({
+              ...subMeta,
+              url: subMeta.url,
+              original_url: url,
+              canonical_locator: url,
+              is_proxyable: true,
+              is_refreshable: true,
+            }, url);
+            upgradedMap.set(cand.url, {
+              url: directUrl,
+              requiredHeaders: remembered.requiredHeaders,
+              subtitles: remembered.subtitles,
+              subtitle_mode: remembered.subtitle_mode,
+              resolution_id: remembered.resolution_id,
+              generation: remembered.generation,
+              delivery_mode: deliveryPlanner.classify(remembered),
+              is_proxyable: remembered.is_proxyable,
+              is_refreshable: remembered.is_refreshable,
+              refresh_after: remembered.refresh_after,
+              expires_at: remembered.expires_at,
+              resolved_at: remembered.resolved_at,
+            });
+          }
+        } catch {}
+      }));
 
       const rankedStreams = rankedBase.map((r) => {
         const upgraded = upgradedMap.get(r.url);

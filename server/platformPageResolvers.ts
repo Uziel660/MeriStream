@@ -443,7 +443,11 @@ export async function resolvePlatformPage(
   // Si el mejor candidato es un embed (YourUpload, Vimeos, Goodstream, Mega, StreamWish),
   // intentar desofuscarlo a stream directo de inmediato probando los mejores candidatos
   if (!isDirect) {
-    for (const cand of scoredList.slice(0, 3)) {
+    // El orden de prioridad sigue siendo el del ranking, pero las redes de
+    // cada candidato se consultan en paralelo. En producción había páginas de
+    // TioAnime/Cinecalidad con tres embeds lentos: el bucle serie añadía hasta
+    // 3 × el timeout aunque el segundo servidor ya estuviera disponible.
+    const resolvedCandidates = await Promise.all(scoredList.slice(0, 3).map(async (cand) => {
       try {
         const subMeta = await EmbedResolvers.resolveWithMeta(cand.url);
         if (subMeta.resolved && subMeta.url && subMeta.type === "direct") {
@@ -452,14 +456,13 @@ export async function resolvePlatformPage(
           // become the preferred source and trigger a rapid false cascade.
           if (subMeta.provider === "Mega" || /\/api\/v1\/stream\/mega(?:\?|$)/i.test(subMeta.url)) {
             const megaHealthy = await (options.megaHealthCheck || defaultMegaHealthCheck)(cand.url);
-            if (!megaHealthy) continue;
+            if (!megaHealthy) return null;
           }
-          resolvedStreamUrl = subMeta.url;
-          isDirect = true;
-          if (subMeta.requiredHeaders) {
-            requiredHeaders = { ...subMeta.requiredHeaders };
-          }
-          break;
+          return {
+            candidate: cand,
+            url: subMeta.url,
+            requiredHeaders: subMeta.requiredHeaders ? { ...subMeta.requiredHeaders } : undefined,
+          };
         }
 
         // `EmbedResolvers` intentionally keeps MEGA `/embed/#!...` locators
@@ -471,13 +474,24 @@ export async function resolvePlatformPage(
           if (mega?.kind === "file") {
             const megaHealthy = await (options.megaHealthCheck || defaultMegaHealthCheck)(cand.url);
             if (megaHealthy) {
-              resolvedStreamUrl = `/api/v1/stream/mega?url=${encodeURIComponent(mega.canonicalUrl)}`;
-              isDirect = true;
-              break;
+              return {
+                candidate: cand,
+                url: `/api/v1/stream/mega?url=${encodeURIComponent(mega.canonicalUrl)}`,
+              };
             }
           }
         }
       } catch {}
+      return null;
+    }));
+
+    // Escoger el primer éxito siguiendo el ranking original, no el orden de
+    // llegada, para que la aceleración no cambie la política de calidad.
+    const firstResolved = resolvedCandidates.find((entry) => entry !== null);
+    if (firstResolved) {
+      resolvedStreamUrl = firstResolved.url;
+      isDirect = true;
+      if (firstResolved.requiredHeaders) requiredHeaders = firstResolved.requiredHeaders;
     }
   }
 

@@ -19,7 +19,7 @@ import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
 import { createPlaybackRequests } from './utils/playbackBootstrap';
-import { RefreshCw, Film, Tv, ArrowUpRight } from 'lucide-react';
+import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
 
 const STORAGE_CONTINUE_KEY = 'nitiflix_continue_watching_v1';
@@ -495,6 +495,7 @@ export function App() {
   const { isGenreHidden, isShowHidden } = useHiddenGenres();
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [serverSearchResults, setServerSearchResults] = useState<Show[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>('all');
@@ -944,6 +945,7 @@ export function App() {
       // already-rendered TMDB cache instead of showing provider-owned rows with
       // incomplete identity or artwork.
       if (publicRes.ok) {
+        if (!isBackground) setCatalogError(null);
         const data = await publicRes.json();
         const list = Array.isArray(data) ? data : data.shows || [];
         if (Array.isArray(list)) {
@@ -1006,9 +1008,12 @@ export function App() {
           } catch {}
           return { lastFetchedPage, hasMore, usedPublicCatalog: true };
         }
+      } else if (!isBackground) {
+        setCatalogError(`No se pudo cargar el catálogo (HTTP ${publicRes.status}).`);
       }
     } catch (e) {
       if (!isBackground) console.error('Error cargando catálogo:', e);
+      if (!isBackground) setCatalogError('No se pudo conectar con el catálogo. Comprueba el túnel e inténtalo de nuevo.');
     }
     return null;
   };
@@ -1144,6 +1149,7 @@ export function App() {
   const loadCatalog = async () => {
     try {
       setIsLoading(true);
+      setCatalogError(null);
 
       // 1. Try cache first (instant)
       try {
@@ -2187,6 +2193,19 @@ export function App() {
             <section className="feature feature-loading" aria-hidden="true">
               <div className="feature-loading-skeleton" />
             </section>
+          ) : catalogError ? (
+            <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-5 animate-in fade-in duration-300">
+              <div className="relative mx-auto w-20 h-20 flex items-center justify-center rounded-2xl bg-zinc-900 text-rose-300 border border-zinc-800 shadow-xl">
+                <AlertCircle size={36} className="stroke-[1.6]" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">No se pudo cargar el catálogo</h2>
+                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">{catalogError}</p>
+              </div>
+              <button type="button" onClick={loadCatalog} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-amber-300 transition-colors">
+                <RefreshCw size={15} /> Reintentar
+              </button>
+            </div>
           ) : (
           /* BIENVENIDA SI NO HAY TÍTULOS */
           (

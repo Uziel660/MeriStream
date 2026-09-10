@@ -167,7 +167,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .site-header.has-search-open .header-account { opacity:0; pointer-events:none; }
 
 /* ---------- hero ---------- */
-.feature { position:relative; min-height:clamp(26rem,66vh,46rem); overflow:hidden; isolation:isolate; border-bottom:1px solid rgba(255,255,255,.035); background:#0b0e14; }
+.feature { position:relative; height:clamp(42rem,100svh,46rem); min-height:0; overflow:hidden; isolation:isolate; border-bottom:1px solid rgba(255,255,255,.035); background:#0b0e14; }
+.feature-loading { display:grid; place-items:center; }
+.feature-loading-skeleton { width:min(100%,var(--ms-content)); height:100%; background:linear-gradient(110deg,rgba(255,255,255,.025) 30%,rgba(255,255,255,.07) 45%,rgba(255,255,255,.025) 60%); background-size:220% 100%; animation:feature-loading-shimmer 1.6s linear infinite; }
+@keyframes feature-loading-shimmer { to { background-position:-220% 0; } }
 .feature-art { position:absolute; inset:0; z-index:-2; }
 .feature-image,.feature-placeholder { width:100%; height:100%; object-fit:cover; object-position:center 22%; }
 .feature-image { filter:saturate(.94) contrast(1.03); transform:scale(1.006); }
@@ -177,7 +180,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   linear-gradient(0deg, var(--ms-bg) 0%, rgba(8,10,15,.62) 18%, transparent 48%),
   linear-gradient(180deg, rgba(8,10,15,.28), transparent 24%); }
 .feature-caption { position:absolute; right:clamp(1rem,3vw,2.5rem); bottom:1.6rem; color:rgba(255,255,255,.48); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; }
-.feature-content { width:min(100%,var(--ms-content)); min-height:inherit; margin:0 auto; padding:clamp(5.5rem,11vh,8.5rem) clamp(1rem,4vw,3.2rem) clamp(4.5rem,8vh,6rem); display:flex; flex-direction:column; justify-content:flex-end; align-items:flex-start; }
+.feature-content { width:min(100%,var(--ms-content)); height:100%; min-height:0; box-sizing:border-box; margin:0 auto; padding:clamp(5.5rem,11vh,8.5rem) clamp(1rem,4vw,3.2rem) clamp(4.5rem,8vh,6rem); display:flex; flex-direction:column; justify-content:flex-end; align-items:flex-start; }
 .eyebrow { display:flex; align-items:center; gap:.5rem; margin:0 0 .7rem; color:#d7dce4; font-size:.72rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
 .feature-dash { width:1.6rem; height:2px; border-radius:99px; background:var(--ms-accent); }
 .feature-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; margin-bottom:.65rem; color:var(--ms-text-muted); font-size:.78rem; }

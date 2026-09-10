@@ -2080,6 +2080,23 @@ export function App() {
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN PERSONALIZADA INTELIGENTE */}
+                  {isLoadingRecs && homeSections.primaryRails.length === 0 && (
+                    <>
+                      <MediaRow
+                        title="Recomendaciones"
+                        subtitle="Preparando tu selección"
+                        items={[]}
+                        onSelectMedia={handleOpenDetails}
+                        isLoading
+                      />
+                      <MediaRow
+                        title="Más para descubrir"
+                        items={[]}
+                        onSelectMedia={handleOpenDetails}
+                        isLoading
+                      />
+                    </>
+                  )}
                   {homeSections.primaryRails.map((rail) => (
                     <MediaRow
                       key={rail.id}
@@ -2138,8 +2155,15 @@ export function App() {
             </div>
           </>
         ) : (
+          /* Reserva el hero durante la carga para que el catálogo no empuje
+             el footer desde el viewport al primer render (CLS). */
+          isLoading ? (
+            <section className="feature feature-loading" aria-hidden="true">
+              <div className="feature-loading-skeleton" />
+            </section>
+          ) : (
           /* BIENVENIDA SI NO HAY TÍTULOS */
-          !isLoading && (
+          (
             <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-8 animate-in fade-in duration-300">
               <div className="relative mx-auto w-20 h-20 flex items-center justify-center rounded-2xl bg-zinc-900 text-amber-400 border border-zinc-800 shadow-xl">
                 <Film size={36} className="stroke-[1.6]" />
@@ -2205,6 +2229,7 @@ export function App() {
                 </button>
               </div>
             </div>
+          )
           )
         )}
         <div ref={autoLoadSentinelRef} className="catalog-autoload-sentinel" aria-hidden="true" />

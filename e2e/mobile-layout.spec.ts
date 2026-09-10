@@ -20,11 +20,15 @@ test.describe('Responsive móvil', () => {
       scrollWidth: document.documentElement.scrollWidth,
       heroPriority: document.querySelector<HTMLElement>('.feature-image') &&
         (document.querySelector<HTMLImageElement>('.feature-image')?.fetchPriority || null),
+      heroWidth: document.querySelector<HTMLImageElement>('.feature-image')?.getAttribute('width') || null,
+      heroHeight: document.querySelector<HTMLImageElement>('.feature-image')?.getAttribute('height') || null,
       controls: [...document.querySelectorAll<HTMLElement>('.search-toggle, .preferences-trigger, .account-login')]
         .map((element) => element.getBoundingClientRect().height),
     }));
     expect(homeGeometry.scrollWidth).toBeLessThanOrEqual(homeGeometry.width + 1);
     expect(homeGeometry.heroPriority).toBe('high');
+    expect(homeGeometry.heroWidth).toBe('1920');
+    expect(homeGeometry.heroHeight).toBe('1080');
     expect(homeGeometry.controls.every((height) => height >= 40)).toBeTruthy();
 
     await page.getByRole('button', { name: 'Abrir búsqueda' }).click();

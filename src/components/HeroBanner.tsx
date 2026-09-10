@@ -71,6 +71,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
           sizes="100vw"
           alt=""
           className="feature-image"
+          // El hero es un fondo panorámico; estas dimensiones reservan su
+          // proporción antes de que llegue la respuesta del CDN y evitan CLS.
+          width={1920}
+          height={1080}
           loading="eager"
           fetchPriority="high"
           decoding="async"

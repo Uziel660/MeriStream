@@ -36,6 +36,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - **Lectura de preferencias:** `useHiddenGenres` ya no lee `localStorage` durante el inicializador síncrono; hidrata después del primer paint y luego sincroniza servidor/pestañas.
 - **Recuperación HLS:** ante un `mediaError` fatal se intenta una recuperación in-place una vez por intento antes de escalar a proxy/failover; se registra el motivo.
 - **Prioridad de imágenes:** `SmartImage` conserva `fetchPriority="high"` para el hero; antes el wrapper lo eliminaba y anulaba la pista LCP.
+- **CLS del primer render:** el hero reserva una altura responsive estable, la imagen declara `width/height` panorámicos y se muestran skeletons de recomendaciones mientras llega la respuesta; además `index.html` preconecta con `image.tmdb.org`.
 - **Pruebas E2E nuevas:** regresión VidSrc para TMDB `1465063` y auditoría móvil de home, ficha y login `/admin` (`e2e/provider-identity-guards.spec.ts`, `e2e/mobile-layout.spec.ts`).
 
 ### Evidencia de validación de esta revisión
@@ -50,11 +51,12 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - La suite completa de Vitest terminó **811/811** correcta tras el último cambio. La ejecución E2E conjunta terminó **14/18**: los cuatro fallos restantes son expectativas antiguas del test (fallback local y botón de paginación que ya fue sustituido por autoload, más una etiqueta accesible antigua), no errores del puente de búsqueda; los cinco E2E de búsqueda y los cuatro de móvil/identidad sí pasaron.
 - E2E dirigido móvil + identidad VidSrc: **4/4** correctos.
 - Medición automatizada de imagen hero: `loading=eager`, `fetchPriority=high`, sin overflow horizontal en 390 px; `/admin` conserva campos y botón de 44 px.
+- Medición local con PerformanceObserver en sesión limpia: CLS aproximado **0,025** en escritorio (1280×720) y **0,086** en móvil (390×844), frente a ~0,33/~0,67 antes del placeholder y la reserva de filas. El resultado puede variar con red, caché y extensiones.
 
 ### Aún pendiente
 
 - Validación de identidad del vídeo servido más allá del idioma: comparar título/alias/año/duración o metadatos del proveedor cuando estén disponibles, y registrar con mayor detalle por qué se acepta/descarta cada candidato.
-- Estrategia segura de preload del hero/LCP dinámico y medición con DevTools en un perfil de navegador limpio (la prioridad alta ya está aplicada y comprobada).
+- Preload literal del hero/LCP dinámico: no se añade porque la portada se decide después de consultar el catálogo y un `href` fijo podría descargar la película equivocada; se dejó preconnect, dimensiones, prioridad alta y reserva de layout.
 - Auditoría visual completa de todas las rutas y estados autenticados, especialmente el panel `/admin`; home, ficha y login móvil ya tienen evidencia automatizada.
 - E2E final de reproducción prolongada con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
 - Informe visual/E2E final y revisión de identidad por título/duración siguen pendientes; los cambios de esta revisión están publicados en `lastversion`.

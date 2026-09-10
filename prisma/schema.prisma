@@ -31,6 +31,10 @@ model Show {
   status               String    @default("Finalizado")
   genres               String    @default("Multimedia")
   source               String    @default("")
+  /// Campos editados desde administración. TMDB/backfill los respeta en futuras sincronizaciones.
+  manual_overrides     Json?
+  /// Reglas por obra: { main: [provider...], legacy: [provider...] }.
+  main_path_overrides   Json?
   search_vector        Unsupported("tsvector")?
   created_at           DateTime  @default(now())
   updated_at           DateTime  @updatedAt
@@ -98,6 +102,13 @@ model CrawlTask {
   current_item_title  String?
   error_message       String?
   logs                String    @default("[]") @db.Text
+  // Opciones declaradas por el administrador para que el worker no tenga que
+  // adivinar el adaptador, el tipo de contenido ni la forma de paginar.
+  resolver_hint       String?
+  content_kind       String?
+  pagination_mode     String    @default("auto")
+  pagination_template String?
+  pagination_examples String   @default("[]") @db.Text
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 }
@@ -218,6 +229,8 @@ model SourceLink {
   is_verified    Boolean   @default(false)
   last_checked   DateTime?
   source_status  String    @default("discovered")
+  /// null = política global, true = forzar ruta normal, false = dejar en legacy.
+  main_path_override Boolean?
   canonical_locator String?
   external_id    String?
   extraction_method String?

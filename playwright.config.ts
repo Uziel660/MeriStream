@@ -23,6 +23,12 @@ export default defineConfig({
     timeout: 15_000,
   },
   reporter: 'html',
+  webServer: {
+    command: 'cross-env DATABASE_URL="postgresql://postgres:postgres@localhost:5432/meristream_test?schema=public" npm run dev',
+    url: 'http://127.0.0.1:3010',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000,
+  },
   use: {
     trace: 'on-first-retry',
     // Video de <video> requiere timeout de acción mayor

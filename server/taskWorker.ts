@@ -57,6 +57,11 @@ export interface CrawlJob {
   created_at: string;
   updated_at: string;
   logs: Array<{ timestamp: string; level: "info" | "success" | "warn" | "error"; message: string }>;
+  resolver_hint?: string | null;
+  content_kind?: string | null;
+  pagination_mode: "auto" | "template" | "examples" | string;
+  pagination_template?: string | null;
+  pagination_examples: string[];
 }
 
 export interface WorkerSettings {
@@ -120,6 +125,78 @@ const ANTIBOT_HITS_TO_THROTTLE = 3;
 const ANTIBOT_MAX_THROTTLE_FACTOR = 4;
 
 type QueueItem = CrawlJob["items_queue"][number];
+
+export type CrawlPaginationMode = "auto" | "template" | "examples";
+
+/** Extrae URLs de un textarea que puede incluir etiquetas como "Página 2:". */
+export function extractPaginationUrls(value: unknown): string[] {
+  const lines = Array.isArray(value) ? value : String(value || "").split(/\r?\n/);
+  const urls: string[] = [];
+  for (const line of lines) {
+    const matches = String(line || "").match(/https?:\/\/[^\s<>"]+/gi) || [];
+    for (const raw of matches) {
+      const cleaned = raw.replace(/[),.;]+$/, "");
+      try {
+        const parsed = new URL(cleaned);
+        if ((parsed.protocol === "http:" || parsed.protocol === "https:") && !urls.includes(parsed.toString())) {
+          urls.push(parsed.toString());
+        }
+      } catch {}
+    }
+  }
+  return urls.slice(0, 12);
+}
+
+/**
+ * Detecta el número de página que cambia entre dos enlaces y conserva el resto
+ * de la URL como plantilla. También funciona con un solo enlace que use una
+ * marca reconocible (page=2, /page/2, pagina-2, etc.).
+ */
+export function detectPaginationTemplate(input: unknown): { template: string; page_start: number; examples: string[] } | null {
+  const examples = extractPaginationUrls(input);
+  if (examples.length === 0) return null;
+  const numberPattern = /\d+/g;
+  const replaceAt = (source: string, start: number, length: number) => `${source.slice(0, start)}{page}${source.slice(start + length)}`;
+  const first = examples[0];
+  const firstMatches = Array.from(first.matchAll(numberPattern));
+
+  for (let i = 1; i < examples.length; i++) {
+    const other = examples[i];
+    const a = Array.from(first.matchAll(numberPattern));
+    const b = Array.from(other.matchAll(numberPattern));
+    for (let idx = 0; idx < Math.min(a.length, b.length); idx++) {
+      const av = Number(a[idx][0]);
+      const bv = Number(b[idx][0]);
+      if (!Number.isFinite(av) || !Number.isFinite(bv) || av === bv) continue;
+      // El resto de la URL debe coincidir al quitar el número; esto evita
+      // convertir un año del título en un falso paginador.
+      const template = replaceAt(first, a[idx].index!, a[idx][0].length);
+      const expected = replaceAt(other, b[idx].index!, b[idx][0].length);
+      if (template === expected) return { template, page_start: av, examples };
+    }
+  }
+
+  for (const match of firstMatches) {
+    const index = match.index ?? 0;
+    const before = first.slice(Math.max(0, index - 16), index).toLowerCase();
+    if (/(?:page|pagina|página|pag|p)[^a-z0-9]{0,5}$/.test(before) || /\/\d+\/?$/.test(first.slice(Math.max(0, index - 7), index + match[0].length + 2))) {
+      return { template: replaceAt(first, index, match[0].length), page_start: Number(match[0]), examples };
+    }
+  }
+  return null;
+}
+
+function normalizePaginationMode(value: unknown): CrawlPaginationMode {
+  return value === "template" || value === "examples" ? value : "auto";
+}
+
+function normalizeContentKind(value: unknown): "movie" | "series" | "anime" | null {
+  const kind = String(value || "").trim().toLowerCase();
+  if (kind === "movie" || kind === "pelicula" || kind === "película" || kind === "documentary" || kind === "documental") return "movie";
+  if (kind === "series" || kind === "serie" || kind === "tv") return "series";
+  if (kind === "anime") return "anime";
+  return null;
+}
 
 const isDiscoveryMarker = (it: QueueItem): boolean => Boolean(it) && it.url === DISCOVERY_MARKER_URL;
 const stripDiscoveryMarkers = (items: QueueItem[]): QueueItem[] => items.filter((it) => !isDiscoveryMarker(it));
@@ -319,6 +396,11 @@ class BackgroundCrawlerWorker {
           error_message: true,
           created_at: true,
           updated_at: true,
+          resolver_hint: true,
+          content_kind: true,
+          pagination_mode: true,
+          pagination_template: true,
+          pagination_examples: true,
         },
       });
 
@@ -340,6 +422,11 @@ class BackgroundCrawlerWorker {
         created_at: t.created_at.toISOString(),
         updated_at: t.updated_at.toISOString(),
         logs: [],
+        resolver_hint: t.resolver_hint,
+        content_kind: t.content_kind,
+        pagination_mode: t.pagination_mode || "auto",
+        pagination_template: t.pagination_template,
+        pagination_examples: parseJsonArray<string>(t.pagination_examples),
       }));
     } catch (e) {
       console.error("Error buscando jobs en DB:", e);
@@ -376,6 +463,11 @@ class BackgroundCrawlerWorker {
           created_at: t.created_at.toISOString(),
           updated_at: t.updated_at.toISOString(),
           logs: slicedLogs,
+          resolver_hint: t.resolver_hint,
+          content_kind: t.content_kind,
+          pagination_mode: t.pagination_mode || "auto",
+          pagination_template: t.pagination_template,
+          pagination_examples: parseJsonArray<string>(t.pagination_examples),
         };
       } catch {
         // Una lectura transitoria (pool ocupado/P1008) no debe interpretarse
@@ -405,6 +497,11 @@ class BackgroundCrawlerWorker {
     max_pages?: number;
     delay_ms?: number;
     name?: string;
+    resolver_hint?: string | null;
+    content_kind?: string | null;
+    pagination_mode?: CrawlPaginationMode;
+    pagination_template?: string | null;
+    pagination_examples?: string[] | string | null;
   }): Promise<CrawlJob> {
     const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const targetUrl = options.target_url.trim();
@@ -412,6 +509,14 @@ class BackgroundCrawlerWorker {
     // En full_catalog max_pages se ignora en runtime (barrido autónomo); 0 = "todas".
     const maxPages = options.max_pages ?? (scope === "full_catalog" ? 0 : 1);
     const delay = options.delay_ms && options.delay_ms >= 500 ? options.delay_ms : this.settings.default_delay_ms;
+    const paginationMode = normalizePaginationMode(options.pagination_mode);
+    const paginationExamples = extractPaginationUrls(options.pagination_examples);
+    const detected = paginationMode === "examples" || (paginationMode === "auto" && paginationExamples.length > 0)
+      ? detectPaginationTemplate(paginationExamples)
+      : null;
+    const paginationTemplate = (options.pagination_template || detected?.template || null)?.trim() || null;
+    const resolverHint = String(options.resolver_hint || "").trim() || null;
+    const contentKind = String(options.content_kind || "").trim() || null;
 
     let domainName = "Sitio Web";
     try {
@@ -430,9 +535,10 @@ class BackgroundCrawlerWorker {
       timestamp: new Date().toISOString(),
       level: "info" as const,
       message:
-        scope === "full_catalog"
-          ? `Tarea de BARRIDO COMPLETO creada para ${targetUrl}. Se recorrerá todo el catálogo automáticamente (delay cortés de ${delay}ms).`
-          : `Tarea creada para ${targetUrl}. En cola de ejecución del worker con delay cortés de ${delay}ms.`,
+        `${scope === "full_catalog" ? "Tarea de BARRIDO COMPLETO creada" : "Tarea creada"} para ${targetUrl}. ` +
+        `Resolver: ${resolverHint || "automático"}; tipo: ${contentKind || "automático"}; ` +
+        `paginación: ${paginationTemplate ? `plantilla ${paginationTemplate}` : paginationMode}. ` +
+        `En cola de ejecución con delay cortés de ${delay}ms.`,
     };
 
     const taskRecord = await prisma.crawlTask.create({
@@ -451,6 +557,11 @@ class BackgroundCrawlerWorker {
         items_queue: "[]",
         error_message: null,
         logs: JSON.stringify([initialLog]),
+        resolver_hint: resolverHint,
+        content_kind: contentKind,
+        pagination_mode: paginationMode,
+        pagination_template: paginationTemplate,
+        pagination_examples: JSON.stringify(paginationExamples),
       },
     });
 
@@ -471,6 +582,11 @@ class BackgroundCrawlerWorker {
       created_at: taskRecord.created_at.toISOString(),
       updated_at: taskRecord.updated_at.toISOString(),
       logs: [initialLog],
+      resolver_hint: resolverHint,
+      content_kind: contentKind,
+      pagination_mode: paginationMode,
+      pagination_template: paginationTemplate,
+      pagination_examples: paginationExamples,
     };
   }
 
@@ -854,7 +970,7 @@ class BackgroundCrawlerWorker {
         let analysis: UniversalAnalysisResult | null = null;
         let analysisError: string | null = null;
         try {
-          analysis = await analyzeUniversalUrl(job.target_url);
+          analysis = await analyzeUniversalUrl(job.target_url, undefined, job.resolver_hint || undefined);
         } catch (err: any) {
           analysisError = String(err?.message || err);
           await this.addLog(job.id, "warn", `No se pudo analizar la página inicial: ${analysisError}.`);
@@ -1018,7 +1134,7 @@ class BackgroundCrawlerWorker {
               orderBy: { created_at: "asc" },
               take: 20,
             });
-            const kindHint = kindHintFromCatalogUrl(job.target_url);
+            const kindHint = normalizeContentKind(job.content_kind) || kindHintFromCatalogUrl(job.target_url);
             const sameKindCandidates = kindHint
               ? knownCandidates.filter((show) => show.category === kindHint)
               : [];
@@ -1075,13 +1191,13 @@ class BackgroundCrawlerWorker {
                 adaptivePool.success();
                 continue;
               }
-              const itemKind = (item.kind || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
+              const itemKind = (item.kind || normalizeContentKind(job.content_kind) || kindHintFromCatalogUrl(job.target_url) || knownShow.category || "anime") as "movie" | "series" | "anime";
               // Las películas ya traen su ficha recuperable en el listado: no
               // hace falta descargar 23k fichas individuales. Series/anime sí
               // necesitan detalle para descubrir sus episodios.
               const itemAnalysis = itemKind === "movie"
                 ? null
-                : await analyzeUniversalUrl(item.url || item.title, "detail");
+                : await analyzeUniversalUrl(item.url || item.title, "detail", job.resolver_hint || undefined);
               const eps = itemAnalysis
                 ? normalizeExtractedEpisodes(itemAnalysis.episodes, sourceSite)
                 : [];
@@ -1129,17 +1245,18 @@ class BackgroundCrawlerWorker {
             job.scope === "full_catalog" &&
             /cinecalidad|gnulahd|latanime|tioanime/i.test(job.target_url);
           const sourceSite = siteOf(item.url || job.target_url);
-          const catalogKindHint = item.kind || kindHintFromCatalogUrl(job.target_url);
+          const catalogKindHint = item.kind || normalizeContentKind(job.content_kind) || kindHintFromCatalogUrl(job.target_url);
           const skipMovieDetail = lightweightPrimaryCatalogImport && catalogKindHint === "movie";
           const itemAnalysis = skipMovieDetail
             ? ({ episodes: [] } as UniversalAnalysisResult)
             : await analyzeUniversalUrl(
                 item.url || item.title,
                 lightweightPrimaryCatalogImport ? "detail" : undefined,
+                job.resolver_hint || undefined,
               );
           const parsedItemTitle = parseTitleQuery(item.title || itemAnalysis.title);
           const minimalTitle = item.title || itemAnalysis.title || parsedItemTitle.baseTitle || "Contenido indexado";
-          const minimalKind = (item.kind || itemAnalysis.content_type || kindHintFromCatalogUrl(job.target_url) || "anime") as "movie" | "series" | "anime";
+          const minimalKind = (item.kind || itemAnalysis.content_type || normalizeContentKind(job.content_kind) || kindHintFromCatalogUrl(job.target_url) || "anime") as "movie" | "series" | "anime";
           const extractedEpisodes = lightweightPrimaryCatalogImport
             ? normalizeExtractedEpisodes(itemAnalysis.episodes, sourceSite)
             : itemAnalysis.episodes;
@@ -1332,7 +1449,7 @@ class BackgroundCrawlerWorker {
       const batchPages: number[] = [];
       for (let p = page; p < Math.min(endPageExclusive, page + pageConcurrency); p++) batchPages.push(p);
 
-      const batchUrls = batchPages.map((p) => ({ page: p, url: this.buildPageUrl(job.target_url, p) }));
+      const batchUrls = batchPages.map((p) => ({ page: p, url: this.buildPageUrl(job, p) }));
       const results = await extractCatalogListingsBatch(
         batchUrls.map((b) => b.url),
         {
@@ -1434,8 +1551,12 @@ class BackgroundCrawlerWorker {
    * 3) Genérico: ?page=N (si el sitio usa otro esquema, el detector de
    *    "páginas consecutivas sin obras nuevas" corta el barrido solo).
    */
-  private buildPageUrl(baseUrl: string, pageNumber: number): string {
-    return buildCatalogPageUrl(baseUrl, pageNumber);
+  private buildPageUrl(job: CrawlJob, pageNumber: number): string {
+    const template = String(job.pagination_template || "").trim();
+    if (template.includes("{page}")) {
+      return template.replace(/\{page\}/gi, String(pageNumber));
+    }
+    return buildCatalogPageUrl(job.target_url, pageNumber);
   }
 }
 
@@ -1459,12 +1580,16 @@ export const taskWorker = new BackgroundCrawlerWorker();
  */
 export async function enqueueFullCatalogSweep(
   targetUrl: string,
-  opts?: { delay_ms?: number; name?: string }
+  opts?: { delay_ms?: number; name?: string; resolver_hint?: string; content_kind?: string; pagination_template?: string; pagination_examples?: string[] }
 ): Promise<CrawlJob> {
   return taskWorker.createJob({
     target_url: targetUrl,
     scope: "full_catalog",
     delay_ms: opts?.delay_ms,
     name: opts?.name,
+    resolver_hint: opts?.resolver_hint,
+    content_kind: opts?.content_kind,
+    pagination_template: opts?.pagination_template,
+    pagination_examples: opts?.pagination_examples,
   });
 }

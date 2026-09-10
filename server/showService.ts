@@ -1,5 +1,5 @@
 // server/showService.ts
-import { prisma, normalizeTitle } from "./db";
+import { prisma, Prisma, normalizeTitle } from "./db";
 import { enqueueShowBackfill, showNeedsBackfill } from "./metadataBackfill";
 import { enrichUniversalMetadata, cleanQueryTitle, parseTitleQuery } from "./metadataEngine";
 import { applyEnrichmentGapFill, hasSubstantiveText, isPlausibleYear } from "./metadataMerge";
@@ -16,6 +16,7 @@ import {
   playbackKindForCategory,
 } from "./showEpisodePolicy";
 import { PROVIDER_POLICIES, isProviderAllowedInMainPath, normalizeProviderId } from "./providers/providerPolicy";
+import { getCatalogPolicy, normalizeShowProviderOverrides } from "./catalogPolicy";
 import {
   enqueueWrite,
   enqueueShowCreate,
@@ -727,16 +728,32 @@ async function mergeSequelIntoTwin(
   });
   let nextNumber = (lastEp?.episode_number ?? 0) + 1;
   let added = 0;
+  const urlsToCheck = normalizedEpisodes
+    .map((ep) => ep.url)
+    .filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+  const existingDupes = urlsToCheck.length > 0
+    ? await prisma.episode.findMany({
+        where: { show_id: twin.id, source_url: { in: urlsToCheck } },
+        select: { source_url: true },
+      })
+    : [];
+  const existingUrls = new Set(existingDupes.map((episode) => episode.source_url));
+  const episodesToCreate: Array<{ show_id: string; episode_number: number; title: string; source_url: string }> = [];
+
   for (const ep of normalizedEpisodes) {
-    if (ep.url) {
-      const dupe = await prisma.episode.findFirst({ where: { show_id: twin.id, source_url: ep.url } });
-      if (dupe) continue;
-    }
-    await prisma.episode.create({
-      data: { show_id: twin.id, episode_number: nextNumber, title: ep.title, source_url: ep.url },
+    if (ep.url && existingUrls.has(ep.url)) continue;
+    if (ep.url) existingUrls.add(ep.url);
+    episodesToCreate.push({
+      show_id: twin.id,
+      episode_number: nextNumber,
+      title: ep.title,
+      source_url: ep.url,
     });
     nextNumber++;
-    added++;
+  }
+  if (episodesToCreate.length > 0) {
+    await prisma.episode.createMany({ data: episodesToCreate });
+    added = episodesToCreate.length;
   }
 
   const twinTitleInfo: CanonicalTitleInfo = {
@@ -1082,6 +1099,12 @@ type LiteShowsOptions = {
   onlyMainPath?: boolean;
   /** Admin mode can include legacy rows without returning duplicate identities. */
   dedupe?: boolean;
+  /** Optional admin filters kept server-side so pagination remains accurate. */
+  year?: number;
+  genre?: string;
+  sort?: "recientes" | "rating" | "anio" | "az";
+  /** Admin identity queue: only works that still lack a TMDB id. */
+  missingTmdb?: boolean;
 };
 
 /**
@@ -1127,14 +1150,23 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   const baseTitles = [...new Set(shows
     .map((show) => String(show.base_normalized_title || show.normalized_title || "").trim())
     .filter(Boolean))];
+  const globalCatalogPolicy = getCatalogPolicy();
+  const workMainProviders = new Set(shows.flatMap((show) => normalizeShowProviderOverrides(show.main_path_overrides).main));
   const mainPathSourceSites = [...new Set(
     Object.values(PROVIDER_POLICIES)
       .filter((policy) => ["movie", "series", "anime"].some((kind) =>
-        isProviderAllowedInMainPath(policy.id, kind as any)
+        isProviderAllowedInMainPath(policy.id, kind as any) || globalCatalogPolicy.providerModes[policy.id] === "main" || workMainProviders.has(policy.id)
       ))
       .flatMap((policy) => [policy.id, ...(policy.hosts || [])])
+      .concat([...workMainProviders])
       .map((value) => String(value).toLowerCase())
   )];
+  const sourceLinkMainPathWhere = {
+    OR: [
+      { source_site: { in: mainPathSourceSites } },
+      { main_path_override: true },
+    ],
+  } as const;
 
   const mediaItemSelect = {
     id: true,
@@ -1143,10 +1175,10 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
     normalized_title: true,
     kind: true,
     episodes: {
-      where: { links: { some: { source_site: { in: mainPathSourceSites } } } },
+      where: { links: { some: sourceLinkMainPathWhere } },
       select: {
         links: {
-          where: { source_site: { in: mainPathSourceSites } },
+          where: sourceLinkMainPathWhere,
           select: {
             url: true,
             source_site: true,
@@ -1154,6 +1186,7 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
             link_type: true,
             audio_language: true,
             subtitle_language: true,
+            main_path_override: true,
           },
         },
       },
@@ -1167,15 +1200,15 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   // thousands of nested SourceLink rows; Promise.all here multiplied the
   // memory footprint even after chunking the IN predicates.
   const mediaById = await findManyInChunks(ids, (chunk) => prisma.mediaItem.findMany({
-    where: { id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    where: { id: { in: chunk }, episodes: { some: { links: { some: sourceLinkMainPathWhere } } } },
     select: mediaItemSelect,
   }));
   const mediaByTmdb = await findManyInChunks(tmdbIds, (chunk) => prisma.mediaItem.findMany({
-    where: { tmdb_id: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    where: { tmdb_id: { in: chunk }, episodes: { some: { links: { some: sourceLinkMainPathWhere } } } },
     select: mediaItemSelect,
   }));
   const mediaByBase = await findManyInChunks(baseTitles, (chunk) => prisma.mediaItem.findMany({
-    where: { base_normalized_title: { in: chunk }, episodes: { some: { links: { some: { source_site: { in: mainPathSourceSites } } } } } },
+    where: { base_normalized_title: { in: chunk }, episodes: { some: { links: { some: sourceLinkMainPathWhere } } } },
     select: mediaItemSelect,
   }));
   const legacyEpisodes = await findManyInChunks(ids, (chunk) => prisma.episode.findMany({
@@ -1218,13 +1251,13 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
     const uniqueItems = [...new Map(candidateItems.map((item) => [item.id, item])).values()];
     const canonicalPlayable = uniqueItems.some((item) =>
       (item.episodes || []).some((episode: any) =>
-        filterMainPathLinks(episode.links || [], kind).length > 0
+        filterMainPathLinks(episode.links || [], kind, show.main_path_overrides).length > 0
       )
     );
     if (canonicalPlayable) return true;
 
     return (legacyByShow.get(String(show.id)) || []).some((episode) =>
-      filterMainPathLinks([{ url: episode.url }], kind).length > 0
+      filterMainPathLinks([{ url: episode.url }], kind, show.main_path_overrides).length > 0
     );
   });
 }
@@ -1259,106 +1292,104 @@ export async function getShowsFromDbLite(
     const s = search.trim();
     const tsQuery = s;
     const variants = expandSearchVariants(s);
-
-    const showsParams: any[] = [tsQuery];
-    const countParams: any[] = [tsQuery];
-
-    const likeConditions: string[] = [];
-    const titleFields = searchTitleFieldsSql();
-    for (const v of variants) {
-      showsParams.push(`%${v}%`);
-      countParams.push(`%${v}%`);
-      const paramIdx = showsParams.length;
-      const fieldConditions = [
-        `LOWER(title) LIKE $${paramIdx}`,
-        `LOWER("english_title") LIKE $${paramIdx}`,
-        `LOWER("japanese_title") LIKE $${paramIdx}`,
-        `LOWER("original_title") LIKE $${paramIdx}`,
-        `LOWER(genres) LIKE $${paramIdx}`,
-        ...titleFields.map((field) => `${field} LIKE $${paramIdx}`),
+    const titleFields = searchTitleFieldsSql().map((field) => Prisma.raw(field));
+    const likeConditions = variants.map((variant) => {
+      const pattern = `%${variant}%`;
+      const fields = [
+        Prisma.sql`LOWER(title) LIKE ${pattern}`,
+        Prisma.sql`LOWER("english_title") LIKE ${pattern}`,
+        Prisma.sql`LOWER("japanese_title") LIKE ${pattern}`,
+        Prisma.sql`LOWER("original_title") LIKE ${pattern}`,
+        Prisma.sql`LOWER(genres) LIKE ${pattern}`,
+        ...titleFields.map((field) => Prisma.sql`${field} LIKE ${pattern}`),
       ];
-      likeConditions.push(
-        `(${fieldConditions.join(" OR ")})`
-      );
+      return Prisma.sql`(${Prisma.join(fields, " OR ")})`;
+    });
+
+    const numericTmdbId = /^\d+$/.test(s) ? Number(s) : null;
+    if (numericTmdbId && Number.isInteger(numericTmdbId) && numericTmdbId > 0) {
+      likeConditions.push(Prisma.sql`tmdb_id = ${numericTmdbId}`);
     }
-    const orLikeSql = likeConditions.join(" OR ");
+    const orLikeSql = Prisma.join(likeConditions, " OR ");
+    const categoryFilter = category
+      ? Prisma.sql`AND LOWER(category) LIKE ${`%${category.toLowerCase()}%`}`
+      : Prisma.empty;
+    const genreFilter = options.genre?.trim()
+      ? Prisma.sql`AND LOWER(genres) LIKE ${`%${options.genre.trim().toLowerCase()}%`}`
+      : Prisma.empty;
+    const yearFilter = Number.isInteger(options.year) && Number(options.year) > 0
+      ? Prisma.sql`AND year = ${Number(options.year)}`
+      : Prisma.empty;
+    const missingTmdbFilter = options.missingTmdb ? Prisma.sql`AND tmdb_id IS NULL` : Prisma.empty;
+    const limitOffset = onlyMainPath || options.dedupe
+      ? Prisma.empty
+      : Prisma.sql`LIMIT ${pageSize} OFFSET ${skip}`;
+    const orderBy = options.sort === "rating"
+      ? Prisma.sql`ORDER BY rating DESC NULLS LAST, "created_at" DESC`
+      : options.sort === "anio"
+        ? Prisma.sql`ORDER BY year DESC NULLS LAST, "created_at" DESC`
+        : options.sort === "az"
+          ? Prisma.sql`ORDER BY LOWER(title) ASC, "created_at" DESC`
+          : Prisma.sql`ORDER BY
+              CASE
+                WHEN LOWER(title) = LOWER(${tsQuery}) THEN 0
+                WHEN LOWER(title) LIKE ${`%${tsQuery}%`} THEN 1
+                ${variants[1] ? Prisma.sql`WHEN LOWER(title) LIKE ${`%${variants[1]}%`} THEN 1` : Prisma.empty}
+                WHEN LOWER("english_title") = LOWER(${tsQuery}) THEN 2
+                WHEN LOWER("english_title") LIKE ${`%${tsQuery}%`} THEN 3
+                ELSE 4
+              END,
+              rank DESC,
+              "created_at" DESC`;
 
-    let categoryFilterShows = "";
-    let categoryFilterCount = "";
-    if (category) {
-      showsParams.push(`%${category.toLowerCase()}%`);
-      countParams.push(`%${category.toLowerCase()}%`);
-      const catParamIdx = showsParams.length;
-      categoryFilterShows = `AND LOWER(category) LIKE $${catParamIdx}`;
-      categoryFilterCount = `AND LOWER(category) LIKE $${catParamIdx}`;
-    }
-
-    const limitIdx = showsParams.length + 1;
-    const offsetIdx = showsParams.length + 2;
-    const limitOffsetPlaceholder = onlyMainPath ? "" : `LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
-
-    const showsQuery = `
+    const showsQuery = Prisma.sql`
       SELECT
         "id", "title", "original_title", "japanese_title", "english_title",
         "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
         "poster_path", "backdrop_path", "category", "rating", "year",
         "status", "genres", "created_at",
-        ts_rank(search_vector, plainto_tsquery('simple', $1)) AS rank
+        ts_rank(search_vector, plainto_tsquery('simple', ${tsQuery})) AS rank
       FROM "Show"
       WHERE (
-        search_vector @@ plainto_tsquery('simple', $1)
+        search_vector @@ plainto_tsquery('simple', ${tsQuery})
         OR ${orLikeSql}
       )
-      ${categoryFilterShows}
-      ORDER BY 
-        CASE 
-          WHEN LOWER(title) = LOWER($1) THEN 0
-          WHEN LOWER(title) LIKE $2 THEN 1
-          ${variants[1] ? `WHEN LOWER(title) LIKE $3 THEN 1` : ""}
-          WHEN LOWER("english_title") = LOWER($1) THEN 2
-          WHEN LOWER("english_title") LIKE $2 THEN 3
-          ELSE 4
-        END,
-        rank DESC, 
-        "created_at" DESC
-      ${limitOffsetPlaceholder}
+      ${categoryFilter}
+      ${genreFilter}
+      ${yearFilter}
+      ${missingTmdbFilter}
+      ${orderBy}
+      ${limitOffset}
     `;
 
-    const countQuery = `
+    const countQuery = Prisma.sql`
       SELECT COUNT(*)::int AS total
       FROM "Show"
       WHERE (
-        search_vector @@ plainto_tsquery('simple', $1)
+        search_vector @@ plainto_tsquery('simple', ${tsQuery})
         OR ${orLikeSql}
       )
-      ${categoryFilterCount}
+      ${categoryFilter}
+      ${genreFilter}
+      ${yearFilter}
+      ${missingTmdbFilter}
     `;
 
     if (!onlyMainPath) {
-      showsParams.push(pageSize, skip);
       const [shows, countResult] = await Promise.all([
-        prisma.$queryRawUnsafe(showsQuery, ...showsParams),
-        prisma.$queryRawUnsafe(countQuery, ...countParams),
+        prisma.$queryRaw(showsQuery),
+        prisma.$queryRaw(countQuery),
       ]);
       if (options.dedupe) {
         const uniqueShows = dedupeCatalogShows(shows as any[]);
         const pagedShows = uniqueShows.slice(skip, skip + pageSize);
         return { shows: pagedShows, total: uniqueShows.length, page: pageNum, pageSize, totalPages: Math.ceil(uniqueShows.length / pageSize) };
       }
-      const total = (countResult as any[])[0]?.total || 0;
+      const total = Number((countResult as any[])[0]?.total || 0);
       return { shows, total, page: pageNum, pageSize, totalPages: Math.ceil(total / pageSize) };
     }
 
-    let allShows = await prisma.$queryRawUnsafe(showsQuery, ...showsParams) as any[];
-
-    // A typo cannot be recovered by full-text/substring matching alone
-    // ("one pecie" has no exact `pecie` substring).  If the indexed path has
-    // no hit, run one bounded prefix pass.  Every significant query token must
-    // occur as a short prefix somewhere in the title fields, which keeps this
-    // selective for multi-word titles while still correcting one-character
-    // mistakes.  The pass is intentionally capped and only reaches the main
-    // path filter for those candidates, so normal searches keep their fast
-    // path and memory profile.
+    let allShows = await prisma.$queryRaw(showsQuery) as any[];
     const hasLiteralTitleHit = allShows.some((show) => {
       const title = String(show.title || '').toLowerCase();
       const english = String(show.english_title || '').toLowerCase();
@@ -1370,63 +1401,72 @@ export async function getShowsFromDbLite(
       if (prefixes.length > 0) {
         let fuzzyShows: any[] = [];
         try {
-          // pg_trgm is installed by the existing database setup script. Rank
-          // the complete title fields together so a typo in one word does not
-          // lose an otherwise exact multilingual title. The catch below keeps
-          // older deployments functional when the optional extension is not
-          // available yet.
-          const similarityFields = ["title", "english_title", "japanese_title", "original_title"]
-            .map((column) => `similarity(lower(coalesce(\"${column}\", '')), lower($1))`);
-          const similarityScore = `GREATEST(${similarityFields.join(', ')})`;
-          const trigramCategory = category ? `AND LOWER(category) LIKE $2` : '';
-          fuzzyShows = await prisma.$queryRawUnsafe(`
+          const similarityScore = Prisma.sql`GREATEST(
+            similarity(LOWER(COALESCE("title", '')), LOWER(${s})),
+            similarity(LOWER(COALESCE("english_title", '')), LOWER(${s})),
+            similarity(LOWER(COALESCE("original_title", '')), LOWER(${s})),
+            similarity(LOWER(COALESCE("japanese_title", '')), LOWER(${s}))
+          )`;
+          const fuzzyCategory = category
+            ? Prisma.sql`AND LOWER(category) LIKE ${`%${category.toLowerCase()}%`}`
+            : Prisma.empty;
+          const fuzzyGenre = options.genre?.trim()
+            ? Prisma.sql`AND LOWER(genres) LIKE ${`%${options.genre.trim().toLowerCase()}%`}`
+            : Prisma.empty;
+          const fuzzyYear = Number.isInteger(options.year) && Number(options.year) > 0
+            ? Prisma.sql`AND year = ${Number(options.year)}`
+            : Prisma.empty;
+          fuzzyShows = await prisma.$queryRaw(Prisma.sql`
             SELECT
               "id", "title", "original_title", "japanese_title", "english_title",
               "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
               "poster_path", "backdrop_path", "category", "rating", "year",
               "status", "genres", "created_at", ${similarityScore} AS rank
             FROM "Show"
-            WHERE ${similarityScore} >= 0.22
-            ${trigramCategory}
+            WHERE ${similarityScore} >= ${0.22}
+            ${fuzzyCategory}
+            ${fuzzyGenre}
+            ${fuzzyYear}
+            ${missingTmdbFilter}
             ORDER BY rank DESC, "created_at" DESC
             LIMIT 500
-          `, s, ...(category ? [`%${category.toLowerCase()}%`] : [])) as any[];
+          `) as any[];
         } catch {
-          const fuzzyParams: any[] = [];
           const prefixClauses = prefixes.map((prefix) => {
-            // Two-character prefixes are the compatibility fallback for
-            // transpositions such as "pecie" → "piece". Requiring every
-            // token keeps the result bounded even without pg_trgm.
-            const shortPrefix = prefix.slice(0, 2);
-            fuzzyParams.push(`%${shortPrefix}%`);
-            const idx = fuzzyParams.length;
-            return `(${titleFields.map((field) => `${field} LIKE $${idx}`).join(" OR ")})`;
+            const pattern = `%${prefix.slice(0, 2)}%`;
+            const fields = titleFields.map((field) => Prisma.sql`${field} LIKE ${pattern}`);
+            return Prisma.sql`(${Prisma.join(fields, " OR ")})`;
           });
-          if (category) fuzzyParams.push(`%${category.toLowerCase()}%`);
-          const categorySql = category ? `AND LOWER(category) LIKE $${fuzzyParams.length}` : "";
-          fuzzyShows = await prisma.$queryRawUnsafe(`
+          const fuzzyCategory = category
+            ? Prisma.sql`AND LOWER(category) LIKE ${`%${category.toLowerCase()}%`}`
+            : Prisma.empty;
+          const fuzzyGenre = options.genre?.trim()
+            ? Prisma.sql`AND LOWER(genres) LIKE ${`%${options.genre.trim().toLowerCase()}%`}`
+            : Prisma.empty;
+          const fuzzyYear = Number.isInteger(options.year) && Number(options.year) > 0
+            ? Prisma.sql`AND year = ${Number(options.year)}`
+            : Prisma.empty;
+          fuzzyShows = await prisma.$queryRaw(Prisma.sql`
             SELECT
               "id", "title", "original_title", "japanese_title", "english_title",
               "normalized_title", "base_normalized_title", "tmdb_id", "description", "poster_url", "banner_url",
               "poster_path", "backdrop_path", "category", "rating", "year",
               "status", "genres", "created_at", 0 AS rank
             FROM "Show"
-            WHERE ${prefixClauses.join(" AND ")}
-            ${categorySql}
+            WHERE ${Prisma.join(prefixClauses, " AND ")}
+            ${fuzzyCategory}
+            ${fuzzyGenre}
+            ${fuzzyYear}
+            ${missingTmdbFilter}
             ORDER BY "created_at" DESC
             LIMIT 500
-          `, ...fuzzyParams) as any[];
+          `) as any[];
         }
-        // Preserve exact/full-text hits and add the bounded fuzzy candidates;
-        // deduplication below keeps one row per canonical identity.
         allShows = [...allShows, ...fuzzyShows];
       }
     }
 
     const playableShows = await filterShowsToMainPath(allShows as any[]);
-    // Defense in depth: historical legacy Show rows may contain the same work
-    // more than once. Canonical identity is applied before pagination so both
-    // the cards and X-Catalog-Count represent unique works.
     const uniqueShows = dedupeCatalogShows(playableShows);
     const shows = uniqueShows.slice(skip, skip + pageSize);
     const total = uniqueShows.length;
@@ -1437,36 +1477,45 @@ export async function getShowsFromDbLite(
   if (category) {
     where.category = { contains: category, mode: "insensitive" };
   }
+  if (options.genre?.trim()) {
+    where.genres = { contains: options.genre.trim(), mode: "insensitive" };
+  }
+  if (Number.isInteger(options.year) && Number(options.year) > 0) {
+    where.year = Number(options.year);
+  }
+  if (options.missingTmdb) where.tmdb_id = null;
 
   if (!onlyMainPath) {
+    // Igual que en la búsqueda: la deduplicación debe ver todas las filas para
+    // que el paginado administrativo no repita ni pierda obras.
+    const shouldPageInDb = !options.dedupe;
+    const orderBy = options.sort === "rating"
+      ? [{ rating: "desc" as const }, { created_at: "desc" as const }]
+      : options.sort === "anio"
+        ? [{ year: "desc" as const }, { created_at: "desc" as const }]
+        : options.sort === "az"
+          ? [{ title: "asc" as const }, { created_at: "desc" as const }]
+          : { created_at: "desc" as const };
     const [shows, total] = await Promise.all([
       prisma.show.findMany({
         where,
         select: {
           id: true,
           title: true,
-          original_title: true,
-          japanese_title: true,
-          english_title: true,
           normalized_title: true,
           base_normalized_title: true,
           tmdb_id: true,
-          description: true,
           poster_url: true,
           banner_url: true,
-          poster_path: true,
-          backdrop_path: true,
           category: true,
           rating: true,
           year: true,
-          status: true,
           genres: true,
           created_at: true,
           _count: { select: { episodes: true } },
         },
-        orderBy: { created_at: "desc" },
-        skip,
-        take: pageSize,
+        orderBy,
+        ...(shouldPageInDb ? { skip, take: pageSize } : {}),
       }),
       prisma.show.count({ where }),
     ]);
@@ -1502,7 +1551,13 @@ export async function getShowsFromDbLite(
       created_at: true,
       _count: { select: { episodes: true } },
     },
-    orderBy: { created_at: "desc" },
+    orderBy: options.sort === "rating"
+      ? [{ rating: "desc" as const }, { created_at: "desc" as const }]
+      : options.sort === "anio"
+        ? [{ year: "desc" as const }, { created_at: "desc" as const }]
+        : options.sort === "az"
+          ? [{ title: "asc" as const }, { created_at: "desc" as const }]
+          : { created_at: "desc" as const },
   });
   const playableShows = await filterShowsToMainPath(allShows as any[]);
   // Defense in depth: historical legacy Show rows may contain the same work
@@ -1549,6 +1604,10 @@ export interface UpdateShowPatch {
   banner_url?: string | null;
   japanese_title?: string | null;
   english_title?: string | null;
+  mal_id?: number | string | null;
+  anilist_id?: string | number | null;
+  kitsu_id?: string | number | null;
+  main_path_overrides?: unknown;
 }
 
 export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
@@ -1556,6 +1615,9 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   if (!existing) return null;
 
   const data: Record<string, unknown> = {};
+  const manualOverrides: Record<string, unknown> = existing.manual_overrides && typeof existing.manual_overrides === "object" && !Array.isArray(existing.manual_overrides)
+    ? { ...(existing.manual_overrides as Record<string, unknown>) }
+    : {};
 
   if (typeof patch.title === "string") {
     const raw = patch.title.replace(/\s+/g, " ").trim();
@@ -1581,6 +1643,32 @@ export async function updateShowFields(showId: string, patch: UpdateShowPatch) {
   if (patch.banner_url !== undefined) data.banner_url = patch.banner_url;
   if (patch.japanese_title !== undefined) data.japanese_title = patch.japanese_title;
   if (patch.english_title !== undefined) data.english_title = patch.english_title;
+  if (patch.mal_id !== undefined) {
+    const raw = patch.mal_id === null || patch.mal_id === "" ? null : Number(patch.mal_id);
+    if (raw !== null && (!Number.isInteger(raw) || raw <= 0)) throw new Error("mal_id debe ser un entero positivo o vacío.");
+    if (raw !== null) {
+      const conflict = await prisma.show.findFirst({ where: { mal_id: raw, id: { not: showId } }, select: { id: true, title: true } });
+      if (conflict) throw new Error(`El MAL ID ${raw} ya está asignado a “${conflict.title}”.`);
+    }
+    data.mal_id = raw;
+  }
+  for (const key of ["anilist_id", "kitsu_id"] as const) {
+    if (patch[key] === undefined) continue;
+    const raw = patch[key] === null || patch[key] === "" ? null : String(patch[key]).trim().slice(0, 120);
+    data[key] = raw || null;
+  }
+  if (patch.main_path_overrides !== undefined) {
+    const overrides = normalizeShowProviderOverrides(patch.main_path_overrides);
+    data.main_path_overrides = overrides;
+  }
+
+  // Cada cambio explícito desde el panel queda marcado para que los refrescos
+  // automáticos de TMDB solo completen lo que el administrador no fijó.
+  const overrideKeys = ["title", "description", "genres", "year", "rating", "status", "category", "poster_url", "banner_url", "japanese_title", "english_title", "mal_id", "anilist_id", "kitsu_id", "main_path_overrides"];
+  for (const key of overrideKeys) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) manualOverrides[key] = data[key];
+  }
+  if (Object.keys(manualOverrides).length > 0) data.manual_overrides = manualOverrides;
 
   if (Object.keys(data).length === 0) {
     return getShowByIdFromDb(showId);

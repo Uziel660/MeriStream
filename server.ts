@@ -10,6 +10,7 @@ import {
   getActivePresets,
   saveCustomPresetOverride,
   resetCustomPresetOverride,
+  scraperManager,
 } from "./server/universalScraper";
 import { cleanQueryTitle, parseTitleQuery } from "./server/metadataEngine";
 import { taskWorker } from "./server/taskWorker";
@@ -119,6 +120,12 @@ import {
 import { getUnifiedCatalogCounts } from "./server/catalogCounts";
 import { getIdentityRepairStatus } from "./server/identityRepairStatus";
 import {
+  getCatalogPolicy,
+  getCatalogPolicyProviders,
+  saveCatalogPolicy,
+  isProviderAllowedForWork,
+} from "./server/catalogPolicy";
+import {
   createCatalogReport,
   getCatalogReportSummary,
   listCatalogReports,
@@ -126,6 +133,70 @@ import {
 } from "./server/catalogReports";
 
 const deliveryPlanner = new DeliveryPlanner();
+
+/**
+ * Busca fichas que parecen representar el mismo título. La comprobación es
+ * deliberadamente informativa: nunca fusiona por sí sola y deja la decisión
+ * final al moderador del panel.
+ */
+async function findSimilarShowCandidates(
+  showId: string,
+  title: string,
+  category: string | null | undefined,
+  tmdbId: number | null,
+): Promise<any[]> {
+  const cleanTitle = String(title || "").replace(/\s+/g, " ").trim();
+  if (cleanTitle.length < 3) return [];
+  const isMovie = String(category || "").toLowerCase() === "movie";
+  const categorySql = isMovie ? "AND LOWER(category) = 'movie'" : "AND LOWER(category) IN ('anime', 'series')";
+  try {
+    const rows = await prisma.$queryRawUnsafe(`
+      SELECT id, title, category, tmdb_id, poster_url, year,
+        GREATEST(
+          similarity(LOWER(COALESCE(title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(english_title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(original_title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(japanese_title, '')), LOWER($2))
+        ) AS similarity
+      FROM "Show"
+      WHERE id <> $1
+        AND ($3::int IS NULL OR tmdb_id IS DISTINCT FROM $3::int)
+        ${categorySql}
+        AND GREATEST(
+          similarity(LOWER(COALESCE(title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(english_title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(original_title, '')), LOWER($2)),
+          similarity(LOWER(COALESCE(japanese_title, '')), LOWER($2))
+        ) >= 0.30
+      ORDER BY similarity DESC, updated_at DESC
+      LIMIT 6
+    `, showId, cleanTitle, tmdbId);
+    return (rows as any[]).map((row) => ({ ...row, similarity: Number(row.similarity || 0) }));
+  } catch {
+    // pg_trgm es opcional en instalaciones antiguas. El fallback mantiene una
+    // señal útil con las claves normalizadas sin bloquear la edición de TMDB.
+    const normalized = normalizeTitle(cleanTitle);
+    const base = normalizeBaseTitle(cleanTitle) || normalized;
+    if (!normalized && !base) return [];
+    const rows = await prisma.show.findMany({
+      where: {
+        id: { not: showId },
+        ...(tmdbId == null ? {} : { tmdb_id: { not: tmdbId } }),
+        category: isMovie ? "movie" : { in: ["anime", "series"] },
+        OR: [
+          { normalized_title: { contains: normalized, mode: "insensitive" } },
+          { base_normalized_title: { contains: base, mode: "insensitive" } },
+          { title: { contains: cleanTitle.split(/\s+/)[0], mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, title: true, category: true, tmdb_id: true, poster_url: true, year: true },
+      orderBy: { updated_at: "desc" },
+      take: 6,
+    });
+    return rows.map((row) => ({ ...row, similarity: 0.3 }));
+  }
+}
+
 const resolutionCoordinator = new ResolutionCoordinator(
   (url) => {
     // VidSrc's signed HLS needs its provider-specific chain and headers. Keep
@@ -530,7 +601,7 @@ async function resolveCrossPlatformStreams(
             episode_number: epNum,
           },
         },
-        select: { url: true, source_site: true },
+        select: { url: true, source_site: true, main_path_override: true },
         orderBy: [{ priority_tier: "asc" }, { last_checked: "desc" }],
       });
       const hasZoko = sourceLinks.some((link) =>
@@ -542,7 +613,7 @@ async function resolveCrossPlatformStreams(
         // ficha and canonical playback path. Without this gate, a legacy
         // Episode id could reintroduce AnimeFLV/LaMovie/Doramasflix/TioPlus
         // after the primary resolver had correctly excluded them.
-        if (!isProviderAllowedInCrossPlatformRecovery(provider, kind as any, hasZoko)) {
+        if (!isProviderAllowedForWork(provider, kind as any, { showOverrides: primaryShow.main_path_overrides, linkOverride: link.main_path_override }) && !isProviderAllowedInCrossPlatformRecovery(provider, kind as any, hasZoko)) {
           continue;
         }
         const site = siteFromDomain(link.source_site) || siteFromDomain(hostOfStreamUrl(link.url));
@@ -572,7 +643,7 @@ async function resolveCrossPlatformStreams(
       // This compatibility branch has no canonical link inventory. TioAnime
       // is therefore never admitted here; the canonical SourceLink branch
       // above can allow it only when ZokoAnime is present.
-      if (!isProviderAllowedInCrossPlatformRecovery(provider, kind as any, false)) continue;
+      if (!isProviderAllowedForWork(provider, kind as any, { showOverrides: primaryShow.main_path_overrides }) && !isProviderAllowedInCrossPlatformRecovery(provider, kind as any, false)) continue;
       if (site && site !== primarySite && !platformMap.has(site)) {
         platformMap.set(site, ep.source_url);
       }
@@ -708,7 +779,7 @@ async function findCanonicalMediaEpisodeForLegacy(
         kind: null,
       },
       links: (() => {
-        return filterMainPathLinks(episode.links, playbackKind)
+        return filterMainPathLinks(episode.links, playbackKind, targetShow.main_path_overrides)
           .map((link) => ({ url: link.url, link_type: link.link_type }));
       })(),
     })));
@@ -764,7 +835,7 @@ async function findCanonicalMediaEpisodeForLegacy(
         },
       );
     }
-    const playbackLinks = filterMainPathLinks(mergedEpisode.links, playbackKind);
+    const playbackLinks = filterMainPathLinks(mergedEpisode.links, playbackKind, targetShow.main_path_overrides);
     const rankedRaw = await buildMultiSourceCascade(playbackLinks, { maxPerSite: 2, maxTotal: 8 });
     const ranked = keepCanonicalCandidatesFirst(rankedRaw, mergedEpisode.links);
     return ranked.length > 0 ? { mediaEpisode: mergedEpisode, ranked } : null;
@@ -1038,6 +1109,13 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         : mediaEpisode.media_item?.kind === "series"
           ? "series"
           : "anime";
+      const policyShow = await prisma.show.findFirst({
+        where: mediaEpisode.media_item?.tmdb_id != null
+          ? { tmdb_id: mediaEpisode.media_item.tmdb_id, category: playbackKind }
+          : { normalized_title: mediaEpisode.media_item?.normalized_title || "", category: playbackKind },
+        select: { main_path_overrides: true },
+      }).catch(() => null);
+      const showOverrides = policyShow?.main_path_overrides;
       const aliasMerge = playbackKind === "anime"
         ? await enrichAnimeMediaEpisodeWithAliases(mediaEpisode)
         : { episode: mediaEpisode, changed: false };
@@ -1050,8 +1128,8 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         const provider = normalizeProviderId(link.source_site || link.host || link.url);
         // TioAnime is retained only as the documented anime fallback, and is
         // suppressed whenever the preferred ZokoAnime locator exists.
-        if (provider === "tioanime") return playbackKind === "anime" && hasZoko;
-        return isProviderAllowedInMainPath(provider, playbackKind);
+        if (provider === "tioanime" && !showOverrides && link.main_path_override == null) return playbackKind === "anime" && hasZoko;
+        return isProviderAllowedForWork(provider, playbackKind, { showOverrides, linkOverride: link.main_path_override });
       };
 
       const cached = playStreamsCache.get(mediaEpisode.id);
@@ -1096,6 +1174,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
       const policyLinks = filterMainPathLinks(
         (validLinks.length > 0 ? validLinks : playbackEpisode.links).filter(isAllowedLink),
         playbackKind,
+        showOverrides,
       );
       const linksToUse = policyLinks;
       if (linksToUse.length === 0) {
@@ -1213,7 +1292,7 @@ export async function handlePlayEpisode(req: Request, res: Response) {
         ? "series"
         : "anime";
     const legacyProvider = normalizeProviderId(sourceUrl);
-    if (!isProviderAllowedInMainPath(legacyProvider, legacyKind)) {
+    if (!isProviderAllowedForWork(legacyProvider, legacyKind, { showOverrides: (targetShow as any)?.main_path_overrides })) {
       return res.status(404).json({
         error: "La fuente histórica está deshabilitada para el camino principal.",
         provider: legacyProvider,
@@ -1367,7 +1446,7 @@ async function startServer() {
   app.use((req, res, next) => {
     if (process.env.NODE_ENV === "production") {
       if (req.headers["x-forwarded-proto"] === "http") {
-        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+        return res.redirect(301, `https://${req.hostname}${req.url}`);
       }
       res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
       res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
@@ -1382,7 +1461,7 @@ async function startServer() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+        if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
           callback(null, false);
@@ -1777,6 +1856,14 @@ async function startServer() {
     try {
       const search = typeof req.query.search === "string" ? req.query.search.trim() : undefined;
       const category = typeof req.query.category === "string" ? req.query.category.trim() : undefined;
+      const genre = typeof req.query.genre === "string" ? req.query.genre.trim() : undefined;
+      const requestedYear = typeof req.query.year === "string" ? Number(req.query.year) : Number(req.query.year);
+      const year = Number.isInteger(requestedYear) && requestedYear > 0 ? requestedYear : undefined;
+      const requestedSort = typeof req.query.sort === "string" ? req.query.sort : undefined;
+       const sort = requestedSort === "rating" || requestedSort === "anio" || requestedSort === "az" || requestedSort === "recientes"
+         ? requestedSort
+         : undefined;
+       const missingTmdb = req.query.identity === "missing_tmdb" || req.query.missing_tmdb === "true";
       const isLite = req.query.lite === "true";
       const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
@@ -1787,7 +1874,11 @@ async function startServer() {
         const result = await getShowsFromDbLite(search, category, page, limit, {
           onlyMainPath: !includeLegacy,
           dedupe: isAdminRequest,
-        });
+          genre,
+           year,
+           sort,
+           missingTmdb,
+         });
         const visibility = isAdminRequest ? null : await getCatalogVisibility();
         const shows = visibility
           ? (result.shows as any[]).filter((show) => !isCatalogItemHidden(show, visibility))
@@ -1814,6 +1905,7 @@ async function startServer() {
                 filterMainPathLinks(
                   episode.source_url ? [{ url: episode.source_url }] : [],
                   playbackKind,
+                  show.main_path_overrides,
                 ).length > 0,
               )
             : [];
@@ -1883,7 +1975,7 @@ async function startServer() {
         canonicalItem = [...canonicalCandidates]
           .map((item: any) => {
             const activeLinks = item.episodes.reduce(
-              (count: number, episode: any) => count + filterMainPathLinks(episode.links || [], playbackKind).length,
+              (count: number, episode: any) => count + filterMainPathLinks(episode.links || [], playbackKind, (show as any).main_path_overrides).length,
               0,
             );
             const tmdbMatch = (show as any).tmdb_id != null && item.tmdb_id === (show as any).tmdb_id ? 1 : 0;
@@ -1931,11 +2023,13 @@ async function startServer() {
         canonicalEpisodes,
         playbackKind,
         showId,
+        (show as any).main_path_overrides,
       );
       const episode_platforms = countDisplayPlatforms(
         canonicalEpisodes,
         episodes,
         playbackKind,
+        (show as any).main_path_overrides,
       );
       res.json({ ...(show as any), episodes, media_item_id, episode_platforms });
     } catch (e: any) {
@@ -1954,7 +2048,7 @@ async function startServer() {
       if (!show) return res.status(404).json({ error: "Obra no encontrada." });
       const isMovie = String(show.category || "").toLowerCase() === "movie";
       const categories = isMovie ? ["movie"] : ["anime", "series"];
-      const [shows, mediaItems] = await Promise.all([
+      const [shows, mediaItems, similarCandidates] = await Promise.all([
         prisma.show.findMany({
           where: { tmdb_id: tmdbId, category: { in: categories }, id: { not: show.id } },
           select: { id: true, title: true, category: true, tmdb_id: true, poster_url: true, year: true },
@@ -1965,8 +2059,9 @@ async function startServer() {
           select: { id: true, title: true, kind: true, tmdb_id: true, poster_url: true, year: true },
           orderBy: { updated_at: "desc" },
         }),
+        findSimilarShowCandidates(show.id, show.title, show.category, tmdbId),
       ]);
-      res.json({ ok: true, requested_tmdb_id: tmdbId, conflicts: { shows, media_items: mediaItems } });
+      res.json({ ok: true, requested_tmdb_id: tmdbId, conflicts: { shows, media_items: mediaItems }, similar_candidates: similarCandidates });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "No se pudo comprobar la identidad." });
     }
@@ -1993,12 +2088,16 @@ async function startServer() {
         select: { id: true, title: true, kind: true, tmdb_id: true, poster_url: true, year: true },
         orderBy: { updated_at: "desc" },
       });
+      const similarCandidates = tmdbId === null
+        ? []
+        : await findSimilarShowCandidates(show.id, show.title, show.category, tmdbId);
       const requestedMergeId = typeof req.body?.merge_show_id === "string" ? req.body.merge_show_id : undefined;
       if (conflicts.length > 0 && !requestedMergeId) {
         return res.status(409).json({
           code: "TMDB_CONFLICT",
           error: "Ya existe otra obra con ese TMDB ID.",
           conflicts,
+          similar_candidates: similarCandidates,
           requires_confirmation: true,
         });
       }
@@ -2008,10 +2107,21 @@ async function startServer() {
           error: "Ya existe un registro canónico con ese TMDB ID.",
           conflicts: [],
           media_conflicts: mediaConflicts,
+          similar_candidates: similarCandidates,
           requires_confirmation: true,
         });
       }
-      if (requestedMergeId && !conflicts.some((item) => item.id === requestedMergeId)) {
+      if (similarCandidates.length > 0 && !requestedMergeId && !req.body?.allow_similar) {
+        return res.status(409).json({
+          code: "TMDB_SIMILAR",
+          error: "Hay fichas con un título muy parecido.",
+          conflicts: [],
+          media_conflicts: [],
+          similar_candidates: similarCandidates,
+          requires_confirmation: true,
+        });
+      }
+      if (requestedMergeId && ![...conflicts, ...similarCandidates].some((item) => item.id === requestedMergeId)) {
         return res.status(400).json({ error: "La obra elegida para fusionar no coincide con el conflicto comprobado." });
       }
       if (requestedMergeId) {
@@ -2029,6 +2139,9 @@ async function startServer() {
       const title = typeof metadata?.title === "string" && metadata.title.trim() ? metadata.title.trim() : show.title;
       const normalized = normalizeTitle(title);
       const baseNormalized = normalizeBaseTitle(title) || normalized;
+      const manualOverrides: Record<string, unknown> = show.manual_overrides && typeof show.manual_overrides === "object" && !Array.isArray(show.manual_overrides)
+        ? { ...(show.manual_overrides as Record<string, unknown>) }
+        : {};
       const showData: any = {
         tmdb_id: tmdbId,
         ...(metadata ? {
@@ -2044,6 +2157,15 @@ async function startServer() {
           rating: Number.isFinite(Number(metadata.rating)) ? Number(metadata.rating) : show.rating,
         } : {}),
       };
+      for (const field of ["title", "description", "genres", "year", "rating", "status", "category", "poster_url", "banner_url", "japanese_title", "english_title"]) {
+        if (Object.prototype.hasOwnProperty.call(manualOverrides, field)) showData[field] = manualOverrides[field];
+      }
+      if (typeof showData.title === "string" && showData.title.trim()) {
+        showData.normalized_title = normalizeTitle(showData.title);
+        showData.base_normalized_title = normalizeBaseTitle(showData.title) || showData.normalized_title;
+      }
+      manualOverrides.tmdb_id = tmdbId;
+      showData.manual_overrides = manualOverrides;
       const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.show.update({ where: { id: showId }, data: showData });
         const itemKind = isMovie ? "movie" : { in: ["anime", "series"] };
@@ -2059,22 +2181,33 @@ async function startServer() {
           select: { id: true },
         });
         if (mediaItems.length > 0) {
+          const mediaData: any = {
+            tmdb_id: tmdbId,
+            ...(metadata ? {
+              title,
+              normalized_title: normalized,
+              base_normalized_title: baseNormalized,
+              original_title: metadata.original_title ?? undefined,
+              description: metadata.description ?? undefined,
+              poster_url: metadata.poster_url ?? undefined,
+              backdrop_path: metadata.backdrop_path ?? undefined,
+              year: Number.isFinite(Number(metadata.year)) ? Number(metadata.year) : undefined,
+              rating: Number.isFinite(Number(metadata.rating)) ? Number(metadata.rating) : undefined,
+            } : {}),
+          };
+          // El índice multi-fuente también debe conservar los valores que el
+          // administrador fijó en la ficha; de lo contrario un refresco de
+          // identidad mostraría títulos distintos según la pantalla.
+          for (const field of ["title", "description", "poster_url", "year", "rating"]) {
+            if (Object.prototype.hasOwnProperty.call(manualOverrides, field)) mediaData[field] = manualOverrides[field];
+          }
+          if (typeof mediaData.title === "string" && mediaData.title.trim()) {
+            mediaData.normalized_title = normalizeTitle(mediaData.title);
+            mediaData.base_normalized_title = normalizeBaseTitle(mediaData.title) || mediaData.normalized_title;
+          }
           await tx.mediaItem.updateMany({
             where: { id: { in: mediaItems.map((item) => item.id) } },
-            data: {
-              tmdb_id: tmdbId,
-              ...(metadata ? {
-                title,
-                normalized_title: normalized,
-                base_normalized_title: baseNormalized,
-                original_title: metadata.original_title ?? undefined,
-                description: metadata.description ?? undefined,
-                poster_url: metadata.poster_url ?? undefined,
-                backdrop_path: metadata.backdrop_path ?? undefined,
-                year: Number.isFinite(Number(metadata.year)) ? Number(metadata.year) : undefined,
-                rating: Number.isFinite(Number(metadata.rating)) ? Number(metadata.rating) : undefined,
-              } : {}),
-            },
+            data: mediaData,
           });
         }
         return result;
@@ -2082,6 +2215,126 @@ async function startServer() {
       res.json({ ok: true, show: updated, merged_show_id: requestedMergeId || null, metadata_regenerated: Boolean(metadata) });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "No se pudo actualizar la identidad TMDB." });
+    }
+  });
+
+  app.get("/api/v1/admin/catalog/policy", async (_req: Request, res: Response) => {
+    try {
+      return res.json({ ok: true, ...getCatalogPolicy(), providers: getCatalogPolicyProviders() });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || "No se pudo leer la política de fuentes." });
+    }
+  });
+
+  app.put("/api/v1/admin/catalog/policy", async (req: Request, res: Response) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const providerModes = body.providerModes && typeof body.providerModes === "object" && !Array.isArray(body.providerModes)
+        ? body.providerModes
+        : {};
+      const policy = saveCatalogPolicy({ providerModes });
+      return res.json({ ok: true, ...policy, providers: getCatalogPolicyProviders() });
+    } catch (error: any) {
+      return res.status(400).json({ error: error?.message || "No se pudo guardar la política de fuentes." });
+    }
+  });
+
+  // Comprueba bajo demanda si los proveedores JIT tienen una respuesta útil
+  // para la obra. No persiste enlaces ni toca el catálogo: cada ejecución es
+  // una sonda corta y explícita desde el servidor.
+  app.post("/api/v1/admin/source-availability", async (req: Request, res: Response) => {
+    const kind = String(req.body?.kind || "").toLowerCase();
+    const tmdbId = Number(req.body?.tmdb_id ?? req.body?.tmdbId);
+    if (!["movie", "series", "anime"].includes(kind) || !Number.isInteger(tmdbId) || tmdbId <= 0) {
+      return res.status(400).json({ error: "kind y tmdb_id inválidos." });
+    }
+    const season = Math.max(1, Math.round(Number(req.body?.season) || 1));
+    const episode = Math.max(1, Math.round(Number(req.body?.episode) || 1));
+    const started = Date.now();
+    try {
+      const gateway = await resolveByTmdb({ kind: kind as any, tmdbId, season, episode, persist: false });
+      const candidates = [
+        ...gateway.sources.map((source: any) => ({
+          provider: normalizeProviderId(source.provider),
+          url: String(source.url || ""),
+          type: source.streamType || "direct",
+        })),
+        ...gateway.fallbackCandidates.map((source: any) => ({
+          provider: normalizeProviderId(source.provider),
+          url: String(source.url || ""),
+          type: source.type || "embed",
+        })),
+        // Aunque TMDB o la base local no tengan todavía una fila de fuente,
+        // estos dos proveedores tienen un locator público determinista. Se
+        // sondean aquí bajo demanda para que el panel pueda decir "sin
+        // respuesta" en lugar de confundir "sin candidato persistido" con
+        // "proveedor no disponible".
+        {
+          provider: "vidsrc",
+          url: kind === "movie"
+            ? `https://vidsrc.me/embed/movie/${tmdbId}`
+            : `https://vidsrc.me/embed/tv/${tmdbId}/${season}/${episode}`,
+          type: "embed",
+        },
+        {
+          provider: "vidsrcto",
+          url: kind === "movie"
+            ? `https://vidsrcto.to/embed/movie/${tmdbId}`
+            : `https://vidsrcto.to/embed/tv/${tmdbId}/${season}/${episode}`,
+          type: "embed",
+        },
+      ].filter((candidate) => candidate.url && ["vidsrc", "vidsrcto", "zokoanime"].includes(candidate.provider));
+      const unique = [...new Map(candidates.map((candidate) => [`${candidate.provider}|${candidate.url}`, candidate])).values()].slice(0, 8);
+
+      const checks = await Promise.all(unique.map(async (candidate) => {
+        const checkStarted = Date.now();
+        try {
+          let targetUrl = candidate.url;
+          let resolved = candidate.type === "direct";
+          let reason: string | undefined;
+          if (!resolved) {
+            const meta = await Promise.race([
+              resolutionCoordinator.resolve(candidate.url),
+              new Promise<ResolvedStreamMeta | null>((resolve) => setTimeout(() => resolve(null), 2_500)),
+            ]);
+            if (meta?.resolved && meta.url) {
+              targetUrl = meta.url;
+              resolved = true;
+            } else {
+              reason = meta?.failure_reason || "provider_no_media";
+            }
+          }
+          if (!resolved) {
+            return { provider: candidate.provider, url: candidate.url, type: candidate.type, ok: false, status: 0, reason, latency_ms: Date.now() - checkStarted };
+          }
+          const health = await probeStream(targetUrl, { timeoutMs: 2_000, playerReferer: candidate.url });
+          return {
+            provider: candidate.provider,
+            url: candidate.url,
+            type: candidate.type,
+            ok: health.ok,
+            status: health.status || 0,
+            reason: health.reason,
+            latency_ms: health.latencyMs ?? (Date.now() - checkStarted),
+          };
+        } catch (error: any) {
+          return { provider: candidate.provider, url: candidate.url, type: candidate.type, ok: false, status: 0, reason: error?.message || "probe_error", latency_ms: Date.now() - checkStarted };
+        }
+      }));
+
+      const providers = ["vidsrc", "vidsrcto", "zokoanime"].map((provider) => {
+        const providerChecks = checks.filter((check) => check.provider === provider);
+        return {
+          provider,
+          checked: providerChecks.length,
+          available: providerChecks.some((check) => check.ok),
+          checks: providerChecks,
+        };
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ ok: true, kind, tmdb_id: tmdbId, season, episode, elapsed_ms: Date.now() - started, providers });
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || "No se pudo consultar la disponibilidad." });
     }
   });
 
@@ -2134,6 +2387,12 @@ async function startServer() {
           subtitle_language: typeof body.subtitle_language === "string" ? body.subtitle_language.trim().slice(0, 40) || null : null,
           canonical_locator: typeof body.canonical_locator === "string" ? body.canonical_locator.trim().slice(0, 2000) || null : null,
           source_status: typeof body.source_status === "string" ? body.source_status.trim().slice(0, 40) || "discovered" : "discovered",
+          // Una fuente añadida desde administración es una instrucción
+          // explícita: intenta resolverla aunque el proveedor global esté en
+          // legacy. El selector permite devolverla a global o legacy.
+          main_path_override: body.main_path_override === undefined
+            ? true
+            : body.main_path_override === true ? true : body.main_path_override === false ? false : null,
           priority_tier: rawPriority === null ? null : Math.max(0, Math.min(99, Math.round(rawPriority))),
         },
       });
@@ -2161,6 +2420,9 @@ async function startServer() {
         }
       }
       if (body.is_verified !== undefined) data.is_verified = Boolean(body.is_verified);
+      if (body.main_path_override !== undefined) {
+        data.main_path_override = body.main_path_override === true ? true : body.main_path_override === false ? false : null;
+      }
       if (data.url !== undefined && !data.url) return res.status(400).json({ error: "La URL de la fuente no puede quedar vacía." });
       const updated = await prisma.sourceLink.update({ where: { id: req.params.link_id }, data });
       res.json({ ok: true, link: updated });
@@ -3609,6 +3871,12 @@ async function startServer() {
         scope: scope,
         max_pages: maxPages,
         delay_ms: delayMs,
+        name: typeof req.body?.name === "string" ? req.body.name : undefined,
+        resolver_hint: typeof req.body?.resolver_hint === "string" ? req.body.resolver_hint : null,
+        content_kind: typeof req.body?.content_kind === "string" ? req.body.content_kind : null,
+        pagination_mode: req.body?.pagination_mode === "template" || req.body?.pagination_mode === "examples" ? req.body.pagination_mode : "auto",
+        pagination_template: typeof req.body?.pagination_template === "string" ? req.body.pagination_template : null,
+        pagination_examples: req.body?.pagination_examples || [],
       });
 
       res.json({
@@ -3630,6 +3898,49 @@ async function startServer() {
     const jobs = await taskWorker.getAllJobs();
     res.setHeader("Cache-Control", "public, max-age=2, stale-while-revalidate=8");
     res.json(jobs);
+  });
+
+  // POST /api/v1/worker/jobs - creación explícita desde la cola del panel.
+  // Mantiene las opciones de importación junto al checkpoint para que una
+  // reanudación futura use exactamente las mismas decisiones del administrador.
+  app.post("/api/v1/worker/jobs", async (req: Request, res: Response) => {
+    const body = req.body || {};
+    const targetUrl = String(body.target_url || body.url || "").trim();
+    if (!targetUrl) return res.status(400).json({ detail: "target_url es obligatorio" });
+    if (!/^https?:\/\//i.test(targetUrl)) return res.status(400).json({ detail: "target_url debe ser una URL http(s)" });
+    const allowedScopes = new Set(["single", "catalog_pages", "full_catalog"]);
+    const scope = allowedScopes.has(String(body.scope)) ? String(body.scope) as "single" | "catalog_pages" | "full_catalog" : "catalog_pages";
+    const maxPages = scope === "full_catalog" ? 0 : Math.max(1, Math.min(10_000, Number(body.max_pages) || 1));
+    const delay = body.delay_ms === undefined || body.delay_ms === "" ? undefined : Math.max(300, Math.min(10_000, Number(body.delay_ms) || 1500));
+    if (body.pagination_mode === "template" && (typeof body.pagination_template !== "string" || !body.pagination_template.includes("{page}"))) {
+      return res.status(400).json({ detail: "pagination_template debe incluir {page}" });
+    }
+    const examples = Array.isArray(body.pagination_examples)
+      ? body.pagination_examples.filter((item: unknown) => typeof item === "string")
+      : typeof body.pagination_examples === "string" ? body.pagination_examples : [];
+    try {
+      const job = await taskWorker.createJob({
+        target_url: targetUrl,
+        scope,
+        max_pages: maxPages,
+        delay_ms: delay,
+        name: typeof body.name === "string" ? body.name : undefined,
+        resolver_hint: typeof body.resolver_hint === "string" ? body.resolver_hint : null,
+        content_kind: typeof body.content_kind === "string" ? body.content_kind : null,
+        pagination_mode: body.pagination_mode === "template" || body.pagination_mode === "examples" ? body.pagination_mode : "auto",
+        pagination_template: typeof body.pagination_template === "string" ? body.pagination_template : null,
+        pagination_examples: examples,
+      });
+      return res.status(201).json({ status: "pending", job });
+    } catch (e: any) {
+      return res.status(500).json({ detail: `Error creando tarea de worker: ${e?.message || e}` });
+    }
+  });
+
+  // Los adaptadores reales se muestran en el formulario de Nueva tarea para
+  // poder fijar uno cuando la detección automática no sea suficiente.
+  app.get("/api/v1/scraper/adapters", (_req: Request, res: Response) => {
+    res.json(scraperManager.getAvailableAdapters());
   });
 
   // GET /api/v1/worker/settings - Get rate limit and anti-blocking configs
@@ -3880,8 +4191,8 @@ async function startServer() {
   app.post("/api/v1/verification/run", async (req: Request, res: Response) => {
     const body = req.body || {};
     // Validación de input
-    if (body.mode !== undefined && body.mode !== "metadata" && body.mode !== "full") {
-      return res.status(400).json({ ok: false, detail: "mode must be 'metadata' or 'full'" });
+    if (body.mode !== undefined && body.mode !== "metadata" && body.mode !== "full" && body.mode !== "identity") {
+      return res.status(400).json({ ok: false, detail: "mode must be 'metadata', 'identity' or 'full'" });
     }
     if (
       body.platforms !== undefined &&

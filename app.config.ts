@@ -40,6 +40,7 @@ export function localAllowedOrigins(): string[] {
     "https://classifieds-discounts-father-barrier.trycloudflare.com",
     "https://bookstore-britain-lows-locked.trycloudflare.com",
     "https://fabrics-merit-shut-tone.trycloudflare.com",
+    "https://stream.merith.me",
     "https://prehensile-hyperactively-zara.ngrok-free.dev",
     "http://prehensile-hyperactively-zara.ngrok-free.dev",
   ];

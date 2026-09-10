@@ -48,6 +48,8 @@ jobs:
       - name: Deterministic frontend tests
         run: >-
           npx vitest run
+          src/hooks/useHiddenGenres.test.tsx
+          src/utils/labels.test.ts
           src/utils/playbackBootstrap.test.ts
           src/utils/playerLanguages.test.ts
           src/utils/searchUtils.test.ts
@@ -58,6 +60,7 @@ jobs:
           src/utils/deliveryCapabilities.test.ts
           src/utils/episodeLabels.test.ts
           src/utils/subtitleFormat.test.ts
+          src/utils/textCleaner.test.ts
           src/utils/colorExtractor.test.ts
           tests/continueWatchingAndDetails.test.ts
 

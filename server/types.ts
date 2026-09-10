@@ -88,6 +88,7 @@ export interface SourceLinkInput {
   audio_language?: string;
   subtitle_language?: string;
   subtitles?: Array<{ id?: string; label?: string; language?: string; src: string; is_default?: boolean }>;
+  main_path_override?: boolean | null;
 }
 
 export type SourceKind = "page" | "embed" | "stable_direct" | "ephemeral_direct";

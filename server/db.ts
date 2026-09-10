@@ -1,14 +1,19 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { parseTitleQuery } from "./metadataEngine";
 import "dotenv/config";
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "file:./dev.db";
+  // CI y las pruebas usan el PostgreSQL efímero configurado por sus workflows.
+  if (process.env.CI || process.env.NODE_ENV === "test") {
+    process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/meristream_test?schema=public";
+  } else {
+    process.env.DATABASE_URL = "file:./dev.db";
+  }
 }
 
 const prisma = new PrismaClient();
 
-export { prisma };
+export { prisma, Prisma };
 
 /**
  * Normalizes title string for deduplication (removes punctuation, extra spaces, accents, converts to lowercase)

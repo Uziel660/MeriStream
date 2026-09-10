@@ -1,3 +1,4 @@
+import { Prisma, MediaEpisode, SourceLink, MediaItem } from "@prisma/client";
 // server/reconcileCatalog.ts
 // ══════════════════════════════════════════════════════════════════
 // RECONCILIACIÓN DE SECUELAS YA EXISTENTES (S2/S3 guardadas como cartels
@@ -44,11 +45,9 @@ function detectSeason(title: string, kind?: string): number {
   if (raw.season && raw.season > 1) return raw.season;
   const parsed = parseTitleQuery(raw.canonical);
   if (parsed.season && parsed.season > 1) return parsed.season;
-  // En anime/series algunos catálogos publican solo "Título 2". No aplicar
-  // esta convención a películas, donde el número suele formar parte del
-  // título de una secuela cinematográfica.
+
   if (kind !== "movie") {
-    const bare = raw.canonical.match(/(?:^|\s)(\d{1,2})$/);
+    const bare = raw.canonical.trim().match(/\b(\d{1,2})$/);
     const value = bare ? Number(bare[1]) : 0;
     if (value > 1 && value <= 20) return value;
   }
@@ -115,41 +114,83 @@ function sameTmdbNamespace(left: string, right: string): boolean {
   return leftTv === rightTv && (leftTv || left === right);
 }
 
-/** Copia una fuente al episodio canónico sin perder evidencia ni receta JIT. */
-async function copySourceLink(link: any, targetMediaEpisodeId: string): Promise<void> {
-  await prisma.sourceLink
-    .create({
-      data: {
-        media_episode_id: targetMediaEpisodeId,
-        source_site: link.source_site,
-        url: link.url,
-        link_type: link.link_type,
-        language: link.language,
-        audio_language: link.audio_language,
-        subtitle_language: link.subtitle_language,
-        subtitles: link.subtitles ?? undefined,
-        host: link.host,
-        priority_tier: link.priority_tier,
-        is_verified: link.is_verified,
-        last_checked: link.last_checked,
-        source_status: link.source_status,
-        canonical_locator: link.canonical_locator,
-        external_id: link.external_id,
-        extraction_method: link.extraction_method,
-        resolver_version: link.resolver_version,
-        failure_reason: link.failure_reason,
-        last_success: link.last_success,
-        last_failure: link.last_failure,
-        retry_after: link.retry_after,
-      },
-    })
-    .catch((error: any) => {
-      // Solo una colisión de la clave única significa que la fuente ya fue
-      // copiada. Cualquier otro error (por ejemplo, una caída de PostgreSQL)
-      // debe abortar la fusión para no borrar la única copia de la fuente.
-      if (error?.code !== "P2002") throw error;
+
+/**
+ * Bulk insert function for episodes and links. This replaces N+1 upserts and creates with bulk creates.
+ */
+async function bulkMoveEpisodesAndLinks(
+  canonicalItemId: string,
+  episodes: (MediaEpisode & { links?: SourceLink[] })[],
+  getSeason: (ep: MediaEpisode) => number
+) {
+  if (!episodes || episodes.length === 0) return;
+
+  const episodesData = episodes.map(ep => ({
+    media_item_id: canonicalItemId,
+    season_number: getSeason(ep),
+    episode_number: ep.episode_number,
+  }));
+
+  // Prisma skipDuplicates ignores duplicates on unique constraints.
+  await prisma.mediaEpisode.createMany({
+    data: episodesData,
+    skipDuplicates: true,
+  });
+
+  const targetEps = await prisma.mediaEpisode.findMany({
+    where: {
+      media_item_id: canonicalItemId,
+      season_number: { in: Array.from(new Set(episodesData.map(e => e.season_number))) },
+    },
+    select: { id: true, season_number: true, episode_number: true },
+  });
+
+  const targetMap = new Map();
+  for (const t of targetEps) {
+    targetMap.set(`${t.season_number}-${t.episode_number}`, t.id);
+  }
+
+  const linksData: Prisma.SourceLinkCreateManyInput[] = [];
+  for (const ep of episodes) {
+    const season = getSeason(ep);
+    const targetId = targetMap.get(`${season}-${ep.episode_number}`);
+    if (targetId && ep.links) {
+      for (const link of ep.links) {
+        linksData.push({
+          media_episode_id: targetId,
+          source_site: link.source_site,
+          url: link.url,
+          link_type: link.link_type,
+          language: link.language,
+          audio_language: link.audio_language,
+          subtitle_language: link.subtitle_language,
+          subtitles: link.subtitles ?? undefined,
+          host: link.host,
+          priority_tier: link.priority_tier,
+          is_verified: link.is_verified,
+          last_checked: link.last_checked,
+          source_status: link.source_status,
+          canonical_locator: link.canonical_locator,
+          external_id: link.external_id,
+          extraction_method: link.extraction_method,
+          resolver_version: link.resolver_version,
+          failure_reason: link.failure_reason,
+          last_success: link.last_success,
+          last_failure: link.last_failure,
+          retry_after: link.retry_after,
+        });
+      }
+    }
+  }
+
+  if (linksData.length > 0) {
+    await prisma.sourceLink.createMany({
+      data: linksData,
+      skipDuplicates: true,
     });
+  }
 }
+
 
 export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): Promise<ReconcileSummary> {
   const dry = opts.dryRun !== false; // SEGURIDAD: dry run por defecto
@@ -251,13 +292,14 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
       // no una temporada nueva. Solo una secuela sin marcador explícito usa la
       // siguiente temporada disponible.
       const sameIdentity = sameBase || guard.similarity >= 0.5;
-      const season = kind === "movie"
-        ? 1
-        : detected > 1
-          ? detected
-          : sameIdentity
-            ? 1
-            : Math.max(1, maxSeason + 1);
+      let season = 1;
+      if (kind !== "movie") {
+        if (detected > 1) {
+          season = detected;
+        } else if (!sameIdentity) {
+          season = Math.max(1, maxSeason + 1);
+        }
+      }
 
       const lastEp = await prisma.episode.findFirst({
         where: { show_id: canonical.id },
@@ -272,15 +314,25 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
         orderBy: { episode_number: "asc" },
       });
       let moved = 0;
+
+      const sourceUrls = sequelEps.map((e) => e.source_url).filter(Boolean) as string[];
+      let existingUrls = new Set<string>();
+      if (!dry && sourceUrls.length > 0) {
+        const existing = await prisma.episode.findMany({
+          where: { show_id: canonical.id, source_url: { in: sourceUrls } },
+          select: { source_url: true },
+        });
+        existingUrls = new Set(existing.map((e) => e.source_url as string));
+      }
+
       for (const ep of sequelEps) {
         if (!dry) {
-          const dupe = ep.source_url
-            ? await prisma.episode.findFirst({ where: { show_id: canonical.id, source_url: ep.source_url } })
-            : null;
+          const dupe = ep.source_url ? existingUrls.has(ep.source_url) : false;
           if (!dupe) {
             await prisma.episode.create({
               data: { show_id: canonical.id, episode_number: nextNumber, title: ep.title, source_url: ep.source_url },
             });
+            if (ep.source_url) existingUrls.add(ep.source_url);
           }
           nextNumber++;
         } else {
@@ -321,20 +373,8 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
             where: { media_item_id: sequelItem.id },
             include: { links: true },
           });
-          for (const me of seqMediaEps) {
-            const target = await prisma.mediaEpisode.upsert({
-              where: {
-                media_item_id_season_number_episode_number: {
-                  media_item_id: canonicalItem.id,
-                  season_number: season,
-                  episode_number: me.episode_number,
-                },
-              },
-              create: { media_item_id: canonicalItem.id, season_number: season, episode_number: me.episode_number },
-              update: {},
-            });
-            for (const link of me.links) await copySourceLink(link, target.id);
-          }
+          await bulkMoveEpisodesAndLinks(canonicalItem.id, seqMediaEps, () => season);
+          moved += seqMediaEps.length;
         }
       }
 
@@ -384,6 +424,49 @@ export async function reconcileSequelsByTmdb(opts: { dryRun?: boolean } = {}): P
  * el multiplexor seguiría viendo fuentes fragmentadas aunque los carteles ya
  * fueran una sola obra.
  */
+
+async function processDuplicateMediaItems(
+  canonical: MediaItem,
+  duplicates: (MediaItem & { episodes?: (MediaEpisode & { links?: SourceLink[] })[] })[],
+  kind: string,
+  dry: boolean,
+  summary: MediaItemReconcileSummary
+) {
+  for (const duplicate of duplicates) {
+    const guard = shouldAutoMerge(
+      canonical.title,
+      duplicate.title,
+      kind,
+      duplicate.title,
+      [canonical.original_title].filter(Boolean) as string[],
+      [duplicate.original_title].filter(Boolean) as string[],
+    );
+    if (!guard.ok) {
+      summary.skipped.push({ canonical: canonical.title, merged: duplicate.title, reason: guard.reason });
+      continue;
+    }
+
+    const detected = detectSeason(duplicate.title, kind);
+    let moved = 0;
+    if (!dry && duplicate.episodes && duplicate.episodes.length > 0) {
+      await bulkMoveEpisodesAndLinks(
+        canonical.id,
+        duplicate.episodes,
+        (episode) => (detected > 1 && Number(episode.season_number) === 1) ? detected : (Number(episode.season_number) || 1)
+      );
+    }
+    moved += (duplicate.episodes || []).length;
+
+    if (!dry) {
+      await prisma.mediaItem.delete({ where: { id: duplicate.id } });
+      summary.media_items_deleted++;
+    }
+    summary.merges_done++;
+    summary.episodes_moved += moved;
+    summary.details.push({ canonical: canonical.title, merged: duplicate.title, season: Math.max(1, detected), episodes_moved: moved });
+  }
+}
+
 export async function reconcileMediaItemsByTmdb(opts: { dryRun?: boolean } = {}): Promise<MediaItemReconcileSummary> {
   const dry = opts.dryRun !== false;
   const summary: MediaItemReconcileSummary = {
@@ -426,56 +509,7 @@ export async function reconcileMediaItemsByTmdb(opts: { dryRun?: boolean } = {})
     }
     for (const [kind, sameKind] of byKind) {
       const canonical = sameKind[0];
-      for (const duplicate of sameKind.slice(1)) {
-        const guard = shouldAutoMerge(
-          canonical.title,
-          duplicate.title,
-          kind,
-          duplicate.title,
-          [canonical.original_title].filter(Boolean) as string[],
-          [duplicate.original_title].filter(Boolean) as string[],
-        );
-        if (!guard.ok) {
-          summary.skipped.push({ canonical: canonical.title, merged: duplicate.title, reason: guard.reason });
-          continue;
-        }
-
-        const detected = detectSeason(duplicate.title, kind);
-        let moved = 0;
-        for (const episode of duplicate.episodes || []) {
-          // Si el título indica S2/S3 y el importador dejó la temporada en 1,
-          // corregirla al mover; las temporadas explícitas ya se conservan.
-          const season = detected > 1 && Number(episode.season_number) === 1
-            ? detected
-            : Number(episode.season_number) || 1;
-          if (!dry) {
-            const target = await prisma.mediaEpisode.upsert({
-              where: {
-                media_item_id_season_number_episode_number: {
-                  media_item_id: canonical.id,
-                  season_number: season,
-                  episode_number: episode.episode_number,
-                },
-              },
-              create: {
-                media_item_id: canonical.id,
-                season_number: season,
-                episode_number: episode.episode_number,
-              },
-              update: {},
-            });
-            for (const link of episode.links || []) await copySourceLink(link, target.id);
-          }
-          moved++;
-        }
-        if (!dry) {
-          await prisma.mediaItem.delete({ where: { id: duplicate.id } });
-          summary.media_items_deleted++;
-        }
-        summary.merges_done++;
-        summary.episodes_moved += moved;
-        summary.details.push({ canonical: canonical.title, merged: duplicate.title, season: detected > 1 ? detected : 1, episodes_moved: moved });
-      }
+      await processDuplicateMediaItems(canonical, sameKind.slice(1), kind, dry, summary);
     }
   }
   return summary;
@@ -519,7 +553,10 @@ export async function mergeTwoShows(
     });
     maxSeason = agg._max?.season_number ?? 0;
   }
-  const season = kind === "movie" ? 1 : detected > 1 ? detected : Math.max(1, maxSeason + 1);
+  let season = 1;
+  if (kind !== "movie") {
+    season = detected > 1 ? detected : Math.max(1, maxSeason + 1);
+  }
 
   const lastEp = await prisma.episode.findFirst({
     where: { show_id: keep.id },
@@ -530,15 +567,25 @@ export async function mergeTwoShows(
 
   const mergeEps = await prisma.episode.findMany({ where: { show_id: merge.id }, orderBy: { episode_number: "asc" } });
   let moved = 0;
+
+  const sourceUrls = mergeEps.map((e) => e.source_url).filter(Boolean) as string[];
+  let existingUrls = new Set<string>();
+  if (!dry && sourceUrls.length > 0) {
+    const existing = await prisma.episode.findMany({
+      where: { show_id: keep.id, source_url: { in: sourceUrls } },
+      select: { source_url: true },
+    });
+    existingUrls = new Set(existing.map((e) => e.source_url as string));
+  }
+
   for (const ep of mergeEps) {
     if (!dry) {
-      const dupe = ep.source_url
-        ? await prisma.episode.findFirst({ where: { show_id: keep.id, source_url: ep.source_url } })
-        : null;
+      const dupe = ep.source_url ? existingUrls.has(ep.source_url) : false;
       if (!dupe) {
         await prisma.episode.create({
           data: { show_id: keep.id, episode_number: nextNumber, title: ep.title, source_url: ep.source_url },
         });
+        if (ep.source_url) existingUrls.add(ep.source_url);
       }
       nextNumber++;
     } else {
@@ -557,20 +604,7 @@ export async function mergeTwoShows(
         where: { media_item_id: mergeItem.id },
         include: { links: true },
       });
-      for (const me of seqMediaEps) {
-        const target = await prisma.mediaEpisode.upsert({
-          where: {
-            media_item_id_season_number_episode_number: {
-              media_item_id: canonicalItem.id,
-              season_number: season,
-              episode_number: me.episode_number,
-            },
-          },
-          create: { media_item_id: canonicalItem.id, season_number: season, episode_number: me.episode_number },
-          update: {},
-        });
-        for (const link of me.links) await copySourceLink(link, target.id);
-      }
+      await bulkMoveEpisodesAndLinks(canonicalItem.id, seqMediaEps, () => season);
       await prisma.mediaItem.delete({ where: { id: mergeItem.id } });
     }
     await prisma.show.delete({ where: { id: merge.id } });

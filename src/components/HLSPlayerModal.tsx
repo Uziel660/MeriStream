@@ -1174,19 +1174,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         hls.loadSource(playUrl);
         hls.attachMedia(video);
 
-        // Cuando se analiza el manifiesto, extraemos las calidades e iniciamos en la más alta
-        hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
+        const handleManifestParsed = (_evt: any, data: any) => {
           if (attemptId !== attemptIdRef.current) return;
-          // MANIFEST_PARSED => el directo arrancó: cancelar el watchdog directo.
           if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
           playbackConfirmedRef.current = true;
-          // Un intento anterior puede haber dejado un mensaje de fallo mientras
-          // este manifiesto se resolvía. Un manifiesto válido invalida ese aviso.
           setPlaybackError(null);
           setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
+
           if (activeServer) {
             setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
           }
+
           const levels: { index: number; label: string; height?: number }[] = data.levels.map((lvl: Level, idx: number) => ({
             index: idx,
             label: lvl.height ? `${lvl.height}p` : `${Math.round((lvl.bitrate ?? 0) / 1000)} kbps`,
@@ -1205,7 +1203,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             pendingResumeTimeRef.current = null;
           }
 
-          // Reproducir automáticamente de manera fluida
           video.play().then(() => {
             if (attemptId !== attemptIdRef.current) return;
             setDeliveryState(prev => {
@@ -1218,7 +1215,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             setIsPlaying(false);
           });
 
-          // Watchdog congelado en segundo 0
           setTimeout(() => {
             if (attemptId !== attemptIdRef.current) return;
             if (video && !video.paused && video.currentTime === 0 && !playbackConfirmedRef.current && activeServer) {
@@ -1231,13 +1227,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               });
             }
           }, 3500);
-        });
+        };
 
-        // Extraer pistas de audio (multiaudio si el contenido lo incluye)
-        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_evt, data) => {
+        const handleAudioTracksUpdated = (_evt: any, data: any) => {
           if (attemptId !== attemptIdRef.current) return;
           if (data.audioTracks && data.audioTracks.length > 1) {
-            const audios: AudioOption[] = data.audioTracks.map((track, idx) => ({
+            const audios: AudioOption[] = data.audioTracks.map((track: any, idx: number) => ({
               id: idx,
               name: track.name || track.lang || `Pista ${idx + 1}`,
               lang: track.lang,
@@ -1245,24 +1240,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             setAudioTracks(audios);
             setActiveAudioTrack(hls.audioTrack);
           }
-        });
+        };
 
-        // Manejo de cambio dinámico de calidad
-        hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
+        const handleLevelSwitched = (_evt: any, data: any) => {
           if (attemptId !== attemptIdRef.current) return;
           const lvl = hls.levels[data.level];
           if (lvl && lvl.height) {
             setCurrentResolutionLabel(`${lvl.height}p ${lvl.height >= 1080 ? 'Full HD' : 'HD'}`);
           }
-        });
+        };
 
-        // Algunos hosts publican una variante HD que queda obsoleta antes que
-        // las demás. HLS.js la marca como `levelLoadError` fatal después de
-        // varios reintentos y el flujo anterior saltaba de inmediato a otro
-        // proveedor, aunque el mismo manifiesto todavía tuviera una calidad
-        // inferior reproducible. Retirar esa variante y continuar en la
-        // siguiente evita el fallback en cascada sin ocultar un fallo real del
-        // servidor completo.
         const droppedLevels = new Set<number>();
         const recoverUnavailableLevel = (data: any): boolean => {
           const detail = String(data?.details || '');
@@ -1289,8 +1276,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           return true;
         };
 
-        // ERRORES FATALES Y NO FATALES (SEGMENTOS, BUFFER, PROTOCOLO)
-        hls.on(Hls.Events.ERROR, (_evt, data) => {
+        const handleHlsError = (_evt: any, data: any) => {
           if (attemptId !== attemptIdRef.current) return;
           if (!data.fatal) {
             if (data.details === 'bufferStalledError' || data.details === 'bufferNudgeOnStall') {
@@ -1339,7 +1325,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           console.warn('HLS Fatal Error:', data.type, data.details);
 
-          // Regla 3: Un fallo directo puede escalar a proxy únicamente si is_proxyable !== false
           if (
             activeServer &&
             canEscalateToProxy(activeServer) &&
@@ -1357,7 +1342,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             return;
           }
 
-          // Servidor falló definitivamente en ambos modos (directo y proxy)
           if (activeServer) {
             setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'failed' }));
             api.reportPlayerEvent({
@@ -1370,7 +1354,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             });
           }
 
-          // Si hay más servidores en la lista, pasar automáticamente al siguiente una sola vez
           if (activeServerIndex < servers.length - 1) {
             const nextIdx = activeServerIndex + 1;
             setFailoverNotice(`Cambiando a ${servers[nextIdx]?.label || 'siguiente servidor'}...`);
@@ -1380,7 +1363,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             setDeliveryState('error');
             setPlaybackError(MSG_NO_SERVERS);
           }
-        });
+        };
+
+        hls.on(Hls.Events.MANIFEST_PARSED, handleManifestParsed);
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, handleAudioTracksUpdated);
+        hls.on(Hls.Events.LEVEL_SWITCHED, handleLevelSwitched);
+        hls.on(Hls.Events.ERROR, handleHlsError);
       }
     }; // end setupHls
 

@@ -1,15 +1,65 @@
 import { prisma } from '../server/db';
-import { splitConcatenatedWords } from '../server/utils/titleNormalizer';
+import { cleanSlugToWords } from '../server/utils/titleNormalizer';
 import { translateGenresToEs } from '../server/metadataEngine';
 
 function toTitleCase(str: string): string {
   return str.replace(
     /\w\S*/g,
-    (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+    (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
   );
 }
 
-async function run() {
+function fixTitle(originalTitle: string): { newTitle: string; titleChanged: boolean } {
+  let newTitle = originalTitle;
+  let titleChanged = false;
+
+  if (!newTitle.includes(" ") && newTitle.length >= 8) {
+    let processed = newTitle.replace(/([a-z])([A-Z])/g, '$1 $2');
+
+    if (!processed.includes(" ")) {
+      const cleaned = cleanSlugToWords(processed);
+      if (cleaned && cleaned.toLowerCase() !== processed.toLowerCase()) {
+        processed = cleaned;
+      }
+    }
+
+    if (processed !== newTitle) {
+      newTitle = toTitleCase(processed);
+      titleChanged = true;
+    }
+  }
+
+  return { newTitle, titleChanged };
+}
+
+function fixGenres(originalGenres: unknown): { newGenresStr: string; genresChanged: boolean } {
+  let currentGenres: string[] = [];
+
+  if (typeof originalGenres === 'string') {
+    try {
+      const parsed = JSON.parse(originalGenres);
+      if (Array.isArray(parsed)) {
+        currentGenres = parsed.map((genre) => String(genre).trim());
+      } else if (typeof parsed === 'string') {
+        currentGenres = parsed.split(',').map((genre) => genre.trim());
+      } else if (parsed != null) {
+        currentGenres = [String(parsed).trim()];
+      }
+    } catch {
+      currentGenres = originalGenres.split(',').map(g => g.trim());
+    }
+  } else if (Array.isArray(originalGenres)) {
+    currentGenres = originalGenres as string[];
+  }
+
+  currentGenres = currentGenres.filter(Boolean);
+  const newGenresList = translateGenresToEs(currentGenres);
+  const genresChanged = JSON.stringify(currentGenres) !== JSON.stringify(newGenresList);
+
+  return { newGenresStr: newGenresList.join(', '), genresChanged };
+}
+
+async function run(): Promise<void> {
   console.log("Starting DB titles and genres repair...");
   
   const shows = await prisma.show.findMany({
@@ -20,56 +70,17 @@ async function run() {
   let genresFixed = 0;
   
   for (const show of shows) {
-    let titleChanged = false;
-    let newTitle = show.title;
-    
-    // Fix squashed titles
-    if (!newTitle.includes(" ") && newTitle.length >= 8) {
-      const lower = newTitle.toLowerCase();
-      // splitConcatenatedWords returns lowercase spaced words
-      const split = splitConcatenatedWords(lower);
-      if (split !== lower) {
-        newTitle = toTitleCase(split);
-        titleChanged = true;
-      }
-    }
-    
-    // Fix genres
-    let currentGenres: string[] = [];
-    if (typeof show.genres === 'string') {
-      try {
-        currentGenres = JSON.parse(show.genres);
-        if (!Array.isArray(currentGenres)) currentGenres = [show.genres];
-      } catch {
-        currentGenres = (show.genres as string).split(',').map(g => g.trim());
-      }
-    } else if (Array.isArray(show.genres)) {
-      currentGenres = show.genres;
-    }
-    
-    // Translate and split genres (this uses the updated GENRE_ES_ALIASES)
-    const newGenres = translateGenresToEs(currentGenres);
-    
-    // Check if genres actually changed
-    const genresChanged = JSON.stringify(currentGenres) !== JSON.stringify(newGenres);
+    const { newTitle, titleChanged } = fixTitle(show.title);
+    const { newGenresStr, genresChanged } = fixGenres(show.genres);
     
     if (titleChanged || genresChanged) {
-      const updateData: any = {};
+      const updateData: Record<string, string> = {};
       if (titleChanged) updateData.title = newTitle;
-      // In Prisma with SQLite, we might need to JSON stringify it if the schema is String, 
-      // but Prisma Client usually handles it if the schema says String. 
-      // Actually, if the schema says String, we should pass a string. 
-      // Let's check how it's defined:
-      // Wait, in my previous script task-976, `s.genres.join` threw an error because it's a string!
-      // This means the schema defines it as `String`, and we should pass a string.
-      // But wait! `s.genres` was `Acción, Aventura`. Not a JSON string!
-      if (genresChanged) {
-        updateData.genres = newGenres.join(', ');
-      }
+      if (genresChanged) updateData.genres = newGenresStr;
       
       console.log(`Updating ${show.title}...`);
       if (titleChanged) console.log(`  Title: -> ${newTitle}`);
-      if (genresChanged) console.log(`  Genres: -> ${newGenres.join(', ')}`);
+      if (genresChanged) console.log(`  Genres: -> ${newGenresStr}`);
       
       await prisma.show.update({
         where: { id: show.id },
@@ -84,4 +95,12 @@ async function run() {
   console.log(`\nFinished! Fixed ${titlesFixed} titles and ${genresFixed} genres.`);
 }
 
-run().catch(console.error).finally(() => prisma.$disconnect());
+run()
+  .catch((error) => {
+    console.error("Migration failed:", error);
+  })
+  .finally(() => {
+    // Sonarcloud might complain about floating promise if void is missing.
+    // We already use void or just await.
+    prisma.$disconnect().catch(() => {});
+  });

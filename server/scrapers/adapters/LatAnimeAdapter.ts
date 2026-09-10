@@ -379,20 +379,47 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       };
     }
 
-    // Resolver todos los iframes en paralelo con timeout de seguridad (4.5s)
-    const resolutions = await Promise.all(
-      iframeUrls.map(async (iframeUrl) => {
-        try {
-          const timeoutPromise = new Promise<{ iframeUrl: string; resolved: string }>((resolve) =>
-            setTimeout(() => resolve({ iframeUrl, resolved: "" }), 4500)
-          );
-          const resolvePromise = EmbedResolvers.resolve(iframeUrl).then((resolved) => ({ iframeUrl, resolved }));
-          return await Promise.race([resolvePromise, timeoutPromise]);
-        } catch {
-          return { iframeUrl, resolved: "" };
-        }
-      })
-    );
+    // Resolver todos los iframes en paralelo con timeout de seguridad (4.5s).
+    // El resultado crítico, sin embargo, no debe esperar al último servidor:
+    // en LatAnime suele haber un Uqload/SprintCDN sano junto a varios embeds
+    // caídos. En cuanto uno devuelve HLS vivo devolvemos ese candidato y
+    // dejamos los locators restantes para el fallback JIT del reproductor.
+    const resolutionPromises = iframeUrls.map(async (iframeUrl) => {
+      try {
+        const timeoutPromise = new Promise<{ iframeUrl: string; resolved: string }>((resolve) =>
+          setTimeout(() => resolve({ iframeUrl, resolved: "" }), 4500)
+        );
+        const resolvePromise = EmbedResolvers.resolve(iframeUrl).then((resolved) => ({ iframeUrl, resolved }));
+        return await Promise.race([resolvePromise, timeoutPromise]);
+      } catch {
+        return { iframeUrl, resolved: "" };
+      }
+    });
+    const liveDirectCache = new Map<string, boolean>();
+    const firstLiveDirect = Promise.any(resolutionPromises.map(async (resolution) => {
+      const { iframeUrl, resolved } = await resolution;
+      if (!this.isDirectMedia(resolved) || isDeadOrBlocked(resolved)) throw new Error("not_direct");
+      const live = await this.isLiveMedia(resolved);
+      liveDirectCache.set(resolved, live);
+      if (!live) throw new Error("direct_not_live");
+      return { iframeUrl, resolved };
+    }));
+
+    try {
+      const first = await firstLiveDirect;
+      const fallbackEmbeds = iframeUrls
+        .filter((iframeUrl) => iframeUrl !== first.iframeUrl && this.isPlayableCandidate(iframeUrl) && !isDeadOrBlocked(iframeUrl));
+      return {
+        stream_url: first.resolved,
+        all_available_streams: [first.resolved, ...fallbackEmbeds].slice(0, MAX_RETURNED_STREAMS),
+        title,
+      };
+    } catch {
+      // Ningún directo sano apareció pronto; reutilizar las resoluciones ya
+      // iniciadas para conservar la selección completa de servidores.
+    }
+
+    const resolutions = await Promise.all(resolutionPromises);
 
     const all_available_streams: string[] = [];
     const directStreams: string[] = [];
@@ -416,7 +443,11 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
     }
 
     const liveDirectStreams = directStreams.length > 0
-      ? (await Promise.all(directStreams.map(async (stream) => (await this.isLiveMedia(stream)) ? stream : null)))
+      ? (await Promise.all(directStreams.map(async (stream) => {
+          const live = liveDirectCache.has(stream) ? liveDirectCache.get(stream) : await this.isLiveMedia(stream);
+          liveDirectCache.set(stream, Boolean(live));
+          return live ? stream : null;
+        })))
         .filter((stream): stream is string => Boolean(stream))
       : [];
     const finalStreams = liveDirectStreams.length > 0

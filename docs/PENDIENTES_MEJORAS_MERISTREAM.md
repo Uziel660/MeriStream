@@ -35,6 +35,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - **Puente local de títulos/aliases:** las fichas ya cargadas también se comparan por título localizado, alias almacenado, título inglés, original y japonés; los resultados locales y TMDB se fusionan solo cuando la identidad es inequívoca y se vuelven a ordenar por coincidencia (`src/App.tsx`). Así una búsqueda tipo `Forgotten Island` puede encontrar una ficha guardada como `La isla olvidada` sin adivinar entre candidatos ambiguos.
 - **Lectura de preferencias:** `useHiddenGenres` ya no lee `localStorage` durante el inicializador síncrono; hidrata después del primer paint y luego sincroniza servidor/pestañas.
 - **Recuperación HLS:** ante un `mediaError` fatal se intenta una recuperación in-place una vez por intento antes de escalar a proxy/failover; se registra el motivo.
+- **Arranque VidSrc optimizado:** el gateway acepta el primer mirror y el primer hash HLS compatible/usable, descarta el idioma explícitamente incorrecto antes de sondear segmentos y corta el lote cuando todos apuntan al mismo CDN fallido; NXSHA consulta scrapers en lotes paralelos.
+- **Arranque LatAnime optimizado:** el adaptador devuelve el primer HLS vivo sin esperar todos los embeds; `/api/v1/catalog/episode-servers` evita volver a desofuscar los fallbacks cuando ya existe un directo validado. Los demás locators siguen disponibles para resolución JIT.
 - **Prioridad de imágenes:** `SmartImage` conserva `fetchPriority="high"` para el hero; antes el wrapper lo eliminaba y anulaba la pista LCP.
 - **CLS del primer render:** el hero reserva una altura responsive estable, la imagen declara `width/height` panorámicos y se muestran skeletons de recomendaciones mientras llega la respuesta; además `index.html` preconecta con `image.tmdb.org`.
 - **Pruebas E2E nuevas:** regresión VidSrc para TMDB `1465063` y auditoría móvil de home, ficha y login `/admin` (`e2e/provider-identity-guards.spec.ts`, `e2e/mobile-layout.spec.ts`).
@@ -47,6 +49,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Pruebas unitarias dirigidas tras el puente de búsqueda: **27/27** correctas (`searchCatalogMerge`, `publicCatalog`).
 - Prueba real `GET /api/v1/providers/movie/1465063?...&originalLanguage=en`: VidSrc etiquetado `[Korean]` ya no entra en `sources`.
 - Prueba real `GET /api/v1/providers/movie/550?...&originalLanguage=en`: se conserva una fuente VidSrc con `audioLanguage: en`.
+- Prueba real de latencia VidSrc/LatAnime (2026-09-09): `LatAnime One Piece` (`/ver/one-piece-latino-episodio-1`) pasó de aproximadamente **5,2 s** en la ruta completa a **1,1–2,3 s** en cuatro ejecuciones posteriores (variación de red); VidSrc `Fight Club` quedó en aproximadamente **3,1–4,2 s** cuando el upstream entrega HLS y el caso incompatible `1465063` corta en aproximadamente **4,1 s**, frente a ~13,7 s al recorrer todos los mirrors.
 - Prueba real de subtítulos para TMDB `1465063`: devolvió pistas `es-419`, `es` y `en` desde SubtitleCat, sin el año conflictivo de `Fantasy Island (1977)`.
 - La suite completa de Vitest terminó **811/811** correcta tras el último cambio. La ejecución E2E conjunta terminó **14/18**: los cuatro fallos restantes son expectativas antiguas del test (fallback local y botón de paginación que ya fue sustituido por autoload, más una etiqueta accesible antigua), no errores del puente de búsqueda; los cinco E2E de búsqueda y los cuatro de móvil/identidad sí pasaron.
 - E2E dirigido móvil + identidad VidSrc: **4/4** correctos.
@@ -110,6 +113,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Prioridad P1 — fallback y estabilidad del reproductor
 
 ### 5. No cambiar de servidor durante una reproducción sana
+
+**Estado: mejorado.** El arranque ya no espera mirrors/embeds equivalentes una vez que existe un HLS compatible y LatAnime conserva los demás locators para JIT. Sigue pendiente la prueba prolongada con cortes de red reales.
 
 - Auditar los eventos HLS `fatal`, `waiting`, `stalled`, `mediaError` y `networkError`.
 - Separar errores recuperables de fallos reales: `HLSPlayerModal` intenta `recoverMediaError` una vez por intento antes de cambiar de servidor cuando procede.

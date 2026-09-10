@@ -625,7 +625,7 @@ async function resolveNxshaMultiLang(
       detectedLabel: string;
     } | null = null;
 
-    for (const server of servers.slice(0, 12)) {
+    const inspectServer = async (server: any) => {
       const sourceQuery = encodeNxshaData({
         ex_lang: false,
         provider: server.scraper,
@@ -636,14 +636,13 @@ async function resolveNxshaMultiLang(
         ...(media.episode ? { episode: media.episode } : {}),
       });
       const sourceResponse = await fetchText(fetcher, `${NXSHA_API_ORIGIN}/api/sources?q=${encodeURIComponent(sourceQuery)}`, apiHeaders);
-      if (!sourceResponse.ok) continue;
+      if (!sourceResponse.ok) return null;
       let sourcePayload: any;
-      try { sourcePayload = JSON.parse(sourceResponse.text); } catch { continue; }
+      try { sourcePayload = JSON.parse(sourceResponse.text); } catch { return null; }
       const sourceData = typeof sourcePayload?._hash === "string" ? decodeVidSrcTrackPayload(sourcePayload._hash) : null;
       const candidates = Array.isArray(sourceData?.sources)
         ? sourceData.sources
           .map((source: any) => ({
-            source,
             playable: playableUrl(source?.url, source?.type),
             label: String(source?.label || source?.quality || "").trim(),
           }))
@@ -658,23 +657,29 @@ async function resolveNxshaMultiLang(
         const fallback = (candidate: any) => candidate.label.includes("english") ? 20 : candidate.label.includes("multi") ? 10 : 0;
         return fallback(right) - fallback(left);
       });
+      const candidate = candidates[0];
+      if (!candidate?.playable) return null;
+      const detectedLanguages = detectNxshaLanguages(candidate.label || "");
+      const detectedLanguage = detectedLanguages[0] || (detectNxshaLanguage(candidate.label || "") === "multi" ? "multi" : null);
+      return {
+        playable: candidate.playable,
+        score: rankCandidateByPreferredAudio(detectedLanguage || undefined, preferredAudio),
+        detectedLanguage,
+        detectedLabel: candidate.label,
+      };
+    };
 
-      for (const candidate of candidates.slice(0, 3)) {
-        const playable = candidate.playable;
-        if (!playable) continue;
-        const detectedLanguages = detectNxshaLanguages(candidate.label || "");
-        const detectedLanguage = detectedLanguages[0] || (detectNxshaLanguage(candidate.label || "") === "multi" ? "multi" : null);
-        const score = rankCandidateByPreferredAudio(detectedLanguage || undefined, preferredAudio);
-        if (!bestCandidate || score > bestCandidate.score) {
-          bestCandidate = {
-            playable,
-            score,
-            detectedLanguage,
-            detectedLabel: candidate.label,
-          };
+    // Query NXSHA scrapers in small parallel batches. They are independent;
+    // the previous serial loop multiplied every scraper's RTT and made the
+    // language-aware VidSrc path look like a player failure.
+    const nxshaServers = servers.slice(0, 12);
+    for (let offset = 0; offset < nxshaServers.length; offset += 4) {
+      const batch = await Promise.all(nxshaServers.slice(offset, offset + 4).map((server) => inspectServer(server).catch(() => null)));
+      for (const candidate of batch) {
+        if (candidate && (!bestCandidate || candidate.score > bestCandidate.score)) {
+          bestCandidate = candidate;
         }
       }
-
       // An exact match is already the best possible outcome. Stop querying
       // later scrapers, keeping the preference-aware path bounded in latency.
       if (bestCandidate?.score >= 1000) break;
@@ -915,18 +920,18 @@ export async function resolveVidSrcEmbed(
       return { status: "embed_only", embedUrl, playerOrigin, reason: "server_hashes_not_found" };
     }
 
-    const serverResults = await Promise.allSettled(serverHashes.map(async (hash) => {
+    const resolveServerHash = async (hash: string): Promise<string> => {
       const rcpUrl = new URL(`/rcp/${encodeURIComponent(hash)}`, playerOrigin).toString();
       const rcp = await fetchText(fetcher, rcpUrl, {
         ...playerHeaders,
         "Sec-Fetch-Dest": "empty",
       });
-      if (!rcp.ok) return null;
+      if (!rcp.ok) throw new Error("vidsrc_rcp_unavailable");
 
       const sourcePath = extractQuotedPath(rcp.text, "src");
-      if (!sourcePath) return null;
+      if (!sourcePath) throw new Error("vidsrc_source_not_found");
       const sourceUrl = toAbsolute(sourcePath, playerOrigin);
-      if (!sourceUrl) return null;
+      if (!sourceUrl) throw new Error("vidsrc_source_invalid");
 
       let terminalUrl = sourceUrl;
       if (new URL(sourceUrl).pathname.startsWith("/prorcp/")) {
@@ -934,21 +939,25 @@ export async function resolveVidSrcEmbed(
           ...playerHeaders,
           "Sec-Fetch-Dest": "empty",
         });
-        if (!terminal.ok) return null;
+        if (!terminal.ok) throw new Error("vidsrc_terminal_unavailable");
         const file = extractQuotedPath(terminal.text, "file");
         const absoluteFile = file ? toAbsolute(file, terminal.finalUrl) : null;
-        if (!absoluteFile) return null;
+        if (!absoluteFile) throw new Error("vidsrc_terminal_source_not_found");
         terminalUrl = absoluteFile;
       }
 
       const playable = playableUrl(terminalUrl, "hls");
-      return playable?.streamType === "hls" ? playable.url : null;
-    }));
+      if (!playable || playable.streamType !== "hls") throw new Error("vidsrc_non_hls_source");
+      return playable.url;
+    };
 
-    const hlsUrl = serverResults.find(
-      (result): result is PromiseFulfilledResult<string | null> => result.status === "fulfilled" && Boolean(result.value),
-    );
-    if (!hlsUrl?.value) {
+    // The server buttons are equivalent mirrors. Resolve the first terminal
+    // HLS instead of waiting for every hash (a slow scraper used to hold the
+    // player behind all remaining servers even after one was ready).
+    let hlsUrl: string;
+    try {
+      hlsUrl = await Promise.any(serverHashes.map(resolveServerHash));
+    } catch {
       return { status: "embed_only", embedUrl, playerOrigin, reason: "no_native_hls_from_servers" };
     }
 
@@ -961,8 +970,8 @@ export async function resolveVidSrcEmbed(
       status: "direct",
       embedUrl,
       playerOrigin,
-      hlsUrl: hlsUrl.value,
-      ...(await enrichDirectResult(embedUrl, hlsUrl.value, fetcher, requiredHeaders, `${playerOrigin}/`, options.preferredSubtitles)),
+      hlsUrl,
+      ...(await enrichDirectResult(embedUrl, hlsUrl, fetcher, requiredHeaders, `${playerOrigin}/`, options.preferredSubtitles)),
       requiredHeaders,
     };
   } catch (error) {
@@ -994,76 +1003,93 @@ export class VidSrcClient implements DirectStreamProvider {
 
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
     if (!this.kinds.includes(req.kind as any)) return [];
-    const sources: PlayableSource[] = [];
+    const toPlayableSource = (result: VidSrcProbeResult): PlayableSource | null => {
+      if (!result.hlsUrl) return null;
+      const playable = playableUrl(result.hlsUrl, "hls");
+      if (!playable) return null;
+      const preferredAudio = (req.preferredAudio?.length ? req.preferredAudio
+        .map((preference) => normalizeLanguageCode(preference))
+        .filter((value): value is string => Boolean(value))
+        .map((preference) => result.audioTracks?.find((track) => {
+          const language = normalizeLanguageCode(track.language);
+          return Boolean(language && (language === preference || language.startsWith(`${preference}-`) || preference.startsWith(`${language}-`)));
+        }))
+        .find(Boolean) : undefined)
+        || result.audioTracks?.find((track) => track.isDefault)
+        || result.audioTracks?.[0];
+      const detectedLang = result.detectedLanguage;
+      return {
+        provider: this.id,
+        providerGroup: "api",
+        url: playable.url,
+        streamType: playable.streamType,
+        audioLanguage: normalizeLanguageCode(preferredAudio?.language) || detectedLang || null,
+        audioTracks: result.audioTracks,
+        subtitleLanguage: null,
+        subtitles: result.subtitles || [],
+        requiredHeaders: result.requiredHeaders,
+        canonicalLocator: result.embedUrl,
+        sourceStatus: "resolved",
+        score: 85,
+      };
+    };
 
     // Mirrors are queried in bounded batches. The old all-at-once strategy made
     // a blocked shared CDN consume every socket and delayed the UI for a minute;
     // the first healthy batch is enough because mirrors are equivalent locators.
-    for (let offset = 0; offset < this.origins.length && sources.length === 0; offset += MIRROR_BATCH_SIZE) {
+    for (let offset = 0; offset < this.origins.length; offset += MIRROR_BATCH_SIZE) {
       const batch = this.origins.slice(offset, offset + MIRROR_BATCH_SIZE);
-      const attempts = await Promise.allSettled(
-        batch.map(async (origin) => {
-          const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher, {
-            preferredAudio: req.preferredAudio,
-            preferredSubtitles: req.preferredSubtitles,
-          });
-          const usable = result.status === "direct" && Boolean(result.hlsUrl)
-            && await isVidSrcHlsUsable(result.hlsUrl, result.requiredHeaders, this.fetcher);
-          return { result, usable };
-        }),
-      );
-      const directHosts = new Set<string>();
-      for (const attempt of attempts) {
-        if (attempt.status !== "fulfilled") continue;
-        const result = attempt.value.result;
+      const attempts = batch.map(async (origin) => {
+        const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher, {
+          preferredAudio: req.preferredAudio,
+          preferredSubtitles: req.preferredSubtitles,
+        });
+        let directHost: string | null = null;
         if (result.hlsUrl) {
-          try { directHosts.add(new URL(result.hlsUrl).hostname); } catch { /* malformed result */ }
+          try { directHost = new URL(result.hlsUrl).hostname; } catch { /* malformed result */ }
         }
-        if (!attempt.value.usable) continue;
+        if (result.status !== "direct" || !result.hlsUrl) return { source: null, directHost };
+        // Reject an explicitly wrong language before the expensive segment
+        // probe. This is both safer (no Korean source shown as English) and
+        // faster when NXSHA exposes several dubbed/labelled candidates.
         if (!isVidSrcLanguageCompatible(
           result.detectedLanguage,
           req.originalLanguage,
           req.preferredAudio,
           result.audioTracks,
-        )) continue;
-        const playable = playableUrl(result.hlsUrl, "hls");
-        if (!playable) continue;
-        const preferredAudio = (req.preferredAudio?.length ? req.preferredAudio
-          .map((preference) => normalizeLanguageCode(preference))
-          .filter((value): value is string => Boolean(value))
-          .map((preference) => result.audioTracks?.find((track) => {
-            const language = normalizeLanguageCode(track.language);
-            return Boolean(language && (language === preference || language.startsWith(`${preference}-`) || preference.startsWith(`${language}-`)));
-          }))
-          .find(Boolean) : undefined)
-          || result.audioTracks?.find((track) => track.isDefault)
-          || result.audioTracks?.[0];
-        const detectedLang = result.detectedLanguage;
-        sources.push({
-          provider: this.id,
-          providerGroup: "api",
-          url: playable.url,
-          streamType: playable.streamType,
-          audioLanguage: normalizeLanguageCode(preferredAudio?.language) || detectedLang || null,
-          audioTracks: result.audioTracks,
-          subtitleLanguage: null,
-          subtitles: result.subtitles || [],
-          requiredHeaders: result.requiredHeaders,
-          canonicalLocator: result.embedUrl,
-          sourceStatus: "resolved",
-          score: 85,
-        });
-      }
-      // Different VidSrc mirrors often point to the same terminal CDN. Once
-      // that CDN has failed validation, querying the remaining equivalent
-      // locators only adds latency and load without increasing coverage.
-      if (sources.length === 0 && directHosts.size === 1) break;
-    }
+        )) return { source: null, directHost };
+        const usable = await isVidSrcHlsUsable(result.hlsUrl, result.requiredHeaders, this.fetcher);
+        return { source: usable ? toPlayableSource(result) : null, directHost };
+      });
 
-    const deduped = new Map<string, PlayableSource>();
-    for (const source of sources) {
-      if (!deduped.has(source.url)) deduped.set(source.url, source);
+      // The first compatible, playable mirror is enough to start playback.
+      // Waiting for every mirror made one slow/dead origin delay a healthy
+      // source by several seconds. Remaining attempts continue in the
+      // background and are intentionally not part of the critical path.
+      try {
+        const first = await Promise.any(attempts.map(async (attempt) => {
+          const { source } = await attempt;
+          if (!source) throw new Error("vidsrc_candidate_rejected");
+          return source;
+        }));
+        return [first];
+      } catch {
+        // Every origin in this batch failed or was rejected; try the next
+        // bounded batch, preserving the existing mirror coverage.
+        const settled = await Promise.allSettled(attempts);
+        const directHosts = new Set(
+          settled
+            .filter((attempt): attempt is PromiseFulfilledResult<{ source: PlayableSource | null; directHost: string | null }> => attempt.status === "fulfilled")
+            .map((attempt) => attempt.value.directHost)
+            .filter((host): host is string => Boolean(host)),
+        );
+        // Different VidSrc mirrors frequently point to one terminal CDN. Once
+        // that CDN has failed language/health validation, more locators cannot
+        // improve the result and only add several seconds of latency.
+        if (directHosts.size === 1) break;
+      }
+
     }
-    return [...deduped.values()];
+    return [];
   }
 }

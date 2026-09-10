@@ -2879,6 +2879,63 @@ async function startServer() {
 
       const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
 
+      // LatAnime's adapter already validates direct HLS candidates against the
+      // manifest and first segment. Do not spend another 3s per fallback embed
+      // enriching pages that are not needed to start playback: the player can
+      // resolve those locators JIT if the first direct stream later fails.
+      // Hosts whose direct URL needs extra metadata (Vimeos/Zoko headers) stay
+      // on the full path below so their delivery contract is preserved.
+      const fastDirect = extracted.stream_url && isDirectMedia(extracted.stream_url)
+        && !isSourcePage(extracted.stream_url)
+        && !/vimeos\.[a-z]+|p\d+\.vimeos\.zip|zokoanime\.video\/stream\//i.test(extracted.stream_url)
+        ? extracted.stream_url
+        : "";
+      if (fastDirect) {
+        const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
+        const fastRankedStreams = rankedBase
+          .map((stream) => ({
+            ...stream,
+            provider: sourceSite,
+            source_site: sourceSite,
+            original_url: url,
+            canonical_locator: url,
+            ...(stream.type === "direct" || stream.url === fastDirect
+              ? {
+                  type: "direct" as const,
+                  delivery_mode: "direct_trial" as const,
+                  is_proxyable: true,
+                  is_refreshable: true,
+                }
+              : {
+                  type: "embed" as const,
+                  delivery_mode: "embed" as const,
+                  is_proxyable: false,
+                  is_refreshable: true,
+                }),
+          }))
+          .sort((a, b) => {
+            const aDirect = a.type === "direct" || isDirectMedia(a.url);
+            const bDirect = b.type === "direct" || isDirectMedia(b.url);
+            if (aDirect && !bDirect) return -1;
+            if (!aDirect && bDirect) return 1;
+            return a.tier - b.tier;
+          });
+        const safeFastRanked = fastRankedStreams.map((stream) => {
+          const provider = stream.source_site || sourceSite || stream.provider;
+          return Array.isArray(stream.subtitles)
+            ? { ...stream, subtitles: proxyResolvedSubtitles({ subtitles: stream.subtitles }, provider).subtitles || [] }
+            : stream;
+        });
+        return res.json({
+          url,
+          stream_url: fastDirect,
+          all_available_streams: all,
+          title: extracted.title,
+          resolved: true,
+          ranked_streams: safeFastRanked,
+        });
+      }
+
       // Intentar desofuscar de inmediato los mejores embeds a stream nativo directo (.m3u8/.mp4)
       const upgradedMap = new Map<string, {
         url: string;

@@ -21,11 +21,25 @@ export function isAdminConfigured(): boolean {
   return Boolean(user && password && secret);
 }
 
-function cookieOptions(): CookieOptions {
+function cookieOptions(req?: Request): CookieOptions {
+  // Production is also used through `http://localhost` during local checks.
+  // Derive the transport from the actual request so a Secure cookie is only
+  // emitted when the browser can send it back. Express trusts the proxy in
+  // server.ts, so x-forwarded-proto covers the Cloudflare HTTPS route.
+  const forwardedProto = String(req?.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const requestProtocol = forwardedProto || String(req?.protocol || "").toLowerCase();
+  const hasRequestProtocol = Boolean(requestProtocol);
+  const secure = hasRequestProtocol
+    ? Boolean(req?.secure || requestProtocol === "https")
+    : process.env.NODE_ENV === "production";
+
   return {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure,
     path: "/",
   };
 }
@@ -148,7 +162,7 @@ export function adminLogin(req: Request, res: Response): void {
     return;
   }
   res.cookie(ADMIN_SESSION_COOKIE, issueAdminSession(), {
-    ...cookieOptions(),
+    ...cookieOptions(req),
     maxAge: ADMIN_SESSION_TTL_SECONDS * 1000,
   });
   res.json({ ok: true });
@@ -166,11 +180,11 @@ export function adminSession(req: Request, res: Response): void {
   res.json({ ok: true, authenticated: true });
 }
 
-export function adminLogout(_req: Request, res: Response): void {
+export function adminLogout(req: Request, res: Response): void {
   if (!isAdminConfigured()) {
     unavailable(res);
     return;
   }
-  res.clearCookie(ADMIN_SESSION_COOKIE, cookieOptions());
+  res.clearCookie(ADMIN_SESSION_COOKIE, cookieOptions(req));
   res.status(204).end();
 }

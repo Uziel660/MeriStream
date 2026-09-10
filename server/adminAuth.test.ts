@@ -92,6 +92,20 @@ describe("adminAuth", () => {
     );
   });
 
+  it("permite la sesión local por HTTP aunque el servidor esté en producción", () => {
+    setAdminEnv();
+    process.env.NODE_ENV = "production";
+    const { res } = mockResponse();
+
+    adminLogin({ headers: {}, protocol: "http", secure: false, body: { user: "admin-test", password: "correct-password" } } as Request, res);
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      ADMIN_SESSION_COOKIE,
+      expect.any(String),
+      expect.objectContaining({ secure: false })
+    );
+  });
+
   it("valida sesiones, rechaza tokens inválidos y permite el middleware solo con cookie válida", () => {
     setAdminEnv();
     const token = issueAdminSession();

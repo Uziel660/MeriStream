@@ -5,7 +5,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 ## Estado de partida
 
 - Rama de trabajo: `lastversion`.
-- Último commit publicado de esta revisión: `804bee7 fix: rank and bridge multilingual catalog search` (incluye los cambios de identidad, reproducción, responsive y rendimiento de esta revisión).
+- Último commit publicado de esta revisión: `072a10a perf: reduce VidSrc and LatAnime playback startup` (incluye la optimización más reciente de identidad, reproducción, responsive y rendimiento).
 - El worktree estaba limpio al crear esta lista.
 - El `.env` de `E:\merinuevo\.env` ya se copió al proyecto local. Mantenerlo ignorado por Git y no exponer sus valores.
 - El servidor local de desarrollo se probó en `http://localhost:3010/`.

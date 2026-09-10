@@ -51,7 +51,7 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - Estrategia segura de preload del hero/LCP dinámico y medición en perfil de navegador limpio.
 - Auditoría visual completa con capturas de todas las rutas, especialmente `/admin`, y pruebas táctiles en dispositivos reales.
 - E2E final de reproducción con varios servidores, idioma inglés, una obra solo VidSrc, una obra con fallback y una obra sin subtítulos.
-- Push de `b2d2a3c` y actualización final de esta lista con enlaces al informe.
+- Informe visual/E2E final y revisión de identidad por título/duración siguen pendientes; los cambios de esta revisión ya están publicados en `lastversion`.
 
 ## Prioridad P0 — integridad de reproducción
 

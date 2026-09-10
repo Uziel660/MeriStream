@@ -2,6 +2,7 @@ export type PreferredQuality = 'auto' | '1080p' | '720p' | '480p';
 export type SubtitlePosition = 'bottom' | 'center' | 'top' | 'custom';
 export type ContrastMode = 'standard' | 'high';
 export type PerformanceMode = 'auto' | 'quality' | 'balanced' | 'low';
+export type InterfaceStyle = 'cinematic' | 'glass' | 'noir' | 'aurora';
 
 export interface AppPreferences {
   preferredLanguages: string[];
@@ -17,6 +18,8 @@ export interface AppPreferences {
    * only to MeriStream's same-origin catalog endpoints. */
   tmdbApiKey: string;
   contrast: ContrastMode;
+  /** Changes the complete visual language without touching playback/provider contracts. */
+  interfaceStyle: InterfaceStyle;
   /** Controls purely client-side visual cost. No playback/provider contract
    * depends on this value. */
   performanceMode: PerformanceMode;
@@ -36,6 +39,7 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   reduceMotion: false,
   tmdbApiKey: '',
   contrast: 'standard',
+  interfaceStyle: 'cinematic',
   performanceMode: 'auto',
   showServerSelector: false,
 };
@@ -51,6 +55,10 @@ function storageKey(userId?: string | null): string {
 
 function normalizePerformanceMode(value: unknown): PerformanceMode {
   return value === 'quality' || value === 'balanced' || value === 'low' ? value : 'auto';
+}
+
+function normalizeInterfaceStyle(value: unknown): InterfaceStyle {
+  return value === 'glass' || value === 'noir' || value === 'aurora' ? value : 'cinematic';
 }
 
 function clampPosition(value: unknown, fallback: number): number {
@@ -77,6 +85,7 @@ export function getAppPreferences(userId?: string | null): AppPreferences {
       subtitlePositionX: clampPosition(parsed.subtitlePositionX, DEFAULT_APP_PREFERENCES.subtitlePositionX),
       subtitlePositionY: clampPosition(parsed.subtitlePositionY, DEFAULT_APP_PREFERENCES.subtitlePositionY),
       contrast,
+      interfaceStyle: normalizeInterfaceStyle(parsed.interfaceStyle),
       performanceMode: normalizePerformanceMode(parsed.performanceMode),
       showServerSelector: parsed.showServerSelector === true,
       tmdbApiKey: typeof parsed.tmdbApiKey === 'string' ? parsed.tmdbApiKey.trim().slice(0, 128) : '',
@@ -100,6 +109,7 @@ export function applyAppPreferencesToDocument(userId?: string | null): AppPrefer
     document.documentElement.dataset.msContrast = preferences.contrast;
     document.documentElement.dataset.msReduceMotion = preferences.reduceMotion ? 'true' : 'false';
     document.documentElement.dataset.msPerformance = preferences.performanceMode;
+    document.documentElement.dataset.msStyle = preferences.interfaceStyle;
   }
   if (typeof window !== 'undefined') {
     const nextSelectorValue = preferences.showServerSelector ? 'true' : 'false';

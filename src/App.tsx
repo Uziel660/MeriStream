@@ -562,7 +562,8 @@ export function App() {
   }, [user?.id]);
 
   const tmdbRequestInit = useCallback((): RequestInit => {
-    const key = getAppPreferences(user?.id).tmdbApiKey.trim();
+    const preferences = getAppPreferences(user?.id);
+    const key = preferences.tmdbApiKeyEnabled ? preferences.tmdbApiKey.trim() : '';
     return key ? { headers: { 'X-TMDB-Personal-Key': key } } : {};
   }, [user?.id]);
 

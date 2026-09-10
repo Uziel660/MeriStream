@@ -234,11 +234,21 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
                 </select>
               </label>
               <label className="text-sm font-semibold">Clave personal de TMDB
+                <span className="mb-2 flex items-start gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs font-normal text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={preferences.tmdbApiKeyEnabled}
+                    onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKeyEnabled: event.target.checked }))}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-amber-400"
+                    aria-describedby="tmdb-key-help"
+                  />
+                  <span><strong className="block text-zinc-100">Activar clave personal</strong><span className="mt-0.5 block text-[10px] leading-relaxed text-zinc-500">La clave solo se aplica cuando marcas esta casilla y guardas las preferencias.</span></span>
+                </span>
                 <span className="relative mt-2 block">
-                  <input type={showTmdbKey ? 'text' : 'password'} value={preferences.tmdbApiKey} onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKey: event.target.value.slice(0, 128) }))} autoComplete="off" spellCheck={false} placeholder="Opcional" className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 pr-10 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400" aria-describedby="tmdb-key-help" />
+                  <input type={showTmdbKey ? 'text' : 'password'} value={preferences.tmdbApiKey} onChange={(event) => setPreferences((current) => ({ ...current, tmdbApiKey: event.target.value.slice(0, 128) }))} autoComplete="off" spellCheck={false} disabled={!preferences.tmdbApiKeyEnabled} placeholder={preferences.tmdbApiKeyEnabled ? 'Pega aquí tu clave de TMDB' : 'Activa la casilla para introducirla'} className={`w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 pr-10 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400 ${!preferences.tmdbApiKeyEnabled ? 'cursor-not-allowed opacity-50' : ''}`} aria-describedby="tmdb-key-help" />
                   <button type="button" onClick={() => setShowTmdbKey((value) => !value)} className="absolute inset-y-0 right-1 grid w-8 place-items-center text-zinc-400 hover:text-white" aria-label={showTmdbKey ? 'Ocultar clave de TMDB' : 'Mostrar clave de TMDB'}>{showTmdbKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                 </span>
-                <span id="tmdb-key-help" className="mt-1 block text-[10px] font-normal leading-relaxed text-zinc-500">Solo se envía a endpoints de catálogo de MeriStream. Vacío = configuración del servidor.</span>
+                <span id="tmdb-key-help" className="mt-1 block text-[10px] font-normal leading-relaxed text-zinc-500">Desactivada = se usa la clave del servidor. Activada = se utiliza esta clave solo en los endpoints de catálogo de MeriStream.</span>
               </label>
             </div>
           </fieldset>

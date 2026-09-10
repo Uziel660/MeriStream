@@ -110,7 +110,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       ? `/api/v1/catalog/public/${publicIdentity.kind}/${publicIdentity.tmdbId}`
       : `/api/v1/shows/${encodeURIComponent(showId)}`;
 
-    const personalKey = getAppPreferences(userId).tmdbApiKey.trim();
+    const preferences = getAppPreferences(userId);
+    const personalKey = preferences.tmdbApiKeyEnabled ? preferences.tmdbApiKey.trim() : '';
     const requestInit = personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : undefined;
     fetchDetailJson(detailUrl, requestInit)
       .then(async (localData) => {
@@ -179,7 +180,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const kind = rawCategory.includes('movie') || rawCategory.includes('pel') ? 'movie'
       : rawCategory.includes('anime') ? 'anime' : 'series';
     const controller = new AbortController();
-    const personalKey = getAppPreferences(userId).tmdbApiKey.trim();
+    const preferences = getAppPreferences(userId);
+    const personalKey = preferences.tmdbApiKeyEnabled ? preferences.tmdbApiKey.trim() : '';
     setIsLoadingRelated(true);
 
     fetch(`/api/v1/catalog/public/${kind}/${tmdbId}/related`, {

@@ -15,8 +15,10 @@ export interface AppPreferences {
   subtitleScale: 'small' | 'normal' | 'large';
   reduceMotion: boolean;
   /** Optional per-user TMDB key. It is kept in this browser profile and sent
-   * only to MeriStream's same-origin catalog endpoints. */
+   * only to MeriStream's same-origin catalog endpoints when explicitly enabled. */
   tmdbApiKey: string;
+  /** Explicit opt-in switch for sending the personal TMDB key. */
+  tmdbApiKeyEnabled: boolean;
   contrast: ContrastMode;
   /** Changes the complete visual language without touching playback/provider contracts. */
   interfaceStyle: InterfaceStyle;
@@ -38,6 +40,7 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   subtitleScale: 'normal',
   reduceMotion: false,
   tmdbApiKey: '',
+  tmdbApiKeyEnabled: false,
   contrast: 'standard',
   interfaceStyle: 'cinematic',
   performanceMode: 'auto',
@@ -89,6 +92,7 @@ export function getAppPreferences(userId?: string | null): AppPreferences {
       performanceMode: normalizePerformanceMode(parsed.performanceMode),
       showServerSelector: parsed.showServerSelector === true,
       tmdbApiKey: typeof parsed.tmdbApiKey === 'string' ? parsed.tmdbApiKey.trim().slice(0, 128) : '',
+      tmdbApiKeyEnabled: parsed.tmdbApiKeyEnabled === true,
       preferredLanguages: Array.isArray(parsed.preferredLanguages) ? parsed.preferredLanguages : DEFAULT_APP_PREFERENCES.preferredLanguages,
       preferredSubtitleLanguages: Array.isArray(parsed.preferredSubtitleLanguages) ? parsed.preferredSubtitleLanguages : DEFAULT_APP_PREFERENCES.preferredSubtitleLanguages,
     };

@@ -27,6 +27,25 @@ describe("SubtitleProxy", () => {
     expect(result?.body.toString("utf8")).toContain("Hola");
   });
 
+  it("prefers UTF-8 and strips markup/entities instead of exposing them", async () => {
+    const proxy = new SubtitleProxy();
+    const source = Buffer.from("1\n00:00:01,000 --> 00:00:02,000\n[Alba] <i>Acción &amp; reacción</i>\n", "utf8");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(source, { status: 200 })));
+    const url = proxy.register({ id: "utf8", provider: "tvsubtitles", language: "es", label: "Español", sourceUrl: "https://www.tvsubtitles.net/files/demo.srt", format: "srt" });
+    const result = await proxy.serve(url!.split("/").pop()!.replace(".vtt", ""));
+    expect(result?.body.toString("utf8")).toContain("[Alba] Acción & reacción");
+    expect(result?.body.toString("utf8")).not.toContain("<i>");
+  });
+
+  it("repairs a UTF-8 subtitle that arrived already mojibaked", async () => {
+    const proxy = new SubtitleProxy();
+    const source = Buffer.from("1\n00:00:01,000 --> 00:00:02,000\nAcciÃ³n española\n", "utf8");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(source, { status: 200 })));
+    const url = proxy.register({ id: "mojibake", provider: "tvsubtitles", language: "es", label: "Español", sourceUrl: "https://www.tvsubtitles.net/files/mojibake.srt", format: "srt" });
+    const result = await proxy.serve(url!.split("/").pop()!.replace(".vtt", ""));
+    expect(result?.body.toString("utf8")).toContain("Acción española");
+  });
+
   it("rejects untrusted remote hosts", () => {
     const proxy = new SubtitleProxy();
     expect(proxy.register({ id: "bad", provider: "yify", language: "en", label: "English", sourceUrl: "https://evil.example/sub.srt" })).toBeNull();

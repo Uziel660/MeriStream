@@ -1,5 +1,5 @@
 export type PreferredQuality = 'auto' | '1080p' | '720p' | '480p';
-export type SubtitlePosition = 'bottom' | 'center' | 'top';
+export type SubtitlePosition = 'bottom' | 'center' | 'top' | 'custom';
 export type ContrastMode = 'standard' | 'high';
 export type PerformanceMode = 'auto' | 'quality' | 'balanced' | 'low';
 
@@ -8,6 +8,9 @@ export interface AppPreferences {
   preferredSubtitleLanguages: string[];
   defaultQuality: PreferredQuality;
   subtitlePosition: SubtitlePosition;
+  /** Custom subtitle anchor as a percentage of the player viewport. */
+  subtitlePositionX: number;
+  subtitlePositionY: number;
   subtitleScale: 'small' | 'normal' | 'large';
   reduceMotion: boolean;
   /** Optional per-user TMDB key. It is kept in this browser profile and sent
@@ -27,6 +30,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   preferredSubtitleLanguages: ['es-419', 'es-ES', 'es', 'en'],
   defaultQuality: 'auto',
   subtitlePosition: 'bottom',
+  subtitlePositionX: 50,
+  subtitlePositionY: 86,
   subtitleScale: 'normal',
   reduceMotion: false,
   tmdbApiKey: '',
@@ -48,6 +53,16 @@ function normalizePerformanceMode(value: unknown): PerformanceMode {
   return value === 'quality' || value === 'balanced' || value === 'low' ? value : 'auto';
 }
 
+function clampPosition(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(92, Math.max(8, Math.round(parsed)));
+}
+
+function normalizeSubtitlePosition(value: unknown): SubtitlePosition {
+  return value === 'top' || value === 'center' || value === 'custom' ? value : 'bottom';
+}
+
 export function getAppPreferences(userId?: string | null): AppPreferences {
   if (typeof window === 'undefined') return { ...DEFAULT_APP_PREFERENCES };
   try {
@@ -58,6 +73,9 @@ export function getAppPreferences(userId?: string | null): AppPreferences {
     return {
       ...DEFAULT_APP_PREFERENCES,
       ...parsed,
+      subtitlePosition: normalizeSubtitlePosition(parsed.subtitlePosition),
+      subtitlePositionX: clampPosition(parsed.subtitlePositionX, DEFAULT_APP_PREFERENCES.subtitlePositionX),
+      subtitlePositionY: clampPosition(parsed.subtitlePositionY, DEFAULT_APP_PREFERENCES.subtitlePositionY),
       contrast,
       performanceMode: normalizePerformanceMode(parsed.performanceMode),
       showServerSelector: parsed.showServerSelector === true,

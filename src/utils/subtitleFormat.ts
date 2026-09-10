@@ -1,10 +1,35 @@
+const HTML_ENTITY_MAP: Record<string, string> = {
+  amp: '&',
+  apos: "'",
+  gt: '>',
+  lt: '<',
+  nbsp: ' ',
+  quot: '"',
+};
+
+/** Remove presentation markup/entities that should not be visible as text. */
+export function sanitizeSubtitleText(input: string): string {
+  return String(input || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .replace(/&#x([\da-f]+);/gi, (_match, hex: string) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(Math.min(codePoint, 0x10ffff)) : _match;
+    })
+    .replace(/&#(\d+);/g, (_match, digits: string) => {
+      const codePoint = Number.parseInt(digits, 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(Math.min(codePoint, 0x10ffff)) : _match;
+    })
+    .replace(/&([a-z]+);/gi, (match, name: string) => HTML_ENTITY_MAP[name.toLowerCase()] || match);
+}
+
 /**
  * Browser <track> only consumes WebVTT. VidSrc's subtitle endpoint currently
  * returns OpenSubtitles SRT files with `application/force-download`, so keep
  * the conversion local to the player and preserve already-valid VTT files.
  */
 export function subtitleTextToWebVtt(input: string): string {
-  const normalized = String(input || "")
+  const normalized = sanitizeSubtitleText(input)
     .replace(/^\uFEFF/, "")
     .replace(/\r\n?/g, "\n")
     .trim();

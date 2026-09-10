@@ -103,10 +103,47 @@ export function PreferencesPanel({ userId, onClose }: PreferencesPanelProps) {
             </label>
             <label className="text-sm font-semibold">Posición de subtítulos
               <select value={preferences.subtitlePosition} onChange={(event) => setPreferences((current) => ({ ...current, subtitlePosition: event.target.value as SubtitlePosition }))} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-xs font-normal text-zinc-200 outline-none focus:border-amber-400">
-                <option value="bottom">Abajo</option><option value="center">Centro</option><option value="top">Arriba</option>
+                <option value="bottom">Abajo</option><option value="center">Centro</option><option value="top">Arriba</option><option value="custom">Personalizada</option>
               </select>
             </label>
           </div>
+
+          {preferences.subtitlePosition === 'custom' && (
+            <fieldset className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <legend className="px-1 text-sm font-semibold text-emerald-100">Ubicación personalizada</legend>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-400">Mueve el centro de los subtítulos dentro del vídeo. Los límites dejan un margen para que sigan siendo cómodos en móvil.</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="text-xs font-medium text-zinc-300">
+                  Horizontal: {preferences.subtitlePositionX}%
+                  <input
+                    type="range"
+                    min="8"
+                    max="92"
+                    step="1"
+                    value={preferences.subtitlePositionX}
+                    onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionX: Number(event.target.value) }))}
+                    className="mt-2 w-full accent-emerald-400"
+                    aria-label="Posición horizontal de subtítulos"
+                  />
+                  <span className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Izquierda</span><span>Derecha</span></span>
+                </label>
+                <label className="text-xs font-medium text-zinc-300">
+                  Vertical: {preferences.subtitlePositionY}%
+                  <input
+                    type="range"
+                    min="8"
+                    max="92"
+                    step="1"
+                    value={preferences.subtitlePositionY}
+                    onChange={(event) => setPreferences((current) => ({ ...current, subtitlePositionY: Number(event.target.value) }))}
+                    className="mt-2 w-full accent-emerald-400"
+                    aria-label="Posición vertical de subtítulos"
+                  />
+                  <span className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Arriba</span><span>Abajo</span></span>
+                </label>
+              </div>
+            </fieldset>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-semibold">Tamaño de subtítulos

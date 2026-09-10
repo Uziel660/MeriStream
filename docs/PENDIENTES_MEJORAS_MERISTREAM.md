@@ -23,6 +23,8 @@ Lista de trabajo para retomar la mejora integral de la aplicación. Se basa en l
 - **Cachés, índices locales, paginación y eliminación de solicitudes duplicadas:** commits `e57134c`, `c01a153`, `318124d` y `cfc9e93`.
 - **Búsqueda existente:** debounce/cancelación en el header, búsqueda TMDB separada de trending, deduplicación, ranking base por popularidad y aliases locales; identificadores exactos TMDB/IMDb (`tt...`) ya funcionan.
 - **Subtítulos fuera del camino crítico de reproducción:** el bootstrap los solicita en paralelo y los anexa sin reiniciar el vídeo (`src/utils/playbackBootstrap.ts`, `src/App.tsx`).
+- **Texto de subtítulos legible:** `SubtitleProxy` prioriza UTF-8 válido, repara mojibake frecuente (`Ã`, `Â`, `â`) cuando está demostrado y limpia etiquetas HTML/entidades (`<i>`, `<br>`, `&amp;`) antes de generar WebVTT; el parser del reproductor repite la limpieza como defensa para pistas externas.
+- **Posición de subtítulos:** Preferencias conserva arriba/centro/abajo y añade modo personalizado con coordenadas horizontal/vertical limitadas al 8–92% para evitar recortes en móvil; la configuración se guarda por perfil y el reproductor reacciona sin reiniciar el vídeo.
 - **Protecciones parciales del fallback:** retirada de niveles HLS obsoletos, watchdog de congelación de 20 s y failover acotado; `PlyrPlayerModal` ya intenta `recoverMediaError`.
 
 ### Aplicado y verificado en `b2d2a3c`

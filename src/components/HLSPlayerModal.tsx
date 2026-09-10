@@ -2107,11 +2107,21 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
-  const subtitlePositionClass = appPreferences.subtitlePosition === 'top'
+  const subtitleIsCustomPosition = appPreferences.subtitlePosition === 'custom';
+  const subtitlePositionClass = subtitleIsCustomPosition
+    ? 'z-20'
+    : appPreferences.subtitlePosition === 'top'
     ? 'top-20'
     : appPreferences.subtitlePosition === 'center'
     ? 'top-1/2 -translate-y-1/2'
     : 'bottom-20';
+  const subtitlePositionStyle = subtitleIsCustomPosition
+    ? {
+        left: `${appPreferences.subtitlePositionX}%`,
+        top: `${appPreferences.subtitlePositionY}%`,
+        transform: 'translate(-50%, -50%)',
+      }
+    : undefined;
   const subtitleScaleClass = appPreferences.subtitleScale === 'large'
     ? 'text-lg sm:text-xl'
     : appPreferences.subtitleScale === 'small'
@@ -2469,7 +2479,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   </video>
 
                   {visibleSubtitleText && (
-                    <div className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center px-6 text-center ${subtitlePositionClass}`}>
+                    <div className={`pointer-events-none absolute flex justify-center px-6 text-center ${subtitleIsCustomPosition ? '' : 'inset-x-0'} ${subtitlePositionClass}`} style={subtitlePositionStyle}>
                       <div className={`max-w-4xl rounded bg-black/70 px-3 py-1 font-medium leading-relaxed text-white shadow-lg ${subtitleScaleClass}`}>
                         {visibleSubtitleText.split(/\r?\n/).map((line, index) => (
                           <div key={`${index}-${line}`}>{line}</div>

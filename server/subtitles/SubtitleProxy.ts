@@ -6,6 +6,7 @@ import { parseSync, stringifySync } from "subtitle";
 import { randomUUID } from "node:crypto";
 import { SubtitleCache } from "./SubtitleCache";
 import type { SubtitleCandidate } from "./types";
+import { sanitizeSubtitleText } from "../subtitleFormat";
 
 const MAX_BYTES = Math.max(256 * 1024, Number(process.env.SUBTITLE_PROXY_MAX_BYTES || 12 * 1024 * 1024));
 const MAX_REDIRECTS = 4;
@@ -142,7 +143,7 @@ function convertSubtitleBuffer(input: Buffer, candidate: SubtitleCandidate): { b
     data = Buffer.from((preferred || entries.find(([name]) => /\.srt$/i.test(name)) || entries[0])[1]);
   }
 
-  const text = decodeSubtitle(data);
+  const text = sanitizeSubtitleText(decodeSubtitle(data));
   if (!text.trim()) return null;
   const format = detectFormat(text, candidate.format, candidate.fileName);
   try {
@@ -156,15 +157,50 @@ function convertSubtitleBuffer(input: Buffer, candidate: SubtitleCandidate): { b
 }
 
 function decodeSubtitle(data: Buffer): string {
-  if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) return data.subarray(3).toString("utf8");
+  if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) return repairMojibake(data.subarray(3).toString("utf8"));
   if (data.length >= 2 && data[0] === 0xff && data[1] === 0xfe) return iconv.decode(data, "utf16-le").replace(/^\uFEFF/, "");
   if (data.length >= 2 && data[0] === 0xfe && data[1] === 0xff) return iconv.decode(data, "utf16-be").replace(/^\uFEFF/, "");
+
+  // UTF-8 subtitles are frequently mislabeled as ISO-8859-1 by providers.
+  // Prefer a valid UTF-8 decode before chardet can turn `á` into `Ã¡`.
+  try {
+    const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(data);
+    if (!/[ÃÂâð�]/.test(utf8)) return utf8.replace(/^\uFEFF/, "");
+    const repaired = repairMojibake(utf8);
+    if (repaired !== utf8) return repaired.replace(/^\uFEFF/, "");
+  } catch {}
+
   const detected = String(chardet.detect(data) || "").toLowerCase();
   const encoding = detected.includes("1252") || detected.includes("latin") || detected.includes("iso-8859-1")
     ? "windows-1252"
     : detected.includes("1251") ? "windows-1251" : "utf8";
   const decoded = iconv.decode(data, encoding);
-  return decoded.replace(/^\uFEFF/, "");
+  return repairMojibake(decoded).replace(/^\uFEFF/, "");
+}
+
+function repairMojibake(value: string): string {
+  let current = value;
+  // Repair only the suspicious run, not the whole line: a correctly decoded
+  // `ñ` next to a broken `Ã³` must remain untouched.
+  for (let pass = 0; pass < 2 && /(?:Ã|Â|â|ð|�)/.test(current); pass += 1) {
+    let changed = false;
+    current = current.replace(/(?:Ã|Â|â|ð)[^\s]*/g, (token) => {
+      try {
+        const candidate = iconv.decode(iconv.encode(token, "windows-1252"), "utf8");
+        if (!candidate || candidate.includes("�") || mojibakeScore(candidate) >= mojibakeScore(token)) return token;
+        changed = true;
+        return candidate;
+      } catch {
+        return token;
+      }
+    });
+    if (!changed) break;
+  }
+  return current;
+}
+
+function mojibakeScore(value: string): number {
+  return (value.match(/(?:Ã|Â|â|ð|�)/g) || []).length;
 }
 
 function detectFormat(text: string, declared?: string, fileName?: string | null): "srt" | "vtt" | "ass" | "ssa" {

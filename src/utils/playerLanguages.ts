@@ -54,6 +54,17 @@ export function normalizePlayerLanguage(value: unknown): PlayerLanguageCode {
   if (/^(?:zh-hans|zh-cn|chi-sim|chs|simplified chinese|chinese simplified|chino simplificado)$/.test(raw)) return 'zh-Hans';
   if (/^(?:zh-hant|zh-tw|zh-hk|chi-tra|cht|traditional chinese|chinese traditional|chino tradicional)$/.test(raw)) return 'zh-Hant';
 
+  if (/^(?:hi|hin|hindi)$/.test(raw)) return 'hi';
+  if (/^(?:ta|tam|tamil)$/.test(raw)) return 'ta';
+  if (/^(?:te|tel|telugu)$/.test(raw)) return 'te';
+  if (/^(?:ml|mal|malayalam)$/.test(raw)) return 'ml';
+  if (/^(?:bn|ben|bengali|bangla)$/.test(raw)) return 'bn';
+  if (/^(?:mr|mar|marathi)$/.test(raw)) return 'mr';
+  if (/^(?:pa|pan|punjabi)$/.test(raw)) return 'pa';
+  if (/^(?:kn|kan|kannada)$/.test(raw)) return 'kn';
+  if (/^(?:gu|guj|gujarati)$/.test(raw)) return 'gu';
+  if (/^(?:ur|urd|urdu)$/.test(raw)) return 'ur';
+
   if (/^(?:fr|fra|fre|french|frances)$/.test(raw)) return 'fr';
   if (/^(?:de|deu|ger|german|aleman)$/.test(raw)) return 'de';
   if (/^(?:it|ita|italian|italiano)$/.test(raw)) return 'it';
@@ -77,6 +88,16 @@ const PLAYER_LANGUAGE_LABELS: Record<string, string> = {
   pt: 'Portugués',
   'zh-Hans': 'Chino simplificado',
   'zh-Hant': 'Chino tradicional',
+  hi: 'Hindi',
+  ta: 'Tamil',
+  te: 'Telugu',
+  ml: 'Malayalam',
+  bn: 'Bengalí',
+  mr: 'Maratí',
+  pa: 'Panyabí',
+  kn: 'Canarés',
+  gu: 'Guyaratí',
+  ur: 'Urdu',
   fr: 'Francés',
   de: 'Alemán',
   it: 'Italiano',

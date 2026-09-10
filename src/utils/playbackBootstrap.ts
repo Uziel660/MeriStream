@@ -100,6 +100,7 @@ function providerQuery(
   episode: number,
   preferredAudio: readonly string[],
   preferredSubtitles: readonly string[],
+  originalLanguage?: string | null,
 ): string {
   const query = new URLSearchParams({
     season: String(season),
@@ -107,6 +108,7 @@ function providerQuery(
     audio: preferredAudio.join(','),
     subtitles: preferredSubtitles.join(','),
   });
+  if (originalLanguage) query.set('originalLanguage', originalLanguage);
   return `/api/v1/providers/${kind}/${tmdbId}?${query.toString()}`;
 }
 
@@ -154,7 +156,7 @@ export function createPlaybackRequests(input: PlaybackBootstrapInput): PlaybackR
   const preferredSubtitles = normalizedPreferences(input.preferredSubtitles, ['es-419', 'es-ES', 'es', 'en']);
 
   const provider: Promise<PlaybackProviderResult> = tmdbId > 0
-    ? safeFetch(fetchImpl, providerQuery(tmdbId, input.kind, season, episodeNumber, preferredAudio, preferredSubtitles))
+    ? safeFetch(fetchImpl, providerQuery(tmdbId, input.kind, season, episodeNumber, preferredAudio, preferredSubtitles, input.show?.original_language))
         .then(safeJson)
         .then((gatewayData) => ({ gatewayData, effectiveTmdbId: tmdbId, recoveredIdentity: false }))
     : safeFetch(fetchImpl, '/api/v1/providers/resolve-title', {
@@ -166,6 +168,7 @@ export function createPlaybackRequests(input: PlaybackBootstrapInput): PlaybackR
           aliases: showAliases(input.show),
           year: showYear(input.show),
           imdbId: input.show?.imdb_id || null,
+          originalLanguage: input.show?.original_language || null,
           season,
           episode: episodeNumber,
           preferredAudio,

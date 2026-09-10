@@ -28,6 +28,8 @@ export interface GatewayRequest {
   kind: GatewayKind;
   season?: number;
   episode?: number;
+  /** TMDB original language used as a conservative identity signal. */
+  originalLanguage?: string | null;
   preferredAudio?: string[];
   preferredSubtitles?: string[];
   persist?: boolean;
@@ -145,6 +147,7 @@ async function mediaContext(req: GatewayRequest): Promise<ProviderRequest> {
     episode: req.episode || 1,
     preferredAudio: req.preferredAudio,
     preferredSubtitles: req.preferredSubtitles,
+    originalLanguage: req.originalLanguage || null,
     title: canonical?.title || legacy?.title || publicAnime?.title || null,
     year: canonical?.year || legacy?.year || publicAnime?.year || null,
     anilistId: legacy?.anilist_id || publicAnime?.anilist_id || null,
@@ -430,7 +433,7 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
   elapsedMs: number;
 }> {
   const started = Date.now();
-  const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}:${(req.preferredAudio || []).join(",")}:${(req.preferredSubtitles || []).join(",")}`;
+  const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}:${normalizeLanguageTag(req.originalLanguage)}:${(req.preferredAudio || []).join(",")}:${(req.preferredSubtitles || []).join(",")}`;
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
     return {

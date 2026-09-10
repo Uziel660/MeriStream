@@ -144,6 +144,7 @@ function mapCatalogShow(s: any): Show {
     title_aliases: Array.isArray(s.title_aliases) ? s.title_aliases.filter((value: unknown): value is string => typeof value === 'string') : [],
     kind: s.kind || s.category || undefined,
     original_title: s.original_title || null,
+    original_language: s.original_language || null,
     english_title: s.english_title || null,
     japanese_title: s.japanese_title || null,
     description: s.description || s.synopsis || '',

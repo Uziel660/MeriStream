@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeVidSrcTrackPayload, parseVidSrcHlsAudioTracks, resolveVidSrcEmbed, VidSrcClient } from "./vidsrcClient";
+import { decodeVidSrcTrackPayload, detectNxshaLanguage, detectNxshaLanguages, isVidSrcLanguageCompatible, parseVidSrcHlsAudioTracks, resolveVidSrcEmbed, VidSrcClient } from "./vidsrcClient";
 
 function mockResponse(body: string, status = 200, contentType = "text/html") {
   return new Response(body, {
@@ -9,6 +9,21 @@ function mockResponse(body: string, status = 200, contentType = "text/html") {
 }
 
 describe("VidSrc native resolver", () => {
+  it("detects concrete languages from NXSHA labels without treating quality as a language", () => {
+    expect(detectNxshaLanguage("[Korean] - 720P")).toBe("ko");
+    expect(detectNxshaLanguages("English | Korean | BluRay | x264")).toEqual(["en", "ko"]);
+    expect(detectNxshaLanguage("AwsPly-[Multi-Lang] - 1080P")).toBe("multi");
+  });
+
+  it("rejects a labelled source from a different work language unless the manifest has an expected dub", () => {
+    expect(isVidSrcLanguageCompatible("ko", "en", ["en"], [])).toBe(false);
+    expect(isVidSrcLanguageCompatible("ko", "en", ["en"], [
+      { id: "en", language: "en", label: "English" },
+    ])).toBe(true);
+    expect(isVidSrcLanguageCompatible("ko", "ko", ["en"], [])).toBe(true);
+    expect(isVidSrcLanguageCompatible(null, "en", ["en"], [])).toBe(true);
+  });
+
   it("parses multiaudio declarations from a master HLS manifest", () => {
     const tracks = parseVidSrcHlsAudioTracks(`#EXTM3U
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="Hindi",LANGUAGE="hi",DEFAULT=NO,AUTOSELECT=NO,URI="audio/hi.m3u8"
@@ -176,6 +191,7 @@ segment.ts`, 200, "application/vnd.apple.mpegurl");
     expect(sources[0]?.url).toBe("https://cdn.example/show/master.m3u8");
     expect(sources[0]?.provider).toBe("vidsrc");
     expect(sources[0]?.url).not.toMatch(/\/embed\//);
+    expect(sources[0]?.audioLanguage).toBeNull();
   });
 
   it("treats a TMDB anime work as a TV route", async () => {

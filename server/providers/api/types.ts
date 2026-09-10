@@ -28,6 +28,8 @@ export interface ProviderRequest {
   anilistId?: string | null;
   malId?: number | null;
   kitsuId?: string | null;
+  /** TMDB original language, when the catalog card carried it. */
+  originalLanguage?: string | null;
   preferredAudio?: string[];
   preferredSubtitles?: string[];
 }

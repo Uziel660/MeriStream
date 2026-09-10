@@ -23,6 +23,7 @@ export interface PublicCatalogShow {
   kind: PublicCatalogKind;
   category: PublicCatalogKind;
   original_title?: string | null;
+  original_language?: string | null;
   english_title?: string | null;
   japanese_title?: string | null;
   description: string;
@@ -317,6 +318,7 @@ export function mapTmdbItem(item: TmdbItem, kind: PublicCatalogKind, isTrending 
     kind,
     category: kind,
     original_title: originalTitle,
+    original_language: item.original_language || null,
     english_title: item.original_language === "en" ? originalTitle : null,
     japanese_title: item.original_language === "ja" ? originalTitle : null,
     description: String(item.overview || ""),
@@ -718,8 +720,34 @@ function interleaveCatalogShows(shows: PublicCatalogShow[]): PublicCatalogShow[]
   return ordered;
 }
 
-function sortSearchShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
+function searchTitleScore(show: PublicCatalogShow, query: string): number {
+  const needle = publicTitleKey(query);
+  if (!needle) return 0;
+  const fields = [
+    { value: show.title, weight: 1_000 },
+    ...(show.title_aliases || []).map((value) => ({ value, weight: 900 })),
+    { value: show.english_title, weight: 880 },
+    { value: show.original_title, weight: 820 },
+    { value: show.japanese_title, weight: 800 },
+  ];
+  let best = 0;
+  for (const field of fields) {
+    const value = publicTitleKey(field.value);
+    if (!value) continue;
+    if (value === needle) best = Math.max(best, field.weight);
+    else if (value.startsWith(needle)) best = Math.max(best, field.weight - 100);
+    else if (value.includes(needle)) best = Math.max(best, field.weight - 220);
+  }
+  return best;
+}
+
+function sortSearchShows(shows: PublicCatalogShow[], query = ""): PublicCatalogShow[] {
   return [...shows].sort((a, b) => {
+    if (query) {
+      const titleScoreA = searchTitleScore(a, query);
+      const titleScoreB = searchTitleScore(b, query);
+      if (titleScoreB !== titleScoreA) return titleScoreB - titleScoreA;
+    }
     const popularityA = Number.isFinite(Number(a.popularity)) ? Number(a.popularity) : -1;
     const popularityB = Number.isFinite(Number(b.popularity)) ? Number(b.popularity) : -1;
     if (popularityB !== popularityA) return popularityB - popularityA;
@@ -729,6 +757,40 @@ function sortSearchShows(shows: PublicCatalogShow[]): PublicCatalogShow[] {
     if (ratingB !== ratingA) return ratingB - ratingA;
     return String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' });
   });
+}
+
+function mergePublicCatalogShow(existing: PublicCatalogShow, incoming: PublicCatalogShow): PublicCatalogShow {
+  const aliases = [...new Set([
+    ...(existing.title_aliases || []),
+    ...(incoming.title_aliases || []),
+    existing.title,
+    incoming.title,
+    existing.original_title,
+    incoming.original_title,
+    existing.english_title,
+    incoming.english_title,
+    existing.japanese_title,
+    incoming.japanese_title,
+  ].filter((value): value is string => Boolean(String(value || "").trim())))];
+  return {
+    ...existing,
+    // Keep the Spanish request's display title when it arrived first, while
+    // retaining the English/original variants for search and subtitle lookup.
+    title_aliases: aliases,
+    original_title: existing.original_title || incoming.original_title || null,
+    original_language: existing.original_language || incoming.original_language || null,
+    english_title: existing.english_title || incoming.english_title || null,
+    japanese_title: existing.japanese_title || incoming.japanese_title || null,
+    description: existing.description || incoming.description,
+    synopsis: existing.synopsis || incoming.synopsis,
+    poster_url: existing.poster_url || incoming.poster_url,
+    banner_url: existing.banner_url || incoming.banner_url,
+    backdrop_url: existing.backdrop_url || incoming.backdrop_url,
+    poster_path: existing.poster_path || incoming.poster_path,
+    backdrop_path: existing.backdrop_path || incoming.backdrop_path,
+    rating: Math.max(Number(existing.rating || 0), Number(incoming.rating || 0)),
+    popularity: Math.max(Number(existing.popularity || 0), Number(incoming.popularity || 0)),
+  };
 }
 
 export function parsePublicCatalogIdentifier(value: unknown): { tmdbId?: number; imdbId?: string } | null {
@@ -804,8 +866,8 @@ export async function getPublicCatalogByIdentifier(value: unknown, apiKey?: stri
   };
 }
 
-async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, genreId?: number | null, tvGenreId?: number | null, apiKey?: string): Promise<TmdbListResponse> {
-  const language = "es-419";
+async function fetchList(kind: PublicCatalogKind, query: string, page: number, mode: string, genreId?: number | null, tvGenreId?: number | null, apiKey?: string, requestedLanguage = "es-419"): Promise<TmdbListResponse> {
+  const language = requestedLanguage;
   if (query) {
     const path = kind === "movie" ? "/search/movie" : "/search/tv";
     return tmdbFetch<TmdbListResponse>(path, { query, page, language, include_adult: "false" }, apiKey);
@@ -855,10 +917,14 @@ export async function getPublicCatalog(options: {
   // public catalog silently stops at the first 20 anime and makes the legacy
   // database look more complete than the canonical TMDB catalog.
   const pagesNeeded = Math.max(1, Math.min(5, Math.ceil(pageSize / 20)));
+  const searchLanguages = query ? ["es-419", "en-US"] : ["es-419"];
   const groupedResponses = await Promise.all(kinds.map(async (entry) => ({
     kind: entry,
-    pages: await Promise.all(Array.from({ length: pagesNeeded }, (_unused, offset) =>
-      fetchList(entry, query, page + offset, mode, genreId, tvGenreId, options.apiKey))),
+    // Spanish remains the primary ranked feed. One English page is enough to
+    // recover a title alias in the common TMDB/IMDb mismatch case without
+    // doubling every pagination request.
+    pages: await Promise.all(searchLanguages.flatMap((language) => Array.from({ length: language === "en-US" ? 1 : pagesNeeded }, (_unused, offset) =>
+      fetchList(entry, query, page + offset, mode, genreId, tvGenreId, options.apiKey, language)))),
   })));
   const mappedShows = groupedResponses.flatMap(({ kind: entryKind, pages }) => pages.flatMap((response) => {
     const results = response.results || [];
@@ -887,15 +953,21 @@ export async function getPublicCatalog(options: {
     const key = `${namespace}:${show.tmdb_id}`;
     const previous = uniqueMap.get(key);
     if (!previous || (show.kind === "anime" && previous.kind === "series")) uniqueMap.set(key, show);
+    else uniqueMap.set(key, mergePublicCatalogShow(previous, show));
   }
   const unique = dedupePoorPublicDuplicates([...uniqueMap.values()]);
   const ordered = query
-    ? sortSearchShows(unique)
+    ? sortSearchShows(unique, query)
     : kind === "all" ? interleaveCatalogShows(unique) : unique;
-  const totals = groupedResponses.reduce((sum, group) => {
-    const firstPage = group.pages[0];
-    return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);
-  }, 0);
+  // Search runs once in Spanish and once in English to recover titles that
+  // differ between TMDB/IMDb. The merged TMDB identity count is the only
+  // meaningful total; summing both language responses would double it.
+  const totals = query
+    ? unique.length
+    : groupedResponses.reduce((sum, group) => {
+        const firstPage = group.pages[0];
+        return sum + Number(firstPage?.total_results || firstPage?.results?.length || 0);
+      }, 0);
   // `page` is a TMDB page cursor (20 results), even when this endpoint
   // aggregates three pages into a 60-item response. Expose the upstream page
   // count so category-specific "Cargar más" buttons can stop at the real

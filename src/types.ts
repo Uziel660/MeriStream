@@ -23,6 +23,7 @@ export interface Show {
   /** Canonical and translated titles supplied by public catalogs. */
   title_aliases?: string[];
   original_title?: string;
+  original_language?: string | null;
   japanese_title?: string;
   english_title?: string;
   overview?: string;

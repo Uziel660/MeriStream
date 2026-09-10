@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type { AudioTrack, DirectStreamProvider, PlayableSource, ProviderRequest, SubtitleTrack } from "./types";
 import { playableUrl } from "./types";
+import { normalizeLanguageCode } from "../../utils/languageDetector";
 
 const DEFAULT_DOMAINS = [
   "https://vidsrc.me",
@@ -44,6 +45,8 @@ export interface VidSrcProbeResult {
   subtitles?: SubtitleTrack[];
   requiredHeaders?: Record<string, string>;
   reason?: string;
+  detectedLanguage?: string | null;
+  detectedLabel?: string | null;
 }
 
 type VidSrcMediaRef = {
@@ -53,6 +56,134 @@ type VidSrcMediaRef = {
   episode?: number;
 };
 
+
+function extractNxshaLabelTags(label: string): string[] {
+  const tags: string[] = [];
+  const bracketMatches = label.match(/\[([^\]]+)\]/g);
+  if (bracketMatches) {
+    for (const match of bracketMatches) {
+      tags.push(match.replace(/^\[/, "").replace(/\]$/, "").trim());
+    }
+  }
+  const parenMatches = label.match(/\(([^)]+)\)/g);
+  if (parenMatches) {
+    for (const match of parenMatches) {
+      tags.push(match.replace(/^\(/, "").replace(/\)$/, "").trim());
+    }
+  }
+  return tags;
+}
+
+const NXSHA_LANGUAGE_PATTERNS: Array<[RegExp, string]> = [
+  [/\b(?:spanish|espanol|español|spa|esp)\b/i, "es"],
+  [/\b(?:english|ingles|inglés|eng)\b/i, "en"],
+  [/\b(?:japanese|japones|japonés|jpn|日本語)\b/i, "ja"],
+  [/\b(?:korean|coreano|kor|한국어)\b/i, "ko"],
+  [/\b(?:chinese|chino|zho|chi|中文)\b/i, "zh"],
+  [/\b(?:portuguese|portugues|português|por)\b/i, "pt"],
+  [/\b(?:french|frances|francés|fra|fre)\b/i, "fr"],
+  [/\b(?:german|aleman|alemán|deu|ger)\b/i, "de"],
+  [/\b(?:italian|italiano|ita)\b/i, "it"],
+  [/\b(?:russian|ruso|rus)\b/i, "ru"],
+  [/\b(?:arabic|arabe|árabe|ara)\b/i, "ar"],
+  [/\b(?:hindi|hin)\b/i, "hi"],
+  [/\b(?:tamil|tam)\b/i, "ta"],
+  [/\b(?:telugu|tel)\b/i, "te"],
+  [/\b(?:malayalam|mal)\b/i, "ml"],
+  [/\b(?:bengali|bangla|ben)\b/i, "bn"],
+  [/\b(?:marathi|mar)\b/i, "mr"],
+  [/\b(?:punjabi|pan)\b/i, "pa"],
+  [/\b(?:kannada|kan)\b/i, "kn"],
+  [/\b(?:gujarati|guj)\b/i, "gu"],
+  [/\b(?:urdu|urd)\b/i, "ur"],
+  [/\b(?:turkish|turco|tur)\b/i, "tr"],
+];
+
+function normalizePreferredLanguages(values: readonly string[] | undefined): string[] {
+  return [...new Set((values || [])
+    .map((value) => normalizeLanguageCode(value))
+    .filter((value): value is string => Boolean(value)))];
+}
+
+/** Detect every concrete language advertised by an NXSHA source label. */
+export function detectNxshaLanguages(label: string): string[] {
+  const raw = String(label || "").trim();
+  if (!raw) return [];
+  const detected: string[] = [];
+  const add = (value: string | undefined) => {
+    if (value && value !== "multi" && !detected.includes(value)) detected.push(value);
+  };
+
+  for (const tag of extractNxshaLabelTags(raw)) add(normalizeLanguageCode(tag));
+  for (const [pattern, language] of NXSHA_LANGUAGE_PATTERNS) {
+    if (pattern.test(raw)) add(language);
+  }
+
+  // Some upstream labels contain only a BCP-47 code, for example `[en]` or
+  // `[hi-IN]`, which is intentionally not covered by the human-name regexes.
+  for (const token of raw.split(/[|,;/·\-()[\]{}]+/).map((value) => value.trim()).filter(Boolean)) {
+    add(normalizeLanguageCode(token));
+  }
+  return detected;
+}
+
+export function detectNxshaLanguage(label: string): string | undefined {
+  const languages = detectNxshaLanguages(label);
+  if (languages.length > 0) return languages[0];
+  return /multi[\s-]?lang/i.test(String(label || "")) ? "multi" : undefined;
+}
+
+function rankCandidateByPreferredAudio(
+  detectedLang: string | undefined,
+  preferredAudio: readonly string[],
+): number {
+  if (!detectedLang) return preferredAudio.length > 0 ? 100 : 50;
+  if (detectedLang === "multi") return preferredAudio.length > 0 ? 500 : 50;
+  if (preferredAudio.length === 0) return 50;
+  for (let i = 0; i < preferredAudio.length; i++) {
+    const pref = preferredAudio[i];
+    if (detectedLang === pref || detectedLang.startsWith(pref + "-") || pref.startsWith(detectedLang + "-")) {
+      return 1000 - i * 10;
+    }
+  }
+  return 10;
+}
+
+function languageTagsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizeLanguageCode(left);
+  const normalizedRight = normalizeLanguageCode(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+  return normalizedLeft.split("-")[0] === normalizedRight.split("-")[0];
+}
+
+/**
+ * VidSrc labels are only a hint, but an explicit mismatch with TMDB's
+ * original language is strong evidence that the upstream scraper returned a
+ * different work. Keep a source when its manifest exposes an expected audio
+ * track (dubbed/multi-audio), otherwise reject the mismatched candidate before
+ * it enters the provider cascade.
+ */
+export function isVidSrcLanguageCompatible(
+  detectedLanguage: string | null | undefined,
+  originalLanguage: string | null | undefined,
+  preferredAudio: readonly string[] = [],
+  audioTracks: readonly AudioTrack[] = [],
+): boolean {
+  const original = normalizeLanguageCode(originalLanguage);
+  if (!original) return true;
+  const preferred = normalizePreferredLanguages(preferredAudio);
+  const expected = [original, ...preferred];
+  const trackLanguages = audioTracks
+    .map((track) => normalizeLanguageCode(track.language || track.label))
+    .filter((language): language is string => Boolean(language) && language !== "multi");
+  if (trackLanguages.length > 0) {
+    return trackLanguages.some((language) => expected.some((wanted) => languageTagsMatch(language, wanted)));
+  }
+  const detected = normalizeLanguageCode(detectedLanguage);
+  if (!detected || detected === "multi") return true;
+  return expected.some((wanted) => languageTagsMatch(detected, wanted));
+}
 function parseVidSrcMediaRef(embedUrl: string): VidSrcMediaRef | null {
   try {
     const parts = new URL(embedUrl).pathname.split("/").filter(Boolean);
@@ -363,6 +494,7 @@ async function fetchVidSrcSubtitles(
   embedUrl: string,
   fetcher: FetchLike,
   referer: string,
+  preferredSubtitles: readonly string[] = [],
 ): Promise<SubtitleTrack[]> {
   const media = parseVidSrcMediaRef(embedUrl);
   if (!media) return [];
@@ -386,17 +518,29 @@ async function fetchVidSrcSubtitles(
   try { payload = JSON.parse(response.text); } catch { return []; }
   const decoded = typeof payload?._hash === "string" ? decodeVidSrcTrackPayload(payload._hash) : null;
   const rawTracks = Array.isArray(decoded?.subtitles) ? decoded.subtitles : [];
-  return rawTracks
+  const tracks = rawTracks
     .map((track: any, index: number): SubtitleTrack | null => {
       const url = String(track?.uri || track?.url || track?.src || "").trim();
       if (!/^https?:\/\//i.test(url)) return null;
+      const rawLanguage = String(track?.language || track?.lang || "").trim();
       return {
-        language: String(track?.language || "und").trim() || "und",
-        label: String(track?.title || track?.label || track?.language || `Subtítulo ${index + 1}`).trim(),
+        language: normalizeLanguageCode(rawLanguage) || rawLanguage || "und",
+        label: String(track?.title || track?.label || rawLanguage || `Subtítulo ${index + 1}`).trim(),
         url,
       };
     })
     .filter((track: SubtitleTrack | null): track is SubtitleTrack => Boolean(track));
+  const preferred = normalizePreferredLanguages(preferredSubtitles);
+  if (preferred.length === 0) return tracks;
+  const rank = (track: SubtitleTrack) => {
+    const language = normalizeLanguageCode(track.language) || track.language || "und";
+    const index = preferred.findIndex((value) => language === value || language.startsWith(`${value}-`) || value.startsWith(`${language}-`));
+    return index < 0 ? preferred.length + 1 : index;
+  };
+  return tracks
+    .map((track, index) => ({ track, index, rank: rank(track) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(({ track }) => track);
 }
 
 async function inspectVidSrcTracks(
@@ -405,6 +549,7 @@ async function inspectVidSrcTracks(
   fetcher: FetchLike,
   requiredHeaders: Record<string, string>,
   playerReferer: string,
+  preferredSubtitles: readonly string[] = [],
 ): Promise<{ audioTracks: AudioTrack[]; subtitles: SubtitleTrack[] }> {
   const [manifest, subtitles] = await Promise.all([
     fetchText(fetcher, hlsUrl, {
@@ -412,7 +557,7 @@ async function inspectVidSrcTracks(
       ...requiredHeaders,
       "Sec-Fetch-Dest": "empty",
     }).catch(() => null),
-    fetchVidSrcSubtitles(embedUrl, fetcher, playerReferer).catch(() => []),
+    fetchVidSrcSubtitles(embedUrl, fetcher, playerReferer, preferredSubtitles).catch(() => []),
   ]);
   const audioTracks = manifest?.ok ? parseVidSrcHlsAudioTracks(manifest.text, manifest.finalUrl || hlsUrl) : [];
   return { audioTracks, subtitles };
@@ -424,8 +569,9 @@ async function enrichDirectResult(
   fetcher: FetchLike,
   requiredHeaders: Record<string, string>,
   playerReferer: string,
+  preferredSubtitles: readonly string[] = [],
 ): Promise<Pick<VidSrcProbeResult, "audioTracks" | "subtitles">> {
-  const tracks = await inspectVidSrcTracks(embedUrl, hlsUrl, fetcher, requiredHeaders, playerReferer);
+  const tracks = await inspectVidSrcTracks(embedUrl, hlsUrl, fetcher, requiredHeaders, playerReferer, preferredSubtitles);
   return {
     ...(tracks.audioTracks.length > 0 ? { audioTracks: tracks.audioTracks } : {}),
     ...(tracks.subtitles.length > 0 ? { subtitles: tracks.subtitles } : {}),
@@ -435,6 +581,8 @@ async function enrichDirectResult(
 async function resolveNxshaMultiLang(
   embedUrl: string,
   fetcher: FetchLike,
+  preferredAudio: string[] = [],
+  preferredSubtitles: readonly string[] = [],
 ): Promise<VidSrcProbeResult | null> {
   const media = parseVidSrcMediaRef(embedUrl);
   if (!media) return null;
@@ -470,6 +618,13 @@ async function resolveNxshaMultiLang(
       return rank(right) - rank(left);
     });
 
+    let bestCandidate: {
+      playable: { url: string; streamType: "hls" };
+      score: number;
+      detectedLanguage: string | null;
+      detectedLabel: string;
+    } | null = null;
+
     for (const server of servers.slice(0, 12)) {
       const sourceQuery = encodeNxshaData({
         ex_lang: false,
@@ -490,33 +645,65 @@ async function resolveNxshaMultiLang(
           .map((source: any) => ({
             source,
             playable: playableUrl(source?.url, source?.type),
-            label: String(source?.label || source?.quality || "").toLowerCase(),
+            label: String(source?.label || source?.quality || "").trim(),
           }))
           .filter((candidate: any) => candidate.playable?.streamType === "hls")
         : [];
       candidates.sort((left: any, right: any) => {
-        const rank = (candidate: any) => candidate.label.includes("english") ? 20 : candidate.label.includes("multi") ? 10 : 0;
-        return rank(right) - rank(left);
+        const leftLang = detectNxshaLanguage(left.label || "");
+        const rightLang = detectNxshaLanguage(right.label || "");
+        const leftScore = rankCandidateByPreferredAudio(leftLang, preferredAudio);
+        const rightScore = rankCandidateByPreferredAudio(rightLang, preferredAudio);
+        if (rightScore !== leftScore) return rightScore - leftScore;
+        const fallback = (candidate: any) => candidate.label.includes("english") ? 20 : candidate.label.includes("multi") ? 10 : 0;
+        return fallback(right) - fallback(left);
       });
 
       for (const candidate of candidates.slice(0, 3)) {
         const playable = candidate.playable;
         if (!playable) continue;
-        const requiredHeaders = {
-          Referer: playerUrl,
-          "User-Agent": DEFAULT_UA,
-          "Sec-Fetch-Dest": "iframe",
-        };
-        const tracks = await enrichDirectResult(embedUrl, playable.url, fetcher, requiredHeaders, playerUrl);
-        return {
-          status: "direct",
-          embedUrl,
-          playerOrigin: NXSHA_API_ORIGIN,
-          hlsUrl: playable.url,
-          ...tracks,
-          requiredHeaders,
-        };
+        const detectedLanguages = detectNxshaLanguages(candidate.label || "");
+        const detectedLanguage = detectedLanguages[0] || (detectNxshaLanguage(candidate.label || "") === "multi" ? "multi" : null);
+        const score = rankCandidateByPreferredAudio(detectedLanguage || undefined, preferredAudio);
+        if (!bestCandidate || score > bestCandidate.score) {
+          bestCandidate = {
+            playable,
+            score,
+            detectedLanguage,
+            detectedLabel: candidate.label,
+          };
+        }
       }
+
+      // An exact match is already the best possible outcome. Stop querying
+      // later scrapers, keeping the preference-aware path bounded in latency.
+      if (bestCandidate?.score >= 1000) break;
+    }
+
+    if (bestCandidate) {
+      const requiredHeaders = {
+        Referer: playerUrl,
+        "User-Agent": DEFAULT_UA,
+        "Sec-Fetch-Dest": "iframe",
+      };
+      const tracks = await enrichDirectResult(
+        embedUrl,
+        bestCandidate.playable.url,
+        fetcher,
+        requiredHeaders,
+        playerUrl,
+        preferredSubtitles,
+      );
+      return {
+        status: "direct",
+        embedUrl,
+        playerOrigin: NXSHA_API_ORIGIN,
+        hlsUrl: bestCandidate.playable.url,
+        ...tracks,
+        requiredHeaders,
+        detectedLanguage: bestCandidate.detectedLanguage,
+        detectedLabel: bestCandidate.detectedLabel,
+      };
     }
   } catch {
     // The SBS player is an optional multilang path. The regular VidSrc mirrors
@@ -532,6 +719,10 @@ async function resolveNxshaMultiLang(
 export async function resolveVidSrcEmbed(
   embedUrl: string,
   fetcher: FetchLike = fetch,
+  options: {
+    preferredAudio?: readonly string[];
+    preferredSubtitles?: readonly string[];
+  } = {},
 ): Promise<VidSrcProbeResult> {
   const baseHeaders: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
@@ -652,7 +843,7 @@ export async function resolveVidSrcEmbed(
                     embedUrl,
                     playerOrigin: new URL(resolvedApiPlayer).origin,
                     hlsUrl: signedHlsUrl,
-                    ...(await enrichDirectResult(embedUrl, signedHlsUrl, fetcher, requiredHeaders, streamPlayerFinalUrl)),
+                    ...(await enrichDirectResult(embedUrl, signedHlsUrl, fetcher, requiredHeaders, streamPlayerFinalUrl, options.preferredSubtitles)),
                     requiredHeaders,
                   };
                 }
@@ -665,7 +856,12 @@ export async function resolveVidSrcEmbed(
       }
     }
     if (!playerUrl) {
-      const multiLang = await resolveNxshaMultiLang(embedUrl, fetcher);
+      const multiLang = await resolveNxshaMultiLang(
+        embedUrl,
+        fetcher,
+        normalizePreferredLanguages(options.preferredAudio),
+        options.preferredSubtitles || [],
+      );
       if (multiLang) return multiLang;
       return { status: "embed_only", embedUrl, reason: "player_iframe_not_found" };
     }
@@ -710,7 +906,7 @@ export async function resolveVidSrcEmbed(
         embedUrl,
         playerOrigin,
         hlsUrl: immediatePlayable.url,
-        ...(await enrichDirectResult(embedUrl, immediatePlayable.url, fetcher, requiredHeaders, `${playerOrigin}/`)),
+        ...(await enrichDirectResult(embedUrl, immediatePlayable.url, fetcher, requiredHeaders, `${playerOrigin}/`, options.preferredSubtitles)),
         requiredHeaders,
       };
     }
@@ -766,7 +962,7 @@ export async function resolveVidSrcEmbed(
       embedUrl,
       playerOrigin,
       hlsUrl: hlsUrl.value,
-      ...(await enrichDirectResult(embedUrl, hlsUrl.value, fetcher, requiredHeaders, `${playerOrigin}/`)),
+      ...(await enrichDirectResult(embedUrl, hlsUrl.value, fetcher, requiredHeaders, `${playerOrigin}/`, options.preferredSubtitles)),
       requiredHeaders,
     };
   } catch (error) {
@@ -807,7 +1003,10 @@ export class VidSrcClient implements DirectStreamProvider {
       const batch = this.origins.slice(offset, offset + MIRROR_BATCH_SIZE);
       const attempts = await Promise.allSettled(
         batch.map(async (origin) => {
-          const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher);
+          const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher, {
+            preferredAudio: req.preferredAudio,
+            preferredSubtitles: req.preferredSubtitles,
+          });
           const usable = result.status === "direct" && Boolean(result.hlsUrl)
             && await isVidSrcHlsUsable(result.hlsUrl, result.requiredHeaders, this.fetcher);
           return { result, usable };
@@ -821,17 +1020,31 @@ export class VidSrcClient implements DirectStreamProvider {
           try { directHosts.add(new URL(result.hlsUrl).hostname); } catch { /* malformed result */ }
         }
         if (!attempt.value.usable) continue;
+        if (!isVidSrcLanguageCompatible(
+          result.detectedLanguage,
+          req.originalLanguage,
+          req.preferredAudio,
+          result.audioTracks,
+        )) continue;
         const playable = playableUrl(result.hlsUrl, "hls");
         if (!playable) continue;
-        const preferredAudio = result.audioTracks?.find((track) => track.isDefault)
-          || result.audioTracks?.find((track) => track.language?.toLowerCase().startsWith("en"))
+        const preferredAudio = (req.preferredAudio?.length ? req.preferredAudio
+          .map((preference) => normalizeLanguageCode(preference))
+          .filter((value): value is string => Boolean(value))
+          .map((preference) => result.audioTracks?.find((track) => {
+            const language = normalizeLanguageCode(track.language);
+            return Boolean(language && (language === preference || language.startsWith(`${preference}-`) || preference.startsWith(`${language}-`)));
+          }))
+          .find(Boolean) : undefined)
+          || result.audioTracks?.find((track) => track.isDefault)
           || result.audioTracks?.[0];
+        const detectedLang = result.detectedLanguage;
         sources.push({
           provider: this.id,
           providerGroup: "api",
           url: playable.url,
           streamType: playable.streamType,
-          audioLanguage: preferredAudio?.language || "en",
+          audioLanguage: normalizeLanguageCode(preferredAudio?.language) || detectedLang || null,
           audioTracks: result.audioTracks,
           subtitleLanguage: null,
           subtitles: result.subtitles || [],

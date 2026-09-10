@@ -40,6 +40,7 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   "es-la": "es-419",
   "es-latam": "es-419",
   "es-419": "es-419",
+  ea: "es-419",
   "spanish-latam": "es-419",
   "spanish-latin-america": "es-419",
 
@@ -81,6 +82,7 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   portugues: "pt",
   "pt-br": "pt-BR",
   "por-br": "pt-BR",
+  pb: "pt-BR",
   "brazilian-portuguese": "pt-BR",
   "portuguese-brazil": "pt-BR",
   "portugues-brasil": "pt-BR",
@@ -117,6 +119,170 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   hi: "hi",
   hin: "hi",
   hindi: "hi",
+
+  ta: "ta",
+  tam: "ta",
+  tamil: "ta",
+
+  te: "te",
+  tel: "te",
+  telugu: "te",
+
+  ml: "ml",
+  mal: "ml",
+  malayalam: "ml",
+
+  bn: "bn",
+  ben: "bn",
+  bengali: "bn",
+  bangla: "bn",
+
+  mr: "mr",
+  mar: "mr",
+  marathi: "mr",
+
+  pa: "pa",
+  pan: "pa",
+  punjabi: "pa",
+
+  kn: "kn",
+  kan: "kn",
+  kannada: "kn",
+
+  gu: "gu",
+  guj: "gu",
+  gujarati: "gu",
+
+  ur: "ur",
+  urd: "ur",
+  urdu: "ur",
+
+  th: "th",
+  tha: "th",
+  thai: "th",
+  tailandes: "th",
+
+  vi: "vi",
+  vie: "vi",
+  vietnamese: "vi",
+  vietnamita: "vi",
+
+  id: "id",
+  ind: "id",
+  indonesian: "id",
+  indonesio: "id",
+
+  ms: "ms",
+  msa: "ms",
+  malay: "ms",
+  malayo: "ms",
+
+  tl: "tl",
+  tgl: "tl",
+  tagalog: "tl",
+  filipino: "tl",
+
+  pl: "pl",
+  pol: "pl",
+  polish: "pl",
+  polaco: "pl",
+
+  nl: "nl",
+  nld: "nl",
+  dutch: "nl",
+  holandés: "nl",
+  holandes: "nl",
+
+  sv: "sv",
+  swe: "sv",
+  swedish: "sv",
+  sueco: "sv",
+
+  no: "no",
+  nor: "no",
+  norwegian: "no",
+  noruego: "no",
+
+  da: "da",
+  dan: "da",
+  danish: "da",
+  danes: "da",
+
+  fi: "fi",
+  fin: "fi",
+  finnish: "fi",
+  finlandes: "fi",
+
+  cs: "cs",
+  ces: "cs",
+  czech: "cs",
+  checo: "cs",
+
+  ro: "ro",
+  ron: "ro",
+  romanian: "ro",
+  rumano: "ro",
+
+  hu: "hu",
+  hun: "hu",
+  hungarian: "hu",
+  hungaro: "hu",
+
+  el: "el",
+  ell: "el",
+  greek: "el",
+  griego: "el",
+
+  he: "he",
+  heb: "he",
+  hebrew: "he",
+  hebreo: "he",
+
+  uk: "uk",
+  ukr: "uk",
+  ukrainian: "uk",
+  ucraniano: "uk",
+
+  bg: "bg",
+  bul: "bg",
+  bulgarian: "bg",
+  bulgaro: "bg",
+
+  hr: "hr",
+  hrv: "hr",
+  croatian: "hr",
+  croata: "hr",
+
+  sr: "sr",
+  srp: "sr",
+  serbian: "sr",
+  serbio: "sr",
+
+  sk: "sk",
+  slk: "sk",
+  slovak: "sk",
+  eslovaco: "sk",
+
+  sl: "sl",
+  slv: "sl",
+  slovenian: "sl",
+  esloveno: "sl",
+
+  et: "et",
+  est: "et",
+  estonian: "et",
+  estonio: "et",
+
+  lv: "lv",
+  lav: "lv",
+  latvian: "lv",
+  letón: "lv",
+  leton: "lv",
+
+  lt: "lt",
+  lit: "lt",
+  lithuanian: "lt",
+  lituano: "lt",
 
   tr: "tr",
   tur: "tr",

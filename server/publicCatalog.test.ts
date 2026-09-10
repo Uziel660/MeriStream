@@ -246,7 +246,28 @@ describe("TMDB public catalog", () => {
     expect(result.shows[0]?.title).toBe("The Creator");
     expect(result.total).toBe(1);
     expect(calls.some((url) => url.includes("/search/movie") && url.includes("query=The+Creator") && url.includes("language=es-419"))).toBe(true);
+    expect(calls.some((url) => url.includes("/search/movie") && url.includes("query=The+Creator") && url.includes("language=en-US"))).toBe(true);
     expect(calls.some((url) => url.includes("/trending/movie/week") || url.includes("/trending/tv/week"))).toBe(false);
+  });
+
+  it("merges Spanish and English search titles under one TMDB identity", async () => {
+    process.env.TMDB_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const language = url.searchParams.get("language");
+      if (url.pathname.endsWith("/search/movie")) {
+        const spanish = { id: 1465063, title: "La isla olvidada", original_title: "La isla olvidada", original_language: "es", release_date: "2026-01-01", popularity: 10 };
+        const english = { id: 1465063, title: "Forgotten Island", original_title: "La isla olvidada", original_language: "es", release_date: "2026-01-01", popularity: 10 };
+        return new Response(JSON.stringify({ page: 1, total_results: 1, total_pages: 1, results: [language === "en-US" ? english : spanish] }), { status: 200 });
+      }
+      if (url.pathname.endsWith("/search/tv")) return new Response(JSON.stringify({ page: 1, total_results: 0, total_pages: 1, results: [] }), { status: 200 });
+      return new Response("not found", { status: 404 });
+    }));
+
+    const result = await getPublicCatalog({ kind: "all", query: "Forgotten Island", limit: 10 });
+    expect(result.shows).toHaveLength(1);
+    expect(result.shows[0]).toMatchObject({ tmdb_id: 1465063, title: "La isla olvidada" });
+    expect(result.shows[0]?.title_aliases).toEqual(expect.arrayContaining(["Forgotten Island", "La isla olvidada"]));
   });
 
   it("orders global search results by TMDB popularity descending", async () => {
@@ -276,8 +297,10 @@ describe("TMDB public catalog", () => {
     }));
 
     const result = await getPublicCatalog({ kind: "all", query: "popular", limit: 10 });
-    expect(result.shows.map((show) => show.tmdb_id)).toEqual([2, 11, 1]);
-    expect(result.shows.map((show) => show.popularity)).toEqual([80, 40, 5]);
+    // A title-prefix match is a stronger candidate signal than raw popularity;
+    // the remaining matches still fall back to popularity/rating ordering.
+    expect(result.shows.map((show) => show.tmdb_id)).toEqual([11, 2, 1]);
+    expect(result.shows.map((show) => show.popularity)).toEqual([40, 80, 5]);
   });
 
   it("keeps a live-action TV search out of the anime namespace", async () => {

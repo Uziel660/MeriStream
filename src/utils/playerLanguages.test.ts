@@ -19,6 +19,8 @@ describe('playerLanguages', () => {
     expect(normalizePlayerLanguage('Português Brasil')).toBe('pt-BR');
     expect(normalizePlayerLanguage('zh-CN')).toBe('zh-Hans');
     expect(normalizePlayerLanguage('zh-TW')).toBe('zh-Hant');
+    expect(normalizePlayerLanguage('Hindi')).toBe('hi');
+    expect(normalizePlayerLanguage('Tamil')).toBe('ta');
   });
 
   it('does not model dub/sub as languages', () => {
@@ -32,6 +34,7 @@ describe('playerLanguages', () => {
     expect(playerLanguageLabel('es')).toBe('Español');
     expect(playerLanguageLabel('ko')).toBe('Coreano');
     expect(playerLanguageLabel('pt-BR')).toBe('Portugués (Brasil)');
+    expect(playerLanguageLabel('hi')).toBe('Hindi');
   });
 
   it('sorts preferred languages first and unknown last', () => {

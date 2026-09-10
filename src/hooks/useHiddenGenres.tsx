@@ -72,8 +72,11 @@ function visibleGenreKey(value: unknown): string {
 }
 
 export function HiddenGenresProvider({ children }: { children: React.ReactNode }) {
-  const [hiddenGenres, setHiddenGenres] = useState<Set<string>>(() => readStorage(STORAGE_KEY, true));
-  const [hiddenShowIds, setHiddenShowIds] = useState<Set<string>>(() => readStorage(SHOW_STORAGE_KEY));
+  // localStorage is synchronous. Start with an empty snapshot so the first
+  // paint is not blocked by storage I/O; the effect below hydrates preferences
+  // immediately after paint and then reconciles with the server.
+  const [hiddenGenres, setHiddenGenres] = useState<Set<string>>(() => new Set());
+  const [hiddenShowIds, setHiddenShowIds] = useState<Set<string>>(() => new Set());
 
   const syncFromServer = useCallback(async () => {
     try {
@@ -102,6 +105,7 @@ export function HiddenGenresProvider({ children }: { children: React.ReactNode }
 
   // Sincronizar cambios hechos fuera de este Provider y entre pestañas.
   useEffect(() => {
+    syncFromStorage();
     void syncFromServer();
     const onCustomChange = (event: Event) => {
       if (event instanceof CustomEvent && event.detail?.source === PROVIDER_EVENT_SOURCE) return;

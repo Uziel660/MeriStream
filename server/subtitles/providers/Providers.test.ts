@@ -78,4 +78,27 @@ describe("subtitle providers", () => {
       expect.objectContaining({ provider: "subtitlecat", language: "en" }),
     ]));
   });
+
+  it("rejects a SubtitleCat result whose visible year belongs to another work", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("index.php?search=")) {
+        return new Response(
+          `<a href="subs/1977/Fantasy%20Island%20%281977%29.html">Fantasy Island (1977) Revenge of the Forgotten</a>`,
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+
+    const result = await new SubtitleCatProvider(1_000).search({
+      tmdbId: 1465063,
+      kind: "movie",
+      title: "La isla olvidada",
+      titleAliases: ["Forgotten Island"],
+      year: 2026,
+      preferredLanguages: ["es", "en"],
+    });
+
+    expect(result).toEqual([]);
+  });
 });

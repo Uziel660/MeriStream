@@ -83,6 +83,9 @@ export function providerGatewayRouter(): Router {
         tmdbId: identity.tmdbId,
         season: intValue(req.body?.season, 1),
         episode: intValue(req.body?.episode, 1),
+        originalLanguage: typeof req.body?.originalLanguage === "string"
+          ? req.body.originalLanguage.trim().slice(0, 16)
+          : null,
         preferredAudio: preferenceList(req.body?.preferredAudio),
         preferredSubtitles: preferenceList(req.body?.preferredSubtitles),
         // Identity recovery is deliberately read-only. Persisting source links
@@ -123,6 +126,9 @@ export function providerGatewayRouter(): Router {
         tmdbId,
         season: intValue(req.query.season, 1),
         episode: intValue(req.query.episode, 1),
+        originalLanguage: typeof req.query.originalLanguage === "string"
+          ? req.query.originalLanguage.trim().slice(0, 16)
+          : null,
         preferredAudio: preferenceList(req.query.audio),
         preferredSubtitles: preferenceList(req.query.subtitles),
         persist: req.query.persist === "1" || req.query.persist === "true",
@@ -146,6 +152,9 @@ export function providerGatewayRouter(): Router {
         tmdbId,
         season: intValue(req.body?.season, 1),
         episode: intValue(req.body?.episode, 1),
+        originalLanguage: typeof req.body?.originalLanguage === "string"
+          ? req.body.originalLanguage.trim().slice(0, 16)
+          : null,
         preferredAudio: preferenceList(req.body?.preferredAudio),
         preferredSubtitles: preferenceList(req.body?.preferredSubtitles),
         persist: Boolean(req.body?.persist),

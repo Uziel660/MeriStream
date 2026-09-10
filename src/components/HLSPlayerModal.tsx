@@ -156,6 +156,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const attemptIdRef = useRef<number>(0);
   // Regla 7: Un servidor no puede intentarse más de una vez por modo dentro del mismo intento de reproducción.
   const attemptedModesRef = useRef<Set<string>>(new Set());
+  // HLS.js can recover a decoder/media fault in-place. Allow one recovery per
+  // playback attempt before escalating to proxy or another server.
+  const mediaRecoveryAttemptsRef = useRef<Set<number>>(new Set());
   // Los locators de páginas/embeds pueden fallar por una respuesta transitoria
   // del proveedor. Permitimos un único reintento del mismo locator antes de
   // avanzar para que el failover no descarte una fuente primaria recuperable.
@@ -1309,6 +1312,23 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           if (recoverUnavailableLevel(data)) {
             console.warn('HLS variant unavailable; continuing with a lower quality level', data.level);
             return;
+          }
+
+          if (data.type === 'mediaError' && !mediaRecoveryAttemptsRef.current.has(attemptId)) {
+            mediaRecoveryAttemptsRef.current.add(attemptId);
+            try {
+              hls.recoverMediaError();
+              api.reportPlayerEvent({
+                eventType: "playback_buffering",
+                provider: activeServer?.provider || "Servidor",
+                serverUrl: activeServer?.url || url,
+                mediaTitle: currentTitle,
+                details: `HLS mediaError recuperable (${data.details}); se reintenta el mismo stream antes del failover`,
+              });
+              return;
+            } catch (error) {
+              console.warn('HLS media recovery failed; escalating', error);
+            }
           }
 
           console.warn('HLS Fatal Error:', data.type, data.details);

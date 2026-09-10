@@ -26,6 +26,16 @@ describe("languageDetector", () => {
     expect(normalizeLanguageCode("Italiano")).toBe("it");
   });
 
+  it("normalizes VidSrc and subtitle languages commonly used by Indian providers", () => {
+    expect(normalizeLanguageCode("Hindi")).toBe("hi");
+    expect(normalizeLanguageCode("Tamil")).toBe("ta");
+    expect(normalizeLanguageCode("Telugu")).toBe("te");
+    expect(normalizeLanguageCode("Malayalam")).toBe("ml");
+    expect(normalizeLanguageCode("Bengali")).toBe("bn");
+    expect(normalizeLanguageCode("ea")).toBe("es-419");
+    expect(normalizeLanguageCode("pb")).toBe("pt-BR");
+  });
+
   it("detects Spanish dub/sub metadata without touching video bytes", () => {
     expect(detectLanguageHints({ title: "One Piece Latino", url: "https://cdn.example/ep.mp4" })).toMatchObject({
       language: "dub",

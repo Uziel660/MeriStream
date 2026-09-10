@@ -445,6 +445,16 @@ export function normalizeLanguageTag(value: string | null | undefined): string |
   if (["ja", "japonés", "japones", "japanese", "jp", "jpn"].includes(raw)) return "ja";
   if (["en", "english", "eng"].includes(raw)) return "en";
   if (["ko", "korean", "kor", "coreano"].includes(raw)) return "ko";
+  if (["hi", "hindi", "hin"].includes(raw)) return "hi";
+  if (["ta", "tamil", "tam"].includes(raw)) return "ta";
+  if (["te", "telugu", "tel"].includes(raw)) return "te";
+  if (["ml", "malayalam", "mal"].includes(raw)) return "ml";
+  if (["bn", "bengali", "bangla", "ben"].includes(raw)) return "bn";
+  if (["mr", "marathi", "mar"].includes(raw)) return "mr";
+  if (["pa", "punjabi", "pan"].includes(raw)) return "pa";
+  if (["kn", "kannada", "kan"].includes(raw)) return "kn";
+  if (["gu", "gujarati", "guj"].includes(raw)) return "gu";
+  if (["ur", "urdu", "urd"].includes(raw)) return "ur";
 
   // Preserve common BCP-47 casing for known regional/script variants instead
   // of leaking the lower-cased internal key to UI/ranking comparisons.

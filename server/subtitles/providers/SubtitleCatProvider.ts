@@ -29,6 +29,21 @@ function titleMatches(query: string, value: string): boolean {
   return common >= Math.max(1, Math.ceil(Math.min(leftTokens.size, rightTokens.size) * 0.6));
 }
 
+/**
+ * SubtitleCat's search page mixes films, episodes and release groups. When a
+ * requested year is known, a visible conflicting year is stronger evidence
+ * than the loose token match above and must reject the result. Pages without
+ * a year stay eligible because the provider often omits it from the label.
+ */
+function compatibleYear(value: string, requestedYear?: number | null): boolean {
+  const year = Number(requestedYear || 0);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) return true;
+  const found = [...String(value || "").matchAll(/\b(?:19|20)\d{2}\b/g)]
+    .map((match) => Number(match[0]))
+    .filter((candidate) => candidate >= 1900 && candidate <= 2100);
+  return found.length === 0 || found.includes(year);
+}
+
 function wantedLanguages(values?: string[]): Set<string> {
   return new Set((values || ["es-419", "es", "en"])
     .map((value) => normalizeSubtitleLanguage(value))
@@ -56,6 +71,7 @@ export class SubtitleCatProvider implements SubtitleProvider {
         const href = $(element).attr("href") || "";
         const label = $(element).text().trim();
         if (!href || !titleMatches(alias, label)) return;
+        if (!compatibleYear(`${label} ${href}`, request.year)) return;
         if (request.season != null && request.episode != null) {
           const marker = new RegExp(`(?:s0?${request.season}[\\s._-]*e0?${request.episode}(?!\\d)|${request.season}x0?${request.episode}(?!\\d))`, "i");
           if (/s\d{1,2}[\s._-]*e\d{1,3}|\b\d{1,2}x\d{1,3}\b/i.test(label) && !marker.test(label)) return;
@@ -66,6 +82,7 @@ export class SubtitleCatProvider implements SubtitleProvider {
       const pageResults = await Promise.all(pages.slice(0, 8).map(async (pageUrl) => ({ pageUrl, pageHtml: await this.fetchText(pageUrl) })));
       for (const { pageUrl, pageHtml } of pageResults) {
         if (!pageHtml) continue;
+        if (!compatibleYear(pageUrl, request.year)) continue;
         const pageDom = cheerio.load(pageHtml);
         const candidates: SubtitleCandidate[] = [];
         pageDom("a[href]").each((_index, element) => {
@@ -75,6 +92,7 @@ export class SubtitleCatProvider implements SubtitleProvider {
           const language = normalizeSubtitleLanguage(match[2]);
           if (!language || !preferred.has(language)) return;
           const sourceUrl = new URL(href, BASE_URL).toString();
+          if (!compatibleYear(`${sourceUrl} ${match[1]}`, request.year)) return;
           candidates.push({
             id: `subtitlecat:${sourceUrl}`,
             provider: this.id,

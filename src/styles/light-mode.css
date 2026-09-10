@@ -1,0 +1,409 @@
+/* MeriStream light preset
+ * Keeps playback chrome intentionally dark while turning the browsing,
+ * discovery and preference surfaces into a true light interface.
+ */
+
+html[data-ms-style='light'] {
+  color-scheme: light;
+
+  /* Current semantic design system */
+  --ms-bg: #f5f7fb;
+  --ms-bg-elevated: #ffffff;
+  --ms-surface: #ffffff;
+  --ms-surface-2: #f0f3f8;
+  --ms-surface-3: #e5eaf1;
+  --ms-text: #161b26;
+  --ms-text-muted: #5f6978;
+  --ms-text-dim: #8791a1;
+  --ms-border: rgba(15, 23, 42, .10);
+  --ms-border-strong: rgba(15, 23, 42, .18);
+  --ms-accent: #c98212;
+  --ms-accent-strong: #a86200;
+  --ms-accent-ink: #fffaf0;
+  --ms-danger: #c73e55;
+  --ms-shadow-1: 0 14px 38px rgba(31, 41, 55, .10);
+  --ms-shadow-2: 0 30px 80px rgba(31, 41, 55, .16);
+
+  /* Legacy tokens still consumed by a few catalog primitives */
+  --bg-vault: #f5f7fb;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #edf1f6;
+  --border-subtle: #dce2ea;
+  --accent-dynamic: #b9740d;
+  --text-main: #161b26;
+  --text-muted: #667085;
+
+  --ms-style-header-bg: rgba(255, 255, 255, .90);
+  --ms-style-panel-bg: rgba(255, 255, 255, .98);
+
+  /* Video playback stays cinema-dark for predictable contrast. */
+  --ms-player-accent: #f4b33f;
+  --ms-player-accent-soft: rgba(244, 179, 63, .20);
+  --ms-player-surface: rgba(8, 10, 15, .92);
+  --ms-player-border: rgba(255, 255, 255, .14);
+}
+
+html[data-ms-style='light'][data-ms-contrast='high'] {
+  --ms-text: #05070b;
+  --ms-text-muted: #343b47;
+  --ms-text-dim: #4f5968;
+  --ms-border: rgba(2, 6, 23, .20);
+  --ms-border-strong: rgba(2, 6, 23, .34);
+}
+
+html[data-ms-style='light'],
+html[data-ms-style='light'] body,
+html[data-ms-style='light'] #root,
+html[data-ms-style='light'] .app-shell {
+  background-color: var(--ms-bg);
+  color: var(--ms-text);
+}
+
+html[data-ms-style='light'] body {
+  background:
+    radial-gradient(circle at 78% -8%, rgba(244, 179, 63, .10), transparent 30rem),
+    radial-gradient(circle at 12% 36%, rgba(71, 118, 180, .06), transparent 28rem),
+    linear-gradient(180deg, #fbfcfe 0%, var(--ms-bg) 45%, #f0f3f8 100%);
+}
+
+html[data-ms-style='light'] ::selection {
+  background: rgba(201, 130, 18, .24);
+  color: #161b26;
+}
+
+html[data-ms-style='light'] ::-webkit-scrollbar-thumb {
+  background: #b9c1cc;
+}
+
+/* Header and navigation */
+html[data-ms-style='light'] .site-header,
+html[data-ms-style='light'] .site-header.is-at-top {
+  background: rgba(255, 255, 255, .90) !important;
+  border-bottom-color: var(--ms-border);
+  box-shadow: 0 8px 28px rgba(31, 41, 55, .055);
+  backdrop-filter: blur(20px) saturate(145%);
+}
+
+html[data-ms-style='light'] .brand,
+html[data-ms-style='light'] .nav-item:hover,
+html[data-ms-style='light'] .nav-item.is-active,
+html[data-ms-style='light'] .account-name {
+  color: var(--ms-text);
+}
+
+html[data-ms-style='light'] .brand-period,
+html[data-ms-style='light'] .brand-symbol,
+html[data-ms-style='light'] .genre-shortcut:hover,
+html[data-ms-style='light'] .genre-shortcut[aria-pressed='true'] {
+  color: var(--ms-accent);
+  border-color: currentColor;
+}
+
+html[data-ms-style='light'] .header-search input {
+  background: rgba(244, 246, 249, .96);
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+
+html[data-ms-style='light'] .header-search input::placeholder,
+html[data-ms-style='light'] .genre-nav > span,
+html[data-ms-style='light'] .nav-item,
+html[data-ms-style='light'] .genre-shortcut {
+  color: var(--ms-text-muted);
+}
+
+html[data-ms-style='light'] .account-login {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+html[data-ms-style='light'] .account-login:hover,
+html[data-ms-style='light'] .account-trigger:hover {
+  background: var(--ms-surface-2);
+}
+
+html[data-ms-style='light'] .account-menu {
+  background: rgba(255, 255, 255, .985);
+  border-color: var(--ms-border);
+  box-shadow: var(--ms-shadow-2);
+}
+
+html[data-ms-style='light'] .avatar-choice[aria-pressed='true'] span {
+  outline-color: #273142;
+}
+
+/* Hero: white editorial wash keeps dark copy readable over arbitrary art. */
+html[data-ms-style='light'] .feature-art {
+  background: #e9edf3;
+  box-shadow: 0 20px 55px rgba(31, 41, 55, .10);
+}
+
+html[data-ms-style='light'] .feature-shade {
+  background:
+    linear-gradient(90deg, rgba(247, 249, 252, .995) 0%, rgba(247, 249, 252, .94) 29%, rgba(247, 249, 252, .62) 50%, rgba(247, 249, 252, .15) 78%, transparent 100%),
+    linear-gradient(0deg, var(--ms-bg) 0%, rgba(245, 247, 251, .62) 24%, transparent 58%);
+}
+
+html[data-ms-style='light'] .feature-image {
+  filter: saturate(.94) contrast(.98) brightness(1.03);
+}
+
+html[data-ms-style='light'] .feature h1,
+html[data-ms-style='light'] .feature-title {
+  color: #121722;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+html[data-ms-style='light'] .feature-meta,
+html[data-ms-style='light'] .feature-genres,
+html[data-ms-style='light'] .feature-synopsis {
+  color: var(--ms-text-muted);
+}
+
+html[data-ms-style='light'] .feature-meta > span + span {
+  border-left-color: #c8ced7;
+}
+
+html[data-ms-style='light'] .feature-caption {
+  color: rgba(255, 255, 255, .88);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .65);
+}
+
+/* Buttons, toolbars and reusable surfaces */
+html[data-ms-style='light'] .ui-button-primary,
+html[data-ms-style='light'] .button-primary,
+html[data-ms-style='light'] .details-play {
+  background: var(--ms-accent) !important;
+  color: #fffaf0 !important;
+  box-shadow: 0 9px 24px rgba(169, 98, 0, .16);
+}
+
+html[data-ms-style='light'] .ui-button-primary:hover,
+html[data-ms-style='light'] .button-primary:hover,
+html[data-ms-style='light'] .details-play:hover {
+  background: var(--ms-accent-strong) !important;
+}
+
+html[data-ms-style='light'] .ui-button-secondary,
+html[data-ms-style='light'] .button-secondary,
+html[data-ms-style='light'] .ui-button-ghost,
+html[data-ms-style='light'] .icon-button,
+html[data-ms-style='light'] .ui-icon-button {
+  background: rgba(255, 255, 255, .78);
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+html[data-ms-style='light'] .ui-button-secondary:hover,
+html[data-ms-style='light'] .button-secondary:hover,
+html[data-ms-style='light'] .ui-button-ghost:hover,
+html[data-ms-style='light'] .icon-button:hover,
+html[data-ms-style='light'] .ui-icon-button:hover {
+  background: var(--ms-surface-2);
+  color: #10151f;
+}
+
+html[data-ms-style='light'] .catalog-toolbar,
+html[data-ms-style='light'] .ui-surface,
+html[data-ms-style='light'] .spotlight-section,
+html[data-ms-style='light'] .episode-card {
+  background: rgba(255, 255, 255, .92) !important;
+  border-color: var(--ms-border) !important;
+  color: var(--ms-text);
+  box-shadow: var(--ms-shadow-1);
+}
+
+html[data-ms-style='light'] .section-heading h2,
+html[data-ms-style='light'] .section-heading h3,
+html[data-ms-style='light'] .media-card-title,
+html[data-ms-style='light'] .episode-card strong {
+  color: var(--ms-text);
+}
+
+html[data-ms-style='light'] .section-heading p,
+html[data-ms-style='light'] .row-count,
+html[data-ms-style='light'] .media-card-meta,
+html[data-ms-style='light'] .episode-card p,
+html[data-ms-style='light'] .episode-card small {
+  color: var(--ms-text-muted);
+}
+
+html[data-ms-style='light'] .media-poster {
+  background: #e4e9f0;
+  border-color: rgba(15, 23, 42, .08);
+  box-shadow: 0 10px 28px rgba(31, 41, 55, .10);
+}
+
+html[data-ms-style='light'] .media-card:hover .media-poster {
+  transform: translateY(-5px) scale(1.012);
+  border-color: rgba(201, 130, 18, .32);
+  box-shadow: 0 20px 42px rgba(31, 41, 55, .16), 0 0 0 1px rgba(201, 130, 18, .06);
+}
+
+html[data-ms-style='light'] .media-card:hover .media-card-title {
+  color: #9c5b00;
+}
+
+html[data-ms-style='light'] .poster-placeholder,
+html[data-ms-style='light'] .feature-placeholder {
+  background: #e7ecf2;
+  color: #8996a6;
+}
+
+html[data-ms-style='light'] .media-skeleton > div,
+html[data-ms-style='light'] .media-skeleton > span {
+  background: #e4e9ef;
+}
+
+/* Search, catalog inputs and menus */
+html[data-ms-style='light'] input:not([type='range']):not([type='checkbox']):not([type='radio']),
+html[data-ms-style='light'] select,
+html[data-ms-style='light'] textarea {
+  color-scheme: light;
+}
+
+html[data-ms-style='light'] .catalog-toolbar input,
+html[data-ms-style='light'] .catalog-toolbar select,
+html[data-ms-style='light'] .ui-input,
+html[data-ms-style='light'] .ui-select {
+  background: #f7f9fc !important;
+  color: var(--ms-text) !important;
+  border-color: var(--ms-border-strong) !important;
+}
+
+html[data-ms-style='light'] .catalog-toolbar input::placeholder,
+html[data-ms-style='light'] .ui-input::placeholder {
+  color: var(--ms-text-dim);
+}
+
+/* Details/auth overlays become light surfaces while the backdrop remains dim. */
+html[data-ms-style='light'] .details-overlay,
+html[data-ms-style='light'] .auth-overlay {
+  background: rgba(31, 41, 55, .38) !important;
+  backdrop-filter: blur(14px) saturate(105%) !important;
+}
+
+html[data-ms-style='light'] .details-panel,
+html[data-ms-style='light'] .auth-panel {
+  background: rgba(255, 255, 255, .985) !important;
+  border-color: var(--ms-border) !important;
+  color: var(--ms-text) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+
+html[data-ms-style='light'] .details-panel::before,
+html[data-ms-style='light'] .details-panel::after {
+  border-color: var(--ms-border);
+}
+
+html[data-ms-style='light'] .details-title,
+html[data-ms-style='light'] .details-heading,
+html[data-ms-style='light'] .auth-panel h1,
+html[data-ms-style='light'] .auth-panel h2,
+html[data-ms-style='light'] .auth-panel h3 {
+  color: var(--ms-text) !important;
+}
+
+html[data-ms-style='light'] .details-description,
+html[data-ms-style='light'] .details-meta,
+html[data-ms-style='light'] .auth-panel p {
+  color: var(--ms-text-muted) !important;
+}
+
+html[data-ms-style='light'] .details-category,
+html[data-ms-style='light'] .details-season-trigger,
+html[data-ms-style='light'] .episode-loadmore {
+  background: #f1f4f8 !important;
+  border-color: var(--ms-border-strong) !important;
+  color: var(--ms-text) !important;
+}
+
+/* Preference dialog uses Tailwind utility colors internally; anchor the dialog
+ * with semantic classes so previewing Light also previews the settings UI. */
+html[data-ms-style='light'] .preferences-overlay {
+  background: rgba(31, 41, 55, .34) !important;
+}
+
+html[data-ms-style='light'] .preferences-panel {
+  background: #ffffff !important;
+  border-color: var(--ms-border-strong) !important;
+  color: var(--ms-text) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-100'],
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-200'],
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-300'] {
+  color: #202733 !important;
+}
+
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-400'],
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-500'] {
+  color: #667085 !important;
+}
+
+html[data-ms-style='light'] .preferences-panel [class*='text-zinc-600'] {
+  color: #8a94a3 !important;
+}
+
+html[data-ms-style='light'] .preferences-panel [class*='border-zinc-'] {
+  border-color: #dce2ea !important;
+}
+
+html[data-ms-style='light'] .preferences-panel select,
+html[data-ms-style='light'] .preferences-panel input[type='text'],
+html[data-ms-style='light'] .preferences-panel input[type='password'] {
+  background: #f7f9fc !important;
+  border-color: #d6dde7 !important;
+  color: #1c2430 !important;
+}
+
+html[data-ms-style='light'] .preferences-panel label[class*='bg-zinc-900'],
+html[data-ms-style='light'] .preferences-panel button[class*='bg-zinc-900'] {
+  background: #f7f9fc !important;
+}
+
+html[data-ms-style='light'] .preferences-panel button[class*='hover:bg-zinc-800']:hover,
+html[data-ms-style='light'] .preferences-panel button[class*='hover:bg-zinc-900']:hover {
+  background: #edf1f6 !important;
+  color: #111827 !important;
+}
+
+html[data-ms-style='light'] .preferences-footer {
+  background: rgba(255, 255, 255, .96) !important;
+  border-color: #dce2ea !important;
+}
+
+/* Preset card preview */
+.interface-style-preview[data-preview='light'] {
+  border-color: rgba(15, 23, 42, .13);
+  border-radius: .75rem;
+  background: linear-gradient(145deg, #ffffff, #e9eef5 68%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .65), inset 0 -18px 28px rgba(52, 65, 85, .045);
+}
+
+.interface-style-preview[data-preview='light']::before {
+  background: #c98212;
+}
+
+.interface-style-preview[data-preview='light']::after {
+  background: rgba(31, 41, 55, .16);
+}
+
+.interface-style-preview[data-preview='light'] span {
+  background: rgba(31, 41, 55, .08);
+}
+
+/* Keep the actual player dark: media controls are more legible against video
+ * and switching interface themes must never alter playback behavior. */
+html[data-ms-style='light'] [data-player-root],
+html[data-ms-style='light'] .hls-player-modal,
+html[data-ms-style='light'] .player-shell {
+  color-scheme: dark;
+}
+
+html[data-ms-style='light'] [data-player-topbar],
+html[data-ms-style='light'] [data-player-controls] {
+  color: #f7f8fb;
+}

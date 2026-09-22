@@ -3,6 +3,11 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
+# Prisma needs OpenSSL available while generating the native ARM64 client.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

@@ -1,0 +1,93 @@
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:18.6-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      PGDATA: /var/lib/postgresql/18/docker
+    command: ["postgres", "-c", "config_file=/etc/postgresql/custom-postgres.conf"]
+    volumes:
+      # PostgreSQL 18 stores PGDATA below this parent directory.
+      - meristream_pgdata:/var/lib/postgresql
+      - ./docker/custom-postgres.conf:/etc/postgresql/custom-postgres.conf:ro
+      # The sanitized custom-format dump is kept outside the database volume.
+      - ./database/seed:/seed:ro
+      - ./scripts/docker/postgres-init.sh:/docker-entrypoint-initdb.d/20-meristream-seed.sh:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1536m}
+    cpus: ${POSTGRES_CPUS:-2.0}
+    shm_size: 256m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" >/dev/null
+          && test -f "$${PGDATA:-/var/lib/postgresql/data}/.merilast-seed-restored"
+          && psql -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -Atqc
+          "SELECT 1 FROM public._merilast_restore_status WHERE id = 'catalog-seed'
+          AND restored_at IS NOT NULL" | grep -qx 1
+      interval: 10s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3010"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      ADMIN_USER: ${ADMIN_USER:?Set ADMIN_USER in .env}
+      ADMIN_PASS: ${ADMIN_PASS:?Set ADMIN_PASS in .env}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Set ADMIN_SESSION_SECRET in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3010}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      ENFORCE_HTTPS: ${ENFORCE_HTTPS:-false}
+      FLIXQUEST_API_URL: ${FLIXQUEST_API_URL:-https://flixquest-api.vercel.app}
+      FLIXQUEST_PROVIDER_IDS: ${FLIXQUEST_PROVIDER_IDS:-showbox,vidsrc,vidsrcto}
+      NUVIO_STREAMS_URL: ${NUVIO_STREAMS_URL:-https://nuviostreams.hayd.uk}
+      ANIME_SDK_URL: ${ANIME_SDK_URL:-}
+      ANIME_SDK_CONTENT_PROVIDERS: ${ANIME_SDK_CONTENT_PROVIDERS:-megaplay,animeparadise,allmanga,gogoanime}
+      OPENSUBTITLES_V3_ENDPOINTS: ${OPENSUBTITLES_V3_ENDPOINTS:-https://opensubtitles-v3.strem.io,https://opensubtitles.strem.io}
+      OPENSUBTITLES_V3_TIMEOUT_MS: ${OPENSUBTITLES_V3_TIMEOUT_MS:-7000}
+      TVSUBTITLES_TIMEOUT_MS: ${TVSUBTITLES_TIMEOUT_MS:-10000}
+      YIFY_SUBTITLES_BASE_URL: ${YIFY_SUBTITLES_BASE_URL:-https://www.yifysubtitles.ch,https://yts-subs.com}
+      YIFY_SUBTITLES_TIMEOUT_MS: ${YIFY_SUBTITLES_TIMEOUT_MS:-8000}
+      SUBTITLE_PROVIDER_TIMEOUT_MS: ${SUBTITLE_PROVIDER_TIMEOUT_MS:-8000}
+      SUBTITLE_SEARCH_CACHE_TTL_MS: ${SUBTITLE_SEARCH_CACHE_TTL_MS:-14400000}
+      SUBTITLE_PROXY_TIMEOUT_MS: ${SUBTITLE_PROXY_TIMEOUT_MS:-15000}
+      SUBTITLE_PROXY_MAX_BYTES: ${SUBTITLE_PROXY_MAX_BYTES:-12582912}
+      SUBTITLE_PROXY_CACHE_TTL_MS: ${SUBTITLE_PROXY_CACHE_TTL_MS:-604800000}
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-3010}:3010"
+    mem_limit: ${APP_MEM_LIMIT:-1024m}
+    cpus: ${APP_CPUS:-2.0}
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3010/health').then((r) =>
+          process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  meristream_pgdata:

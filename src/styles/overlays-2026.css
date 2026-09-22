@@ -1,0 +1,157 @@
+/* MeriStream 2026 — overlays, dialogs and playback polish */
+
+/* Details becomes a cinematic sheet on desktop and a full-screen view on phones. */
+.details-overlay {
+  padding: clamp(.65rem, 2vw, 1.5rem);
+  align-items: center !important;
+  justify-content: center !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(3, 5, 8, .86) !important;
+  backdrop-filter: blur(14px) saturate(115%) !important;
+}
+.details-panel {
+  width: min(100%, 64rem) !important;
+  max-width: 64rem !important;
+  height: min(92dvh, 58rem) !important;
+  max-height: 92dvh;
+  border: 1px solid var(--ms-border-strong) !important;
+  border-radius: var(--ms-radius-xl) !important;
+  overflow: hidden;
+  background: rgba(10, 13, 18, .985) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+.details-scroll {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.18) transparent;
+}
+.details-body { background: linear-gradient(180deg, rgba(255,255,255,.015), transparent 18rem); }
+.details-play {
+  min-height: 46px !important;
+  border-radius: 999px !important;
+  background: var(--ms-accent) !important;
+  color: var(--ms-accent-ink) !important;
+  box-shadow: none !important;
+  font-weight: 800 !important;
+}
+.details-play:hover { background: var(--ms-accent-strong) !important; }
+.details-category {
+  border-color: var(--ms-border-strong) !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.07) !important;
+  color: #e4e9ef !important;
+}
+.details-glow { opacity: .18 !important; filter: blur(50px) !important; }
+.episode-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 62px;
+  border-color: var(--ms-border) !important;
+  background: rgba(255,255,255,.025) !important;
+  transition: background-color 150ms var(--ms-ease), border-color 150ms var(--ms-ease), transform 150ms var(--ms-ease) !important;
+}
+.episode-card:hover { border-color: var(--ms-border-strong) !important; background: rgba(255,255,255,.05) !important; }
+.episode-play { min-width: 44px !important; min-height: 44px !important; color: var(--ms-accent) !important; }
+.details-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr)); gap:.85rem; margin-top:.35rem; margin-bottom:.35rem; }
+.details-facts > div { min-height:4.6rem; display:flex; flex-direction:column; justify-content:center; gap:.35rem; padding:.85rem 1.15rem; border:1px solid var(--ms-border); border-radius:.95rem; background:rgba(255,255,255,.03); backdrop-filter:blur(8px); }
+.details-facts span { color:var(--ms-text-dim); font-size:.68rem; text-transform:uppercase; letter-spacing:.12em; font-weight:600; }
+.details-facts strong { color:var(--ms-text); font-size:.92rem; font-weight:750; letter-spacing:-.01em; }
+.details-season-picker { width:min(15rem,72vw); }
+.details-season-trigger { width:100%; min-height:2.45rem; display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.52rem .85rem; border:1px solid var(--ms-border-strong); border-radius:.8rem; background:var(--ms-surface-2); color:var(--ms-text); font-size:.78rem; font-weight:750; text-align:left; }
+.details-season-trigger:hover { background:var(--ms-surface-3); border-color:rgba(244,179,63,.42); }
+.details-season-menu { position:absolute; z-index:30; top:calc(100% + .35rem); left:0; width:100%; max-height:15rem; overflow-y:auto; padding:.35rem; border:1px solid var(--ms-border-strong); border-radius:.85rem; background:rgba(13,16,23,.98); box-shadow:var(--ms-shadow-2); }
+.details-season-option { width:100%; min-height:2.35rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.45rem .6rem; border-radius:.58rem; color:var(--ms-text-muted); font-size:.7rem; text-align:left; }
+.details-season-option:hover,.details-season-option[aria-selected="true"] { background:rgba(244,179,63,.12); color:var(--ms-text); }
+.details-season-option[aria-selected="true"] { color:var(--ms-accent-strong); }
+.details-season-option small { color:var(--ms-text-dim); font-size:.62rem; }
+.episode-loadmore { width:100%; min-height:2.75rem; margin-top:.9rem; display:flex; align-items:center; justify-content:center; gap:.55rem; border:1px solid var(--ms-border); border-radius:.85rem; background:rgba(255,255,255,.03); color:var(--ms-text-muted); font-size:.76rem; font-weight:700; transition:background 150ms,border-color 150ms,color 150ms; }
+.episode-loadmore:hover { background:rgba(255,255,255,.07); border-color:var(--ms-border-strong); color:var(--ms-text); }
+.episode-loadmore span { color:var(--ms-text-dim); font-weight:500; }
+.details-related { padding-top:1.75rem; margin-top:1rem; border-top:1px solid var(--ms-border); }
+.details-section-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:1.15rem; }
+.details-section-heading h4 { margin-top:.35rem; color:var(--ms-text); font-size:1.15rem; font-weight:820; letter-spacing:-.025em; }
+.details-section-heading > span { color:var(--ms-text-dim); font-size:.72rem; }
+.details-section-kicker { display:inline-flex; align-items:center; gap:.4rem; color:var(--ms-accent); font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.details-related-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1.15rem; }
+.details-related-grid .media-card-title { font-size:.75rem; }
+.details-related-grid .media-card-meta { font-size:.64rem; }
+.details-related-skeleton { aspect-ratio:2/3; border-radius:.85rem; background:linear-gradient(110deg,rgba(255,255,255,.04) 30%,rgba(255,255,255,.09) 45%,rgba(255,255,255,.04) 60%); background-size:220% 100%; animation:details-related-shimmer 1.4s linear infinite; }
+@keyframes details-related-shimmer { to { background-position:-220% 0; } }
+
+/* Authentication remains compact, readable and password-manager friendly. */
+.auth-overlay {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)) !important;
+  background: rgba(3,5,8,.86) !important;
+  backdrop-filter: blur(14px) !important;
+}
+.auth-panel {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto !important;
+  border: 1px solid var(--ms-border-strong) !important;
+  border-radius: var(--ms-radius-xl) !important;
+  background: var(--ms-bg-elevated) !important;
+  box-shadow: var(--ms-shadow-2) !important;
+}
+.auth-panel > .pointer-events-none { opacity: .18; }
+.auth-panel :where(input, select, textarea) {
+  min-height: 46px;
+  border-color: var(--ms-border-strong) !important;
+  border-radius: .8rem !important;
+  background: #0a0d13 !important;
+  color: var(--ms-text) !important;
+}
+.auth-panel :where(input, select, textarea):focus {
+  border-color: rgba(244,179,63,.55) !important;
+  box-shadow: 0 0 0 3px rgba(244,179,63,.08) !important;
+}
+.auth-panel label { color: #cfd5df; }
+
+/* Player: keep effects cheap. Video and HLS always win over decoration. */
+[data-player-topbar] {
+  padding-top: max(1rem, env(safe-area-inset-top)) !important;
+  padding-left: max(1rem, env(safe-area-inset-left)) !important;
+  padding-right: max(1rem, env(safe-area-inset-right)) !important;
+  will-change: opacity;
+}
+[data-player-topbar] button { min-width: 44px; min-height: 44px; }
+.plyr { --plyr-color-main: var(--ms-accent); }
+.plyr__control--overlaid { background: var(--ms-accent) !important; color: var(--ms-accent-ink) !important; }
+.plyr__progress input[type=range], .plyr__volume input[type=range] { color: var(--ms-accent) !important; }
+
+/* Admin is intentionally productivity-first: readable surfaces, not cinematic effects. */
+body:has([data-admin-root]), body:has(.admin-shell) { background: #090c11; }
+[data-admin-root], .admin-shell { color: var(--ms-text); }
+[data-admin-root] :where(input,select,textarea), .admin-shell :where(input,select,textarea) {
+  border-color: var(--ms-border) !important;
+  background: #0e1218 !important;
+}
+[data-admin-root] :where(table,thead,tbody,tr,td,th), .admin-shell :where(table,thead,tbody,tr,td,th) { border-color: var(--ms-border) !important; }
+
+@media (max-width: 640px) {
+  .details-overlay { padding: 0 !important; align-items: stretch !important; }
+  .details-panel {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+  .details-scroll { padding-bottom: env(safe-area-inset-bottom); }
+  .details-related-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+  .details-related-grid .media-card-title { font-size:.66rem; }
+  .details-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .auth-panel { border-radius: 1.15rem !important; }
+}
+
+@media (pointer: coarse) {
+  .episode-play, .details-panel button, .auth-panel button { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-player-topbar], .details-panel, .auth-panel, .episode-card { will-change: auto; }
+  .details-glow { display: none !important; }
+}

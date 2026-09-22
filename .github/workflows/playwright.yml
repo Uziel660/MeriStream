@@ -1,0 +1,93 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: playwright-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meristream_playwright
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d meristream_playwright"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meristream_playwright?schema=public
+      NODE_ENV: development
+      MERISTREAM_URL: http://127.0.0.1:3010
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare database
+        run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Start MeriStream
+        run: |
+          npm run dev > /tmp/meristream-playwright.log 2>&1 &
+          echo $! > /tmp/meristream-playwright.pid
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3010/ >/dev/null; then
+              echo "MeriStream is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/meristream-playwright.log
+          exit 1
+
+      - name: Validate Playwright suite discovery
+        run: npm run test:e2e:list
+
+      # The full Playwright spec suite contains catalog/live-provider cases that
+      # require a prepared production-like dataset or LIVE_SCRAPER_E2E=1. PR CI
+      # instead exercises deterministic browser paths against the real app
+      # process, with network boundaries mocked inside each audit.
+      - name: Audit home and details
+        run: node e2e/frontend_visual_audit.cjs
+
+      - name: Audit preferences and player
+        run: node e2e/immersive_player_visual_audit.cjs
+
+      - name: Upload browser artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-audit-${{ github.sha }}
+          path: |
+            artifacts/frontend-visual/
+            artifacts/immersive-player-visual/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Show server log on failure
+        if: ${{ failure() }}
+        run: cat /tmp/meristream-playwright.log || true

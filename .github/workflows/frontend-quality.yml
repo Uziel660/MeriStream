@@ -1,0 +1,73 @@
+name: Frontend quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'tailwind.config.*'
+      - '.github/workflows/frontend-quality.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'tailwind.config.*'
+      - '.github/workflows/frontend-quality.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript / lint
+        run: npm run lint
+
+      - name: Deterministic frontend tests
+        run: >-
+          npx vitest run
+          src/hooks/useHiddenGenres.test.tsx
+          src/utils/labels.test.ts
+          src/utils/playbackBootstrap.test.ts
+          src/utils/playerLanguages.test.ts
+          src/utils/searchUtils.test.ts
+          src/utils/imageSizes.test.ts
+          src/utils/playerDelivery.test.ts
+          src/utils/streamOptimizer.test.ts
+          src/utils/streamOptimizer.zilla.test.ts
+          src/utils/deliveryCapabilities.test.ts
+          src/utils/episodeLabels.test.ts
+          src/utils/subtitleFormat.test.ts
+          src/utils/textCleaner.test.ts
+          src/utils/colorExtractor.test.ts
+          tests/continueWatchingAndDetails.test.ts
+
+      - name: Production build
+        run: npm run build
+
+      # Full DB/integration coverage belongs to provider-v2-ci.yml, which
+      # provisions PostgreSQL. Browser coverage belongs to playwright.yml.
+      # Keeping those responsibilities separate makes this frontend gate fast
+      # and deterministic instead of depending on databases or live providers.

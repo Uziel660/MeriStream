@@ -1,0 +1,416 @@
+[
+  {
+    "provider": "cinecalidad",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 5,
+    "totalServersDirect": 5,
+    "averageLatencyMs": 307,
+    "works": [
+      {
+        "workId": "cmtqiy9pg000r4hb92vkuban0",
+        "title": "A la carrera",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/carrera-contra-el-tiempo/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://p5.vimeos.zip/hls2/03/00013/utlnulhfjayx_,n,h,.urlset/master.m3u8?t=0Fgk7IS3MTeb4wonQBBPSPFpXxXvVxxRhKX6swGm2lk&s=1788946970&e=43200&v=351799106&srv=s9&i=0.0&sp=0&fr=utlnulhfjayx&r=e",
+            "hostName": "p5.vimeos.zip",
+            "resolvedDirectUrl": "https://p5.vimeos.zip/hls2/03/00013/utlnulhfjayx_,n,h,.urlset/master.m3u8?t=0Fgk7IS3MTeb4wonQBBPSPFpXxXvVxxRhKX6swGm2lk&s=1788946970&e=43200&v=351799106&srv=s9&i=0.0&sp=0&fr=utlnulhfjayx&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 480,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqjnhfty75wo7zn",
+        "title": "LEGO Star Wars: The Mandalorian",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/lego-star-wars-the-mandalorian/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://vimeos.zip/hls2/03/00013/tomn7ghj1bqe_,n,h,.urlset/master.m3u8?t=R_k6S4uxYyxeOJ0UvjGLkKc5DQHnMrvKzjSCbCxlrIc&s=1788946971&e=43200&v=352838085&srv=s10&i=0.0&sp=0&fr=tomn7ghj1bqe&r=e",
+            "hostName": "vimeos.zip",
+            "resolvedDirectUrl": "https://vimeos.zip/hls2/03/00013/tomn7ghj1bqe_,n,h,.urlset/master.m3u8?t=R_k6S4uxYyxeOJ0UvjGLkKc5DQHnMrvKzjSCbCxlrIc&s=1788946971&e=43200&v=352838085&srv=s10&i=0.0&sp=0&fr=tomn7ghj1bqe&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 532,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmtqiz7nq00a6td8siuieok46",
+        "title": "Prácticamente magia",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/hechizo-de-amor/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://p5.vimeos.zip/hls2/03/00013/7vf96y6y840z_,n,h,.urlset/master.m3u8?t=86nLSJcHtqnK8YnROysQ4IhxrMWkvL_-F3zWkGET95k&s=1788946973&e=43200&v=351799127&srv=s10&i=0.0&sp=0&fr=7vf96y6y840z&r=e",
+            "hostName": "p5.vimeos.zip",
+            "resolvedDirectUrl": "https://p5.vimeos.zip/hls2/03/00013/7vf96y6y840z_,n,h,.urlset/master.m3u8?t=86nLSJcHtqnK8YnROysQ4IhxrMWkvL_-F3zWkGET95k&s=1788946973&e=43200&v=351799127&srv=s10&i=0.0&sp=0&fr=7vf96y6y840z&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 164,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqjnqt5lgcf3ut8",
+        "title": "Happy Feet: El Pingüino 2",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/happy-feet-el-pinguino-2/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://p7.vimeos.zip/hls2/03/00013/0mxuddsz2ufd_,n,h,.urlset/master.m3u8?t=pa6Jc46rqiSn5Sa863U44sMc-CtlNLeIcqtZ98NRbro&s=1788946975&e=43200&v=352838099&srv=s9&i=0.0&sp=0&fr=0mxuddsz2ufd&r=e",
+            "hostName": "p7.vimeos.zip",
+            "resolvedDirectUrl": "https://p7.vimeos.zip/hls2/03/00013/0mxuddsz2ufd_,n,h,.urlset/master.m3u8?t=pa6Jc46rqiSn5Sa863U44sMc-CtlNLeIcqtZ98NRbro&s=1788946975&e=43200&v=352838099&srv=s9&i=0.0&sp=0&fr=0mxuddsz2ufd&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 194,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqjnsaib2mm9naw",
+        "title": "Jim y el durazno gigante",
+        "category": "movie",
+        "locatorUrl": "https://www.cinecalidad.am/ver-pelicula/jim-y-el-durazno-gigante/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://p6.vimeos.zip/hls2/02/00013/3r3hzd6z9bs7_,n,h,.urlset/master.m3u8?t=ac9EnQlSAj9SnNeof1ScULoXjQmvO4sKiOZxqq-GLLA&s=1788946976&e=43200&v=351799150&srv=s10&i=0.3&sp=0&fr=3r3hzd6z9bs7&r=e",
+            "hostName": "p6.vimeos.zip",
+            "resolvedDirectUrl": "https://p6.vimeos.zip/hls2/02/00013/3r3hzd6z9bs7_,n,h,.urlset/master.m3u8?t=ac9EnQlSAj9SnNeof1ScULoXjQmvO4sKiOZxqq-GLLA&s=1788946976&e=43200&v=351799150&srv=s10&i=0.3&sp=0&fr=3r3hzd6z9bs7&r=e",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 167,
+            "isHlsOrMp4": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "latanime",
+    "totalWorksTested": 5,
+    "worksPassedNative": 5,
+    "totalServersTested": 5,
+    "totalServersDirect": 5,
+    "averageLatencyMs": 922,
+    "works": [
+      {
+        "workId": "mtqjnlp0ah5dvewf",
+        "title": "Shiguang Dailiren",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/link-click-temporada-4-episodio-2",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/06/11941/23j965pr7zfc_x/master.m3u8?t=ii62VUcYaNhXrqSrNSZIY6zRjEC9p4K7oyvXK05IthU&s=1788946978&e=10800&f=59705358&srv=1070&asn=174&sp=5500&p=0",
+            "hostName": "edge2-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge2-waw-sprintcdn.r66nv9ed.com/hls2/06/11941/23j965pr7zfc_x/master.m3u8?t=ii62VUcYaNhXrqSrNSZIY6zRjEC9p4K7oyvXK05IthU&s=1788946978&e=10800&f=59705358&srv=1070&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 466,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqkgy2m6f00wwqh",
+        "title": "Mobile Suit Gundam Hathaway",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/mobile-suit-gundam-hathaway-castellano-episodio-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/01/11921/330ggyrqf7ru_x/master.m3u8?t=mtzNlcp327DcoGeYaM_ny3it1_rHFpEO0MIq4lPB9ec&s=1788946981&e=10800&f=59609748&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/01/11921/330ggyrqf7ru_x/master.m3u8?t=mtzNlcp327DcoGeYaM_ny3it1_rHFpEO0MIq4lPB9ec&s=1788946981&e=10800&f=59609748&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 520,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqkgz4qrytm7wt2",
+        "title": "MOBILE SUIT GUNDAM HATHAWAY The Sorcery of Nymph Circe",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/mobile-suit-gundam-hathaway-the-sorcery-of-nymph-circe-castellano-episodio-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/03/11921/mv8wio3aho28_x/master.m3u8?t=HLfWvVJpl6aiGH1cNF7EbDHXx-EWT_aDojV6efrFgbY&s=1788946983&e=10800&f=59609439&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-vienna-sprintcdn.owphbf24.com",
+            "resolvedDirectUrl": "https://edge1-vienna-sprintcdn.owphbf24.com/hls2/03/11921/mv8wio3aho28_x/master.m3u8?t=HLfWvVJpl6aiGH1cNF7EbDHXx-EWT_aDojV6efrFgbY&s=1788946983&e=10800&f=59609439&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 640,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "cmtqj6j5k23t8butgaqzkm9qp",
+        "title": "Bleach",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/bleach-sennen-kessen-hen-s4-latino-episodio-2",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FEAAjECyJ%23EXLmNSGOgUZLh7fowcipDhdGpjzq1dzK93N4u9Em3TI",
+            "hostName": "/api/v1/stream/mega?url=https%",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FEAAjECyJ%23EXLmNSGOgUZLh7fowcipDhdGpjzq1dzK93N4u9Em3TI",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "video/mp4",
+            "latencyMs": 2464,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqkh4asior274h9",
+        "title": "Gintama: Yoshiwara en llamas",
+        "category": "anime",
+        "locatorUrl": "https://latanime.org/ver/gintama-yoshiwara-en-llamas-castellano-episodio-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/02/11906/bspuuy2cpoxx_x/master.m3u8?t=4s2Z7cWG8yysHaB3Xjs8tkwCcquvSm2XQmZUKeXzf14&s=1788946992&e=10800&f=59530285&srv=1060&asn=174&sp=5500&p=0",
+            "hostName": "edge1-waw-sprintcdn.r66nv9ed.com",
+            "resolvedDirectUrl": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/02/11906/bspuuy2cpoxx_x/master.m3u8?t=4s2Z7cWG8yysHaB3Xjs8tkwCcquvSm2XQmZUKeXzf14&s=1788946992&e=10800&f=59530285&srv=1060&asn=174&sp=5500&p=0",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 521,
+            "isHlsOrMp4": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "gnula",
+    "totalWorksTested": 3,
+    "worksPassedNative": 0,
+    "totalServersTested": 3,
+    "totalServersDirect": 0,
+    "averageLatencyMs": 0,
+    "works": [
+      {
+        "workId": "cmtqiy9l5000l4hb9mtbm2h66",
+        "title": "Coyote vs. Acme",
+        "category": "movie",
+        "locatorUrl": "https://vidara.to/e/fj8IIayeIgrfD",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://vidara.to/e/fj8IIayeIgrfD",
+            "hostName": "vidara.to",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmtqj5tl90qdebutgbfog6s72",
+        "title": "Linternas",
+        "category": "series",
+        "locatorUrl": "https://ww3.gnulahd.nu/linternas-1x02/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/linternas-1x02/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      },
+      {
+        "workId": "cmtqj6j5k23t8butgaqzkm9qp",
+        "title": "Bleach",
+        "category": "anime",
+        "locatorUrl": "https://ww3.gnulahd.nu/bleach-1x01/",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://ww3.gnulahd.nu/bleach-1x01/",
+            "hostName": "ww3.gnulahd.nu",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "provider": "tioanime",
+    "totalWorksTested": 5,
+    "worksPassedNative": 3,
+    "totalServersTested": 6,
+    "totalServersDirect": 3,
+    "averageLatencyMs": 158,
+    "works": [
+      {
+        "workId": "mtqjnk11e9npn2dk",
+        "title": "Kaijuu 8-gou: Narumi no Heijitsu",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/kaijuu-8gou-narumi-no-heijitsu-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3kgvcrcormbl7sekm.cloudwindow-route.com/engine/hls2/01/18169/ptzpmjexclvo_,n,.urlset/master.m3u8?t=6utkNe-8FJltQcvu8ddFlmOS9pF89JJtIIHfNEIIU-4&s=1788947001&e=14400&f=90846163&node=wa8Ql9lnVLagZwrgrT1uJogHHzSmAfeQ2u0q7/YfM7k=&i=38.224&sp=2500&asn=272962&q=n&rq=euct7h08xRQXFsbt6nSsqTeBa03e7kxi428KlIHn",
+            "hostName": "ugc-cdn-caching-n3kgvcrcormbl7sekm.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3kgvcrcormbl7sekm.cloudwindow-route.com/engine/hls2/01/18169/ptzpmjexclvo_,n,.urlset/master.m3u8?t=6utkNe-8FJltQcvu8ddFlmOS9pF89JJtIIHfNEIIU-4&s=1788947001&e=14400&f=90846163&node=wa8Ql9lnVLagZwrgrT1uJogHHzSmAfeQ2u0q7/YfM7k=&i=38.224&sp=2500&asn=272962&q=n&rq=euct7h08xRQXFsbt6nSsqTeBa03e7kxi428KlIHn",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 163,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqjnm4cdg7qqvag",
+        "title": "La heroína del moño",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/the-ribbon-hero-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3hk2fu0xytfxdnam1.cloudwindow-route.com/engine/hls2/01/17920/vm2nswtcxj5q_,n,.urlset/master.m3u8?t=vEFGxNe_i2xoaDdzFvCswbK_tkAdR9mBMu2Dc1QJ7do&s=1788947003&e=14400&f=89604901&node=CatogKv06NyslfS3spcIlYvR8c+jX7buY1Hn4Peu8/4=&i=38.224&sp=2500&asn=272962&q=n&rq=QdPA5WIZ64dDrWudlOA1BPre2DIrwWghT1PRT6wd",
+            "hostName": "ugc-cdn-caching-n3hk2fu0xytfxdnam1.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3hk2fu0xytfxdnam1.cloudwindow-route.com/engine/hls2/01/17920/vm2nswtcxj5q_,n,.urlset/master.m3u8?t=vEFGxNe_i2xoaDdzFvCswbK_tkAdR9mBMu2Dc1QJ7do&s=1788947003&e=14400&f=89604901&node=CatogKv06NyslfS3spcIlYvR8c+jX7buY1Hn4Peu8/4=&i=38.224&sp=2500&asn=272962&q=n&rq=QdPA5WIZ64dDrWudlOA1BPre2DIrwWghT1PRT6wd",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 163,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtql75brybncut3g",
+        "title": "Gintama Movie 3: Yoshiwara Daienjou",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/gintama-movie-3-yoshiwara-daienjou-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 1,
+        "servers": [
+          {
+            "rawUrl": "https://ugc-cdn-caching-n3p7xh0or5dp3h6tfm.cloudwindow-route.com/engine/hls2/01/18112/xbtuke1mfvca_,n,.urlset/master.m3u8?t=VZZRCWPXbfBzPlNCFhGwTXfCF3Q_WFQurl5LXmwwMUk&s=1788947005&e=14400&f=90560113&node=6ulR/OxUUMCsqJIQSWHjwr0fJXNyI+Kk0KgF5VgTCHQ=&i=38.224&sp=2500&asn=272962&q=n&rq=f2ielACxTrqOaRBCVjbO698YPvVu67vMPqIsjyaA",
+            "hostName": "ugc-cdn-caching-n3p7xh0or5dp3h6tfm.cloudwindow-route.com",
+            "resolvedDirectUrl": "https://ugc-cdn-caching-n3p7xh0or5dp3h6tfm.cloudwindow-route.com/engine/hls2/01/18112/xbtuke1mfvca_,n,.urlset/master.m3u8?t=VZZRCWPXbfBzPlNCFhGwTXfCF3Q_WFQurl5LXmwwMUk&s=1788947005&e=14400&f=90560113&node=6ulR/OxUUMCsqJIQSWHjwr0fJXNyI+Kk0KgF5VgTCHQ=&i=38.224&sp=2500&asn=272962&q=n&rq=f2ielACxTrqOaRBCVjbO698YPvVu67vMPqIsjyaA",
+            "isDirect": true,
+            "httpStatus": 200,
+            "contentType": "application/vnd.apple.mpegurl",
+            "latencyMs": 147,
+            "isHlsOrMp4": true
+          }
+        ]
+      },
+      {
+        "workId": "mtqjp14xtjj6l613",
+        "title": "Tensei shitara Slime Datta Ken Movie 2: Soukai no Namida-hen",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/tensei-shitara-slime-datta-ken-movie-2-soukai-no-namidahen-1",
+        "serversCount": 1,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://mega.nz/embed/!0etREBTA!OsUXJy9I-xG9niG5piLxDBdK3VZfO5sb08UwIPWQJ2E",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2F0etREBTA%23OsUXJy9I-xG9niG5piLxDBdK3VZfO5sb08UwIPWQJ2E",
+            "isDirect": true,
+            "httpStatus": 0,
+            "contentType": "",
+            "latencyMs": 6012,
+            "isHlsOrMp4": false
+          }
+        ]
+      },
+      {
+        "workId": "mtqjp1k193cpe2p5",
+        "title": "Kimetsu no Yaiba Movie 1: Mugenjou-hen Akaza Sairai",
+        "category": "anime",
+        "locatorUrl": "https://tioanime.com/ver/kimetsu-no-yaiba-movie-1-mugenjouhen-akaza-sairai-1",
+        "serversCount": 2,
+        "nativePlayableServersCount": 0,
+        "servers": [
+          {
+            "rawUrl": "https://mega.nz/embed/!xGt32Y5B!DaMgtiX2llxWYsYz0-mJwHibYJ1w1NJkJYqHjXcuBQU",
+            "hostName": "mega.nz",
+            "resolvedDirectUrl": "/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FxGt32Y5B%23DaMgtiX2llxWYsYz0-mJwHibYJ1w1NJkJYqHjXcuBQU",
+            "isDirect": true,
+            "httpStatus": 502,
+            "contentType": "application/json; charset=utf-8",
+            "latencyMs": 602,
+            "isHlsOrMp4": false
+          },
+          {
+            "rawUrl": "https://www.yourupload.com/embed/3F2218QXbB6A",
+            "hostName": "www.yourupload.com",
+            "resolvedDirectUrl": null,
+            "isDirect": false,
+            "httpStatus": null,
+            "contentType": null,
+            "latencyMs": null,
+            "isHlsOrMp4": false,
+            "error": "Resolved as embed or unresolvable host"
+          }
+        ]
+      }
+    ]
+  }
+]

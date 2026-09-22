@@ -1,0 +1,366 @@
+/* Screenshot-driven polish layer. Keep this file last so changes stay isolated and reversible. */
+
+/* Brand: compact broken-ring play mark + clean wordmark. */
+.brand {
+  gap: .52rem !important;
+  font-size: 1.02rem !important;
+  font-weight: 820 !important;
+  letter-spacing: -.045em !important;
+}
+.brand-symbol {
+  position: relative !important;
+  width: 2rem !important;
+  height: 2rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #f7b332 !important;
+  clip-path: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.brand-symbol::before {
+  content: "";
+  position: absolute;
+  inset: .15rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  transform: rotate(-26deg);
+  opacity: .98;
+}
+.brand-symbol svg {
+  position: relative;
+  z-index: 1;
+  width: .9rem !important;
+  height: .9rem !important;
+  fill: currentColor;
+  transform: translateX(1px) !important;
+}
+.brand-light { color: #fff !important; font-weight: 820 !important; }
+.brand-period { color: #f7b332 !important; }
+
+/* Header: the legacy stylesheet still gave the top row 88px. Tighten the whole shell. */
+.header-inner { padding-top: .4rem !important; padding-bottom: .22rem !important; }
+.header-top {
+  height: 3.55rem !important;
+  min-height: 3.55rem !important;
+}
+.header-bottom { min-height: 2.45rem !important; }
+.header-search { height: 2.5rem !important; }
+.nav-item,
+.genre-shortcut { min-height: 2.25rem !important; }
+
+/* The account popover belongs below both header rows. Anchoring it to the
+   account button's row used to cover the quick-genre navigation. */
+@media (min-width: 981px) {
+  .header-account .account-menu {
+    top: calc(100% + 3.55rem) !important;
+    z-index: 80;
+  }
+}
+
+.site-header.is-at-top {
+  background: linear-gradient(180deg, rgba(7,8,13,.86) 0%, rgba(7,8,13,.48) 58%, rgba(7,8,13,.08) 88%, transparent 100%) !important;
+}
+
+/* Admin login is also a mobile surface: keep fields and the primary action
+   comfortably tappable without changing the compact desktop composition. */
+.admin-login-input { min-height: 44px; }
+.admin-login-submit { min-height: 44px; }
+
+/* Hero desktop: keep the image dominant but stop the title from swallowing the artwork. */
+.feature {
+  min-height: clamp(34rem, 79vh, 56rem) !important;
+  /* The header is two rows tall; let the artwork begin behind its first
+     pixel instead of leaving a 20–30px strip of empty background above it. */
+  margin-top: -6.625rem !important;
+}
+.feature-shade {
+  background:
+    linear-gradient(90deg, rgba(7,8,13,.97) 0%, rgba(7,8,13,.84) 17%, rgba(7,8,13,.50) 37%, rgba(7,8,13,.13) 66%, rgba(7,8,13,.035) 100%),
+    linear-gradient(0deg, #07080d 0%, rgba(7,8,13,.86) 8%, rgba(7,8,13,.34) 27%, transparent 57%),
+    linear-gradient(180deg, rgba(7,8,13,.30) 0%, transparent 25%) !important;
+}
+.feature-content {
+  padding-bottom: clamp(7rem, 11vh, 8.5rem) !important;
+}
+.feature h1 {
+  font-size: clamp(3.2rem, 6.15vw, 6rem) !important;
+  line-height: .9 !important;
+  letter-spacing: -.055em !important;
+}
+/* Keep metadata visually separate from the oversized title. The genre line
+   is supporting information, so it needs its own breathing room rather than
+   reading as a continuation of the last title line. */
+.feature-genres {
+  margin-top: clamp(1.15rem, 1.8vw, 1.45rem) !important;
+  line-height: 1.45;
+}
+.catalog-content { margin-top: -4.15rem !important; }
+/* Browse/category pages sit below the sticky header; only home may overlap the hero. */
+.catalog-content-browse {
+  margin-top: 0 !important;
+  padding-top: clamp(1.25rem, 3vw, 2.5rem) !important;
+  background: var(--ms-immersive-bg) !important;
+}
+
+/* Search is a workspace, not another rounded card around the results. */
+.search-results-panel {
+  padding-inline: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.search-results-heading {
+  padding-inline: 0 !important;
+}
+.search-filter-bar {
+  padding-inline: 0 !important;
+}
+.section-kicker {
+  margin: 0 0 .55rem;
+  color: var(--ms-accent);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.catalog-autoload-status {
+  min-height: 1.2rem;
+  margin-top: 1.15rem !important;
+  color: var(--ms-text-dim) !important;
+  font-size: .7rem !important;
+}
+
+/* Details body spans the viewport so there is no visible dark rectangle edge. */
+.details-body {
+  z-index: 3 !important;
+  width: 100% !important;
+  max-width: none !important;
+  background: linear-gradient(180deg, rgba(7,8,13,.12), rgba(7,8,13,.96) 3.2rem, #07080d 7rem) !important;
+}
+
+@media (min-width: 641px) {
+  .details-play {
+    width: fit-content !important;
+    min-width: 13rem !important;
+    align-self: flex-start !important;
+    padding: .82rem 1.5rem !important;
+    min-height: 3rem !important;
+  }
+}
+
+@media (min-width: 901px) {
+  .poster-slot { flex-basis: clamp(8.25rem, 12vw, 10.65rem) !important; }
+  .details-body {
+    margin-top: 0 !important;
+    padding-top: 1.65rem !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+/* A real inset outline survives poster zoom and keeps all four rounded
+   corners visible. The old border changed on the transformed element and
+   could disappear along the top edge on Chromium. */
+.media-poster::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border: 1.5px solid rgba(255,255,255,.96);
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.media-card:hover .media-poster::before,
+.media-card:focus-visible .media-poster::before {
+  opacity: 1;
+}
+.media-card:hover .media-poster,
+.media-card:focus-visible .media-poster {
+  border-color: transparent !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.34) !important;
+}
+
+/* Put the first action on the artwork, where a viewer expects it. */
+.details-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  margin-top: 1rem;
+}
+.details-hero-play {
+  min-height: 2.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .65rem 1.15rem;
+  border: 1px solid rgba(244,179,63,.72);
+  border-radius: .85rem;
+  background: var(--ms-accent);
+  color: var(--ms-accent-ink);
+  font-size: .82rem;
+  font-weight: 850;
+  box-shadow: 0 10px 24px rgba(0,0,0,.24);
+  transition: background .16s ease, transform .16s ease;
+}
+.details-hero-play:hover { background: var(--ms-accent-strong); transform: translateY(-1px); }
+.details-movie-progress {
+  max-width: 22rem;
+  padding-top: .35rem;
+}
+
+/* Admin overview should communicate progress while its live endpoint is
+   slow, instead of presenting a large empty panel. */
+.admin-overview-skeleton {
+  display: grid;
+  gap: 1rem;
+}
+.admin-overview-skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+}
+.admin-overview-skeleton-block {
+  min-height: 7rem;
+  border: 1px solid var(--ms-border);
+  border-radius: 1rem;
+  background: linear-gradient(110deg, rgba(255,255,255,.025) 30%, rgba(255,255,255,.065) 45%, rgba(255,255,255,.025) 60%);
+  background-size: 220% 100%;
+  animation: admin-overview-shimmer 1.25s linear infinite;
+}
+.admin-overview-skeleton-block.is-large { min-height: 14rem; }
+@keyframes admin-overview-shimmer { to { background-position: -220% 0; } }
+
+/* Phones: artwork and information should be one composition, not two stacked blocks. */
+@media (max-width: 640px) {
+  html,
+  body,
+  #root,
+  .app-shell {
+    max-width: 100% !important;
+    overflow-x: clip !important;
+  }
+  .header-inner,
+  .catalog-content,
+  .details-body,
+  .site-footer {
+    width: auto !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .feature,
+  .details-panel {
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+  }
+
+  .header-inner {
+    padding: .32rem .72rem .12rem !important;
+  }
+  .header-top {
+    height: 3.05rem !important;
+    min-height: 3.05rem !important;
+    gap: .35rem !important;
+  }
+  .header-bottom { min-height: 2.35rem !important; }
+  .brand { font-size: .94rem !important; gap: .42rem !important; }
+  .brand-symbol { width: 1.75rem !important; height: 1.75rem !important; }
+  .brand-symbol::before { inset: .13rem; border-width: 1.8px; }
+  .primary-nav { gap: .05rem !important; }
+  .nav-item {
+    min-height: 2.15rem !important;
+    padding: .3rem .52rem !important;
+    font-size: .71rem !important;
+  }
+  .site-header.is-at-top {
+    background: linear-gradient(180deg, rgba(7,8,13,.93) 0%, rgba(7,8,13,.56) 62%, rgba(7,8,13,.10) 90%, transparent 100%) !important;
+  }
+
+  .feature {
+    min-height: clamp(29rem, 58svh, 34rem) !important;
+    margin-top: -5.85rem !important;
+  }
+  .feature-image {
+    object-position: 58% 17% !important;
+    filter: saturate(.98) contrast(1.04) brightness(.96) !important;
+  }
+  .feature-shade {
+    background:
+      linear-gradient(90deg, rgba(7,8,13,.54) 0%, rgba(7,8,13,.08) 78%),
+      linear-gradient(0deg, #07080d 0%, rgba(7,8,13,.92) 7%, rgba(7,8,13,.52) 23%, rgba(7,8,13,.14) 46%, transparent 67%) !important;
+  }
+  .feature-content {
+    padding: 7rem 1rem 3.65rem !important;
+    transform: translateY(-2rem);
+  }
+  .feature h1 {
+    max-width: 9ch !important;
+    font-size: clamp(2.65rem, 13vw, 3.65rem) !important;
+    line-height: .9 !important;
+  }
+  .feature-genres { display: none !important; }
+  .feature-meta {
+    margin-top: 0 !important;
+    margin-bottom: .45rem !important;
+  }
+  .feature-actions { gap: .48rem !important; margin-top: .85rem !important; }
+  .button-primary,
+  .button-secondary {
+    padding: .6rem .82rem !important;
+    font-size: .81rem !important;
+  }
+  .catalog-content {
+    margin-top: -3.1rem !important;
+    padding-inline: .72rem !important;
+  }
+  .catalog-content-browse {
+    margin-top: 0 !important;
+    padding-top: 1rem !important;
+  }
+  .section-heading { margin-bottom: .62rem !important; }
+  .poster-rail { gap: .62rem !important; }
+  .poster-slot { flex-basis: clamp(7.4rem, 36vw, 8.9rem) !important; }
+
+  .details-hero > img { object-position: center 18% !important; }
+  .details-body {
+    z-index: 3 !important;
+    margin-top: 0 !important;
+    padding: 1.25rem 1rem 4rem !important;
+    background: linear-gradient(180deg, rgba(7,8,13,.68), #07080d 3.2rem) !important;
+  }
+  .details-play {
+    min-height: 3.15rem !important;
+    padding-block: .7rem !important;
+    border-radius: .82rem !important;
+  }
+  .details-hero-actions { margin-top: .7rem; }
+  .details-hero-play { min-height: 2.55rem; padding-inline: .8rem; font-size: .72rem; }
+  .admin-overview-skeleton-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 360px) {
+  .nav-item {
+    padding-left: .43rem !important;
+    padding-right: .43rem !important;
+    font-size: .69rem !important;
+  }
+  .feature-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    width: min(11rem, 100%) !important;
+  }
+  .feature-actions .button-primary,
+  .feature-actions .button-secondary {
+    width: 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-content { transform: none !important; }
+}

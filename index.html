@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c1013" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.svg" />
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
+    <link rel="dns-prefetch" href="//image.tmdb.org" />
+    <title>MeriStream</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script type="text/javascript">
+      window['__onGCastApiAvailable'] = function(isAvailable) {
+        if (isAvailable && window.cast && window.cast.framework && window.chrome && window.chrome.cast) {
+          try {
+            var options = {
+              receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+              autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+              androidReceiverCompatible: false
+            };
+            cast.framework.CastContext.getInstance().setOptions(options);
+            window.__gcast_initialized = true;
+            window.dispatchEvent(new CustomEvent('google-cast-initialized'));
+          } catch(e) {
+            console.warn('[Cast] Error in __onGCastApiAvailable:', e);
+          }
+        }
+      };
+    </script>
+    <script type="text/javascript" src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+  </body>
+</html>

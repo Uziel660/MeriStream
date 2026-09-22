@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "server/providers/**/*.ts",
+    "server/scrapers/adapters/AnimeAv1Adapter.ts",
+    "server/scrapers/ScraperManager.ts",
+    "server/siteRatingService.ts"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

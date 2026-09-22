@@ -1,0 +1,337 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+model Show {
+  id                   String    @id @default(cuid())
+  mal_id               Int?      @unique
+  anilist_id           String?
+  kitsu_id             String?
+  anidb_id             String?
+  imdb_id              String?
+  tvdb_id              Int?
+  tmdb_id              Int?
+  title                String
+  original_title       String?
+  japanese_title       String?
+  english_title        String?
+  normalized_title     String
+  base_normalized_title String?
+  description          String    @default("")
+  poster_url           String?
+  banner_url           String?
+  poster_path          String?
+  backdrop_path        String?
+  category             String    @default("movie")
+  rating               Float     @default(8.0)
+  year                 Int       @default(2024)
+  status               String    @default("Finalizado")
+  genres               String    @default("Multimedia")
+  source               String    @default("")
+  /// Campos editados desde administración. TMDB/backfill los respeta en futuras sincronizaciones.
+  manual_overrides     Json?
+  /// Reglas por obra: { main: [provider...], legacy: [provider...] }.
+  main_path_overrides   Json?
+  search_vector        Unsupported("tsvector")?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  episodes             Episode[]
+
+  @@index([normalized_title])
+  @@index([base_normalized_title])
+  @@index([tmdb_id])
+  @@index([imdb_id])
+  @@index([tvdb_id])
+  @@index([anidb_id])
+}
+
+/// User-submitted catalog quality reports. The identity fields are copied at
+/// submission time so a report remains useful even if a catalog row is later
+/// merged, renamed, or removed.
+model CatalogReport {
+  id                String   @id @default(cuid())
+  show_id           String?
+  tmdb_id           Int?
+  kind              String?
+  title             String
+  episode_id        String?
+  episode_number    Float?
+  report_type       String
+  details           String?  @db.Text
+  source_provider   String?
+  source_url        String?  @db.Text
+  status            String   @default("open")
+  admin_note        String?  @db.Text
+  resolution_action String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  resolved_at       DateTime?
+
+  @@index([status, created_at])
+  @@index([show_id])
+  @@index([tmdb_id, kind])
+  @@index([report_type])
+}
+
+model Episode {
+  id             String   @id @default(cuid())
+  show_id        String
+  show           Show     @relation(fields: [show_id], references: [id], onDelete: Cascade)
+  title          String
+  episode_number Float
+  source_url     String    @default("")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([show_id])
+}
+
+model CrawlTask {
+  id                  String   @id
+  name                String
+  target_url          String
+  status              String
+  scope               String   @default("catalog_pages")
+  max_pages           Int      @default(1)
+  current_page        Int      @default(0)
+  total_discovered    Int      @default(0)
+  shows_imported      Int      @default(0)
+  episodes_imported   Int      @default(0)
+  rate_limit_delay_ms Int      @default(1500)
+  items_queue         String    @default("[]") @db.Text
+  current_item_title  String?
+  error_message       String?
+  logs                String    @default("[]") @db.Text
+  // Opciones declaradas por el administrador para que el worker no tenga que
+  // adivinar el adaptador, el tipo de contenido ni la forma de paginar.
+  resolver_hint       String?
+  content_kind       String?
+  pagination_mode     String    @default("auto")
+  pagination_template String?
+  pagination_examples String   @default("[]") @db.Text
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+model WorkerSettingsStore {
+  id                  String   @id @default("default")
+  default_delay_ms     Int      @default(1500)
+  jitter_enabled       Boolean  @default(true)
+  max_concurrent_jobs  Int      @default(3)
+  user_agent_rotation Boolean  @default(true)
+  updated_at           DateTime @updatedAt
+}
+
+model MediaItem {
+  id                    String   @id @default(cuid())
+  normalized_title      String
+  base_normalized_title String?
+  title                 String
+  original_title        String?
+  description           String   @default("")
+  rating                Float    @default(0)
+  genres                String   @default("")
+  tmdb_id               Int?
+  mal_id                Int?
+  anilist_id            String?
+  kitsu_id              String?
+  anidb_id              String?
+  imdb_id               String?
+  tvdb_id               Int?
+  kind                  String   @default("movie")
+  year                  Int?
+  poster_url            String?
+  poster_path           String?
+  backdrop_path         String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  episodes         MediaEpisode[]
+
+  @@unique([normalized_title, kind, year])
+  @@index([normalized_title])
+  @@index([base_normalized_title])
+  @@index([tmdb_id])
+  @@index([mal_id])
+  @@index([anilist_id])
+  @@index([kitsu_id])
+  @@index([anidb_id])
+  @@index([imdb_id])
+  @@index([tvdb_id])
+}
+
+/// Índice de referencias externas mantenido en el servidor. No se expone al
+/// cliente: sirve para resolver identidades sin repetir búsquedas remotas.
+model LocalCatalogIndex {
+  id              String   @id @default(cuid())
+  kind            String
+  canonical_title String
+  normalized_title String
+  aliases         String   @default("") @db.Text
+  tmdb_id         Int?
+  mal_id          Int?
+  anilist_id      String?
+  kitsu_id        String?
+  anidb_id        String?
+  year            Int?
+  source          String
+  updated_at      DateTime @updatedAt
+
+  @@index([kind, normalized_title])
+  @@index([kind, tmdb_id])
+  @@index([kind, mal_id])
+  @@index([kind, anilist_id])
+}
+
+model ExternalApiCache {
+  id         String   @id @default(cuid())
+  provider   String
+  cache_key  String   @unique
+  payload    Json
+  expires_at DateTime
+  updated_at DateTime @updatedAt
+
+  @@index([provider, expires_at])
+}
+
+model CatalogVisibility {
+  id              String   @id @default("default")
+  hidden_genres   String   @default("[]") @db.Text
+  hidden_show_ids String   @default("[]") @db.Text
+  updated_at      DateTime @updatedAt
+}
+
+model SiteRating {
+  id      String  @id @default(cuid())
+  site    String  @unique
+  rating  Float   @default(5.0)
+  enabled Boolean @default(true)
+  notes   String?
+  updated_at DateTime @updatedAt
+}
+
+model MediaEpisode {
+  id             String     @id @default(cuid())
+  media_item_id  String
+  media_item     MediaItem  @relation(fields: [media_item_id], references: [id], onDelete: Cascade)
+  season_number  Int        @default(1)
+  episode_number Float
+  created_at     DateTime   @default(now())
+  updated_at     DateTime   @updatedAt
+
+  links          SourceLink[]
+
+  @@unique([media_item_id, season_number, episode_number])
+}
+
+model SourceLink {
+  id               String       @id @default(cuid())
+  media_episode_id String
+  media_episode    MediaEpisode @relation(fields: [media_episode_id], references: [id], onDelete: Cascade)
+
+  source_site    String
+  url            String
+  link_type      String    @default("direct")
+  language          String?
+  audio_language    String?
+  subtitle_language String?
+  subtitles         Json?
+  host           String?
+  priority_tier  Int?
+  is_verified    Boolean   @default(false)
+  last_checked   DateTime?
+  source_status  String    @default("discovered")
+  /// null = política global, true = forzar ruta normal, false = dejar en legacy.
+  main_path_override Boolean?
+  canonical_locator String?
+  external_id    String?
+  extraction_method String?
+  resolver_version String?
+  failure_reason String?
+  last_success   DateTime?
+  last_failure   DateTime?
+  retry_after    DateTime?
+
+  @@unique([media_episode_id, source_site, url])
+  @@index([media_episode_id, source_status])
+  @@index([source_site, source_status])
+}
+
+model User {
+  id            String          @id @default(cuid())
+  username      String          @unique
+  password_hash String
+  avatar        String?         @default("amber")
+  is_admin      Boolean         @default(false)
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @updatedAt
+  watch_history WatchProgress[]
+  lists         UserList[]
+}
+
+model WatchProgress {
+  id               String   @id @default(cuid())
+  user_id          String
+  user             User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  show_id          String
+  show_title       String
+  show_poster      String?
+  episode_id       String
+  episode_number   Float
+  episode_title    String
+  progress_percent Float    @default(0)
+  current_time     Float?   @default(0)
+  duration         Float?   @default(0)
+  last_watched_at  DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@unique([user_id, show_id, episode_id])
+  @@index([user_id])
+  @@index([show_id])
+  @@index([last_watched_at])
+}
+
+model UserList {
+  id          String         @id @default(cuid())
+  user_id     String
+  user        User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name        String
+  description String?        @default("")
+  is_system   Boolean        @default(false)
+  system_type String?        // "favorites" | "watchlist" | null
+  icon        String?        @default("list")
+  is_public   Boolean        @default(false)
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
+  items       UserListItem[]
+
+  @@unique([user_id, name])
+  @@index([user_id])
+  @@index([user_id, system_type])
+}
+
+model UserListItem {
+  id           String    @id @default(cuid())
+  list_id      String
+  list         UserList  @relation(fields: [list_id], references: [id], onDelete: Cascade)
+  show_id      String
+  tmdb_id      Int?
+  title        String
+  poster_url   String?
+  backdrop_url String?
+  kind         String?   @default("movie")
+  year         Int?
+  rating       Float?
+  genres       String?
+  added_at     DateTime  @default(now())
+
+  @@unique([list_id, show_id])
+  @@index([list_id])
+  @@index([show_id])
+}

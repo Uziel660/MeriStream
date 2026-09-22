@@ -5857,14 +5857,23 @@ async function startServer() {
 
   // PostgreSQL: no PRAGMAs needed (those were SQLite-specific).
   // PostgreSQL handles concurrency natively with MVCC.
-  try {
-    await prisma.$queryRawUnsafe("SELECT 1 as alive");
-    databaseReady = true;
-    console.log("[DB] PostgreSQL connection OK");
-  } catch (e) {
-    databaseReady = false;
-    console.warn("[DB] PostgreSQL connection failed:", e?.message || e);
-  }
+  let databaseProbeRunning = false;
+  const refreshDatabaseReady = async () => {
+    if (databaseProbeRunning) return;
+    databaseProbeRunning = true;
+    try {
+      await prisma.$queryRawUnsafe("SELECT 1 as alive");
+      if (!databaseReady) console.log("[DB] PostgreSQL connection OK");
+      databaseReady = true;
+    } catch (e) {
+      if (databaseReady) console.warn("[DB] PostgreSQL connection failed:", e?.message || e);
+      databaseReady = false;
+    } finally {
+      databaseProbeRunning = false;
+    }
+  };
+  await refreshDatabaseReady();
+  setInterval(() => { void refreshDatabaseReady(); }, 10_000).unref();
 
   // Drenador del outbox de escrituras diferidas (aplica ops del archivo cuando la BD responde).
   startWriteBufferDrainer();

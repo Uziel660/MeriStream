@@ -142,19 +142,12 @@ The session keeps up to 10,000 short-lived opaque locators so long VidSrc/Vimeos
 playlists do not evict their first segments; only URL metadata is retained and
 media bytes are streamed through the relay.
 
-The latest public probes are stored in:
-
-- `docs/reports/provider-host-probe-2026-09-07.json`
-- `docs/reports/provider-resolver-probe-2026-09-07.json`
-- `docs/reports/provider-browser-validation-2026-09-08.md`
-- `docs/reports/provider-browser-validation-2026-09-08.json`
-
-The browser validation report is the current evidence for the minimum ten-work
-acceptance gate. It records the final host, response status and content type for
-the landing page, resolver, internal playback session, manifest, child playlist
-and first media segment. A successful HLS case requires a `200` master and child
-plus a `200`/`206` segment; internal MP4 relays are checked with a bounded range
-request. Failures remain documented instead of being turned into fallback
-successes. Public TMDB titles are shown in Spanish (`es-419`) when TMDB provides
-that localization; when it does not, the canonical title or Japanese/English
-title is kept to avoid inventing metadata.
+Live provider probes are intentionally kept outside the public source tree. Run
+the provider and playback test suites in a private environment, then retain
+their reports with the deployment backup. A successful HLS check requires a
+`200` master and child playlist plus a `200`/`206` media segment; internal MP4
+relays are checked with a bounded range request. Failures remain visible in the
+test output instead of being turned into fallback successes. Public TMDB titles
+are shown in Spanish (`es-419`) when TMDB provides that localization; when it
+does not, the canonical title or Japanese/English title is kept to avoid
+inventing metadata.

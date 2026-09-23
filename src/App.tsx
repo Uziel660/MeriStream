@@ -1536,11 +1536,30 @@ export function App() {
     const showId = episode.show_id || selectedShowId || 'unknown';
     const route = readAppUrlState();
     const wasPlaying = Boolean(playingStreamData);
+    const publicIdentity = /^tmdb-(movie|series|anime)-(\d+)$/i.exec(showId);
+    const knownShow = showOverride || shows.find((s) => s.id === showId)
+      || serverSearchResults.find((s) => s.id === showId);
+    const publicKind = publicIdentity?.[1].toLowerCase();
+    const currentShow = publicIdentity
+      ? {
+        ...knownShow,
+        id: showId,
+        title: knownShow?.title || showTitle,
+        tmdb_id: knownShow?.tmdb_id ?? Number(publicIdentity[2]),
+        kind: publicKind,
+        category: publicKind,
+      } as Show
+      : knownShow;
+    const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
+    const locatorIdentity = /^tmdb:\/\/(movie|series|anime)\/(\d+)/i.exec(sourceHint);
+    const rawKindForUrl = String(
+      publicKind || showOverride?.kind || showOverride?.category || currentShow?.kind || currentShow?.category
+      || locatorIdentity?.[1] || route.kind || '',
+    ).toLowerCase();
+    const kindForUrl = rawKindForUrl.includes('anime') ? 'anime' : rawKindForUrl.includes('movie') || rawKindForUrl.includes('pel') ? 'movie' : 'series';
     if (!wasPlaying && selectedShowId) playerReturnToDetailsRef.current = selectedShowId;
     else if (!selectedShowId) playerReturnToDetailsRef.current = null;
     setSelectedShowId(null);
-    const rawKindForUrl = String(showOverride?.kind || showOverride?.category || route.kind || '').toLowerCase();
-    const kindForUrl = rawKindForUrl.includes('anime') ? 'anime' : rawKindForUrl.includes('movie') || rawKindForUrl.includes('pel') ? 'movie' : 'series';
     navigateAppRoute(
       `/ver/${encodeURIComponent(showId)}/${encodeURIComponent(String(episode.id))}`,
       {
@@ -1553,8 +1572,6 @@ export function App() {
     // La tarjeta de búsqueda puede proceder del lote server-side y no estar
     // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
     // subtítulos igual que una tarjeta del catálogo principal.
-    const currentShow = showOverride || shows.find((s) => s.id === showId)
-      || serverSearchResults.find((s) => s.id === showId);
     const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id)
       || continueWatchingItems.find(p => p.showId === showId && p.episodeNumber === episode.episode_number)
       || continueWatchingItems.find(p => (showTitle && p.showTitle && p.showTitle.toLowerCase().trim() === showTitle.toLowerCase().trim()) && (p.episodeId === episode.id || p.episodeNumber === episode.episode_number));
@@ -1582,7 +1599,6 @@ export function App() {
 
     try {
       const rawCategory = String((currentShow as any)?.kind || currentShow?.category || '').toLowerCase();
-      const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
       const gatewayKind = rawCategory.includes('anime') || sourceHint.startsWith('tmdb://anime/')
         ? 'anime'
         : (rawCategory.includes('movie') || rawCategory.includes('pel') || sourceHint.startsWith('tmdb://movie/'))

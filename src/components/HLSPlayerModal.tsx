@@ -197,7 +197,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // Estados de Servidores y Selección Inteligente
   const [servers, setServers] = useState<ScoredServer[]>([]);
   const [activeServerIndex, setActiveServerIndex] = useState<number>(0);
-  const [serverHealthMap, setServerHealthMap] = useState<Record<string, 'online' | 'checking' | 'failed'>>({});
+  const [serverHealthMap, setServerHealthMap] = useState<Record<string, 'online' | 'checking' | 'unverified' | 'failed'>>({});
   const [streamInfo, setStreamInfo] = useState<MediaStreamOut | null>(null);
   const [resolvedSubtitleTracks, setResolvedSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [isLoadingStream, setIsLoadingStream] = useState(true);
@@ -505,6 +505,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   } = useChromecast(undefined, handleRemoteEnded);
 
   const castLoadInFlightRef = useRef<{ attemptId: number; work: Promise<boolean> } | null>(null);
+  const castPlaybackStartRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isCasting || !activeServer || castPlaybackStartRef.current === null) return;
+    if (castCurrentTime > castPlaybackStartRef.current + 0.5) {
+      setServerHealthMap((previous) => previous[activeServer.id] === 'online'
+        ? previous
+        : { ...previous, [activeServer.id]: 'online' });
+      castPlaybackStartRef.current = null;
+    }
+  }, [isCasting, castCurrentTime, activeServer?.id]);
 
   const loadActiveServerOnCast = useCallback((resumeTime: number, candidateUrl?: string | null): Promise<boolean> => {
     if (!activeServer || activeServer.isEmbed || activeServer.notPlayable || isUnresolvedCanonical(activeServer.url)) {
@@ -517,6 +528,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     work = (async () => {
       let castUrl = String(candidateUrl || activeSessionUrl || activeServer.url || '').trim();
       if (!castUrl) return false;
+      castPlaybackStartRef.current = Math.max(resumeTime || 0, castCurrentTime || 0, currentTime || 0);
 
       if (shouldProxyForCast(activeServer, castUrl)) {
         setDeliveryState('requesting_proxy');
@@ -551,7 +563,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         playbackConfirmedRef.current = true;
         setPlaybackError(null);
         setDeliveryState(/\/api\/v1\/playback\//i.test(castUrl) ? 'playing_proxy' : 'playing_direct');
-        setServerHealthMap((previous) => ({ ...previous, [activeServer.id]: 'online' }));
       } else {
         setPlaybackError('Chromecast no pudo abrir esta fuente. Prueba otro servidor.');
         setDeliveryState('error');
@@ -573,6 +584,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   }, [
     activeServer,
     activeSessionUrl,
+    castCurrentTime,
+    currentTime,
     loadMediaOnCast,
     props.title,
     media?.title,
@@ -952,11 +965,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
       setIsLoadingStream(false);
 
-      // Inicializar todos los servidores como disponibles ('online') por defecto.
-      // Probar latencia en segundo plano para enriquecer la UI sin bloquear ni marcar servidores falsamente como muertos.
-      const initialMap: Record<string, 'online' | 'checking' | 'failed'> = {};
+      // Ninguna fuente se muestra como disponible hasta que este reproductor
+      // consiga avanzar de verdad; el ping solo se conserva como dato de latencia.
+      const initialMap: Record<string, 'online' | 'checking' | 'unverified' | 'failed'> = {};
       ranked.forEach((s) => {
-        initialMap[s.id] = 'online';
+        initialMap[s.id] = 'unverified';
       });
       setServerHealthMap(initialMap);
 
@@ -965,10 +978,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (!srv.isEmbed && !srv.notPlayable) {
           quickProbeServerHealth(srv, 2500).then((lat) => {
             if (!cancelled && lat !== null) {
-              setServerHealthMap((prev) => ({
-                ...prev,
-                [srv.id]: 'online',
-              }));
               setServers((prev) => {
                 const targetIdx = prev.findIndex((p) => p.id === srv.id);
                 if (targetIdx !== -1) {
@@ -1071,6 +1080,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     let cancelled = false;
     jitInFlightRef.current.add(jitKey);
     jitCompletedRef.current.add(jitKey);
+    setServerHealthMap((previous) => ({ ...previous, [targetId]: 'checking' }));
     setCanonicalResolveError(null);
     setDeliveryState('resolving');
 
@@ -1167,6 +1177,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           jitCompletedRef.current.delete(jitKey);
           setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
           setDeliveryState('error');
+          setServerHealthMap((previous) => ({ ...previous, [targetId]: 'failed' }));
           setServers((prev) => prev.map((candidate) =>
             candidate.id === targetId ? { ...candidate, notPlayable: true, failure_reason: 'unresolved' } : candidate
           ));
@@ -1255,6 +1266,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             : 'No se pudo renovar esta fuente.'
         );
         setDeliveryState('error');
+        setServerHealthMap((previous) => ({ ...previous, [targetId]: 'failed' }));
       })
       .finally(() => {
         jitInFlightRef.current.delete(jitKey);
@@ -1273,6 +1285,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     }
     if (index === activeServerIndex && !isAutoFailover) return;
     if (index >= servers.length || index < 0) return;
+
+    setServerHealthMap((previous) => ({ ...previous, [servers[index].id]: 'checking' }));
 
     // Protección contra carreras: invalidar TODOS los temporizadores/promesas del
     // intento anterior (punto 6 y 7).
@@ -1489,9 +1503,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       playbackConfirmedRef.current = true;
       setPlaybackError(null);
       setDeliveryState('playing_direct');
-      if (activeServer) {
-        setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
-      }
     };
 
     const setupDash = async (playUrl: string) => {
@@ -1593,10 +1604,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           playbackConfirmedRef.current = true;
           setPlaybackError(null);
           setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
-
-          if (activeServer) {
-            setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
-          }
 
           const levels: { index: number; label: string; height?: number }[] = data.levels.map((lvl: Level, idx: number) => ({
             index: idx,
@@ -1878,9 +1885,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             console.log("[Player] Transmitiendo proxy a Chromecast:", finalUrl, "en segundo:", resumeTime);
             void loadActiveServerOnCast(resumeTime, finalUrl);
             playbackConfirmedRef.current = true;
-            if (activeServer) {
-              setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
-            }
             proxyRequestInFlightRef.current = false;
             return;
           }
@@ -1900,6 +1904,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           console.error("Proxy falló para", canonicalUrl, _err);
           if (attemptId !== attemptIdRef.current) return;
           proxyRequestInFlightRef.current = false;
+          if (activeServer) {
+            setServerHealthMap((previous) => ({ ...previous, [activeServer.id]: 'failed' }));
+          }
           // Regla 4: Proxy fallido puede avanzar al siguiente servidor una sola vez.
           if (activeServerIndex < servers.length - 1) {
             handleServerChange(activeServerIndex + 1, true);
@@ -1975,9 +1982,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         playbackConfirmedRef.current = true;
         setDeliveryState('playing_direct');
         setDeliveryCapability(url, 'direct_ok', activeServer?.provider);
-        if (activeServer) {
-          setServerHealthMap((prev) => ({ ...prev, [activeServer.id]: 'online' }));
-        }
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
       };
       video.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -2085,6 +2089,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     bufferingStartMsRef.current = null;
 
     const onTimeUpdate = () => {
+      if (listenerAttemptId !== attemptIdRef.current) return;
       setCurrentTime(video.currentTime);
 
       // Si el elemento ya avanza, cualquier overlay de un intento anterior es
@@ -2092,6 +2097,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       // después de que HLS.js había comenzado a reproducir.
       if (video.currentTime > 0.3 && !video.paused) {
         setPlaybackError(null);
+        setServerHealthMap((previous) => previous[activeServer.id] === 'online'
+          ? previous
+          : { ...previous, [activeServer.id]: 'online' });
       }
 
       // Confirmar playback saludable y cancelar watchdog de pantalla negra y directo
@@ -2879,9 +2887,28 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           }
                         });
                         const row = (srv: (typeof servers)[number], idx: number, siteLabel?: string) => {
-                          const status = serverHealthMap[srv.id] || 'online';
-                          const isJit = Boolean(isUnresolvedCanonical(srv.url) || srv.canonical_locator || srv.is_refreshable);
+                          const status = serverHealthMap[srv.id] || 'unverified';
+                          const isJit = Boolean(
+                            srv.isEmbed || srv.notPlayable || isUnresolvedCanonical(srv.url)
+                            || (hasExpiringSignature(srv.url) && (!srv.expires_at || srv.expires_at <= Date.now()) && !srv.resolved_at)
+                          );
                           const effectiveSiteLabel = siteLabel || (srv.sourceSite ? String(srv.sourceSite).toUpperCase() : '');
+                          const statusTitle = status === 'failed'
+                            ? 'Falló al intentar reproducir (clic para volver a probar)'
+                            : status === 'checking'
+                              ? 'Comprobando esta fuente en el reproductor'
+                              : status === 'online'
+                                ? 'Reproducción confirmada en este reproductor'
+                                : 'Aún no se ha confirmado reproduciendo';
+                          const detailLabel = status === 'online'
+                            ? 'Reproducción confirmada'
+                            : status === 'failed'
+                              ? 'No se pudo reproducir en la última prueba'
+                              : status === 'checking'
+                                ? 'Probando en el reproductor…'
+                                : isJit
+                                  ? 'Sin confirmar · se resolverá al probar'
+                                  : 'Sin confirmar en este reproductor';
                           return (
                             <button
                               key={srv.id}
@@ -2904,39 +2931,31 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                                       ? 'bg-rose-500'
                                       : status === 'checking'
                                       ? 'bg-amber-400 animate-pulse'
-                                      : isJit && !srv.resolved_at
-                                      ? 'bg-sky-400 shadow-sm shadow-sky-400/50'
-                                      : 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                                      : status === 'online'
+                                        ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                                        : 'bg-zinc-500'
                                   }`}
-                                  title={
-                                    status === 'failed'
-                                      ? 'Falló reproducción previa (clic para reintentar)'
-                                      : status === 'checking'
-                                      ? 'Comprobando respuesta...'
-                                      : isJit && !srv.resolved_at
-                                      ? 'Servidor Canónico (Resolución JIT)'
-                                      : 'Servidor Verificado (Online)'
-                                  }
+                                  title={statusTitle}
                                 />
                                 <div className="flex flex-col truncate">
                                   <span className="truncate">
-                                    {srv.label}
+                                    {isJit ? (effectiveSiteLabel || srv.provider || srv.label) : srv.label}
                                   </span>
                                   <span className="text-[10px] text-zinc-500 font-mono">
-                                    {isJit && !srv.resolved_at
-                                      ? 'Resolución JIT al reproducir'
-                                      : srv.isEmbed
-                                      ? 'Locator de proveedor (se resuelve JIT)'
-                                      : srv.url.includes('/api/v1/stream/mega')
-                                      ? 'Mega Directo (Nativo, con subtítulos)'
-                                      : 'Stream Directo (HLS)'}
+                                    {detailLabel}
                                     {srv.latencyMs ? ` • ${srv.latencyMs}ms` : ''}
                                     {status === 'failed' ? ' • Clic para reintentar' : ''}
                                   </span>
                                 </div>
                               </div>
                               {effectiveSiteLabel && (
-                                <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 uppercase font-bold tracking-wide">
+                                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wide ${
+                                  status === 'online'
+                                    ? 'bg-emerald-500/10 text-emerald-300'
+                                    : status === 'failed'
+                                      ? 'bg-rose-500/10 text-rose-300'
+                                      : 'bg-zinc-800 text-zinc-400'
+                                }`}>
                                   {effectiveSiteLabel}
                                 </span>
                               )}

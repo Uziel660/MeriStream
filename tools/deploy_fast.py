@@ -1,73 +1,53 @@
-# tools/deploy_fast.py
 import os
-import sys
-import paramiko
+import shlex
+import shutil
 import subprocess
-import time
+import sys
 
-if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-SERVER_IP = '100.107.203.21'
-USERNAME = 'root'
-PASSWORD = '2008'
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIST_DIR = os.path.join(BASE_DIR, 'dist')
 
-def build_app():
-    print("🔨 [1/3] Compilando frontend y backend con Vite y esbuild...")
-    res = subprocess.run(["npm", "run", "build"], cwd=BASE_DIR, shell=True)
-    if res.returncode != 0:
-        print("❌ Error en npm run build. Cancelando despliegue.")
-        sys.exit(1)
-    print("✔ Compilación completada con éxito.")
+SSH_TARGET = os.environ.get("MERISTREAM_SSH_TARGET", "").strip()
+REMOTE_DIR = os.environ.get("MERISTREAM_REMOTE_DIR", "/opt/meristream").strip()
 
-def sftp_upload_dist(sftp, local_dir, remote_dir):
-    try:
-        sftp.mkdir(remote_dir)
-    except:
-        pass
-    for root, dirs, files in os.walk(local_dir):
-        rel = os.path.relpath(root, local_dir)
-        dest_dir = os.path.normpath(os.path.join(remote_dir, rel)).replace('\\', '/')
-        try:
-            sftp.mkdir(dest_dir)
-        except:
-            pass
-        for f in files:
-            local_f = os.path.join(root, f)
-            remote_f = os.path.normpath(os.path.join(dest_dir, f)).replace('\\', '/')
-            sftp.put(local_f, remote_f)
 
-def deploy():
-    print(f"🚀 [2/3] Conectando a {SERVER_IP} por SFTP...")
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    try:
-        client.connect(SERVER_IP, username=USERNAME, password=PASSWORD, timeout=15)
-        sftp = client.open_sftp()
+def build_app() -> None:
+    print("🔨 [1/2] Comprobando la compilación de la app...")
+    result = subprocess.run(["npm", "run", "build"], check=False)
+    if result.returncode != 0:
+        print("❌ La compilación falló. No se desplegó ningún cambio.")
+        raise SystemExit(result.returncode)
+    print("✔ Compilación completada.")
 
-        print("📤 Subiendo /dist actualizado al servidor...")
-        sftp_upload_dist(sftp, DIST_DIR, "/opt/meristream/dist")
-        print("✔ Archivos sincronizados en /opt/meristream/dist.")
 
-        sftp.close()
+def deploy() -> None:
+    if not SSH_TARGET:
+        print("❌ Define MERISTREAM_SSH_TARGET con el alias SSH o destino del servidor.")
+        raise SystemExit(2)
 
-        print("⚡ [3/3] Reiniciando contenedor meristream-app...")
-        stdin, stdout, stderr = client.exec_command("docker restart meristream-app")
-        out = stdout.read().decode().strip()
-        print(f"✔ Contenedor {out} reiniciado y activo en Docker.")
+    ssh = shutil.which("ssh")
+    if not ssh:
+        print("❌ No se encontró OpenSSH. Instálalo o añádelo al PATH.")
+        raise SystemExit(2)
 
-        print("\n🎉 ¡DESPLIEGUE RÁPIDO FINALIZADO CON ÉXITO! (https://stream.merith.me)")
-    except Exception as e:
-        print("❌ Error durante el despliegue:", e)
-        sys.exit(1)
-    finally:
-        client.close()
+    remote_dir = shlex.quote(REMOTE_DIR)
+    remote_command = (
+        f"cd {remote_dir}"
+        " && git pull --ff-only origin main"
+        " && sudo docker compose up -d --build --no-deps app"
+    )
+    print(f"🚀 [2/2] Reconstruyendo solo el servicio app en {SSH_TARGET}...")
+    result = subprocess.run([ssh, SSH_TARGET, remote_command], check=False)
+    if result.returncode != 0:
+        print("❌ El despliegue falló. PostgreSQL y el túnel no se modificaron.")
+        raise SystemExit(result.returncode)
+    print("✔ Servicio app actualizado. PostgreSQL y el túnel permanecen intactos.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     build_app()
     deploy()

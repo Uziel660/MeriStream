@@ -3127,13 +3127,20 @@ async function startServer() {
       return res.status(503).json({ error: "backend_busy", fallback: "next_candidate" });
     }
     try {
-      const resolver = providerResolverRegistry.findResolver(originalUrl);
-      const cached = resolver?.name === "VidSrc"
-        ? undefined
-        : resolutionId
+      const cached = resolutionId
         ? resolutionCoordinator.getByResolutionId(resolutionId, originalUrl)
         : undefined;
-      const meta = cached ?? await resolvePlaybackLocator(originalUrl);
+      // Reuse the just-validated HLS URL when its signed lease is still fresh.
+      // Resolving VidSrc a second time here used to race its mirror/CDN rotation
+      // and could turn a source that had just passed validation into a 422. The
+      // playback session refreshes renewable streams after an upstream 401/403.
+      const cachedIsFresh = Boolean(
+        cached?.resolved && cached.url && cached.is_proxyable !== false
+        && (!Number.isFinite(cached.expires_at) || cached.expires_at! > Date.now() + 5_000)
+      );
+      const meta = cachedIsFresh && cached
+        ? cached
+        : await resolvePlaybackLocator(originalUrl);
       // Proxyable and renewable are different properties. A current signed URL
       // may be relayed until its own deadline even when no stable locator exists
       // to renew it later.

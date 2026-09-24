@@ -1,186 +1,229 @@
 # MeriStream
 
-Plataforma personal tipo Netflix con catálogo unificado, múltiples fuentes por obra/episodio y reproductor interno HLS/MP4.
+MeriStream es una plataforma personal de catálogo y reproducción multimedia con frontend React, API Node.js, PostgreSQL y resolución Just-In-Time de fuentes reproducibles.
 
-## Documentación
+La identidad pública del contenido se basa principalmente en TMDB. Los proveedores externos aportan fuentes y disponibilidad; no son la identidad canónica del catálogo.
 
-**Fuente técnica principal:** [`docs/MERISTREAM.md`](docs/MERISTREAM.md)
+## Arquitectura
 
-Ahí están centralizados:
+```text
+TMDB / metadata
+      ↓
+catálogo público
+      ↓
+TMDB ID canónico
+      ↓
+Provider Gateway
+      ↓
+HLS / DASH / MP4
+      ↓
+resolución JIT + failover
+      ↓
+reproductor interno
+```
 
-- arquitectura actual;
-- TMDB/AniList/MAL e identidad;
-- providers y prioridades ES/EN/JA;
-- crawlers/workers;
-- resolución JIT y playback;
-- contratos y endpoints API;
-- qué es legacy y qué se conserva;
-- reglas para integrar APIs/providers nuevos.
+Componentes principales:
 
-## Stack
+- **Frontend:** React + Vite.
+- **Servidor:** Node.js + Express + TypeScript.
+- **Base de datos:** PostgreSQL + Prisma.
+- **Playback:** Hls.js, dash.js y Plyr.
+- **Resolución:** gateway de providers, resolutores de embeds/locators y sesiones proxy cuando una fuente no puede reproducirse directamente.
+- **Usuarios:** autenticación, progreso de reproducción y listas.
+- **Watch Party:** sincronización mediante WebSocket.
+- **Workers:** ingestión, mantenimiento y verificación de fuentes.
 
-- Node.js + Express + TypeScript
-- React + Vite
-- PostgreSQL + Prisma
-- Cheerio para scraping HTTP
-- Hls.js/Plyr para reproducción
-- Vitest para tests
+## Catálogo y providers
 
-## Inicio rápido con Docker
+El catálogo público usa TMDB como identidad principal y expone IDs estables por película, serie o anime.
 
-La forma reproducible de ejecutar MeriStream es Docker Compose. Incluye PostgreSQL 18, una semilla del catálogo actual y una imagen de la aplicación construida desde el código fuente.
+La política operativa de providers vive en:
+
+```text
+server/providers/providerPolicy.ts
+```
+
+Los targets de ingestión completa viven en:
+
+```text
+server/providers/ingestionRegistry.ts
+```
+
+Actualmente el flujo normal de ingestión incluye entradas para:
+
+- Cinecalidad
+- Gnula
+- LatAnime
+- TioAnime
+- Doramasflix
+- Internet Archive
+
+Otros providers pueden participar mediante resolución directa/JIT según su política. Los providers marcados como `legacy` se conservan para compatibilidad o recuperación explícita y no deben volver al ranking principal de forma automática.
+
+El reproductor interno solo considera como fuentes directas formatos reproducibles como HLS, DASH o MP4. Páginas y embeds sin resolver quedan como candidatos de recuperación; no sustituyen una fuente de video válida.
+
+## Inicio recomendado: Docker
+
+Requisitos:
+
+- Docker
+- Docker Compose
+
+Crea el archivo de entorno:
 
 ```bash
 cp .env.example .env
-# Cambia todos los valores CHANGE_ME.
+```
+
+En PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Sustituye todos los valores `CHANGE_ME` y arranca:
+
+```bash
 docker compose up --build -d
 ```
 
-En PowerShell, usa `Copy-Item .env.example .env`. La aplicación quedará disponible en `http://127.0.0.1:3010`. La primera creación del volumen puede tardar varios minutos porque restaura el catálogo completo. Consulta [`docs/DOCKER.md`](docs/DOCKER.md) para copias de seguridad, restauración y actualización.
+Servicios:
 
-La semilla pública contiene catálogo, episodios, fuentes e índices. Las cuentas, contraseñas, listas, historiales y otros datos operativos se mantienen fuera de ella.
+- Aplicación: `http://127.0.0.1:3010`
+- PostgreSQL local: `127.0.0.1:5433`
+- Healthcheck: `http://127.0.0.1:3010/health`
 
-## Desarrollo local desde BD vacía
+El volumen `meristream_pgdata` conserva PostgreSQL entre recreaciones de contenedores.
+
+No ejecutes `docker compose down -v` salvo que quieras eliminar la base de datos local.
+
+## Variables de entorno
+
+Las variables completas y sus valores por defecto seguros están en `.env.example`.
+
+Las esenciales son:
+
+| Variable | Uso |
+| --- | --- |
+| `POSTGRES_USER` | Usuario de PostgreSQL |
+| `POSTGRES_PASSWORD` | Contraseña de PostgreSQL |
+| `POSTGRES_DB` | Base de datos |
+| `ADMIN_USER` | Usuario administrador |
+| `ADMIN_PASS` | Contraseña del administrador |
+| `ADMIN_SESSION_SECRET` | Firma de sesión administrativa |
+| `JWT_SECRET` | Firma de autenticación |
+| `TMDB_API_KEY` | Acceso al catálogo/enriquecimiento de TMDB |
+| `ALLOWED_ORIGINS` | Orígenes autorizados para el navegador |
+| `ENFORCE_HTTPS` | Fuerza HTTPS cuando existe proxy/túnel compatible |
+
+Las integraciones de providers y subtítulos se configuran también desde `.env.example`.
+
+## Desarrollo local
+
+Instala dependencias:
 
 ```bash
 npm install
 ```
 
-Crea `.env` local:
-
-```env
-DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/meristream?schema=public"
-TMDB_API_KEY="tu_tmdb_key"
-ADMIN_USER="admin"
-ADMIN_PASS="cambia-esto"
-ADMIN_SESSION_SECRET="secreto-largo-y-aleatorio"
-```
-
-Luego:
+Configura una instancia PostgreSQL y una `DATABASE_URL` válida, luego:
 
 ```bash
 npx prisma generate
 npx prisma db push
-npm run bootstrap
-npm run ingest:all
 npm run dev
 ```
 
-### 1. Bootstrap del catálogo
-
-`npm run bootstrap` está pensado para una BD vacía. Por defecto crea un catálogo inicial canónico con TMDB:
-
-- 250 películas;
-- 100 series;
-- 100 anime;
-- temporadas/episodios de TV/anime;
-- `SiteRating` inicial desde la policy de providers.
-
-No inventa `SourceLink`: las fuentes de video solo se guardan cuando los providers/workers realmente las descubren.
-
-Puedes cambiar el tamaño:
+Comandos principales:
 
 ```bash
-npm run bootstrap -- --movies=500 --series=300 --anime=300
-```
-
-Opciones útiles:
-
-```text
---dry-run          valida sin escribir catálogo
---skip-episodes    crea MediaItem sin esqueletos de episodios
---delay-ms=150     ajusta pausa entre requests TMDB
---reset            vacía SOLO MediaItem/MediaEpisode si no existen SourceLink
-```
-
-El bootstrap es idempotente por `tmdb_id + kind`: puedes volver a ejecutarlo para ampliar/actualizar el catálogo sin duplicar obras.
-
-### 2. Ingestión completa de providers
-
-`npm run ingest:all` crea tareas `full_catalog` para todos los catálogos registrados en `server/providers/ingestionRegistry.ts` y el worker las procesa cuando arranca el servidor.
-
-Incluye actualmente AnimeAV1, AnimeFLV, JKAnime, HiAnimes, GNULA, Cinecalidad, LaMovie, TubePelis, TioPlus, Doramasflix, LatAnime, TioAnime y VerAnimes.
-
-Modo normal:
-
-```bash
-npm run ingest:all
-npm run dev
-```
-
-Modo agresivo:
-
-```bash
-npm run ingest:all -- --fast
-npm run dev
-```
-
-Volver a recorrer todos los catálogos desde cero sin duplicar jobs:
-
-```bash
-npm run ingest:all -- --refresh
-npm run dev
-```
-
-Combinar refresh + máximo ritmo:
-
-```bash
-npm run ingest:all -- --refresh --fast
-npm run dev
-```
-
-Solo ver qué tareas crearía:
-
-```bash
-npm run ingest:all -- --dry
-```
-
-`npm run fast-start` se conserva como alias de `npm run ingest:all -- --fast`.
-
-El modo `full_catalog` no usa un número fijo de páginas: avanza hasta que el sitio deja de devolver contenido, con reanudación persistente y un fusible anti-loop.
-
-Scripts principales:
-
-```bash
-npm run bootstrap
-npm run ingest:all
-npm run fast-start
 npm run dev
 npm run build
-npm test
+npm start
 npm run lint
+npm test
+npm run test:e2e
+npm run db:generate
+npm run db:push
+npm run bootstrap
+npm run ingest:all
 ```
 
-## Dirección técnica
+`npm run bootstrap` prepara catálogo persistente cuando se necesita una base inicial. `npm run ingest:all` encola la ingestión de los targets activos definidos en el registro actual.
+
+## API principal
+
+Base:
 
 ```text
-TMDB / AniList / MAL
-        ↓
-MediaItem → MediaEpisode → SourceLink[]
-                          ↑
-                crawlers/providers
-                          ↓
-                resolución Just-In-Time
-                          ↓
-                  reproductor interno
+/api/v1
 ```
 
-Los sitios externos son **providers de fuentes**, no la identidad del catálogo.
+Rutas clave:
 
-Prioridad de idiomas:
+| Ruta | Uso |
+| --- | --- |
+| `GET /api/v1/catalog/public` | Catálogo público por TMDB |
+| `GET /api/v1/catalog/public/:kind/:tmdbId` | Detalle canónico |
+| `GET /api/v1/catalog/search` | Búsqueda |
+| `GET /api/v1/providers/:kind/:tmdbId` | Resolución JIT de providers |
+| `POST /api/v1/resolve-embed` | Resolución de locator/embed |
+| `POST /api/v1/playback/sessions` | Sesión proxy renovable |
+| `GET /api/v1/proxy/stream` | Entrega mediante proxy cuando es necesaria |
 
-- Anime: **JA + SUB ES** > audio ES > JA + SUB EN.
-- Películas/series: **EN y ES casi al mismo nivel**, con subtítulos ES/EN como bonus.
+El frontend centraliza el acceso a la API en `src/api/client.ts`.
 
-## Seguridad
+## Administración de PostgreSQL
 
-No versionar nunca:
+Con Docker:
 
-```text
-.env
-dist/
-cookies.txt
-secrets/tokens
+```bash
+docker compose ps
+docker compose logs --tail=100 db
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 ```
 
-Si un secreto ya estuvo en Git, hay que **rotarlo**; borrarlo del último commit no lo elimina del historial.
+Para Prisma Studio en desarrollo, configura `DATABASE_URL` hacia la instancia local y ejecuta:
+
+```bash
+npx prisma studio
+```
+
+No expongas PostgreSQL públicamente.
+
+## Backups
+
+Linux/macOS:
+
+```bash
+./scripts/docker/backup.sh backups/meristream-$(date -u +%Y%m%dT%H%M%SZ).dump
+```
+
+PowerShell:
+
+```powershell
+.\scripts\docker\backup.ps1
+```
+
+Los backups pueden contener cuentas, hashes, progreso e historial. Guárdalos fuera del repositorio y con acceso restringido.
+
+La semilla de `database/seed/` solo se restaura automáticamente cuando PostgreSQL crea un volumen nuevo; no sobrescribe una base ya existente.
+
+## Comprobaciones
+
+```bash
+docker compose ps
+docker compose logs --tail=100 app
+docker compose logs --tail=100 db
+curl -fsS http://127.0.0.1:3010/health
+```
+
+Antes de cambios de esquema o restauraciones, crea un backup verificado.
+
+## Seguridad y límites
+
+- Nunca subas `.env`, cookies, tokens, bases privadas o backups.
+- Rota cualquier secreto que haya sido publicado previamente.
+- Mantén TLS/HTTPS en producción.
+- MeriStream no debe desactivar TLS, evadir CAPTCHA/DRM ni saltarse controles de acceso de terceros.
+- Una URL temporal firmada no debe tratarse como identidad persistente; conserva un locator estable y resuélvelo Just-In-Time.

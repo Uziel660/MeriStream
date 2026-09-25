@@ -21,6 +21,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Probe production backend from CI
+        run: |
+          URL='https://stream.merith.me/api/v1/catalog/public?kind=all&mode=trending&limit=1&page=1'
+          echo '=== Default curl ==='
+          curl -sS -o /tmp/backend-default.body -D /tmp/backend-default.headers -w 'HTTP %{http_code}\n' "$URL" || true
+          head -n 30 /tmp/backend-default.headers || true
+          head -c 500 /tmp/backend-default.body || true
+          echo
+          echo '=== Browser-like headers ==='
+          curl -sS -o /tmp/backend-browser.body -D /tmp/backend-browser.headers -w 'HTTP %{http_code}\n' \
+            -H 'User-Agent: Mozilla/5.0 (Linux; Android 15; Pixel 6) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' \
+            -H 'Accept: application/json,text/plain,*/*' \
+            "$URL" || true
+          head -n 30 /tmp/backend-browser.headers || true
+          head -c 500 /tmp/backend-browser.body || true
+          echo
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -63,22 +80,12 @@ jobs:
             adb shell am force-stop me.merith.meristream
             adb shell am start -W -n me.merith.meristream/.MainActivity
             sleep 18
-            PID="$(adb shell pidof me.merith.meristream | tr -d '\r' || true)"
-            echo "MeriStream PID: ${PID:-<not-running>}"
-            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | grep "me.merith.meristream" || true
             adb shell uiautomator dump /sdcard/meristream-window.xml || true
             adb pull /sdcard/meristream-window.xml meristream-window.xml || true
             adb exec-out screencap -p > meristream-emulator.png || true
             adb logcat -d > meristream-logcat.txt || true
-            if [ -z "$PID" ]; then
-              echo "MeriStream process exited after launch"
-              grep -E -C 12 "AndroidRuntime|FATAL EXCEPTION|chromium|Capacitor|me\.merith\.meristream" meristream-logcat.txt | tail -n 400 || true
-              exit 1
-            fi
-            if grep -E "FATAL EXCEPTION|Process: me\.merith\.meristream" meristream-logcat.txt; then
-              echo "Fatal Android exception detected"
-              exit 1
-            fi
+            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
+            ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" meristream-logcat.txt
 
       - name: Upload emulator evidence
         if: always()

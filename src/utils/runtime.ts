@@ -34,3 +34,38 @@ export function backendWsUrl(path = '/ws/watch-party'): string {
   parsed.hash = '';
   return parsed.toString();
 }
+
+
+let nativeFetchBridgeInstalled = false;
+
+function rewriteNativeApiUrl(raw: string): string {
+  if (!isNativeShell()) return raw;
+  try {
+    if (raw.startsWith('/api/')) return backendUrl(raw);
+    const parsed = new URL(raw, window.location.href);
+    if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/')) {
+      return backendUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+    }
+  } catch {
+    // Keep the original value if it is not a valid URL.
+  }
+  return raw;
+}
+
+/**
+ * Some legacy UI code still calls fetch('/api/...') directly. In the native
+ * shell that path would otherwise point at the bundled WebView origin instead
+ * of the MeriStream server. CapacitorHttp handles transport; this bridge only
+ * rewrites same-origin API paths to the remote backend.
+ */
+export function installNativeFetchBridge(): void {
+  if (!isNativeShell() || nativeFetchBridgeInstalled || typeof window.fetch !== 'function') return;
+  nativeFetchBridgeInstalled = true;
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (typeof input === 'string') return originalFetch(rewriteNativeApiUrl(input), init);
+    if (input instanceof URL) return originalFetch(rewriteNativeApiUrl(input.toString()), init);
+    return originalFetch(input, init);
+  }) as typeof window.fetch;
+}

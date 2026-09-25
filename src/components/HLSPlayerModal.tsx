@@ -53,6 +53,7 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
+import { backendUrl } from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
@@ -369,15 +370,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   })();
   const subtitleSignature = subtitleTracks.map((track) => `${track.id}:${track.url}`).join('|');
   const hasBurnedInSubtitles = servers[activeServerIndex]?.subtitle_mode === 'burned_in';
-  const subtitleSourceUrl = (track: SubtitleTrack): string => {
-    const parsedUrl = new URL(track.url, window.location.href);
-    if (parsedUrl.origin === window.location.origin) return parsedUrl.toString();
-    const isOpenSubtitles = /(^|\.)opensubtitles\.(org|com)$/i.test(parsedUrl.hostname);
-    if (isOpenSubtitles) {
-      return `/api/v1/proxy/subtitle?url=${encodeURIComponent(parsedUrl.toString())}`;
-    }
-    return `/api/v1/proxy/stream?referer=${encodeURIComponent(`${parsedUrl.origin}/`)}&url=${encodeURIComponent(parsedUrl.toString())}`;
-  };
+  const subtitleSourceUrl = (track: SubtitleTrack): string => backendUrl(track.url);
 
   const activeSubtitleTrack = activeSubtitleId === 'off'
     ? undefined
@@ -541,8 +534,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
         const previousSessionId = activeSessionIdRef.current;
         activeSessionIdRef.current = session.session_id;
-        setActiveSessionUrl(session.playback_url);
-        castUrl = session.playback_url;
+        setActiveSessionUrl(backendUrl(session.playback_url));
+        castUrl = backendUrl(session.playback_url);
         if (previousSessionId && previousSessionId !== session.session_id) {
           void api.closeProxySession(previousSessionId);
         }
@@ -1817,7 +1810,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return;
     }
     const capability = getDeliveryCapability(url, activeServer?.provider);
-    let finalUrl = url;
+    let finalUrl = backendUrl(url);
 
     // Hacia el proxy SOLO si una marca previa o la resolución lo exige
     const intent = nextDeliveryIntent(activeServer, capability);
@@ -1858,7 +1851,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             return;
           }
           activeSessionIdRef.current = session.session_id;
-          finalUrl = session.playback_url;
+          finalUrl = backendUrl(session.playback_url);
           setActiveSessionUrl(finalUrl);
           // Conservar la metadata de la sesión en el servidor activo.
           setServers((prev) => {

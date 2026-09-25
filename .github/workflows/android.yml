@@ -1,0 +1,45 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.json"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_ORIGIN: https://stream.merith.me
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install web dependencies
+        run: npm ci
+      - name: Install Capacitor toolchain without changing lockfile
+        run: npm run android:deps
+      - name: Build frontend
+        run: npm run build:client
+      - name: Create Android project
+        run: npx cap add android
+      - name: Sync frontend into Android
+        run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk

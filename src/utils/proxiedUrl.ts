@@ -6,9 +6,11 @@
 //
 // El origen SIEMPRE viene de app.config.ts (fuente única; sin hardcodes).
 
-import { backendOrigin } from "../../app.config";
+import { backendBaseOrigin, backendUrl } from "./runtime";
 
-export { backendOrigin };
+export function backendOrigin(): string {
+  return backendBaseOrigin();
+}
 
 function isLocalUrl(url: string): boolean {
   return (
@@ -28,15 +30,17 @@ function isLocalUrl(url: string): boolean {
  * resolvería 127.0.0.1 contra sí mismo y los streams morirían.
  */
 export function proxiedStreamUrl(url: string, title?: string, provider?: string): string {
-  if (!url || isLocalUrl(url)) return url;
+  if (!url) return url;
+  if (isLocalUrl(url)) return backendUrl(url);
   const titleParam = title ? `&title=${encodeURIComponent(title)}` : '';
   const provParam = provider ? `&provider=${encodeURIComponent(provider)}` : '';
-  return `/api/v1/proxy/stream?url=${encodeURIComponent(url)}${titleParam}${provParam}`;
+  return backendUrl(`/api/v1/proxy/stream?url=${encodeURIComponent(url)}${titleParam}${provParam}`);
 }
 
 /** Lightweight image proxy - no DNS lookup, no stealth client, just fetch + stream */
 export function proxiedImageUrl(url: string): string {
-  if (!url || isLocalUrl(url)) return url;
-  return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`;
+  if (!url) return url;
+  if (isLocalUrl(url)) return backendUrl(url);
+  return backendUrl(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`);
 }
 

@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { InterfaceStyleBridge } from './components/InterfaceStyleBridge';
 import { AuthProvider } from './contexts/AuthContext';
 import { HiddenGenresProvider } from './hooks/useHiddenGenres';
+import { installNativeFetchBridge } from './utils/runtime';
 import './index.css';
 import './styles/streaming-2026.css';
 import './styles/overlays-2026.css';
@@ -13,6 +14,8 @@ import './styles/immersive-stremio.css';
 import './styles/polish-round.css';
 import './styles/player-2026.css';
 import './styles/interface-presets.css';
+
+installNativeFetchBridge();
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin y se carga bajo
 // demanda; la entrada pública conserva el bundle de providers y reproducción.

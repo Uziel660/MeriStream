@@ -43,3 +43,42 @@ jobs:
         with:
           name: meristream-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch APK in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am force-stop me.merith.meristream
+            adb shell am start -W -n me.merith.meristream/.MainActivity
+            sleep 18
+            adb shell pidof me.merith.meristream
+            adb shell dumpsys window windows | grep -E "mCurrentFocus|mFocusedApp" | grep "me.merith.meristream"
+            adb shell uiautomator dump /sdcard/meristream-window.xml || true
+            adb pull /sdcard/meristream-window.xml meristream-window.xml || true
+            adb exec-out screencap -p > meristream-emulator.png
+            if adb logcat -d | grep -E "FATAL EXCEPTION|Process: me\.merith\.meristream"; then
+              echo "Fatal Android exception detected"
+              exit 1
+            fi
+
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-emulator-evidence
+          path: |
+            meristream-emulator.png
+            meristream-window.xml
+          if-no-files-found: warn

@@ -36,7 +36,11 @@
     "merge-dbs": "npx tsx tools/merge-dbs.ts",
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:live": "cross-env LIVE_SCRAPER_E2E=1 playwright test --project=chromium",
-    "test:e2e:list": "playwright test --project=chromium --list"
+    "test:e2e:list": "playwright test --project=chromium --list",
+    "build:client": "vite build",
+    "android:sync": "npm run build:client && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:run": "npm run android:sync && npx cap run android"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^4.0.2",
@@ -70,7 +74,10 @@
     "subtitle": "^4.2.2",
     "undici": "^8.10.0",
     "ws": "^8.18.0",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -98,7 +105,8 @@
     "tsx": "^4.23.12",
     "typescript": "^5.6.3",
     "vite": "^6.0.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@capacitor/cli": "^8.0.0"
   },
   "overrides": {
     "stream-json": "3.5.0"

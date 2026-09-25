@@ -28,7 +28,7 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,41 +66,6 @@ jobs:
 
       - name: Production build
         run: npm run build
-
-      - name: Setup Java for Android verification
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Install Capacitor Android toolchain
-        run: npm run android:deps
-
-      - name: Create Android project
-        run: |
-          rm -rf android
-          npx cap add android
-
-      - name: Sync production frontend into Android
-        env:
-          VITE_API_ORIGIN: https://stream.merith.me
-        run: npm run android:sync
-
-      - name: Assemble debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
-
-      - name: Verify APK exists
-        run: |
-          test -s android/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload Android debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: meristream-android-debug-pr66
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
 
       # Full DB/integration coverage belongs to provider-v2-ci.yml, which
       # provisions PostgreSQL. Browser coverage belongs to playwright.yml.

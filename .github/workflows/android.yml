@@ -63,12 +63,15 @@ jobs:
             adb shell am force-stop me.merith.meristream
             adb shell am start -W -n me.merith.meristream/.MainActivity
             sleep 18
-            adb shell pidof me.merith.meristream
-            adb shell dumpsys window windows | grep -E "mCurrentFocus|mFocusedApp" | grep "me.merith.meristream"
+            PID="$(adb shell pidof me.merith.meristream | tr -d '\r')"
+            test -n "$PID"
+            echo "MeriStream PID: $PID"
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | grep "me.merith.meristream" || true
             adb shell uiautomator dump /sdcard/meristream-window.xml || true
             adb pull /sdcard/meristream-window.xml meristream-window.xml || true
             adb exec-out screencap -p > meristream-emulator.png
-            if adb logcat -d | grep -E "FATAL EXCEPTION|Process: me\.merith\.meristream"; then
+            adb logcat -d > meristream-logcat.txt
+            if grep -E "FATAL EXCEPTION|Process: me\.merith\.meristream" meristream-logcat.txt; then
               echo "Fatal Android exception detected"
               exit 1
             fi
@@ -81,4 +84,5 @@ jobs:
           path: |
             meristream-emulator.png
             meristream-window.xml
+            meristream-logcat.txt
           if-no-files-found: warn

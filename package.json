@@ -38,7 +38,7 @@
     "test:e2e:live": "cross-env LIVE_SCRAPER_E2E=1 playwright test --project=chromium",
     "test:e2e:list": "playwright test --project=chromium --list",
     "build:client": "vite build",
-    "android:deps": "npm install --no-save --package-lock=false @capacitor/cli@8 @capacitor/core@8 @capacitor/android@8",
+    "android:deps": "npm install --no-save @capacitor/cli@8 @capacitor/core@8 @capacitor/android@8",
     "android:add": "npx cap add android",
     "android:sync": "npm run build:client && npx cap sync android",
     "android:open": "npx cap open android"

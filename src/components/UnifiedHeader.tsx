@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { PreferencesPanel } from './PreferencesPanel';
 import { APP_PREFERENCES_EVENT, applyAppPreferencesToDocument } from '../utils/appPreferences';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
-import { isNativeShell } from '../utils/runtime';
+import { isNativeShell, nativeHaptic } from '../utils/runtime';
 
 export interface FilterItem {
   id: string;
@@ -155,6 +155,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     if (restoreFocus) requestAnimationFrame(() => mobileSearchTriggerRef.current?.focus());
   };
   const openMobileSearch = () => {
+    nativeHaptic();
     setIsUserMenuOpen(false);
     setMobileNavOpen(false);
     setPreferencesOpen(false);
@@ -171,6 +172,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
   };
   const handleSelectTab = (id: string) => {
+    nativeHaptic();
     setQuery('');
     setMobileSearchOpen(false);
     setMobileNavOpen(false);
@@ -217,6 +219,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
               type="button"
               className="mobile-nav-trigger ui-icon-button hidden"
               onClick={() => {
+                nativeHaptic();
                 setMobileSearchOpen(false);
                 setIsUserMenuOpen(false);
                 setPreferencesOpen(false);
@@ -304,7 +307,14 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
         </div>
 
         {mobileNavOpen && (
-          <div ref={mobileNavSheetRef} id="mobile-nav-sheet" className="mobile-nav-sheet" role="dialog" aria-label="Navegación de MeriStream">
+          <>
+            <button
+              type="button"
+              className="mobile-nav-backdrop"
+              aria-label="Cerrar navegación"
+              onClick={() => { nativeHaptic(4); setMobileNavOpen(false); }}
+            />
+            <div ref={mobileNavSheetRef} id="mobile-nav-sheet" className="mobile-nav-sheet" role="dialog" aria-label="Navegación de MeriStream">
             <div className="mobile-nav-grid">
               {[...coreTabs, exploreTab].map((filter) => (
                 <button
@@ -348,7 +358,8 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                 <span>Preferencias</span>
               </button>
             </div>
-          </div>
+            </div>
+          </>
         )}
 
         <div className="header-bottom">

@@ -39,9 +39,10 @@
     "test:e2e:list": "playwright test --project=chromium --list",
     "build:client": "vite build",
     "android:deps": "npm install --no-save @capacitor/cli@8 @capacitor/core@8 @capacitor/android@8",
-    "android:add": "npx cap add android",
-    "android:sync": "npm run build:client && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:add": "npx cap add android && npm run android:patch",
+    "android:sync": "npm run build:client && npm run android:patch && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:patch": "node tools/patch-capacitor-android.mjs"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^4.0.2",

@@ -116,37 +116,71 @@ try {
   })()`);
 
   if (action === 'seed-catalog') {
+    const artwork = ({ title, subtitle, from, to, wide = false }) => {
+      const width = wide ? 1600 : 480;
+      const height = wide ? 900 : 720;
+      const titleSize = wide ? 96 : 54;
+      const titleY = wide ? 670 : 570;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>
+        <rect width="100%" height="100%" fill="url(#bg)"/>
+        <circle cx="${wide ? 1210 : 370}" cy="${wide ? 220 : 210}" r="${wide ? 280 : 150}" fill="#fff" fill-opacity=".12"/>
+        <path d="M0 ${wide ? 700 : 530} Q${wide ? 650 : 190} ${wide ? 400 : 370} ${width} ${wide ? 600 : 440} V${height} H0Z" fill="#07090f" fill-opacity=".52"/>
+        <path d="M0 ${wide ? 760 : 590} Q${wide ? 700 : 220} ${wide ? 590 : 490} ${width} ${wide ? 710 : 540}" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="${wide ? 4 : 3}"/>
+        <text x="${wide ? 96 : 42}" y="${wide ? 570 : 490}" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="${wide ? 30 : 20}" font-weight="700" letter-spacing="${wide ? 8 : 5}">${subtitle.toUpperCase()}</text>
+        <text x="${wide ? 96 : 42}" y="${titleY}" fill="#fff" font-family="Arial,sans-serif" font-size="${titleSize}" font-weight="700">${title}</text>
+        <text x="${wide ? 100 : 46}" y="${wide ? 625 : 620}" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="${wide ? 23 : 17}" letter-spacing="${wide ? 5 : 4}">MERISTREAM</text>
+      </svg>`;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    };
+    const sample = [
+      {
+        id: 'tmdb-movie-550', tmdb_id: 550, title: 'MeriStream Movie',
+        normalized_title: 'meristream movie', category: 'movie', kind: 'movie',
+        year: 2026, rating: 8.4, genres: 'Drama', status: 'Finalizado',
+        poster_url: artwork({ title: 'MeriStream', subtitle: 'Una historia original', from: '#1c2349', to: '#ec8b3c' }),
+        banner_url: artwork({ title: 'MeriStream', subtitle: 'Una historia original', from: '#101936', to: '#d77a37', wide: true }),
+        backdrop_url: artwork({ title: 'MeriStream', subtitle: 'Una historia original', from: '#101936', to: '#d77a37', wide: true }),
+        sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+      },
+      {
+        id: 'tmdb-series-1396', tmdb_id: 1396, title: 'MeriStream Series',
+        normalized_title: 'meristream series', category: 'series', kind: 'series',
+        year: 2026, rating: 8.7, genres: 'Drama', status: 'Emisión',
+        poster_url: artwork({ title: 'MeriStream', subtitle: 'La serie', from: '#123d43', to: '#7d59bd' }),
+        banner_url: '', backdrop_url: '',
+        sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+      },
+      {
+        id: 'tmdb-anime-21', tmdb_id: 21, title: 'MeriStream Anime',
+        normalized_title: 'meristream anime', category: 'anime', kind: 'anime',
+        year: 2026, rating: 8.2, genres: 'Animación, Acción', status: 'Emisión',
+        poster_url: artwork({ title: 'MeriStream', subtitle: 'Anime original', from: '#531c4e', to: '#df6b63' }),
+        banner_url: '', backdrop_url: '',
+        sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+      }
+    ];
     await evaluate(call, `(() => {
-      const sample = [
-        {
-          id: 'tmdb-movie-550', tmdb_id: 550, title: 'MeriStream Movie',
-          normalized_title: 'meristream movie', category: 'movie', kind: 'movie',
-          year: 2026, rating: 8.4, genres: 'Drama', status: 'Finalizado',
-          poster_url: '', banner_url: '', backdrop_url: '',
-          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
-        },
-        {
-          id: 'tmdb-series-1396', tmdb_id: 1396, title: 'MeriStream Series',
-          normalized_title: 'meristream series', category: 'series', kind: 'series',
-          year: 2026, rating: 8.7, genres: 'Drama', status: 'Emisión',
-          poster_url: '', banner_url: '', backdrop_url: '',
-          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
-        },
-        {
-          id: 'tmdb-anime-21', tmdb_id: 21, title: 'MeriStream Anime',
-          normalized_title: 'meristream anime', category: 'anime', kind: 'anime',
-          year: 2026, rating: 8.2, genres: 'Animación, Acción', status: 'Emisión',
-          poster_url: '', banner_url: '', backdrop_url: '',
-          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
-        }
-      ];
+      const sample = ${JSON.stringify(sample)};
       localStorage.setItem('nitiflix_catalog_cache_v5', JSON.stringify({ data: sample, timestamp: Date.now() }));
       return true;
     })()`);
     await call('Page.reload', { ignoreCache: true });
-    await delay(1800);
-    const count = await evaluate(call, `document.querySelectorAll('.media-card').length`);
-    console.log(JSON.stringify({ action, cards: count }));
+    let state = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      state = await evaluate(call, `(() => ({
+        cards: document.querySelectorAll('.media-card').length,
+        images: [...document.querySelectorAll('.media-card img')].filter((image) => image.complete && image.naturalWidth > 0).length,
+        hero: (() => {
+          const image = document.querySelector('.feature-art img.feature-image');
+          return Boolean(image?.complete && image.naturalWidth > 0);
+        })()
+      }))()`);
+      if (state?.cards >= 2 && state.images >= 2 && state.hero) break;
+      await delay(250);
+    }
+    console.log(JSON.stringify({ action, ...state }));
+    if (state?.cards < 2 || state.images < 2 || !state.hero) throw new Error('Seeded catalog artwork did not finish rendering');
   } else if (action === 'open-menu') {
     const opened = await evaluate(call, `(() => {
       const button = document.querySelector('.mobile-nav-trigger');

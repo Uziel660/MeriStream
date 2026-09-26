@@ -130,17 +130,22 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
 
   useEffect(() => {
     const outside = (e: PointerEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setIsUserMenuOpen(false);
+      const target = e.target as Element | null;
+      if (target?.closest?.('.native-account-backdrop,.mobile-nav-backdrop')) return;
+
+      if (isUserMenuOpen && userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        closeNativeOverlayWithBack('account', () => setIsUserMenuOpen(false));
+      }
       if (mobileSearchOpen && searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node) && !mobileSearchTriggerRef.current?.contains(e.target as Node)) {
-        setMobileSearchOpen(false);
+        closeNativeOverlayWithBack('search', () => setMobileSearchOpen(false));
       }
       if (mobileNavOpen && mobileNavSheetRef.current && !mobileNavSheetRef.current.contains(e.target as Node) && !mobileNavTriggerRef.current?.contains(e.target as Node)) {
-        setMobileNavOpen(false);
+        closeNativeOverlayWithBack('nav', () => setMobileNavOpen(false));
       }
     };
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
-  }, [mobileSearchOpen, mobileNavOpen]);
+  }, [mobileSearchOpen, mobileNavOpen, isUserMenuOpen]);
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;

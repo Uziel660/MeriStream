@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, ArrowUp, SlidersHorizontal, Bookmark, Users } from 'lucide-react';
+import { Search, X, Play, LogOut, LogIn, ChevronDown, ArrowLeft, ArrowUp, SlidersHorizontal, Bookmark, Users, Menu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PreferencesPanel } from './PreferencesPanel';
 import { APP_PREFERENCES_EVENT, applyAppPreferencesToDocument } from '../utils/appPreferences';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
+import { isNativeShell } from '../utils/runtime';
 
 export interface FilterItem {
   id: string;
@@ -47,11 +48,15 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const [query, setQuery] = useState(searchQuery || '');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [atTop, setAtTop] = useState(true);
+  const [mobileChromeHidden, setMobileChromeHidden] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileSearchTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileNavSheetRef = useRef<HTMLDivElement>(null);
   const preferencesTriggerRef = useRef<HTMLButtonElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -59,11 +64,34 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   useEffect(() => { if (searchQuery !== undefined) setQuery(searchQuery); }, [searchQuery]);
   useEffect(() => { const timer = setTimeout(() => onSearchChange(query), 200); return () => clearTimeout(timer); }, [query, onSearchChange]);
   useEffect(() => {
-    const onScroll = () => setAtTop(window.scrollY < 18);
+    const native = isNativeShell();
+    let lastY = window.scrollY;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = Math.max(0, window.scrollY);
+        setAtTop(y < 18);
+        if (native) {
+          if (y < 36) setMobileChromeHidden(false);
+          else if (y > lastY + 7) setMobileChromeHidden(true);
+          else if (y < lastY - 7) setMobileChromeHidden(false);
+        }
+        lastY = y;
+        ticking = false;
+      });
+    };
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    if (mobileSearchOpen || mobileNavOpen || isUserMenuOpen || preferencesOpen) {
+      setMobileChromeHidden(false);
+    }
+  }, [mobileSearchOpen, mobileNavOpen, isUserMenuOpen, preferencesOpen]);
 
   // Preferencias soporta también el perfil invitado. Aplicarlas desde el
   // header evita que una capacidad existente quede escondida detrás del login
@@ -81,10 +109,13 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
       if (mobileSearchOpen && searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node) && !mobileSearchTriggerRef.current?.contains(e.target as Node)) {
         setMobileSearchOpen(false);
       }
+      if (mobileNavOpen && mobileNavSheetRef.current && !mobileNavSheetRef.current.contains(e.target as Node) && !mobileNavTriggerRef.current?.contains(e.target as Node)) {
+        setMobileNavOpen(false);
+      }
     };
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
-  }, [mobileSearchOpen]);
+  }, [mobileSearchOpen, mobileNavOpen]);
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -100,6 +131,12 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
         requestAnimationFrame(() => mobileSearchTriggerRef.current?.focus());
         return;
       }
+      if (mobileNavOpen) {
+        e.preventDefault();
+        setMobileNavOpen(false);
+        requestAnimationFrame(() => mobileNavTriggerRef.current?.focus());
+        return;
+      }
       if (isUserMenuOpen) {
         e.preventDefault();
         setIsUserMenuOpen(false);
@@ -108,7 +145,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
-  }, [preferencesOpen, mobileSearchOpen, isUserMenuOpen]);
+  }, [preferencesOpen, mobileSearchOpen, mobileNavOpen, isUserMenuOpen]);
   useEffect(() => {
     if (mobileSearchOpen) requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [mobileSearchOpen]);
@@ -119,11 +156,13 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   };
   const openMobileSearch = () => {
     setIsUserMenuOpen(false);
+    setMobileNavOpen(false);
     setPreferencesOpen(false);
     setMobileSearchOpen(true);
   };
   const openPreferences = () => {
     setMobileSearchOpen(false);
+    setMobileNavOpen(false);
     setIsUserMenuOpen(false);
     setPreferencesOpen(true);
   };
@@ -134,6 +173,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const handleSelectTab = (id: string) => {
     setQuery('');
     setMobileSearchOpen(false);
+    setMobileNavOpen(false);
     setIsUserMenuOpen(false);
     onSearchChange('');
     onSelectCategory(id);
@@ -144,7 +184,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const exploreTab = MAIN_QUICK_FILTERS.find(f => f.id === 'explore')!;
 
   return (
-    <header id="main-unified-header" className={`site-header ${atTop ? 'is-at-top' : ''} ${mobileSearchOpen ? 'has-search-open' : ''}`}>
+    <header id="main-unified-header" className={`site-header ${atTop ? 'is-at-top' : ''} ${mobileSearchOpen ? 'has-search-open' : ''} ${mobileNavOpen ? 'has-mobile-nav-open' : ''} ${mobileChromeHidden ? 'is-chrome-hidden' : ''}`}>
       <div className="header-inner">
         <div className="header-top">
           <a href="/" onClick={e => { e.preventDefault(); handleSelectTab('all'); }} className="brand" aria-label="MeriStream, inicio">
@@ -173,8 +213,25 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
             </button>
 
             <button
+              ref={mobileNavTriggerRef}
               type="button"
-              className="ui-icon-button"
+              className="mobile-nav-trigger ui-icon-button hidden"
+              onClick={() => {
+                setMobileSearchOpen(false);
+                setIsUserMenuOpen(false);
+                setPreferencesOpen(false);
+                setMobileNavOpen((open) => !open);
+              }}
+              aria-label={mobileNavOpen ? 'Cerrar navegación' : 'Abrir navegación'}
+              aria-expanded={mobileNavOpen}
+              aria-controls="mobile-nav-sheet"
+            >
+              <Menu size={19} />
+            </button>
+
+            <button
+              type="button"
+              className="header-watchparty-trigger ui-icon-button"
               onClick={onOpenWatchParty}
               aria-label="Watch Party - Ver en grupo"
               title="Watch Party (Ver en grupo)"
@@ -245,6 +302,54 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
             </div>
           </div>
         </div>
+
+        {mobileNavOpen && (
+          <div ref={mobileNavSheetRef} id="mobile-nav-sheet" className="mobile-nav-sheet" role="dialog" aria-label="Navegación de MeriStream">
+            <div className="mobile-nav-grid">
+              {[...coreTabs, exploreTab].map((filter) => (
+                <button
+                  type="button"
+                  key={filter.id}
+                  onClick={() => handleSelectTab(filter.id)}
+                  aria-current={activeFilter === filter.id ? 'page' : undefined}
+                  className={activeFilter === filter.id ? 'mobile-nav-item is-active' : 'mobile-nav-item'}
+                >
+                  {filter.id === 'explore' ? 'Explorar' : filter.label}
+                </button>
+              ))}
+            </div>
+            <div className="mobile-nav-genres" aria-label="Géneros rápidos">
+              {quickGenres.map((filter) => (
+                <button
+                  type="button"
+                  key={filter.id}
+                  onClick={() => handleSelectTab(filter.id)}
+                  aria-pressed={activeFilter.toLowerCase() === filter.id.toLowerCase()}
+                  className={activeFilter.toLowerCase() === filter.id.toLowerCase() ? 'mobile-nav-item is-active' : 'mobile-nav-item'}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <div className="mobile-nav-actions">
+              <button
+                type="button"
+                className="mobile-nav-action"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  onOpenWatchParty?.();
+                }}
+              >
+                <Users size={16} />
+                <span>Watch Party</span>
+              </button>
+              <button type="button" className="mobile-nav-action" onClick={openPreferences}>
+                <SlidersHorizontal size={16} />
+                <span>Preferencias</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="header-bottom">
           <nav className="primary-nav" aria-label="Navegación principal">

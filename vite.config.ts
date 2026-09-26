@@ -8,6 +8,12 @@ const deferredOverlays = fileURLToPath(
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Android 10's stock WebView can be substantially older than desktop
+    // Chromium. Keep the shared frontend modern, but emit syntax that API 29
+    // WebViews can parse instead of failing before React mounts.
+    target: ['chrome80', 'es2019'],
+  },
   resolve: {
     alias: [
       { find: /^\.\/components\/HLSPlayerModal$/, replacement: deferredOverlays },

@@ -100,6 +100,32 @@ try {
     await evaluate(call, `document.querySelector('.mobile-nav-backdrop')?.click(); true`);
     await delay(200);
     console.log(JSON.stringify({ action, closed: true }));
+  } else if (action === 'assert-menu-closed') {
+    await delay(250);
+    const menuOpen = await evaluate(call, `Boolean(document.querySelector('.mobile-nav-sheet'))`);
+    console.log(JSON.stringify({ action, menuOpen }));
+    if (menuOpen) throw new Error('Android Back did not close the mobile navigation sheet');
+  } else if (action === 'open-preferences') {
+    const opened = await evaluate(call, `(() => {
+      if (!document.querySelector('.mobile-nav-sheet')) {
+        document.querySelector('.mobile-nav-trigger')?.click();
+      }
+      const buttons = [...document.querySelectorAll('.mobile-nav-action')];
+      const target = buttons.find((button) => /preferencias/i.test(button.textContent || ''));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Preferences action was not found in the mobile sheet');
+    await delay(450);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
+    if (!visible) throw new Error('Preferences bottom sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-preferences-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Preferences');
   } else if (action === 'open-player') {
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);
@@ -146,6 +172,8 @@ try {
       nativeShell: document.documentElement.dataset.nativeShell || null,
       performance: document.documentElement.dataset.msPerformance || null,
       menuOpen: Boolean(document.querySelector('.mobile-nav-sheet')),
+      preferencesOpen: Boolean(document.querySelector('.preferences-panel')),
+      accountOpen: Boolean(document.querySelector('.account-menu')),
       player: Boolean(document.querySelector('[data-player-root]')),
       title: document.title
     })`);

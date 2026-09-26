@@ -1381,6 +1381,12 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-pla
   flex: none;
 }
 
+/* The legacy WebView can paint the fullscreen backdrop above portal content.
+ * Keep the More controls touchable and readable on Android 10. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-backdrop {
+  display: none !important;
+}
+
 @media (orientation: landscape) {
   html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
     width: 22rem;

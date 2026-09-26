@@ -19,8 +19,8 @@ const CASES: ProbeCase[] = [
   { provider: "doramasflix", adapter: "doramasflix", title: "Penthouse 1x1", url: "https://doramasflix.io/capitulos/penthouse-1x1" },
   { provider: "archive-org", adapter: "archive_org", title: "Big Buck Bunny", url: "https://archive.org/details/BigBuckBunny_328" },
   { provider: "archive-org", adapter: "archive_org", title: "His Girl Friday", url: "https://archive.org/details/his_girl_friday" },
-  { provider: "tioanime", adapter: "tioanime", title: "Naruto 1", url: "https://tioanime.com/ver/naruto-1" },
-  { provider: "tioanime", adapter: "tioanime", title: "Bleach 1", url: "https://tioanime.com/ver/bleach-1" },
+  { provider: "tioanime", adapter: "tioanime", title: "Kaijuu 8-gou: Narumi no Heijitsu", url: "https://tioanime.com/ver/kaijuu-8gou-narumi-no-heijitsu-1" },
+  { provider: "tioanime", adapter: "tioanime", title: "The Ribbon Hero", url: "https://tioanime.com/ver/the-ribbon-hero-1" },
 ];
 
 const UA = "MeriStream-active-provider-probe/2026-09";

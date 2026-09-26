@@ -297,6 +297,10 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   return (
     <div
       className="continue-card group/cw relative flex flex-col overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 cursor-pointer select-none"
+      onClick={(event) => {
+        if ((event.target as HTMLElement | null)?.closest('button')) return;
+        onPlay();
+      }}
     >
       {/* 16:9 HORIZONTAL THUMBNAIL */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-950">

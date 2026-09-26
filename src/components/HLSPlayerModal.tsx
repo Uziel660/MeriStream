@@ -54,7 +54,14 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
-import { backendUrl, isNativeShell, nativeHaptic } from '../utils/runtime';
+import {
+  backendUrl,
+  isNativeShell,
+  nativeHaptic,
+  nativeLockLandscape,
+  nativeSetImmersive,
+  nativeUnlockOrientation,
+} from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
@@ -2448,31 +2455,22 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const enterNativeImmersive = async () => {
     if (!isNativeShell()) return;
     const node = containerRef.current;
+    await nativeSetImmersive(true);
+    await nativeLockLandscape();
     try {
       if (node && !document.fullscreenElement && typeof node.requestFullscreen === 'function') {
         await node.requestFullscreen();
       }
     } catch {
-      // Fullscreen can be rejected when Android no longer has user activation.
-    }
-    try {
-      const orientation = (screen.orientation as ScreenOrientation & {
-        lock?: (orientation: string) => Promise<void>;
-      });
-      await orientation?.lock?.('landscape');
-    } catch {
-      // Orientation lock is best effort; playback must never depend on it.
+      // Native SystemBars + orientation already provide immersive playback
+      // when WebView fullscreen requires a stricter user-activation window.
     }
   };
 
   const leaveNativeImmersive = () => {
     if (!isNativeShell()) return;
-    try {
-      const orientation = (screen.orientation as ScreenOrientation & { unlock?: () => void });
-      orientation?.unlock?.();
-    } catch {
-      // Keep close/navigation reliable even when orientation APIs are absent.
-    }
+    void nativeSetImmersive(false);
+    void nativeUnlockOrientation();
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
     }
@@ -2590,10 +2588,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         await document.exitFullscreen();
       } finally {
         if (isNativeShell()) {
-          try {
-            const orientation = (screen.orientation as ScreenOrientation & { unlock?: () => void });
-            orientation?.unlock?.();
-          } catch {}
+          await nativeSetImmersive(false);
+          await nativeUnlockOrientation();
         }
       }
     } else if (isNativeShell()) {

@@ -552,14 +552,24 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
 }> {
   const started = Date.now();
   const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}:${normalizeLanguageTag(req.originalLanguage)}:${(req.preferredAudio || []).join(",")}:${(req.preferredSubtitles || []).join(",")}`;
+  const doramasHealth = getDoramasflixHealth();
+  const doramasRecentlyDegraded = doramasHealth.state === "degraded"
+    && typeof doramasHealth.lastCheckedAt === "number"
+    && Date.now() - doramasHealth.lastCheckedAt < 90_000;
+  const isDoramasSource = (source: { provider?: string | null; source_site?: string | null }) =>
+    normalizeProviderId(source.provider || source.source_site || "") === "doramasflix";
+  const filterDegradedDoramas = <T extends { provider?: string | null; source_site?: string | null }>(items: T[]): T[] =>
+    doramasRecentlyDegraded ? items.filter((source) => !isDoramasSource(source)) : items;
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
+    const cachedSources = filterDegradedDoramas(cached.sources);
+    const cachedFallbacks = filterDegradedDoramas(cached.fallbackCandidates);
     const persisted = req.persist
-      ? await persistApiSources(req, cached.sources, cached.fallbackCandidates).catch(() => 0)
+      ? await persistApiSources(req, cachedSources, cachedFallbacks).catch(() => 0)
       : 0;
     return {
-      sources: cached.sources,
-      fallbackCandidates: cached.fallbackCandidates,
+      sources: cachedSources,
+      fallbackCandidates: cachedFallbacks,
       persisted,
       elapsedMs: Date.now() - started,
     };
@@ -601,10 +611,6 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
     // Once the adapter has observed an upstream failure, temporarily suppress
     // only that provider and let the next fallback (normally VidSrc) start.
     // The short TTL keeps recovery automatic when Doramasflix comes back.
-    const doramasHealth = getDoramasflixHealth();
-    const doramasRecentlyDegraded = doramasHealth.state === "degraded"
-      && typeof doramasHealth.lastCheckedAt === "number"
-      && Date.now() - doramasHealth.lastCheckedAt < 90_000;
     const databaseFallbacks = database.fallbackCandidates.filter((source) => {
       if (!doramasRecentlyDegraded) return true;
       return normalizeProviderId(source.provider) !== "doramasflix";

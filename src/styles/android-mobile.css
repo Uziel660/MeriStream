@@ -1228,6 +1228,21 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .header-inn
   padding-right: .6rem !important;
 }
 
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand {
+  color: #f4f5f7 !important;
+  font-size: 1.05rem !important;
+  letter-spacing: -.035em !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-light,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-period {
+  color: #f4f5f7 !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-period {
+  color: #f4b33f !important;
+}
+
 html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top {
   display: flex !important;
   min-height: 4rem !important;

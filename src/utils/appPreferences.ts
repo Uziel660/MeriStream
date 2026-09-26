@@ -77,14 +77,25 @@ function normalizeInterfaceStyle(value: unknown): InterfaceStyle {
 
 function effectivePerformanceMode(mode: PerformanceMode): PerformanceMode {
   if (mode !== 'auto' || !isNativeShell() || typeof navigator === 'undefined') return mode;
-  const nav = navigator as Navigator & { deviceMemory?: number };
+  const nav = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean; effectiveType?: string };
+  };
   const memory = Number(nav.deviceMemory || 0);
   const cores = Number(nav.hardwareConcurrency || 0);
+  const connection = nav.connection;
+  const network = String(connection?.effectiveType || '').toLowerCase();
 
   // Android defaults to a cheap presentation path. Very constrained devices
-  // get the low-cost layer; everything else uses balanced mode. Users can
-  // still explicitly choose quality/low/balanced in Preferences.
-  if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4)) return 'low';
+  // or deliberately constrained networks get the low-cost layer; everything
+  // else uses balanced mode. Users can still override this in Preferences.
+  if (
+    connection?.saveData === true
+    || network === 'slow-2g'
+    || network === '2g'
+    || (memory > 0 && memory <= 4)
+    || (cores > 0 && cores <= 4)
+  ) return 'low';
   return 'balanced';
 }
 

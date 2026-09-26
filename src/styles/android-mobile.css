@@ -1375,6 +1375,13 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .native-pla
   padding: .55rem .65rem;
 }
 
+/* Keep the overflow sheet on Android's static system face/weights. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet button {
+  font-family: Roboto, sans-serif !important;
+  font-weight: 500 !important;
+  font-variation-settings: normal !important;
+}
+
 /* Chrome 74 has no flex gap; leave room between each action's icon and label. */
 html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-player-more-action svg {
   margin-right: .35rem;

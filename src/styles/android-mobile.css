@@ -1381,6 +1381,13 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-pla
   flex: none;
 }
 
+/* Chrome 74 may promote the playing video above fixed WebView content and
+ * erase the More sheet's painted controls. Keep audio playing while the sheet
+ * is open, but release the video surface until it closes. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-root][data-player-more-open='true'] video {
+  visibility: hidden !important;
+}
+
 @media (orientation: landscape) {
   html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
     width: 22rem;

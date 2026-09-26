@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 const port = Number(process.env.DEVTOOLS_PORT || 9222);
 const action = process.argv[2] || 'state';
 const base = `http://127.0.0.1:${port}`;
@@ -329,6 +331,12 @@ try {
     console.log(JSON.stringify({ action, visible, player }));
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'capture-player-more-cdp') {
+    const targetPath = process.argv[3];
+    if (!targetPath) throw new Error('CDP screenshot target path is required');
+    const capture = await call('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
+    await writeFile(targetPath, Buffer.from(capture.data, 'base64'));
+    console.log(JSON.stringify({ action, path: targetPath }));
   } else if (action === 'open-player-party') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

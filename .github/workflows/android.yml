@@ -79,6 +79,7 @@ jobs:
           script: |
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
+            trap 'adb logcat -d > meristream-logcat.txt 2>/dev/null || true' EXIT
             adb shell am force-stop me.merith.meristream
             adb shell am start -W -n me.merith.meristream/.MainActivity
             sleep 18
@@ -90,12 +91,18 @@ jobs:
 
             # Attach Chrome DevTools Protocol to the debug WebView. This lets CI
             # inspect the same React tree rendered by the installed APK.
-            PID="$(adb shell pidof me.merith.meristream | tr -d '\r')"
-            test -n "$PID"
+            # Activity/window state is a stronger liveness check than toybox
+            # pidof, which can intermittently return empty on emulator images.
+            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
             adb shell dumpsys package me.merith.meristream | grep -E "DEBUGGABLE|flags=" | head -8 || true
+            echo "MeriStream processes:"
+            adb shell ps -A | grep -i meristream || true
             SOCKET="$(adb shell cat /proc/net/unix 2>/dev/null | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r' || true)"
             if [ -z "$SOCKET" ]; then
-              SOCKET="webview_devtools_remote_$PID"
+              echo "No WebView DevTools socket found; dumping process and log diagnostics."
+              adb shell ps -A | grep -E 'meristream|webview' || true
+              adb logcat -d | tail -300 || true
+              exit 1
             fi
             echo "Using WebView DevTools socket: $SOCKET"
             adb forward --remove tcp:9222 >/dev/null 2>&1 || true

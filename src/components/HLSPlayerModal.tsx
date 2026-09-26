@@ -178,6 +178,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setVideoNode(node);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const overflowMenuRef = useRef<HTMLDivElement>(null);
   const wakeLockRef = useRef<any>(null);
   const hlsRef = useRef<Hls | null>(null);
   // dash.js se carga solo cuando se selecciona un manifiesto MPD.
@@ -4180,7 +4181,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                   {/* Android/mobile overflow: secondary actions stay available
                       without occupying the control row permanently. */}
-                  <div className="relative sm:hidden" data-mobile-player-overflow>
+                  <div ref={overflowMenuRef} className="relative sm:hidden" data-mobile-player-overflow>
                     <button
                       type="button"
                       onClick={() => setActiveMenu((m) => (m === 'more' ? 'none' : 'more'))}
@@ -4190,7 +4191,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     >
                       <MoreVertical size={17} />
                     </button>
-                    {activeMenu === 'more' && nativeShell && typeof document !== 'undefined' && createPortal((
+                    {activeMenu === 'more' && typeof document !== 'undefined' && overflowMenuRef.current && createPortal((
                       <>
                         <button
                           type="button"
@@ -4325,7 +4326,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         )}
                         </div>
                       </>
-                    ), document.body)}
+                    ), nativeShell ? document.body : overflowMenuRef.current)}
                   </div>
                 </div>
               </div>

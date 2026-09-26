@@ -17,8 +17,9 @@ import { getAppPreferences } from '../utils/appPreferences';
 import { useUserLists } from '../hooks/useUserLists';
 import { useAuth } from '../contexts/AuthContext';
 import { AddToListModal } from './AddToListModal';
-import ReportControl from './ReportControl';
 import { isNativeLowCostPresentation, isNativeShell, nativeHaptic } from '../utils/runtime';
+
+const LazyReportControl = React.lazy(() => import('./ReportControl'));
 
 function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anime'; tmdbId: number } | null {
   const match = /^tmdb-(movie|series|anime)-(\d+)$/.exec(value.trim());
@@ -681,15 +682,19 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         </button>
                       )}
 
-                      <div data-details-secondary-action>
-                        <ReportControl
-                          title={cleanDisplayTitle(show.title)}
-                          showId={show.id}
-                          tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
-                          kind={show.kind || show.category}
-                          className="bg-black/50"
-                        />
-
+                      {!nativeShell && (
+                        <div data-details-secondary-action>
+                          <React.Suspense fallback={null}>
+                            <LazyReportControl
+                              title={cleanDisplayTitle(show.title)}
+                              showId={show.id}
+                              tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                              kind={show.kind || show.category}
+                              className="bg-black/50"
+                            />
+                          </React.Suspense>
+                        </div>
+                      )}
 
                       <button
                         type="button"
@@ -749,16 +754,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                                 <span>Editar obra</span>
                               </button>
                             )}
-                            <ReportControl
-                              title={cleanDisplayTitle(show.title)}
-                              showId={show.id}
-                              tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
-                              kind={show.kind || show.category}
-                              className="native-details-action"
-                            />
+                            <React.Suspense fallback={<div className="native-details-action opacity-60">Cargando reporte…</div>}>
+                              <LazyReportControl
+                                title={cleanDisplayTitle(show.title)}
+                                showId={show.id}
+                                tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                                kind={show.kind || show.category}
+                                className="native-details-action"
+                              />
+                            </React.Suspense>
                           </div>
                         </>
-                      )}                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -803,15 +810,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
                   {/* Reportar también queda disponible cuando una ficha aún no
                       tiene fuentes, justo el caso donde más útil resulta. */}
-                  {(!isMovie || hasNoSources) && (
+                  {!nativeShell && (!isMovie || hasNoSources) && (
                     <div className="flex justify-end">
-                      <ReportControl
-                        title={cleanDisplayTitle(show.title)}
-                        showId={show.id}
-                        tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
-                        kind={show.kind || show.category}
-                        className="bg-black/50"
-                      />
+                      <React.Suspense fallback={null}>
+                        <LazyReportControl
+                          title={cleanDisplayTitle(show.title)}
+                          showId={show.id}
+                          tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                          kind={show.kind || show.category}
+                          className="bg-black/50"
+                        />
+                      </React.Suspense>
                     </div>
                   )}
 

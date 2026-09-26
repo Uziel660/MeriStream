@@ -91,6 +91,11 @@ fi
 cat "/tmp/${PREFIX}-webview-pages.json"
 
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs state
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs performance | tee "${PREFIX}-performance.txt"
+
+if [[ "$MODE" == "low-end" ]]; then
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-low-end-mode
+fi
 
 if [[ "$MODE" == "full" ]]; then
   # Production can be Cloudflare-challenged from GitHub-hosted IPs. Seed the

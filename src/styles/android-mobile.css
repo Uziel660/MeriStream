@@ -376,8 +376,18 @@ html[data-native-shell='android'] [data-player-root] video {
   }
 
   html[data-native-shell='android'] [data-player-controls] button {
-    min-width: 2rem !important;
-    min-height: 2rem !important;
+    min-width: 2.65rem !important;
+    min-height: 2.65rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-scrubber-thumb] {
+    width: 1rem !important;
+    height: 1rem !important;
+    opacity: 1 !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] input[type='range'] {
+    touch-action: none;
   }
 }
 

@@ -8,7 +8,7 @@ import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { Show } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
-import { isNativeLowCostPresentation } from '../utils/runtime';
+import { isNativeLowCostPresentation, isNativeShell } from '../utils/runtime';
 import { useUserLists } from '../hooks/useUserLists';
 
 interface MediaCardProps {
@@ -37,6 +37,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
   }, [user?.id, user?.is_admin]);
   const title = cleanDisplayTitle(media.title);
   const lowCostPresentation = isNativeLowCostPresentation();
+  const nativeShell = isNativeShell();
   const { isGenreHidden } = useHiddenGenres();
   const genre = cleanDisplayGenres(media.genres).find((item) => !isGenreHidden(item)) || contentLabel(media.category);
   const posterSources = cardPosterCandidates(media);
@@ -45,7 +46,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
       type="button"
       className="media-card group relative"
       onClick={() => onSelectMedia?.(media)}
-      onMouseEnter={() => onHover?.(media)}
+      onMouseEnter={nativeShell ? undefined : () => onHover?.(media)}
       onFocus={() => onHover?.(media)}
       aria-label={`Ver detalles de ${title}`}
     >

@@ -173,9 +173,23 @@ try {
     const result = await clickMobileMenuAction('preferencias');
     if (!result?.clicked) throw new Error(`Preferences action was not found. Mobile actions: ${JSON.stringify(result?.labels || [])}`);
     await delay(450);
-    const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
-    if (!visible) throw new Error('Preferences bottom sheet did not open');
-    console.log(JSON.stringify({ action, opened: visible }));
+    const state = await evaluate(call, `(() => {
+      const previews = [...document.querySelectorAll('.interface-style-preview')];
+      const first = previews[0];
+      const bounds = first?.getBoundingClientRect();
+      return {
+        visible: Boolean(document.querySelector('.preferences-panel')),
+        previewCount: previews.length,
+        firstPreview: bounds ? { width: bounds.width, height: bounds.height } : null,
+        previewDisplay: first ? getComputedStyle(first).display : null,
+        previewBeforeWidth: first ? getComputedStyle(first, '::before').width : null,
+      };
+    })()`);
+    if (!state.visible) throw new Error('Preferences bottom sheet did not open');
+    if (state.previewCount < 4 || state.firstPreview?.width < 100 || state.firstPreview?.height < 32 || state.previewDisplay !== 'block' || Number.parseFloat(state.previewBeforeWidth) < 20) {
+      throw new Error(`Interface style previews are not laid out visibly: ${JSON.stringify(state)}`);
+    }
+    console.log(JSON.stringify({ action, opened: state.visible, ...state }));
   } else if (action === 'assert-preferences-closed') {
     await delay(250);
     const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
@@ -353,6 +367,8 @@ try {
         scrollHeight: sheet ? sheet.scrollHeight : null,
         clientHeight: sheet ? sheet.clientHeight : null,
         paintDiagnostics: {
+          userAgent: navigator.userAgent,
+          devicePixelRatio: window.devicePixelRatio,
           sheet: styleSummary(sheet),
           backdrop: styleSummary(backdrop),
           video: styleSummary(video),
@@ -491,6 +507,8 @@ try {
       const memory = performance.memory || null;
       return {
         shell: document.documentElement.dataset.nativeShell || null,
+        userAgent: navigator.userAgent,
+        devicePixelRatio: window.devicePixelRatio,
         performanceMode: document.documentElement.dataset.msPerformance || null,
         nativeBindings: document.documentElement.dataset.nativeBindings || null,
         navigation: {

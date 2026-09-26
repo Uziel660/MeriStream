@@ -144,6 +144,7 @@ jobs:
           cores: 2
           ram-size: 2048M
           heap-size: 256M
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: bash tools/android-emulator-smoke.sh low-end low-end-apk/app-debug.apk
 

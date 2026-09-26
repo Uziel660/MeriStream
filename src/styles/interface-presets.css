@@ -253,7 +253,7 @@ html[data-ms-style='aurora'] .auth-panel { background:linear-gradient(150deg,rgb
 }
 .interface-style-choice:hover { border-color:var(--ms-border-strong); transform:translateY(-1px); }
 .interface-style-choice[aria-pressed='true'] { border-color:var(--ms-accent); background:rgba(255,255,255,.055); }
-.interface-style-preview { position:relative; height:3.6rem; overflow:hidden; border:1px solid rgba(255,255,255,.1); background:#0a0c12; }
+.interface-style-preview { display:block; width:100%; position:relative; height:3.6rem; overflow:hidden; border:1px solid rgba(255,255,255,.1); background:#0a0c12; }
 .interface-style-preview::before { content:''; position:absolute; left:.45rem; right:.45rem; top:.42rem; height:.42rem; border-radius:99px; background:rgba(255,255,255,.16); }
 .interface-style-preview::after { content:''; position:absolute; left:.45rem; bottom:.42rem; width:42%; height:1.65rem; background:rgba(255,255,255,.12); }
 .interface-style-preview span { position:absolute; right:.45rem; bottom:.42rem; width:43%; height:1.65rem; background:rgba(255,255,255,.07); }

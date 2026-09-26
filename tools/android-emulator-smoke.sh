@@ -29,6 +29,10 @@ suppress_emulator_system_dialogs() {
   adb shell settings put global show_first_crash_dialog 0 >/dev/null 2>&1 || true
   adb shell settings put global show_restart_in_crash_dialog 0 >/dev/null 2>&1 || true
   adb shell settings put secure anr_show_background 0 >/dev/null 2>&1 || true
+  # Android's one-time immersive-mode education ("Viewing full screen") is
+  # system UI, not part of MeriStream. Mark it acknowledged so it cannot cover
+  # player screenshots or consume the Back press meant for the overflow sheet.
+  adb shell settings put secure immersive_mode_confirmations confirmed >/dev/null 2>&1 || true
   adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
 }
 

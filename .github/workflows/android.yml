@@ -86,8 +86,13 @@ jobs:
           name: meristream-android-emulator-evidence
           path: |
             meristream-emulator.png
+            meristream-catalog-seeded.png
             meristream-menu.png
             meristream-preferences.png
+            meristream-auth.png
+            meristream-explore-filters.png
+            meristream-lists.png
+            meristream-list-create.png
             meristream-player.png
             meristream-window.xml
             meristream-start.txt

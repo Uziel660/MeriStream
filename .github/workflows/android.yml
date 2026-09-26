@@ -10,6 +10,7 @@ on:
       - "capacitor.config.json"
       - "tools/patch-capacitor-android.mjs"
       - "tools/android-webview-smoke.mjs"
+      - "tools/android-emulator-smoke.sh"
       - ".github/workflows/android.yml"
 
 jobs:
@@ -76,73 +77,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: |
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb logcat -c
-            trap 'adb logcat -d > meristream-logcat.txt 2>/dev/null || true' EXIT
-            adb shell am force-stop me.merith.meristream
-            adb shell am start -W -n me.merith.meristream/.MainActivity
-            sleep 18
-
-            # Initial catalog/native-shell screenshot.
-            adb shell uiautomator dump /sdcard/meristream-window.xml || true
-            adb pull /sdcard/meristream-window.xml meristream-window.xml || true
-            adb exec-out screencap -p > meristream-emulator.png || true
-
-            # Attach Chrome DevTools Protocol to the debug WebView. This lets CI
-            # inspect the same React tree rendered by the installed APK.
-            # Activity/window state is a stronger liveness check than toybox
-            # pidof, which can intermittently return empty on emulator images.
-            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
-            adb shell dumpsys package me.merith.meristream | grep -E "DEBUGGABLE|flags=" | head -8 || true
-            echo "MeriStream processes:"
-            adb shell ps -A | grep -i meristream || true
-            SOCKET="$(adb shell cat /proc/net/unix 2>/dev/null | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r' || true)"
-            if [ -z "$SOCKET" ]; then
-              echo "No WebView DevTools socket found; dumping process and log diagnostics."
-              adb shell ps -A | grep -E 'meristream|webview' || true
-              adb logcat -d | tail -300 || true
-              exit 1
-            fi
-            echo "Using WebView DevTools socket: $SOCKET"
-            adb forward --remove tcp:9222 >/dev/null 2>&1 || true
-            adb forward tcp:9222 "localabstract:$SOCKET"
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsS http://127.0.0.1:9222/json >/tmp/webview-pages.json 2>/dev/null; then
-                break
-              fi
-              sleep 1
-            done
-            cat /tmp/webview-pages.json
-            node tools/android-webview-smoke.mjs state
-
-            # Visual audit of the native bottom-sheet navigation.
-            node tools/android-webview-smoke.mjs open-menu
-            sleep 1
-            adb exec-out screencap -p > meristream-menu.png
-
-            # Android's physical Back key must close temporary UI before the app.
-            adb shell input keyevent 4
-            node tools/android-webview-smoke.mjs assert-menu-closed
-
-            # Preferences should also present as a native bottom sheet and obey Back.
-            node tools/android-webview-smoke.mjs open-preferences
-            sleep 1
-            adb exec-out screencap -p > meristream-preferences.png
-            adb shell input keyevent 4
-            node tools/android-webview-smoke.mjs assert-preferences-closed
-
-            # Real Android WebView playback smoke. This route uses a public
-            # multi-bitrate HLS stream so Cloudflare cannot mask player regressions.
-            node tools/android-webview-smoke.mjs open-player
-            node tools/android-webview-smoke.mjs play
-            sleep 5
-            adb exec-out screencap -p > meristream-player.png
-            node tools/android-webview-smoke.mjs assert-player
-
-            adb logcat -d > meristream-logcat.txt || true
-            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
-            ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" meristream-logcat.txt
+          script: bash tools/android-emulator-smoke.sh full android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload emulator evidence
         if: always()
@@ -155,6 +90,8 @@ jobs:
             meristream-preferences.png
             meristream-player.png
             meristream-window.xml
+            meristream-start.txt
+            meristream-meminfo.txt
             meristream-logcat.txt
           if-no-files-found: warn
 
@@ -162,6 +99,7 @@ jobs:
   low-end-android-smoke:
     name: Android 10 / 2 GB smoke
     needs: build-android
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -191,37 +129,7 @@ jobs:
           ram-size: 2048M
           heap-size: 256M
           disable-animations: true
-          script: |
-            adb install -r low-end-apk/app-debug.apk
-            adb logcat -c
-            trap 'adb logcat -d > meristream-low-end-logcat.txt 2>/dev/null || true' EXIT
-            adb shell am force-stop me.merith.meristream
-            adb shell am start -W -n me.merith.meristream/.MainActivity | tee meristream-low-end-start.txt
-            sleep 12
-            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
-
-            SOCKET="$(adb shell cat /proc/net/unix 2>/dev/null | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r' || true)"
-            test -n "$SOCKET"
-            adb forward --remove tcp:9222 >/dev/null 2>&1 || true
-            adb forward tcp:9222 "localabstract:$SOCKET"
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsS http://127.0.0.1:9222/json >/tmp/low-end-webview-pages.json 2>/dev/null; then
-                break
-              fi
-              sleep 1
-            done
-            cat /tmp/low-end-webview-pages.json
-
-            node tools/android-webview-smoke.mjs state
-            node tools/android-webview-smoke.mjs open-player
-            node tools/android-webview-smoke.mjs play
-            sleep 6
-            node tools/android-webview-smoke.mjs assert-player
-
-            adb shell dumpsys meminfo me.merith.meristream > meristream-low-end-meminfo.txt || true
-            adb exec-out screencap -p > meristream-low-end-player.png || true
-            adb logcat -d > meristream-low-end-logcat.txt || true
-            ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" meristream-low-end-logcat.txt
+          script: bash tools/android-emulator-smoke.sh low-end low-end-apk/app-debug.apk
 
       - name: Upload low-end evidence
         if: always()

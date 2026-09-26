@@ -1,6 +1,5 @@
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import { MotionConfig } from 'motion/react';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { InterfaceStyleBridge } from './components/InterfaceStyleBridge';
@@ -29,7 +28,7 @@ const isAdminRoute = window.location.pathname.startsWith('/admin');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MotionConfig reducedMotion="user"><ErrorBoundary>
+    <ErrorBoundary>
       <AuthProvider>
         <InterfaceStyleBridge />
         <HiddenGenresProvider>
@@ -42,6 +41,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           )}
         </HiddenGenresProvider>
       </AuthProvider>
-    </ErrorBoundary></MotionConfig>
+    </ErrorBoundary>
   </React.StrictMode>
 );

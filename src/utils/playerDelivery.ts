@@ -45,6 +45,7 @@ export function isNativeMediaUrl(url: string | null | undefined): boolean {
     value.includes('/get_video') ||
     value.includes('tapecontent.net') ||
     value.includes('/api/v1/stream/mega') ||
+    value.includes('pixeldrain.com/api/file/') ||
     value.includes('/api/v1/playback/') ||
     value.includes('/api/v1/proxy/stream')
   );
@@ -419,3 +420,4 @@ export function recordAttemptedMode(
 export function handleEmbedTimeout(_currentState: DeliveryState): DeliveryState {
   return 'error';
 }
+

@@ -314,7 +314,8 @@ export class EmbedResolvers {
       u.includes("hls-vod") ||
       u.includes("/get_video") ||
       u.includes("tapecontent.net") ||
-      u.includes("/api/v1/stream/mega")
+      u.includes("/api/v1/stream/mega") ||
+      u.includes("pixeldrain.com/api/file/")
     );
   }
 
@@ -2107,3 +2108,4 @@ export class ProviderResolverRegistry {
 }
 
 export const providerResolverRegistry = new ProviderResolverRegistry();
+

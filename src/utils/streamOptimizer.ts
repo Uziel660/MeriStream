@@ -129,6 +129,7 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('cinecalidad.') ||
       lower.includes('hianimes.se/') ||
       lower.includes('doramasflix.') ||
+      lower.includes('doramasyt.com/ver/') ||
       lower.includes('gnulahd.nu/') ||
       lower.includes('gnula.nu/') ||
       lower.includes('gnula.se/') ||
@@ -153,6 +154,7 @@ export function isEmbedUrl(url: string): boolean {
 
   // Stream nativo servido por nuestro backend (descifrado Mega on-the-fly): siempre directo
   if (u.includes('/api/v1/stream/mega')) return false;
+  if (u.includes('pixeldrain.com/api/file/')) return false;
   if (u.includes('/m3u8/') || u.includes('hls-vod')) return false;
   if (u.includes('/get_video') || u.includes('tapecontent.net')) return false;
 
@@ -228,6 +230,7 @@ export function getProviderName(url: string, index: number, sourceSite?: string,
   if (u.includes('zokoanime')) return 'ZokoAnime (Embed)';
   if (u.includes('megaplay')) return 'AniPulse / Megaplay (HLS)';
   if (u.includes('/api/v1/stream/mega')) return 'Mega Directo (Nativo)';
+  if (u.includes('pixeldrain.com/api/file/')) return 'Pixeldrain Directo';
   if (u.includes('mux.dev') || u.includes('test-streams')) return 'CDN Ultra HLS (Rápido)';
   if (u.includes('commondatastorage.googleapis.com') || u.includes('storage.googleapis')) return 'Google Fast Direct';
   if (u.includes('zilla-networks')) return 'Zilla HLS Network';
@@ -698,3 +701,4 @@ export async function quickProbeServerHealth(server: ScoredServer, timeoutMs = 2
     return null;
   }
 }
+

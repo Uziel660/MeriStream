@@ -262,6 +262,21 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     fallbackProvider: "vidsrc",
     notes: "Adaptador canónico para doramas / series asiáticas: GraphQL público + resolutores nativos HLS/MP4.",
   },
+  doramasyt: {
+    id: "doramasyt",
+    role: "primary",
+    lifecycle: "active",
+    priority: 14,
+    defaultRating: 7.8,
+    contentKinds: ["movie", "series"],
+    audioLanguages: ["ko", "es"],
+    subtitleLanguages: ["es"],
+    discovery: "page",
+    resolver: "doramasyt",
+    hosts: ["doramasyt.com"],
+    fallbackProvider: "doramasflix",
+    notes: "Adaptador dedicado: catálogo Laravel, episodios y mirrors Mega/Pixeldrain; filtra pósters y trackers.",
+  },
   tioplus: {
     id: "tioplus",
     role: "fallback",
@@ -330,6 +345,7 @@ const SITE_ALIASES: Record<string, string> = {
   "doramasflix.net": "doramasflix",
   "doramasflix.in": "doramasflix",
   "doramasflix.com": "doramasflix",
+  "doramasyt.com": "doramasyt",
   "tioplus.app": "tioplus",
   "tubepelis.com": "tubepelis",
   "archive.org": "archive-org",
@@ -519,3 +535,5 @@ export function renditionPreferenceScore(input: RenditionDescriptor): number {
 
   return 50;
 }
+
+

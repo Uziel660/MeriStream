@@ -12,6 +12,7 @@ import { TioPlusAdapter } from "./adapters/TioPlusAdapter";
 import { CinecalidadAdapter } from "./adapters/CinecalidadAdapter";
 import { VerAnimesAdapter } from "./adapters/VerAnimesAdapter";
 import { DoramasflixAdapter } from "./adapters/DoramasflixAdapter";
+import { DoramasYTAdapter } from "./adapters/DoramasYTAdapter";
 import { TubePelisAdapter } from "./adapters/TubePelisAdapter";
 import { HiAnimesAdapter } from "./adapters/HiAnimesAdapter";
 import { GnulaAdapter } from "./adapters/GnulaAdapter";
@@ -46,6 +47,7 @@ export class ScraperManager {
     this.registerAdapter(new TioAnimeAdapter());
     this.registerAdapter(new VerAnimesAdapter());
     this.registerAdapter(new DoramasflixAdapter());
+    this.registerAdapter(new DoramasYTAdapter());
     this.registerAdapter(new TioPlusAdapter());
     this.registerAdapter(new TubePelisAdapter());
     this.registerAdapter(new TvMazeAdapter());
@@ -111,3 +113,4 @@ export class ScraperManager {
     return result.catalog_items || [];
   }
 }
+

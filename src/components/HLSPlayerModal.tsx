@@ -27,6 +27,7 @@ import {
   Lock,
   Unlock,
   Users,
+  MoreVertical,
 } from 'lucide-react';
 import { api, getAuthToken, type PlaybackResolution } from '../api/client';
 import { useChromecast } from '../hooks/useChromecast';
@@ -53,7 +54,7 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
-import { backendUrl } from '../utils/runtime';
+import { backendUrl, isNativeShell } from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
@@ -285,7 +286,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [showLockWidget, setShowLockWidget] = useState(false);
   const lockWidgetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [hoverTime, setHoverTime] = useState<{ time: number; posPercent: number } | null>(null);
-  const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers'>('none');
+  const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers' | 'more'>('none');
 
   // Menús de Configuración de Video
   const [qualityLevels, setQualityLevels] = useState<{ index: number; label: string; height?: number }[]>([]);
@@ -2405,6 +2406,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (window.history.state?.meristream_view === 'player' && !isAppRoutedPlayer) {
       window.history.back();
     }
+    leaveNativeImmersive();
     onClose();
   }, [onClose, props, isAppRoutedPlayer]);
 
@@ -2443,6 +2445,39 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   }, [onClose, props, isAppRoutedPlayer]);
 
   // Controles de Acción de Reproducción
+  const enterNativeImmersive = async () => {
+    if (!isNativeShell()) return;
+    const node = containerRef.current;
+    try {
+      if (node && !document.fullscreenElement && typeof node.requestFullscreen === 'function') {
+        await node.requestFullscreen();
+      }
+    } catch {
+      // Fullscreen can be rejected when Android no longer has user activation.
+    }
+    try {
+      const orientation = (screen.orientation as ScreenOrientation & {
+        lock?: (orientation: string) => Promise<void>;
+      });
+      await orientation?.lock?.('landscape');
+    } catch {
+      // Orientation lock is best effort; playback must never depend on it.
+    }
+  };
+
+  const leaveNativeImmersive = () => {
+    if (!isNativeShell()) return;
+    try {
+      const orientation = (screen.orientation as ScreenOrientation & { unlock?: () => void });
+      orientation?.unlock?.();
+    } catch {
+      // Keep close/navigation reliable even when orientation APIs are absent.
+    }
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  };
+
   const togglePlay = () => {
     if (isViewerMode) {
       showViewerLockNotice('Reproducción controlada por el anfitrión');
@@ -2456,6 +2491,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
+      void enterNativeImmersive();
       video.play().catch(() => {});
     } else {
       video.pause();
@@ -2545,13 +2581,24 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setHoverTime(null);
   };
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const node = containerRef.current;
     if (!node) return;
     if (document.fullscreenElement) {
-      document.exitFullscreen();
+      try {
+        await document.exitFullscreen();
+      } finally {
+        if (isNativeShell()) {
+          try {
+            const orientation = (screen.orientation as ScreenOrientation & { unlock?: () => void });
+            orientation?.unlock?.();
+          } catch {}
+        }
+      }
+    } else if (isNativeShell()) {
+      await enterNativeImmersive();
     } else {
-      node.requestFullscreen();
+      await node.requestFullscreen();
     }
   };
 
@@ -2722,6 +2769,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   return (
     <div
       ref={containerRef}
+      data-player-root
       className={`fixed inset-0 z-[9999] flex h-full w-full min-h-[100dvh] flex-col justify-between bg-black select-none overflow-hidden ${
         !controlsVisible && isPlaying ? 'cursor-none' : ''
       }`}
@@ -3347,6 +3395,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   <button
                     type="button"
                     onClick={() => seekOffset(-10)}
+                    data-mobile-player-secondary
                     disabled={isViewerMode}
                     aria-label="Retroceder 10 segundos"
                     className={`text-zinc-400 hover:text-white transition p-0.5 sm:p-1 ${
@@ -3360,6 +3409,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   <button
                     type="button"
                     onClick={() => seekOffset(10)}
+                    data-mobile-player-secondary
                     disabled={isViewerMode}
                     aria-label="Adelantar 10 segundos"
                     className={`text-zinc-400 hover:text-white transition p-0.5 sm:p-1 ${
@@ -3375,6 +3425,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     <button
                       type="button"
                       onClick={props.onNextEpisode}
+                      data-mobile-player-secondary
                       aria-label="Reproducir siguiente episodio"
                       className="text-zinc-300 hover:text-amber-400 transition flex items-center p-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg sm:bg-white/5 sm:hover:bg-white/10 sm:border sm:border-white/10 text-xs font-semibold"
                       title="Siguiente episodio"
@@ -3385,7 +3436,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   )}
 
                   {/* CONTROL DE VOLUMEN */}
-                  <div className="flex items-center gap-0.5 group/vol">
+                  <div className="flex items-center gap-0.5 group/vol" data-mobile-player-secondary>
                     <button
                       type="button"
                       onClick={toggleMute}
@@ -3661,7 +3712,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   )}
 
                   {/* MENÚ DE VELOCIDAD DE REPRODUCCIÓN */}
-                  <div className="relative">
+                  <div className="relative" data-mobile-player-secondary>
                     <button
                       type="button"
                       onClick={() => setActiveMenu((m) => (m === 'speed' ? 'none' : 'speed'))}
@@ -3765,6 +3816,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* BOTÓN TRANSMITIR A CHROMECAST / SMART TV */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={() => {
                       if (isCasting) {
                         endCastSession();
@@ -3800,6 +3852,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* BLOQUEO DE PANTALLA / MODO FOCUS */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={handleLockScreen}
                     className="p-0.5 sm:p-1.5 rounded-md sm:rounded-lg text-zinc-300 hover:text-white hover:bg-zinc-800/60 transition"
                     title="Bloquear pantalla (Modo Focus)"
@@ -3823,12 +3876,82 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* PANTALLA COMPLETA */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={toggleFullscreen}
                     className="text-zinc-300 hover:text-white p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition"
                     title="Pantalla completa (F)"
                   >
                     {isFullscreen ? <Minimize size={14} className="sm:w-[17px] sm:h-[17px]" /> : <Maximize size={14} className="sm:w-[17px] sm:h-[17px]" />}
                   </button>
+
+                  {/* Android/mobile overflow: secondary actions stay available
+                      without occupying the control row permanently. */}
+                  <div className="relative sm:hidden">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu((m) => (m === 'more' ? 'none' : 'more'))}
+                      className={`p-1 rounded-md transition ${activeMenu === 'more' ? 'bg-zinc-800 text-white' : 'text-zinc-300'}`}
+                      aria-label="Más controles"
+                      title="Más controles"
+                    >
+                      <MoreVertical size={17} />
+                    </button>
+                    {activeMenu === 'more' && (
+                      <div className="absolute bottom-10 right-0 z-[110] w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-zinc-700/80 bg-zinc-900/98 p-2 shadow-2xl">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button type="button" onClick={() => { seekOffset(-10); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            <RotateCcw size={14} /> -10 s
+                          </button>
+                          <button type="button" onClick={() => { seekOffset(10); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            <RotateCw size={14} /> +10 s
+                          </button>
+                          {props.onNextEpisode && (
+                            <button type="button" onClick={() => { setActiveMenu('none'); props.onNextEpisode?.(); }} className="mobile-player-more-action">
+                              <SkipForward size={14} /> Siguiente
+                            </button>
+                          )}
+                          <button type="button" onClick={() => { toggleMute(); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} {isMuted ? 'Activar audio' : 'Silenciar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isCasting) endCastSession();
+                              else requestCastSession();
+                              setActiveMenu('none');
+                            }}
+                            className="mobile-player-more-action"
+                          >
+                            <Cast size={14} /> {isCasting ? 'Desconectar TV' : 'Transmitir'}
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); handleLockScreen(); }} className="mobile-player-more-action">
+                            <Lock size={14} /> Bloquear
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); void toggleFullscreen(); }} className="mobile-player-more-action">
+                            {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />} Pantalla
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); void togglePictureInPicture(); }} className="mobile-player-more-action">
+                            <PictureInPicture size={14} /> PiP
+                          </button>
+                        </div>
+                        <div className="mt-2 border-t border-zinc-800 pt-2">
+                          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Velocidad</span>
+                          <div className="grid grid-cols-6 gap-1">
+                            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                              <button
+                                key={rate}
+                                type="button"
+                                onClick={() => { handleSpeedChange(rate); setActiveMenu('none'); }}
+                                className={`rounded-md px-1 py-1.5 text-[10px] font-mono ${playbackRate === rate ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-800 text-zinc-300'}`}
+                              >
+                                {rate}x
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

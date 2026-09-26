@@ -86,6 +86,23 @@ try {
   await call('Runtime.enable');
   await call('Page.enable');
 
+  const ensureMobileMenuOpen = async () => evaluate(call, `(() => {
+    if (document.querySelector('.mobile-nav-sheet')) return true;
+    const trigger = document.querySelector('.mobile-nav-trigger');
+    if (!trigger) return false;
+    trigger.click();
+    return Boolean(document.querySelector('.mobile-nav-sheet'));
+  })()`);
+
+  const clickMobileMenuAction = async (pattern, selector = '.mobile-nav-action') => evaluate(call, `(() => {
+    const nodes = [...document.querySelectorAll(${JSON.stringify(selector)})];
+    const re = new RegExp(${JSON.stringify(pattern)}, 'i');
+    const target = nodes.find((node) => re.test((node.textContent || '').trim()));
+    if (!target) return { clicked: false, labels: nodes.map((node) => (node.textContent || '').trim()).filter(Boolean) };
+    target.click();
+    return { clicked: true, labels: nodes.map((node) => (node.textContent || '').trim()).filter(Boolean) };
+  })()`);
+
   if (action === 'seed-catalog') {
     await evaluate(call, `(() => {
       const sample = [
@@ -138,17 +155,11 @@ try {
     console.log(JSON.stringify({ action, menuOpen }));
     if (menuOpen) throw new Error('Android Back did not close the mobile navigation sheet');
   } else if (action === 'open-preferences') {
-    const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) {
-        const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
-      }
-      const buttons = [...document.querySelectorAll('.mobile-nav-action')];
-      const target = buttons.find((button) => /preferencias/i.test(button.textContent || ''));
-      if (!target) return false;
-      target.click();
-      return true;
-    })()`);
-    if (!opened) throw new Error('Preferences action was not found in the mobile sheet');
+    const menuReady = await ensureMobileMenuOpen();
+    if (!menuReady) throw new Error('Could not open mobile navigation before Preferences');
+    await delay(120);
+    const result = await clickMobileMenuAction('preferencias');
+    if (!result?.clicked) throw new Error(`Preferences action was not found. Mobile actions: ${JSON.stringify(result?.labels || [])}`);
     await delay(450);
     const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
     if (!visible) throw new Error('Preferences bottom sheet did not open');
@@ -159,13 +170,11 @@ try {
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Preferences');
   } else if (action === 'open-auth') {
-    const opened = await evaluate(call, `(() => {
-      const button = document.querySelector('.account-login');
-      if (!button) return false;
-      button.click();
-      return true;
-    })()`);
-    if (!opened) throw new Error('Account/login button was not found');
+    const menuReady = await ensureMobileMenuOpen();
+    if (!menuReady) throw new Error('Could not open mobile navigation before Auth');
+    await delay(120);
+    const result = await clickMobileMenuAction('ingresar');
+    if (!result?.clicked) throw new Error(`Login action was not found. Mobile actions: ${JSON.stringify(result?.labels || [])}`);
     await delay(350);
     const visible = await evaluate(call, `Boolean(document.querySelector('.auth-panel'))`);
     if (!visible) throw new Error('Auth sheet did not open');
@@ -176,15 +185,11 @@ try {
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Auth');
   } else if (action === 'open-lists') {
-    const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
-      const buttons = [...document.querySelectorAll('.mobile-nav-item')];
-      const target = buttons.find((button) => /mis listas/i.test(button.textContent || ''));
-      if (!target) return false;
-      target.click();
-      return true;
-    })()`);
-    if (!opened) throw new Error('Mis Listas navigation item was not found');
+    const menuReady = await ensureMobileMenuOpen();
+    if (!menuReady) throw new Error('Could not open mobile navigation before Mis Listas');
+    await delay(120);
+    const result = await clickMobileMenuAction('mis listas', '.mobile-nav-item');
+    if (!result?.clicked) throw new Error(`Mis Listas item was not found. Navigation items: ${JSON.stringify(result?.labels || [])}`);
     await delay(900);
     const visible = await evaluate(call, `Boolean(document.querySelector('.my-lists-view'))`);
     if (!visible) throw new Error('Mis Listas surface did not render');
@@ -209,15 +214,197 @@ try {
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close list editor');
   } else if (action === 'open-explore-filters') {
-    const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
-      const buttons = [...document.querySelectorAll('.mobile-nav-item')];
-      const target = buttons.find((button) => /^explorar$/i.test((button.textContent || '').trim()));
-      if (!target) return false;
-      target.click();
+    const menuReady = await ensureMobileMenuOpen();
+    if (!menuReady) throw new Error('Could not open mobile navigation before Explorar');
+    await delay(120);
+    const result = await clickMobileMenuAction('^explorar
+    const filtersOpened = await evaluate(call, `(() => {
+      const trigger = document.querySelector('.native-explore-filter-trigger');
+      if (!trigger) return false;
+      trigger.click();
       return true;
     })()`);
-    if (!opened) throw new Error('Explorar navigation item was not found');
+    if (!filtersOpened) throw new Error('Explore filter trigger was not found');
+    await delay(350);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
+    if (!visible) throw new Error('Explore filter sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-explore-filters-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Explore filters');
+  } else if (action === 'open-watch-party') {
+    const menuReady = await ensureMobileMenuOpen();
+    if (!menuReady) throw new Error('Could not open mobile navigation before Watch Party');
+    await delay(120);
+    const result = await clickMobileMenuAction('watch party');
+    if (!result?.clicked) throw new Error(`Watch Party action was not found. Mobile actions: ${JSON.stringify(result?.labels || [])}`);
+    await delay(450);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.watch-party-join-panel'))`);
+    if (!visible) throw new Error('Watch Party join sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-watch-party-closed') {
+    await delay(300);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.watch-party-join-panel'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Watch Party join sheet');
+  } else if (action === 'open-player') {
+    await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
+    await delay(7000);
+    const hasPlayer = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
+    if (!hasPlayer) throw new Error('Android smoke player did not mount');
+    console.log(JSON.stringify({ action, hasPlayer }));
+  } else if (action === 'play') {
+    const result = await evaluate(call, `(async () => {
+      const video = document.querySelector('video');
+      if (!video) return { found: false };
+      try { await video.play(); } catch (error) {}
+      return { found: true, paused: video.paused, readyState: video.readyState, currentTime: video.currentTime };
+    })()`, true, true);
+    console.log(JSON.stringify({ action, ...result }));
+  } else if (action === 'open-player-more') {
+    const opened = await evaluate(call, `(() => {
+      const button = document.querySelector('button[aria-label="Más controles"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Player More button was not found');
+    await delay(250);
+    const state = await evaluate(call, `(() => {
+      const actions = [...document.querySelectorAll('.mobile-player-more-action')];
+      return {
+        visible: actions.length > 0,
+        labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
+      };
+    })()`);
+    if (!state?.visible) throw new Error('Player More sheet did not open');
+    if (!state.labels.some((label) => /compartir/i.test(label))) {
+      throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
+    }
+    console.log(JSON.stringify({ action, ...state }));
+  } else if (action === 'assert-player-more-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
+    const player = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
+    console.log(JSON.stringify({ action, visible, player }));
+    if (visible) throw new Error('Android Back did not close Player More controls');
+    if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'assert-native-player') {
+    await delay(500);
+    const state = await evaluate(call, `({
+      nativeShell: document.documentElement.dataset.nativeShell || null,
+      nativeBindings: document.documentElement.dataset.nativeBindings || null,
+      player: Boolean(document.querySelector('[data-player-root]')),
+      orientation: (screen.orientation && screen.orientation.type) || null,
+      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      fullscreen: Boolean(document.fullscreenElement)
+    })`);
+    console.log(JSON.stringify({ action, state }, null, 2));
+    if (state.nativeShell !== 'android') throw new Error('Native Android shell marker is missing');
+    if (state.nativeBindings !== 'ready') throw new Error(`Native Capacitor bindings are not ready: ${state.nativeBindings}`);
+    if (!state.player) throw new Error('Player is not mounted');
+    const landscape = String(state.orientation || '').startsWith('landscape')
+      || Number((state.viewport && state.viewport.width) || 0) > Number((state.viewport && state.viewport.height) || 0);
+    if (!landscape) throw new Error(`Player did not enter landscape: ${JSON.stringify(state)}`);
+  } else if (action === 'assert-player') {
+    await delay(3500);
+    const state = await evaluate(call, `(() => {
+      const video = document.querySelector('video');
+      const root = document.querySelector('[data-player-root]');
+      if (!video) return { found: false, player: Boolean(root) };
+      return {
+        found: true,
+        player: Boolean(root),
+        paused: video.paused,
+        currentTime: Number(video.currentTime || 0),
+        duration: Number.isFinite(video.duration) ? video.duration : null,
+        readyState: video.readyState,
+        networkState: video.networkState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        error: video.error ? { code: video.error.code, message: video.error.message } : null,
+        fullscreen: Boolean(document.fullscreenElement),
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      };
+    })()`);
+    console.log(JSON.stringify({ action, state }, null, 2));
+    if (!state?.found || !state.player) throw new Error('Player/video is not mounted');
+    if (state.error) throw new Error(`Video error ${state.error.code}: ${state.error.message || 'unknown'}`);
+    if (state.readyState < 2) throw new Error(`Video never reached HAVE_CURRENT_DATA (readyState=${state.readyState})`);
+    if (state.currentTime <= 0.25) throw new Error(`Video did not make playback progress (currentTime=${state.currentTime})`);
+  } else if (action === 'performance') {
+    const metrics = await evaluate(call, `(() => {
+      const nav = performance.getEntriesByType('navigation')[0] || {};
+      const paints = Object.fromEntries(performance.getEntriesByType('paint').map((entry) => [entry.name, Math.round(entry.startTime)]));
+      const resources = performance.getEntriesByType('resource');
+      const resourceBytes = resources.reduce((sum, entry) => sum + Number(entry.transferSize || 0), 0);
+      const memory = performance.memory || null;
+      return {
+        shell: document.documentElement.dataset.nativeShell || null,
+        performanceMode: document.documentElement.dataset.msPerformance || null,
+        nativeBindings: document.documentElement.dataset.nativeBindings || null,
+        navigation: {
+          responseEnd: Math.round(Number(nav.responseEnd || 0)),
+          domContentLoaded: Math.round(Number(nav.domContentLoadedEventEnd || 0)),
+          loadEventEnd: Math.round(Number(nav.loadEventEnd || 0)),
+        },
+        paints,
+        domNodes: document.getElementsByTagName('*').length,
+        images: document.images.length,
+        resources: resources.length,
+        resourceTransferBytes: Math.round(resourceBytes),
+        jsHeap: memory ? {
+          used: Number(memory.usedJSHeapSize || 0),
+          total: Number(memory.totalJSHeapSize || 0),
+          limit: Number(memory.jsHeapSizeLimit || 0),
+        } : null,
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      };
+    })()`);
+    console.log(JSON.stringify({ action, metrics }, null, 2));
+  } else if (action === 'assert-low-end-mode') {
+    const mode = await evaluate(call, `document.documentElement.dataset.msPerformance || null`);
+    console.log(JSON.stringify({ action, mode }));
+    if (mode !== 'low') throw new Error(`Constrained Android did not select low performance mode (got ${mode})`);
+  } else if (action === 'assert-native-plugins') {
+    const plugins = await evaluate(call, `(() => {
+      const cap = window.Capacitor;
+      const names = ['App', 'Haptics', 'ScreenOrientation', 'Share', 'SystemBars'];
+      const result = {};
+      for (const name of names) {
+        result[name] = Boolean(cap && typeof cap.isPluginAvailable === 'function' && cap.isPluginAvailable(name));
+      }
+      return result;
+    })()`);
+    const missing = Object.entries(plugins || {}).filter(([, available]) => !available).map(([name]) => name);
+    console.log(JSON.stringify({ action, plugins, missing }));
+    if (missing.length) throw new Error(`Native Capacitor plugins missing from APK: ${missing.join(', ')}`);
+  } else {
+    const state = await evaluate(call, `({
+      url: location.href,
+      nativeShell: document.documentElement.dataset.nativeShell || null,
+      nativeBindings: document.documentElement.dataset.nativeBindings || null,
+      legacyWebView: document.documentElement.dataset.nativeLegacyWebview || null,
+      webViewMajor: document.documentElement.dataset.nativeWebviewMajor || null,
+      performance: document.documentElement.dataset.msPerformance || null,
+      menuOpen: Boolean(document.querySelector('.mobile-nav-sheet')),
+      preferencesOpen: Boolean(document.querySelector('.preferences-panel')),
+      accountOpen: Boolean(document.querySelector('.account-menu')),
+      player: Boolean(document.querySelector('[data-player-root]')),
+      title: document.title
+    })`);
+    console.log(JSON.stringify({ action, state }, null, 2));
+    if (state?.nativeShell === 'android' && state?.nativeBindings !== 'ready') {
+      throw new Error(`Android build did not bundle official native plugin bindings (state=${state?.nativeBindings})`);
+    }
+  }
+} finally {
+  ws.close();
+}
+, '.mobile-nav-item');
+    if (!result?.clicked) throw new Error(`Explorar item was not found. Navigation items: ${JSON.stringify(result?.labels || [])}`);
     await delay(900);
     const filtersOpened = await evaluate(call, `(() => {
       const trigger = document.querySelector('.native-explore-filter-trigger');

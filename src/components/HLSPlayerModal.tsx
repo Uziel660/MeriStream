@@ -2755,6 +2755,102 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     ? 'text-sm sm:text-base'
     : 'text-base sm:text-lg';
 
+  // Android / browser Media Session integration. On capable WebViews this
+  // exposes playback to headset buttons, lock-screen controls and the media
+  // notification without creating a second native player implementation.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    const poster = props.posterUrl || media?.poster_url || props.item?.poster_url || '';
+    const showName = props.showTitle || media?.showTitle || media?.title || 'MeriStream';
+    try {
+      session.metadata = new MediaMetadata({
+        title: displayTitle,
+        artist: showName,
+        album: props.episodeNumber ? `Episodio ${props.episodeNumber}` : 'MeriStream',
+        ...(poster ? { artwork: [{ src: poster }] } : {}),
+      });
+    } catch {}
+
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try { session.setActionHandler(action, handler); } catch {}
+    };
+
+    setHandler('play', () => {
+      if (isCasting) castPlay();
+      else void videoRef.current?.play().catch(() => {});
+    });
+    setHandler('pause', () => {
+      if (isCasting) castPause();
+      else videoRef.current?.pause();
+    });
+    setHandler('seekbackward', (details) => {
+      const delta = Number(details.seekOffset || 10);
+      if (isCasting) castSeek(Math.max(0, castCurrentTime - delta));
+      else if (videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - delta);
+    });
+    setHandler('seekforward', (details) => {
+      const delta = Number(details.seekOffset || 10);
+      const max = isCasting ? (castDuration || duration || Number.MAX_SAFE_INTEGER) : (videoRef.current?.duration || duration || Number.MAX_SAFE_INTEGER);
+      if (isCasting) castSeek(Math.min(max, castCurrentTime + delta));
+      else if (videoRef.current) videoRef.current.currentTime = Math.min(max, videoRef.current.currentTime + delta);
+    });
+    setHandler('seekto', (details) => {
+      if (typeof details.seekTime !== 'number') return;
+      if (isCasting) castSeek(details.seekTime);
+      else if (videoRef.current) videoRef.current.currentTime = details.seekTime;
+    });
+    if (props.onNextEpisode) {
+      setHandler('nexttrack', () => props.onNextEpisode?.());
+    }
+
+    return () => {
+      for (const action of ['play', 'pause', 'seekbackward', 'seekforward', 'seekto', 'nexttrack'] as MediaSessionAction[]) {
+        setHandler(action, null);
+      }
+      try { session.metadata = null; } catch {}
+    };
+  }, [
+    displayTitle,
+    props.posterUrl,
+    props.showTitle,
+    props.episodeNumber,
+    props.onNextEpisode,
+    props.item?.poster_url,
+    media?.poster_url,
+    media?.showTitle,
+    media?.title,
+    isCasting,
+    castCurrentTime,
+    castDuration,
+    duration,
+    castPlay,
+    castPause,
+    castSeek,
+  ]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    try {
+      session.playbackState = effectiveIsPlaying ? 'playing' : 'paused';
+    } catch {}
+    if (
+      effectiveDuration > 0
+      && Number.isFinite(effectiveDuration)
+      && Number.isFinite(effectiveCurrentTime)
+      && typeof session.setPositionState === 'function'
+    ) {
+      try {
+        session.setPositionState({
+          duration: effectiveDuration,
+          playbackRate: playbackRate || 1,
+          position: Math.min(effectiveDuration, Math.max(0, effectiveCurrentTime)),
+        });
+      } catch {}
+    }
+  }, [effectiveCurrentTime, effectiveDuration, effectiveIsPlaying, playbackRate]);
+
   // REINTENTO REAL: reinicia el estado del servidor activo y fuerza el
   // pipeline completo (re-resolve JIT si aplica → attachSource). Antes el
   // botón solo repintaba el mismo src sin disparar ninguna petición nueva.

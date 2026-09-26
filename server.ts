@@ -3260,6 +3260,24 @@ async function startServer() {
         return true;
       };
 
+      // URLs that already point to a native media resource must never enter the
+      // generic resolver. Some CDNs (notably Pixeldrain) expose an API path
+      // without a .mp4 suffix; fetching that endpoint as HTML can buffer the
+      // entire file and exhaust the Node heap.
+      if (isNativeExternalUrl(rawUrl)) {
+        const directMeta: ResolvedStreamMeta = {
+          url: rawUrl,
+          original_url: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: /pixeldrain\.com/i.test(rawUrl) ? "Pixeldrain" : "DirectMedia",
+          is_proxyable: true,
+          is_refreshable: false,
+          canonical_locator: rawUrl,
+        };
+        if (await respondWithValidated(directMeta, "direct_external")) return;
+      }
+
       // Zoko's stable locator carries the subtitle list in the player payload.
       // Resolve that locator itself before the generic page extractor turns it
       // into a CDN URL (the CDN URL no longer has subtitle metadata).

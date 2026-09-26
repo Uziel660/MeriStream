@@ -1362,6 +1362,21 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] [data-playe
   border: 1px solid rgba(255,255,255,.12) !important;
 }
 
+html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
+  max-height: 72vh;
+  padding: .55rem .65rem;
+}
+
+@media (orientation: landscape) {
+  html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
+    width: 22rem;
+    max-width: 48vw;
+    height: 100vh;
+    max-height: 100vh;
+    padding: .65rem;
+  }
+}
+
 
 /* Phone-landscape player density. A 2 GB Android 10 emulator exposed that
  * desktop-ish vertical spacing still wastes too much of a short landscape

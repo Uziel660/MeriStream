@@ -2485,6 +2485,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     /^\/(?:ver|watch|reproducir|player)(?:\/|$)/i.test(window.location.pathname)
     || new URLSearchParams(window.location.search).get('view') === 'player'
     || new URLSearchParams(window.location.search).get('player') === '1'
+    || new URLSearchParams(window.location.search).has('test_player')
   );
   const handleClose = useCallback(() => {
     if (isClosingRef.current) return;

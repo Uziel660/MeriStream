@@ -289,9 +289,10 @@ try {
     const state = await evaluate(call, `(() => {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
       const sheet = document.querySelector('.native-player-more-sheet');
-      const bounds = sheet?.getBoundingClientRect();
+      const bounds = sheet ? sheet.getBoundingClientRect() : null;
       if (sheet) sheet.scrollTop = sheet.scrollHeight;
-      const lastBounds = actions[actions.length - 1]?.getBoundingClientRect();
+      const lastAction = actions[actions.length - 1];
+      const lastBounds = lastAction ? lastAction.getBoundingClientRect() : null;
       const lastReachable = Boolean(bounds && lastBounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
       if (sheet) sheet.scrollTop = 0;
       return {
@@ -318,11 +319,11 @@ try {
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
   } else if (action === 'open-player-party') {
-    await evaluate(call, `document.querySelector('button[aria-label="Más controles"]')?.click()`);
+    await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);
     const opened = await evaluate(call, `(() => {
       const action = [...document.querySelectorAll('.mobile-player-more-action')].find((node) => /ver en grupo|watch party/i.test(node.textContent || ''));
-      action?.click();
+      if (action) action.click();
       return Boolean(action);
     })()`);
     if (!opened) throw new Error('Player Watch Party action was not found');
@@ -330,7 +331,7 @@ try {
     const state = await evaluate(call, `({
       join: Boolean(document.querySelector('.watch-party-join-panel')),
       player: Boolean(document.querySelector('[data-player-root]')),
-      historyOverlay: window.history.state?.meristream_native_overlay || null,
+      historyOverlay: (window.history.state && window.history.state.meristream_native_overlay) || null,
     })`);
     console.log(JSON.stringify({ action, state }));
     if (!state.join || !state.player || state.historyOverlay === 'watch-party-join') {
@@ -347,7 +348,7 @@ try {
   } else if (action === 'open-player-quality') {
     const opened = await evaluate(call, `(() => {
       const button = document.querySelector('[data-player-controls] button[title="Calidad de video"]');
-      button?.click();
+      if (button) button.click();
       return Boolean(button);
     })()`);
     if (!opened) throw new Error('Player quality selector button was not found');
@@ -369,6 +370,7 @@ try {
       player: Boolean(document.querySelector('[data-player-root]')),
       catalog: Boolean(document.querySelector('.site-header')),
       route: location.pathname + location.search,
+      historyState: window.history.state,
     })`);
     console.log(JSON.stringify({ action, state }));
     if (state.player || !state.catalog) throw new Error('Android Back did not return from the player to the catalog');

@@ -179,7 +179,6 @@ DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
 sleep 1
 adb exec-out screencap -p > "${PREFIX}-player-more.png" || true
-DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs capture-player-more-cdp "${PREFIX}-player-more-cdp.png" || true
 adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
 

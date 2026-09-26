@@ -104,7 +104,6 @@ jobs:
             meristream-list-create.png
             meristream-player.png
             meristream-player-more.png
-            meristream-player-more-cdp.png
             meristream-window.xml
             meristream-start.txt
             meristream-meminfo.txt
@@ -158,7 +157,6 @@ jobs:
             meristream-low-end-startup.png
             meristream-low-end-player.png
             meristream-low-end-player-more.png
-            meristream-low-end-player-more-cdp.png
             meristream-low-end-meminfo.txt
             meristream-low-end-logcat.txt
             meristream-low-end-performance.txt

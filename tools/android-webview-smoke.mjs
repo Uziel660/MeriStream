@@ -1,5 +1,3 @@
-import { writeFile } from 'node:fs/promises';
-
 const port = Number(process.env.DEVTOOLS_PORT || 9222);
 const action = process.argv[2] || 'state';
 const base = `http://127.0.0.1:${port}`;
@@ -314,7 +312,6 @@ try {
         lastReachable,
         scrollHeight: sheet ? sheet.scrollHeight : null,
         clientHeight: sheet ? sheet.clientHeight : null,
-        videoDisplay: document.querySelector('video') ? getComputedStyle(document.querySelector('video')).display : null,
       };
     })()`);
     if (!state?.visible) throw new Error('Player More sheet did not open');
@@ -327,21 +324,11 @@ try {
     console.log(JSON.stringify({ action, ...state }));
   } else if (action === 'assert-player-more-closed') {
     await delay(250);
-    const state = await evaluate(call, `({
-      visible: Boolean(document.querySelector('.mobile-player-more-action')),
-      player: Boolean(document.querySelector('[data-player-root]')),
-      videoDisplay: document.querySelector('video') ? getComputedStyle(document.querySelector('video')).display : null,
-    })`);
-    console.log(JSON.stringify({ action, ...state }));
-    if (state.visible) throw new Error('Android Back did not close Player More controls');
-    if (!state.player) throw new Error('Android Back closed the player instead of the top-most controls');
-    if (state.videoDisplay === 'none') throw new Error('Closing Player More did not restore the video element');
-  } else if (action === 'capture-player-more-cdp') {
-    const targetPath = process.argv[3];
-    if (!targetPath) throw new Error('CDP screenshot target path is required');
-    const capture = await call('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
-    await writeFile(targetPath, Buffer.from(capture.data, 'base64'));
-    console.log(JSON.stringify({ action, path: targetPath }));
+    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
+    const player = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
+    console.log(JSON.stringify({ action, visible, player }));
+    if (visible) throw new Error('Android Back did not close Player More controls');
+    if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
   } else if (action === 'open-player-party') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

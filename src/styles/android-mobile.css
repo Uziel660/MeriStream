@@ -1381,13 +1381,6 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-pla
   flex: none;
 }
 
-/* Android 10's older WebView can composite its hardware video surface above
- * fixed player controls. Detach only its visual element while More is open;
- * playback state and audio remain owned by the same media element. */
-html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-root][data-player-more-open='true'] video {
-  display: none !important;
-}
-
 @media (orientation: landscape) {
   html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
     width: 22rem;

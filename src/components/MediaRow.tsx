@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Film } from 'lucide-react';
 import { MediaCard, MediaCardSkeleton } from './MediaCard';
 import type { Show } from '../types';
+import { isNativeLowCostPresentation } from '../utils/runtime';
 
 interface MediaRowProps {
   title: string;
@@ -22,6 +23,7 @@ export const MediaRow: React.FC<MediaRowProps> = ({ title, subtitle, items = [],
   const rowRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
+  const lowCostPresentation = isNativeLowCostPresentation();
 
   // Mount the cards only when the rail approaches the viewport. Keeping the
   // metadata in memory is cheap; keeping hundreds of image elements decoded
@@ -37,11 +39,11 @@ export const MediaRow: React.FC<MediaRowProps> = ({ title, subtitle, items = [],
       if (!entry?.isIntersecting) return;
       setIsNearViewport(true);
       observer.disconnect();
-    }, { rootMargin: '900px 0px' });
+    }, { rootMargin: lowCostPresentation ? '350px 0px' : '900px 0px' });
 
     observer.observe(section);
     return () => observer.disconnect();
-  }, []);
+  }, [lowCostPresentation]);
 
   const handleScroll = (direction: number) => {
     const row = rowRef.current;

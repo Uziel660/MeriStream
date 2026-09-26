@@ -420,10 +420,40 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
               ))}
             </div>
             <div className="mobile-nav-actions">
+              {!isAuthenticated && (
+                <button
+                  type="button"
+                  className="mobile-nav-action native-nav-auth"
+                  onClick={() => {
+                    clearNativeOverlayMarker('nav');
+                    setMobileNavOpen(false);
+                    openAuthModal();
+                  }}
+                >
+                  <LogIn size={16} />
+                  <span>Ingresar</span>
+                </button>
+              )}
+              {isAuthenticated && user && (
+                <button
+                  type="button"
+                  className="mobile-nav-action native-nav-account"
+                  onClick={() => {
+                    clearNativeOverlayMarker('nav');
+                    setMobileNavOpen(false);
+                    setIsUserMenuOpen(true);
+                    pushNativeOverlayMarker('account');
+                  }}
+                >
+                  <span className={`account-avatar ${avatarBg}`}>{user.username.charAt(0).toUpperCase()}</span>
+                  <span>Mi cuenta</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="mobile-nav-action"
                 onClick={() => {
+                  clearNativeOverlayMarker('nav');
                   setMobileNavOpen(false);
                   onOpenWatchParty?.();
                 }}

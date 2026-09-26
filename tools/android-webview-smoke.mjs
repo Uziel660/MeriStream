@@ -385,7 +385,7 @@ try {
   } else if (action === 'assert-native-plugins') {
     const plugins = await evaluate(call, `(() => {
       const cap = window.Capacitor;
-      const names = ['App', 'Haptics', 'ScreenOrientation', 'Share', 'SystemBars'];
+      const names = ['App', 'Haptics', 'Keyboard', 'ScreenOrientation', 'Share', 'SystemBars'];
       const result = {};
       for (const name of names) {
         result[name] = Boolean(cap && typeof cap.isPluginAvailable === 'function' && cap.isPluginAvailable(name));

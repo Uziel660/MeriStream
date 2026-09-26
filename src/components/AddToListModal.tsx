@@ -1,5 +1,5 @@
 ﻿// src/components/AddToListModal.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { X, Plus, Heart, Clock, ListPlus, Check, Sparkles, FolderPlus } from "lucide-react";
 import { useUserLists, type UserListData } from "../hooks/useUserLists";
 import { isNativeShell, nativeHaptic } from "../utils/runtime";
@@ -18,13 +18,13 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const nativeShell = isNativeShell();
 
-  const closeSheet = () => {
+  const closeSheet = useCallback(() => {
     if (nativeShell && window.history.state?.meristream_native_overlay === "add-to-list" && window.history.length > 1) {
       window.history.back();
       return;
     }
     onClose();
-  };
+  }, [nativeShell, onClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -50,7 +50,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, closeSheet]);
 
   if (!isOpen || !show) return null;
 

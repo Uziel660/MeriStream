@@ -33,53 +33,13 @@ function injectIntoStyle(styleName) {
   return true;
 }
 
-const patchedMain = injectIntoStyle('AppTheme.NoActionBar');
-injectIntoStyle('AppTheme.NoActionBarLaunch');
-
-if (!patchedMain) {
+if (!injectIntoStyle('AppTheme.NoActionBar')) {
   throw new Error('Could not find AppTheme.NoActionBar in generated Capacitor styles.xml');
 }
+injectIntoStyle('AppTheme.NoActionBarLaunch');
 
 fs.writeFileSync(stylesPath, xml, 'utf8');
 console.log('Patched Capacitor Android window chrome for MeriStream.');
-
-
-const activityPath = path.resolve('android/app/src/main/java/me/merith/meristream/MainActivity.java');
-if (!fs.existsSync(activityPath)) {
-  throw new Error(`Capacitor Android MainActivity not found at ${activityPath}`);
-}
-
-let activity = fs.readFileSync(activityPath, 'utf8');
-if (!activity.includes('WebView.setWebContentsDebuggingEnabled')) {
-  activity = activity
-    .replace(
-      'import com.getcapacitor.BridgeActivity;',
-      `import com.getcapacitor.BridgeActivity;
-import android.content.pm.ApplicationInfo;
-import android.os.Bundle;
-import android.webkit.WebView;`,
-    )
-    .replace(
-      'public class MainActivity extends BridgeActivity {}',
-      `public class MainActivity extends BridgeActivity {
-  @Override
-  protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-      WebView.setWebContentsDebuggingEnabled(true);
-    }
-  }
-}`,
-    );
-}
-
-if (!activity.includes('WebView.setWebContentsDebuggingEnabled')) {
-  throw new Error('Could not patch MainActivity for debug-only WebView inspection');
-}
-
-fs.writeFileSync(activityPath, activity, 'utf8');
-console.log('Enabled Android WebView inspection for debuggable builds only.');
-
 
 function findMainActivity(dir) {
   if (!fs.existsSync(dir)) return null;
@@ -100,13 +60,14 @@ if (!mainActivityPath) {
   throw new Error('Could not locate generated Capacitor MainActivity.java');
 }
 
-let java = fs.readFileSync(mainActivityPath, 'utf8');
-if (!java.includes('setWebContentsDebuggingEnabled')) {
-  const packageMatch = java.match(/^package\s+([^;]+);/m);
-  if (!packageMatch) throw new Error(\`Could not detect Java package in \${mainActivityPath}\`);
-  const packageName = packageMatch[1];
+const originalJava = fs.readFileSync(mainActivityPath, 'utf8');
+const packageMatch = originalJava.match(/^package\s+([^;]+);/m);
+if (!packageMatch) {
+  throw new Error(`Could not detect Java package in ${mainActivityPath}`);
+}
+const packageName = packageMatch[1];
 
-  java = \`package \${packageName};
+const java = `package ${packageName};
 
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -120,17 +81,16 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
-    public void onCreate(Bundle savedInstanceState) {
-        // Expose the installed debug APK's WebView before Capacitor creates it,
-        // enabling deterministic DOM/media assertions from CI. Release APKs
-        // remain non-debuggable and never execute this branch.
+    protected void onCreate(Bundle savedInstanceState) {
+        // Deterministic CI inspection is available only in debuggable builds.
+        // Release APKs never expose their WebView through this branch.
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             WebView.setWebContentsDebuggingEnabled(true);
         }
 
         super.onCreate(savedInstanceState);
 
-        // Keep Android system chrome visually continuous with MeriStream.
+        // Make the native system bars visually continuous with MeriStream.
         getWindow().setStatusBarColor(Color.rgb(5, 6, 8));
         getWindow().setNavigationBarColor(Color.rgb(5, 6, 8));
 
@@ -153,7 +113,7 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
-\`;
-  fs.writeFileSync(mainActivityPath, java, 'utf8');
-}
-console.log(\`Patched MainActivity: \${path.relative(process.cwd(), mainActivityPath)}\`);
+`;
+
+fs.writeFileSync(mainActivityPath, java, 'utf8');
+console.log(`Patched MainActivity: ${path.relative(process.cwd(), mainActivityPath)}`);

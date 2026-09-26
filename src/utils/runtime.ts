@@ -1,3 +1,11 @@
+import {
+  nativeAppBinding,
+  nativeBindingsReady,
+  nativeHapticsBinding,
+  nativeScreenOrientationBinding,
+  nativeSystemBarsBinding,
+} from './nativePluginBindings';
+
 // src/utils/runtime.ts
 // Browser/native runtime bridge. Android ships only the frontend; API,
 // playback proxy, subtitles and Watch Party remain on the MeriStream server.
@@ -10,14 +18,22 @@ export function isNativeShell(): boolean {
 }
 
 function nativePlugin(name: string): any | null {
-  if (!isNativeShell() || typeof window === 'undefined') return null;
-  const capacitor = (window as any).Capacitor;
-  try {
-    if (typeof capacitor?.isPluginAvailable === 'function' && !capacitor.isPluginAvailable(name)) return null;
-  } catch {
-    // Older bridges can omit isPluginAvailable while still exposing Plugins.
-  }
-  return capacitor?.Plugins?.[name] || null;
+  if (!isNativeShell()) return null;
+  const imported = name === 'App'
+    ? nativeAppBinding
+    : name === 'Haptics'
+      ? nativeHapticsBinding
+      : name === 'ScreenOrientation'
+        ? nativeScreenOrientationBinding
+        : name === 'SystemBars'
+          ? nativeSystemBarsBinding
+          : null;
+  if (imported) return imported;
+
+  // Fallback only for bridge-provided/built-in plugins. Official plugins use
+  // generated module imports in the Android build.
+  if (typeof window === 'undefined') return null;
+  return (window as any).Capacitor?.Plugins?.[name] || null;
 }
 
 /**
@@ -29,6 +45,7 @@ export function initializeNativePresentation(): void {
   if (!isNativeShell() || typeof document === 'undefined') return;
   const root = document.documentElement;
   root.dataset.nativeShell = 'android';
+  root.dataset.nativeBindings = nativeBindingsReady ? 'ready' : 'fallback';
   root.classList.add('native-shell', 'native-shell-android');
 }
 

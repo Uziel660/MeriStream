@@ -8,6 +8,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "capacitor.config.json"
+      - "tools/patch-capacitor-android.mjs"
+      - "tools/android-webview-smoke.mjs"
       - ".github/workflows/android.yml"
 
 jobs:
@@ -48,8 +50,8 @@ jobs:
         run: npm run android:deps
       - name: Build frontend
         run: npm run build:client
-      - name: Create Android project
-        run: npx cap add android
+      - name: Create Android project and apply native window polish
+        run: npm run android:add
       - name: Sync frontend into Android
         run: npx cap sync android
       - name: Build debug APK
@@ -80,9 +82,33 @@ jobs:
             adb shell am force-stop me.merith.meristream
             adb shell am start -W -n me.merith.meristream/.MainActivity
             sleep 18
+
+            # Initial catalog/native-shell screenshot.
             adb shell uiautomator dump /sdcard/meristream-window.xml || true
             adb pull /sdcard/meristream-window.xml meristream-window.xml || true
             adb exec-out screencap -p > meristream-emulator.png || true
+
+            # Attach Chrome DevTools Protocol to the debug WebView. This lets CI
+            # inspect the same React tree rendered by the installed APK.
+            SOCKET="$(adb shell cat /proc/net/unix | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r')"
+            test -n "$SOCKET"
+            adb forward tcp:9222 "localabstract:$SOCKET"
+            node tools/android-webview-smoke.mjs state
+
+            # Visual audit of the native bottom-sheet navigation.
+            node tools/android-webview-smoke.mjs open-menu
+            sleep 1
+            adb exec-out screencap -p > meristream-menu.png
+            node tools/android-webview-smoke.mjs close-menu
+
+            # Real Android WebView playback smoke. This route uses a public
+            # multi-bitrate HLS stream so Cloudflare cannot mask player regressions.
+            node tools/android-webview-smoke.mjs open-player
+            node tools/android-webview-smoke.mjs play
+            sleep 5
+            adb exec-out screencap -p > meristream-player.png
+            node tools/android-webview-smoke.mjs assert-player
+
             adb logcat -d > meristream-logcat.txt || true
             adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
             ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" meristream-logcat.txt
@@ -94,6 +120,8 @@ jobs:
           name: meristream-android-emulator-evidence
           path: |
             meristream-emulator.png
+            meristream-menu.png
+            meristream-player.png
             meristream-window.xml
             meristream-logcat.txt
           if-no-files-found: warn

@@ -1,6 +1,7 @@
 // src/components/HLSPlayerModal.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Hls, { Level } from 'hls.js';
+import type Hls from 'hls.js';
+import type { Level } from 'hls.js';
 import {
   X,
   Play,
@@ -1571,13 +1572,31 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
 
-    const setupHls = (playUrl: string) => {
+    const setupHls = async (playUrl: string) => {
       if (!video) return;
       const isHlsUrl = playUrl.includes('.m3u8') || playUrl.includes('/m3u8/');
-      if (isHlsUrl && Hls.isSupported()) {
+      if (!isHlsUrl) return;
+
+      // Native HLS (Safari / WebViews that expose it) should not download
+      // hls.js at all. Android WebView normally falls through to the lazy
+      // import below.
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = playUrl;
+        return;
+      }
+
+      try {
+        const hlsModule = await import('hls.js');
+        if (attemptId !== attemptIdRef.current) return;
+        const HlsCtor = hlsModule.default;
+        if (!HlsCtor.isSupported()) {
+          video.src = playUrl;
+          return;
+        }
+
         const deviceMemory = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8);
         const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4 || deviceMemory <= 4;
-        const hls = new Hls({
+        const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
           // Mantener menos segmentos en memoria en equipos modestos reduce
@@ -1803,10 +1822,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           }
         };
 
-        hls.on(Hls.Events.MANIFEST_PARSED, handleManifestParsed);
-        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, handleAudioTracksUpdated);
-        hls.on(Hls.Events.LEVEL_SWITCHED, handleLevelSwitched);
-        hls.on(Hls.Events.ERROR, handleHlsError);
+        hls.on(HlsCtor.Events.MANIFEST_PARSED, handleManifestParsed);
+        hls.on(HlsCtor.Events.AUDIO_TRACKS_UPDATED, handleAudioTracksUpdated);
+        hls.on(HlsCtor.Events.LEVEL_SWITCHED, handleLevelSwitched);
+        hls.on(HlsCtor.Events.ERROR, handleHlsError);
+      } catch (error) {
+        if (attemptId !== attemptIdRef.current) return;
+        console.warn('No se pudo cargar hls.js; intentando reproducción nativa', error);
+        video.src = playUrl;
       }
     }; // end setupHls
 
@@ -1893,8 +1916,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           const sessionIsHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
           const sessionIsDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
-          if (sessionIsHls && Hls.isSupported()) {
-            setupHls(finalUrl);
+          if (sessionIsHls) {
+            void setupHls(finalUrl);
           } else if (sessionIsDash) {
             void setupDash(finalUrl);
           } else {
@@ -1965,8 +1988,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const isHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
     const isDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
-    if (isHls && Hls.isSupported()) {
-      setupHls(finalUrl);
+    if (isHls) {
+      void setupHls(finalUrl);
     } else if (isDash) {
       void setupDash(finalUrl);
     } else if (isNativeMediaUrl(finalUrl)) {

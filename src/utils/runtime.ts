@@ -21,6 +21,16 @@ export function initializeNativePresentation(): void {
   root.classList.add('native-shell', 'native-shell-android');
 }
 
+/**
+ * Tiny best-effort tactile acknowledgement for high-value mobile actions.
+ * navigator.vibrate is intentionally used instead of a hard plugin dependency
+ * so the shared web build stays untouched. Unsupported devices simply ignore it.
+ */
+export function nativeHaptic(pattern: number | number[] = 6): void {
+  if (!isNativeShell() || typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+  try { navigator.vibrate(pattern); } catch {}
+}
+
 export function backendBaseOrigin(): string {
   if (configuredOrigin) return configuredOrigin;
   if (isNativeShell()) return 'https://stream.merith.me';

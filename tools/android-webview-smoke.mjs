@@ -235,6 +235,25 @@ try {
     const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Explore filters');
+  } else if (action === 'open-watch-party') {
+    const opened = await evaluate(call, `(() => {
+      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      const buttons = [...document.querySelectorAll('.mobile-nav-action')];
+      const target = buttons.find((button) => /watch party/i.test(button.textContent || ''));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Watch Party action was not found');
+    await delay(450);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.watch-party-join-panel'))`);
+    if (!visible) throw new Error('Watch Party join sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-watch-party-closed') {
+    await delay(300);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.watch-party-join-panel'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Watch Party join sheet');
   } else if (action === 'open-player') {
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);
@@ -249,6 +268,42 @@ try {
       return { found: true, paused: video.paused, readyState: video.readyState, currentTime: video.currentTime };
     })()`, true, true);
     console.log(JSON.stringify({ action, ...result }));
+  } else if (action === 'open-player-more') {
+    const opened = await evaluate(call, `(() => {
+      const button = document.querySelector('button[aria-label="Más controles"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Player More button was not found');
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
+    if (!visible) throw new Error('Player More sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-player-more-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
+    const player = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
+    console.log(JSON.stringify({ action, visible, player }));
+    if (visible) throw new Error('Android Back did not close Player More controls');
+    if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'assert-native-player') {
+    await delay(500);
+    const state = await evaluate(call, `({
+      nativeShell: document.documentElement.dataset.nativeShell || null,
+      nativeBindings: document.documentElement.dataset.nativeBindings || null,
+      player: Boolean(document.querySelector('[data-player-root]')),
+      orientation: screen.orientation?.type || null,
+      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      fullscreen: Boolean(document.fullscreenElement)
+    })`);
+    console.log(JSON.stringify({ action, state }, null, 2));
+    if (state.nativeShell !== 'android') throw new Error('Native Android shell marker is missing');
+    if (state.nativeBindings !== 'ready') throw new Error(`Native Capacitor bindings are not ready: ${state.nativeBindings}`);
+    if (!state.player) throw new Error('Player is not mounted');
+    const landscape = String(state.orientation || '').startsWith('landscape')
+      || Number(state.viewport?.width || 0) > Number(state.viewport?.height || 0);
+    if (!landscape) throw new Error(`Player did not enter landscape: ${JSON.stringify(state)}`);
   } else if (action === 'assert-player') {
     await delay(3500);
     const state = await evaluate(call, `(() => {

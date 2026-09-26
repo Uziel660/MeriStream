@@ -940,3 +940,19 @@ html[data-native-shell='android'] .auth-panel > .pointer-events-none {
     height: 2.4rem !important;
   }
 }
+
+
+/* Horizontal rails are swipe-first on Android. Desktop arrow buttons add
+ * visual noise and duplicate a gesture that is more natural on touch. */
+html[data-native-shell='android'] .media-row .row-navigation > .icon-button,
+html[data-native-shell='android'] .media-row .row-count {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .media-row .row-navigation {
+  gap: .4rem !important;
+}
+
+html[data-native-shell='android'] .poster-rail {
+  overscroll-behavior-inline: contain;
+}

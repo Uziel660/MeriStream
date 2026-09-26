@@ -54,7 +54,7 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
-import { backendUrl, isNativeShell } from '../utils/runtime';
+import { backendUrl, isNativeShell, nativeHaptic } from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
@@ -2479,6 +2479,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   };
 
   const togglePlay = () => {
+    nativeHaptic(4);
     if (isViewerMode) {
       showViewerLockNotice('Reproducción controlada por el anfitrión');
       return;
@@ -2600,6 +2601,30 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     } else {
       await node.requestFullscreen();
     }
+  };
+
+  const handlePlayerDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (isScreenLocked) return;
+    if (!isNativeShell()) {
+      void toggleFullscreen();
+      return;
+    }
+    nativeHaptic(8);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+    if (position < 0.38) {
+      seekOffset(-10);
+      setFailoverNotice('−10 s');
+      setTimeout(() => setFailoverNotice(null), 650);
+      return;
+    }
+    if (position > 0.62) {
+      seekOffset(10);
+      setFailoverNotice('+10 s');
+      setTimeout(() => setFailoverNotice(null), 650);
+      return;
+    }
+    void toggleFullscreen();
   };
 
   const togglePictureInPicture = async () => {
@@ -3060,7 +3085,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               }
             }
           }}
-          onDoubleClick={isScreenLocked ? undefined : toggleFullscreen}
+          onDoubleClick={isScreenLocked ? undefined : handlePlayerDoubleClick}
         >
           {isLoadingStream && (
             <div className="flex flex-col items-center gap-4 text-white z-20 animate-in fade-in duration-200">

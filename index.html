@@ -14,24 +14,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script type="text/javascript">
-      window['__onGCastApiAvailable'] = function(isAvailable) {
-        if (isAvailable && window.cast && window.cast.framework && window.chrome && window.chrome.cast) {
-          try {
-            var options = {
-              receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-              autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-              androidReceiverCompatible: false
-            };
-            cast.framework.CastContext.getInstance().setOptions(options);
-            window.__gcast_initialized = true;
-            window.dispatchEvent(new CustomEvent('google-cast-initialized'));
-          } catch(e) {
-            console.warn('[Cast] Error in __onGCastApiAvailable:', e);
-          }
-        }
-      };
-    </script>
-    <script type="text/javascript" src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
   </body>
 </html>

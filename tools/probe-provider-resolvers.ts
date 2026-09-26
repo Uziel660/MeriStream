@@ -29,10 +29,17 @@ type ResolverCheck = {
 };
 
 const SAMPLES = [
+  // Two independent works per active page provider. One healthy title should
+  // not hide a title-specific outage, and one stale title should not condemn
+  // the whole provider.
   { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/bolt/" },
+  { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/thunderbolts/" },
   { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/ver/una-pelicula-de-amor-y-guerra/" },
+  { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/ver/coyote-vs-acme/" },
   { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/mushoku-tensei-jobless-reincarnation-s3-castellano-episodio-1" },
+  { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/kimetsu-no-yaiba-episodio-1" },
   { provider: "zokoanime", adapter: "zokoanime", url: "https://zokoanime.video/stream/mal/32281/1/sub" },
+  { provider: "zokoanime", adapter: "zokoanime", url: "https://zokoanime.video/stream/mal/40746/1/sub" },
 ];
 
 async function readPrefix(response: Response, limit = 64 * 1024): Promise<{ text: string; bytes: number }> {

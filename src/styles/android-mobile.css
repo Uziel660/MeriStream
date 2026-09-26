@@ -1153,3 +1153,117 @@ html[data-native-shell='android'] .native-nav-account .account-avatar {
   flex: 0 0 1.65rem;
   font-size: .72rem !important;
 }
+
+
+/* ------------------------------------------------------------------------- */
+/* Legacy Android WebView safety layer (Chrome <84 / Android 10-class WebView) */
+/* ------------------------------------------------------------------------- */
+html[data-native-shell='android'][data-native-legacy-webview='true'],
+html[data-native-shell='android'][data-native-legacy-webview='true'] body {
+  text-rendering: auto !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] body,
+html[data-native-shell='android'][data-native-legacy-webview='true'] button,
+html[data-native-shell='android'][data-native-legacy-webview='true'] input,
+html[data-native-shell='android'][data-native-legacy-webview='true'] select,
+html[data-native-shell='android'][data-native-legacy-webview='true'] textarea,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h1,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h2,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h3,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h4,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .font-display,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand {
+  font-family: Arial, Roboto, "Segoe UI", sans-serif !important;
+  font-variation-settings: normal !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-inner {
+  padding-left: .6rem !important;
+  padding-right: .6rem !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top {
+  display: flex !important;
+  min-height: 4rem !important;
+  height: 4rem !important;
+  padding: .35rem 0 0 !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top > .flex.items-center.justify-end {
+  display: flex !important;
+  margin-left: auto !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top > .flex.items-center.justify-end > * + * {
+  margin-left: .35rem !important;
+}
+
+/* Chrome 74's GPU rasterizer can lose thin SVG/font strokes. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger {
+  position: relative !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger svg,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger svg,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-symbol svg {
+  display: none !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger::before {
+  content: '';
+  width: .8rem;
+  height: .8rem;
+  display: block;
+  border: 2px solid #aab2bf;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger::after {
+  content: '';
+  width: .42rem;
+  height: 2px;
+  position: absolute;
+  left: 1.55rem;
+  top: 1.52rem;
+  background: #aab2bf;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger::before {
+  content: '';
+  width: 1.05rem;
+  height: 2px;
+  display: block;
+  background: #aab2bf;
+  box-shadow: 0 -.36rem 0 #aab2bf, 0 .36rem 0 #aab2bf;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-symbol::after {
+  content: '';
+  width: 0;
+  height: 0;
+  display: block;
+  margin-left: .12rem;
+  border-top: .32rem solid transparent;
+  border-bottom: .32rem solid transparent;
+  border-left: .5rem solid #f4b33f;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .feature h1 {
+  letter-spacing: -.02em !important;
+  font-weight: 700 !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .site-header,
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .mobile-nav-sheet,
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .native-player-more-sheet {
+  transition: none !important;
+  animation: none !important;
+}

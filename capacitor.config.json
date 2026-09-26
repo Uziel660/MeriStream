@@ -16,5 +16,13 @@
       "hidden": false,
       "animation": "NONE"
     }
+  },
+  "android": {
+    "includePlugins": [
+      "@capacitor/app",
+      "@capacitor/haptics",
+      "@capacitor/screen-orientation",
+      "@capacitor/share"
+    ]
   }
 }

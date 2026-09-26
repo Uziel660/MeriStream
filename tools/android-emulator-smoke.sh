@@ -91,6 +91,7 @@ fi
 cat "/tmp/${PREFIX}-webview-pages.json"
 
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs state
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-native-plugins
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs performance | tee "${PREFIX}-performance.txt"
 
 if [[ "$MODE" == "low-end" ]]; then

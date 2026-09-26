@@ -129,7 +129,7 @@ try {
     await delay(350);
     console.log(JSON.stringify({ action, opened }));
   } else if (action === 'close-menu') {
-    await evaluate(call, `document.querySelector('.mobile-nav-backdrop')?.click(); true`);
+    await evaluate(call, `(() => { const el = document.querySelector('.mobile-nav-backdrop'); if (el) el.click(); return true; })()`);
     await delay(200);
     console.log(JSON.stringify({ action, closed: true }));
   } else if (action === 'assert-menu-closed') {
@@ -140,7 +140,7 @@ try {
   } else if (action === 'open-preferences') {
     const opened = await evaluate(call, `(() => {
       if (!document.querySelector('.mobile-nav-sheet')) {
-        document.querySelector('.mobile-nav-trigger')?.click();
+        const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
       }
       const buttons = [...document.querySelectorAll('.mobile-nav-action')];
       const target = buttons.find((button) => /preferencias/i.test(button.textContent || ''));
@@ -177,7 +177,7 @@ try {
     if (visible) throw new Error('Android Back did not close Auth');
   } else if (action === 'open-lists') {
     const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      if (!document.querySelector('.mobile-nav-sheet')) const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
       const buttons = [...document.querySelectorAll('.mobile-nav-item')];
       const target = buttons.find((button) => /mis listas/i.test(button.textContent || ''));
       if (!target) return false;
@@ -210,7 +210,7 @@ try {
     if (visible) throw new Error('Android Back did not close list editor');
   } else if (action === 'open-explore-filters') {
     const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      if (!document.querySelector('.mobile-nav-sheet')) const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
       const buttons = [...document.querySelectorAll('.mobile-nav-item')];
       const target = buttons.find((button) => /^explorar$/i.test((button.textContent || '').trim()));
       if (!target) return false;
@@ -237,7 +237,7 @@ try {
     if (visible) throw new Error('Android Back did not close Explore filters');
   } else if (action === 'open-watch-party') {
     const opened = await evaluate(call, `(() => {
-      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      if (!document.querySelector('.mobile-nav-sheet')) const navTrigger = document.querySelector('.mobile-nav-trigger'); if (navTrigger) navTrigger.click();
       const buttons = [...document.querySelectorAll('.mobile-nav-action')];
       const target = buttons.find((button) => /watch party/i.test(button.textContent || ''));
       if (!target) return false;
@@ -302,7 +302,7 @@ try {
       nativeShell: document.documentElement.dataset.nativeShell || null,
       nativeBindings: document.documentElement.dataset.nativeBindings || null,
       player: Boolean(document.querySelector('[data-player-root]')),
-      orientation: screen.orientation?.type || null,
+      orientation: (screen.orientation && screen.orientation.type) || null,
       viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
       fullscreen: Boolean(document.fullscreenElement)
     })`);
@@ -311,7 +311,7 @@ try {
     if (state.nativeBindings !== 'ready') throw new Error(`Native Capacitor bindings are not ready: ${state.nativeBindings}`);
     if (!state.player) throw new Error('Player is not mounted');
     const landscape = String(state.orientation || '').startsWith('landscape')
-      || Number(state.viewport?.width || 0) > Number(state.viewport?.height || 0);
+      || Number((state.viewport && state.viewport.width) || 0) > Number((state.viewport && state.viewport.height) || 0);
     if (!landscape) throw new Error(`Player did not enter landscape: ${JSON.stringify(state)}`);
   } else if (action === 'assert-player') {
     await delay(3500);
@@ -373,11 +373,26 @@ try {
     const mode = await evaluate(call, `document.documentElement.dataset.msPerformance || null`);
     console.log(JSON.stringify({ action, mode }));
     if (mode !== 'low') throw new Error(`Constrained Android did not select low performance mode (got ${mode})`);
+  } else if (action === 'assert-native-plugins') {
+    const plugins = await evaluate(call, `(() => {
+      const cap = window.Capacitor;
+      const names = ['App', 'Haptics', 'ScreenOrientation', 'Share', 'SystemBars'];
+      const result = {};
+      for (const name of names) {
+        result[name] = Boolean(cap && typeof cap.isPluginAvailable === 'function' && cap.isPluginAvailable(name));
+      }
+      return result;
+    })()`);
+    const missing = Object.entries(plugins || {}).filter(([, available]) => !available).map(([name]) => name);
+    console.log(JSON.stringify({ action, plugins, missing }));
+    if (missing.length) throw new Error(`Native Capacitor plugins missing from APK: ${missing.join(', ')}`);
   } else {
     const state = await evaluate(call, `({
       url: location.href,
       nativeShell: document.documentElement.dataset.nativeShell || null,
       nativeBindings: document.documentElement.dataset.nativeBindings || null,
+      legacyWebView: document.documentElement.dataset.nativeLegacyWebview || null,
+      webViewMajor: document.documentElement.dataset.nativeWebviewMajor || null,
       performance: document.documentElement.dataset.msPerformance || null,
       menuOpen: Boolean(document.querySelector('.mobile-nav-sheet')),
       preferencesOpen: Boolean(document.querySelector('.preferences-panel')),

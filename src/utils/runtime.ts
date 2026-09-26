@@ -49,6 +49,11 @@ export function initializeNativePresentation(): void {
   const root = document.documentElement;
   root.dataset.nativeShell = 'android';
   root.dataset.nativeBindings = nativeBindingsReady ? 'ready' : 'fallback';
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  const chromeMatch = userAgent.match(/(?:Chrome|CriOS)\/(\d+)/i);
+  const webViewMajor = Number(chromeMatch && chromeMatch[1] ? chromeMatch[1] : 0);
+  if (webViewMajor > 0) root.dataset.nativeWebviewMajor = String(webViewMajor);
+  if (webViewMajor > 0 && webViewMajor < 84) root.dataset.nativeLegacyWebview = 'true';
   root.classList.add('native-shell', 'native-shell-android');
 }
 
@@ -147,52 +152,53 @@ export async function nativeSetImmersive(hidden: boolean): Promise<void> {
 
 let nativeBackBridgeInstalled = false;
 
+function consumeNativeBack(detail?: { canGoBack?: boolean }): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const uiEvent = new CustomEvent('meristream:native-back', {
+    cancelable: true,
+    detail,
+  });
+  if (!window.dispatchEvent(uiEvent)) return true;
+
+  const state = window.history.state || {};
+  const route = String(state.meristream_route || '');
+  const hasTransientOverlay = Boolean(state.meristream_native_overlay);
+  const hasRoutedScreen = route === 'player' || route === 'details';
+  const hasCatalogState = window.location.pathname !== '/'
+    || Boolean(window.location.search)
+    || Boolean(window.location.hash);
+
+  if (hasTransientOverlay || hasRoutedScreen || hasCatalogState) {
+    window.history.back();
+    return true;
+  }
+  return false;
+}
+
 /**
- * Android hardware Back is part of the app navigation contract. Temporary
- * sheets and routed player/details screens consume Back first; pressing Back
- * at the catalog root minimizes the app instead of walking through stale
- * same-origin WebView entries.
+ * Android hardware Back is intercepted by MainActivity and asks this shared
+ * handler first. The official App plugin is a secondary path, not a single
+ * point of failure.
  */
 export function installNativeBackBridge(): void {
   if (!isNativeShell() || nativeBackBridgeInstalled || typeof window === 'undefined') return;
-  const app = nativePlugin('App');
-  if (typeof app?.addListener !== 'function') return;
   nativeBackBridgeInstalled = true;
 
+  (window as any).__meristreamHandleAndroidBack = () => consumeNativeBack();
+
+  const app = nativePlugin('App');
+  if (typeof app?.addListener !== 'function') return;
+
   const listener = app.addListener('backButton', (event: { canGoBack?: boolean }) => {
-    // Give the top-most React surface one synchronous chance to consume Back
-    // (player menus, Watch Party drawer, etc.) before changing history.
-    const uiEvent = new CustomEvent('meristream:native-back', {
-      cancelable: true,
-      detail: event,
-    });
-    if (!window.dispatchEvent(uiEvent)) return;
-
-    const state = window.history.state || {};
-    const route = String(state.meristream_route || '');
-    const hasTransientOverlay = Boolean(state.meristream_native_overlay);
-    const hasRoutedScreen = route === 'player' || route === 'details';
-    const hasCatalogState = window.location.pathname !== '/'
-      || Boolean(window.location.search)
-      || Boolean(window.location.hash);
-
-    // Our React shell owns these history entries. Android's canGoBack value
-    // describes the WebView stack and can be false even while a MeriStream
-    // transient route is intentionally waiting to be popped.
-    if (hasTransientOverlay || hasRoutedScreen || hasCatalogState) {
-      window.history.back();
-      return;
-    }
+    if (consumeNativeBack(event)) return;
 
     if (typeof app.minimizeApp === 'function') {
       const task = app.minimizeApp();
       if (task?.catch) task.catch(() => {});
-      return;
     }
-
-    if (event?.canGoBack) window.history.back();
   });
-  if (listener?.catch) listener.catch(() => { nativeBackBridgeInstalled = false; });
+  if (listener?.catch) listener.catch(() => {});
 }
 
 export function isNativeLowCostPresentation(): boolean {

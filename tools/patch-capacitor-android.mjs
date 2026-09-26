@@ -161,6 +161,8 @@ import android.view.View;
 import android.view.WindowInsetsController;
 import android.webkit.WebView;
 
+import androidx.activity.OnBackPressedCallback;
+
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -173,6 +175,28 @@ public class MainActivity extends BridgeActivity {
         }
 
         super.onCreate(savedInstanceState);
+
+        // Consume Android Back at the Activity layer first. This keeps the
+        // React history contract deterministic even if an optional plugin is
+        // unavailable or the WebView reports canGoBack=false.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                if (webView == null) {
+                    moveTaskToBack(true);
+                    return;
+                }
+                webView.evaluateJavascript(
+                    "(function(){try{return !!(window.__meristreamHandleAndroidBack && window.__meristreamHandleAndroidBack());}catch(e){return false;}})()",
+                    value -> {
+                        if (!"true".equals(value)) {
+                            moveTaskToBack(true);
+                        }
+                    }
+                );
+            }
+        });
 
         // Keep Android system chrome visually continuous with MeriStream.
         getWindow().setStatusBarColor(Color.rgb(5, 6, 8));

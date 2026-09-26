@@ -1049,3 +1049,34 @@ html[data-native-shell='android'][data-ms-performance='low'] .watch-party-panel 
     font-size: 16px !important;
   }
 }
+
+
+/* Keep the Android top bar intentionally sparse: search + one menu. Account,
+ * Watch Party and preferences remain fully reachable inside the menu sheet. */
+html[data-native-shell='android'] .header-watchparty-trigger,
+html[data-native-shell='android'] .preferences-trigger,
+html[data-native-shell='android'] .header-account {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .header-top {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+
+html[data-native-shell='android'] .header-top > .flex.items-center.justify-end {
+  gap: .35rem !important;
+}
+
+html[data-native-shell='android'] .mobile-search-trigger,
+html[data-native-shell='android'] .mobile-nav-trigger {
+  width: 2.85rem !important;
+  height: 2.85rem !important;
+  border-radius: .9rem !important;
+}
+
+html[data-native-shell='android'] .native-nav-account .account-avatar {
+  width: 1.65rem !important;
+  height: 1.65rem !important;
+  flex: 0 0 1.65rem;
+  font-size: .72rem !important;
+}

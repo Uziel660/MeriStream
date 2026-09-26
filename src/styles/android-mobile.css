@@ -350,7 +350,8 @@ html[data-native-shell='android'] [data-player-root] video {
   }
 
   html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'],
-  html[data-native-shell='android'] [data-player-controls] [data-mobile-player-secondary] {
+  html[data-native-shell='android'] [data-player-controls] [data-mobile-player-secondary],
+  html[data-native-shell='android'] [data-player-controls] .quality-server-shortcut {
     display: none !important;
   }
 

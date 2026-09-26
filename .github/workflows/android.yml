@@ -113,7 +113,17 @@ jobs:
             node tools/android-webview-smoke.mjs open-menu
             sleep 1
             adb exec-out screencap -p > meristream-menu.png
-            node tools/android-webview-smoke.mjs close-menu
+
+            # Android's physical Back key must close temporary UI before the app.
+            adb shell input keyevent 4
+            node tools/android-webview-smoke.mjs assert-menu-closed
+
+            # Preferences should also present as a native bottom sheet and obey Back.
+            node tools/android-webview-smoke.mjs open-preferences
+            sleep 1
+            adb exec-out screencap -p > meristream-preferences.png
+            adb shell input keyevent 4
+            node tools/android-webview-smoke.mjs assert-preferences-closed
 
             # Real Android WebView playback smoke. This route uses a public
             # multi-bitrate HLS stream so Cloudflare cannot mask player regressions.
@@ -135,6 +145,7 @@ jobs:
           path: |
             meristream-emulator.png
             meristream-menu.png
+            meristream-preferences.png
             meristream-player.png
             meristream-window.xml
             meristream-logcat.txt

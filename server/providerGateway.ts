@@ -269,7 +269,11 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
     const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
-    const audioLanguage = normalizeLanguageTag(link.audio_language || link.language) || (SPANISH_LOCAL.has(provider) ? "es" : null);
+    // `language=sub|dub` is a rendition marker, not an audio language. Older
+    // rows may only have that marker; never expose the literal marker as an
+    // audio track in the player metadata.
+    const renditionMarker = /^(?:sub|dub)$/i.test(String(link.language || "")) ? null : link.language;
+    const audioLanguage = normalizeLanguageTag(link.audio_language || renditionMarker) || (SPANISH_LOCAL.has(provider) ? "es" : null);
     const subtitleLanguage = normalizeLanguageTag(link.subtitle_language);
     const subtitles = normalizeSubtitleTracks(link.subtitles);
     const score = renditionPreferenceScore({

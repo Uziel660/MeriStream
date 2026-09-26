@@ -6,13 +6,15 @@ const deferredOverlays = fileURLToPath(
   new URL("./src/components/lazy/DeferredOverlays.tsx", import.meta.url),
 );
 
+const isAndroidBundle = process.env.MERISTREAM_ANDROID === "1";
+
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Android 10's stock WebView can be substantially older than desktop
-    // Chromium. Keep the shared frontend modern, but emit syntax that API 29
-    // WebViews can parse instead of failing before React mounts.
-    target: ['chrome80', 'es2019'],
+    // Keep the normal website on Vite's modern default. Only the APK bundle is
+    // transpiled further so Android 10 devices with an old System WebView can
+    // parse the same React application.
+    target: isAndroidBundle ? ['chrome64', 'es2018'] : 'modules',
   },
   resolve: {
     alias: [

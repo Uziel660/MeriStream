@@ -10,6 +10,7 @@ import { logPlayerEvent } from "../../networkLogger";
 const BASE_URL = "https://doramasflix.io";
 const GRAPHQL_URL = "https://user-api.fluxcedene.net/graphql";
 const GRAPHQL_APP = "com.asiapp.doramasgo";
+const LEGACY_GRAPHQL_URL = "https://doraflix.fluxcedene.net/api/gql";
 const CATALOG_PAGE_SIZE = 24;
 // Next Server Actions cambian con cada build de Doramasflix. Estos IDs solo
 // sirven como fallback cuando el sitio no publica a tiempo todos sus chunks.
@@ -21,6 +22,37 @@ const KNOWN_NEXT_ACTION_IDS = [
 const NEXT_ACTION_ID = KNOWN_NEXT_ACTION_IDS[0];
 const NEXT_ACTION_FALLBACK = KNOWN_NEXT_ACTION_IDS[1];
 const externalIdResolver = new ExternalIdResolver();
+
+type DoramasflixMirror = {
+  baseUrl: string;
+  graphqlUrl: string;
+  actionIds: readonly string[];
+  episodePath: string;
+};
+
+// Doramasflix has deployed the same frontend on several domains. The action
+// id and GraphQL host belong to the build, so using the .io values for every
+// URL silently breaks a source selected from .co or .in.
+const DORAMASFLIX_MIRRORS: Record<string, DoramasflixMirror> = {
+  "doramasflix.io": {
+    baseUrl: "https://doramasflix.io",
+    graphqlUrl: "https://user-api.fluxcedene.net/graphql",
+    actionIds: KNOWN_NEXT_ACTION_IDS,
+    episodePath: "capitulos",
+  },
+  "doramasflix.co": {
+    baseUrl: "https://doramasflix.co",
+    graphqlUrl: "https://user-api.seriesapi.co/graphql",
+    actionIds: ["40a53d27c89e3861eb86979d14efed0cc12a44bd70", ...KNOWN_NEXT_ACTION_IDS],
+    episodePath: "capitulos",
+  },
+  "doramasflix.in": {
+    baseUrl: "https://doramasflix.in",
+    graphqlUrl: "https://user-api.seriesapi.co/graphql",
+    actionIds: ["40c6078a8a671297b1458299a5b27a01081afdcb7e", ...KNOWN_NEXT_ACTION_IDS],
+    episodePath: "episodios",
+  },
+};
 
 type DoramasflixHealth = {
   state: "unknown" | "online" | "degraded";
@@ -52,6 +84,15 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       );
     } catch {
       return false;
+    }
+  }
+
+  private mirrorForUrl(url: string): DoramasflixMirror {
+    try {
+      const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+      return DORAMASFLIX_MIRRORS[host] || DORAMASFLIX_MIRRORS["doramasflix.io"];
+    } catch {
+      return DORAMASFLIX_MIRRORS["doramasflix.io"];
     }
   }
 
@@ -212,18 +253,20 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     return result;
   }
 
-  private async fetchGraphql(query: string, variables: Record<string, unknown>, referer: string): Promise<unknown | null> {
+  private async fetchGraphql(query: string, variables: Record<string, unknown>, referer: string, endpoint?: string): Promise<unknown | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(GRAPHQL_URL, {
+      const mirror = this.mirrorForUrl(referer);
+      const graphqlUrl = endpoint || mirror.graphqlUrl || GRAPHQL_URL;
+      const response = await fetch(graphqlUrl, {
         method: "POST",
         signal: controller.signal,
         headers: {
           ...COMMON_HEADERS,
           Accept: "application/json",
           "Content-Type": "application/json",
-          Origin: BASE_URL,
+          Origin: mirror.baseUrl,
           Referer: referer,
           "X-App": GRAPHQL_APP,
         },
@@ -643,9 +686,12 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    */
   private buildNextRouterStateTree(targetUrl: string): string {
     try {
-      const slug = new URL(targetUrl).pathname.split("/").filter(Boolean).pop() || "unknown";
+      const parsed = new URL(targetUrl);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      const section = parts.length > 1 ? parts[parts.length - 2] : this.mirrorForUrl(targetUrl).episodePath;
+      const slug = parts.pop() || "unknown";
       const fullTree = `["",{` +
-        `"children":[["locale","es","d",null],{"children":["capitulos",{"children":[["slug","${slug}","d",null],{"children":["__PAGE__",{},null,null,0]}]}]}],"modal":["__DEFAULT__",{},null,null,0]},null,null,16]`;
+        `"children":[["locale","es","d",null],{"children":["${section}",{"children":[["slug","${slug}","d",null],{"children":["__PAGE__",{},null,null,0]}]}]}],"modal":["__DEFAULT__",{},null,null,0]},null,null,16]`;
       return encodeURIComponent(fullTree);
     } catch {
       return "";
@@ -656,7 +702,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    * Intenta descubrir el Next-Action vigente para getEpisodeLinks escaneando chunks.
    * Acotado y paralelo con cleanup garantizado. Si falla, devuelve el fallback conocido.
    */
-  private async discoverNextActionId(html: string): Promise<string> {
+  private async discoverNextActionId(html: string, baseUrl = BASE_URL): Promise<string> {
     const chunkRegex = /\/_next\/static\/chunks\/[^"']+\.js/g;
     // No limitar a los primeros chunks: Doramasflix mueve la referencia de
     // getEpisodeLinks entre builds y en la versión actual está después del
@@ -679,7 +725,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
           const timer = setTimeout(() => controller.abort(), 3500);
           timers.push(timer);
           try {
-            const full = new URL(c, BASE_URL).href;
+            const full = new URL(c, baseUrl).href;
             const res = await fetch(full, { signal: controller.signal, headers: COMMON_HEADERS });
             if (!res.ok) return null;
             const text = await res.text();
@@ -764,7 +810,29 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     }`;
     const payload = await this.fetchGraphql(query, { episode_id: episodeId }, referer) as any;
     const links = payload?.data?.getEpisodeLinks?.links_online;
-    return Array.isArray(links) ? links : null;
+    if (Array.isArray(links) && links.length > 0) return links;
+
+    // Older Doramasflix builds exposed the same records through the legacy
+    // slug-based API. Keep this fallback because the current domains have
+    // migrated between API backends and their Server Action can be empty while
+    // the old resolver is still serving links.
+    const slug = (() => {
+      try { return new URL(referer).pathname.split("/").filter(Boolean).pop() || ""; } catch { return ""; }
+    })();
+    if (!slug) return Array.isArray(links) ? links : null;
+    const legacyQuery = `query GetEpisodeLinks($episode_slug: String!) {
+      detailEpisode(filter: { slug: $episode_slug, type_serie: "dorama" }) {
+        links_online
+      }
+    }`;
+    const legacyPayload = await this.fetchGraphql(
+      legacyQuery,
+      { episode_slug: slug },
+      referer,
+      LEGACY_GRAPHQL_URL,
+    ) as any;
+    const legacyLinks = legacyPayload?.data?.detailEpisode?.links_online;
+    return Array.isArray(legacyLinks) ? legacyLinks : (Array.isArray(links) ? links : null);
   }
 
   /** Decodifica, resuelve y comprueba todos los servidores de un episodio. */
@@ -826,15 +894,16 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       }
 
       let finalReachable: string[] = [];
+      const mirror = this.mirrorForUrl(cleanUrl);
 
       // 1. Canal primario: Server Action de Next.js (nativo del frontend)
-      let actionId = NEXT_ACTION_ID;
+      let actionId = mirror.actionIds[0] || NEXT_ACTION_ID;
       try {
-        const discovered = await this.discoverNextActionId(html);
+        const discovered = await this.discoverNextActionId(html, mirror.baseUrl);
         if (discovered && /^[a-f0-9]{40,64}$/i.test(discovered)) actionId = discovered;
       } catch {}
 
-      const tryActions = [actionId, ...KNOWN_NEXT_ACTION_IDS].filter((v, i, a) => v && a.indexOf(v) === i);
+      const tryActions = [actionId, ...mirror.actionIds].filter((v, i, a) => v && a.indexOf(v) === i);
 
       for (let attempt = 0; attempt < 2 && finalReachable.length === 0; attempt++) {
         let actionText: string | null = null;

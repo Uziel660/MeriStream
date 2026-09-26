@@ -79,3 +79,61 @@ if (!activity.includes('WebView.setWebContentsDebuggingEnabled')) {
 
 fs.writeFileSync(activityPath, activity, 'utf8');
 console.log('Enabled Android WebView inspection for debuggable builds only.');
+
+
+const mainActivityPath = path.resolve('android/app/src/main/java/me/merith/meristream/MainActivity.java');
+if (fs.existsSync(mainActivityPath)) {
+  let java = fs.readFileSync(mainActivityPath, 'utf8');
+  if (!java.includes('setWebContentsDebuggingEnabled')) {
+    java = `package me.merith.meristream;
+
+import android.content.pm.ApplicationInfo;
+import android.graphics.Color;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.View;
+import android.view.WindowInsetsController;
+import android.webkit.WebView;
+
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Keep the app visually continuous with MeriStream instead of showing
+        // bright browser-like Android system chrome.
+        getWindow().setStatusBarColor(Color.rgb(5, 6, 8));
+        getWindow().setNavigationBarColor(Color.rgb(5, 6, 8));
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsAppearance(
+                    0,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
+            }
+        } else {
+            int flags = getWindow().getDecorView().getSystemUiVisibility();
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        }
+
+        // Debug builds expose the installed Capacitor WebView to Chrome DevTools
+        // so CI can inspect the actual APK DOM and playback state. Release builds
+        // remain unaffected.
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+    }
+}
+`;
+    fs.writeFileSync(mainActivityPath, java, 'utf8');
+  }
+}

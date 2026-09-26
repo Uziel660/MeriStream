@@ -3048,6 +3048,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     <div
       ref={containerRef}
       data-player-root
+      data-player-more-open={activeMenu === 'more' ? 'true' : undefined}
       className={`fixed inset-0 z-[9999] flex h-full w-full min-h-[100dvh] flex-col justify-between bg-black select-none overflow-hidden ${
         !controlsVisible && isPlaying ? 'cursor-none' : ''
       }`}

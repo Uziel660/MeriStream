@@ -1,6 +1,7 @@
 // src/hooks/useChromecast.ts
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SubtitleTrack } from "../types";
+import { isNativeShell } from "../utils/runtime";
 
 declare global {
   interface Window {
@@ -8,6 +9,55 @@ declare global {
     cast?: any;
     chrome?: any;
   }
+}
+
+
+const GOOGLE_CAST_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+let castSdkPromise: Promise<boolean> | null = null;
+
+function ensureGoogleCastSdk(): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (window.cast?.framework && window.chrome?.cast) return Promise.resolve(true);
+  if (castSdkPromise) return castSdkPromise;
+
+  castSdkPromise = new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (ready: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (ready) {
+        window.dispatchEvent(new CustomEvent('google-cast-ready'));
+      }
+      resolve(ready);
+    };
+
+    const previous = window.__onGCastApiAvailable;
+    window.__onGCastApiAvailable = (isAvailable: boolean) => {
+      if (typeof previous === 'function') {
+        try { previous(isAvailable); } catch {}
+      }
+      if (isAvailable) {
+        queueMicrotask(() => finish(Boolean(window.cast?.framework && window.chrome?.cast)));
+      } else {
+        finish(false);
+      }
+    };
+
+    let script = document.querySelector<HTMLScriptElement>('script[data-meristream-cast-sdk="true"]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = GOOGLE_CAST_SDK_URL;
+      script.async = true;
+      script.defer = true;
+      script.dataset.meristreamCastSdk = 'true';
+      script.onerror = () => finish(false);
+      document.head.appendChild(script);
+    }
+
+    window.setTimeout(() => finish(Boolean(window.cast?.framework && window.chrome?.cast)), 12_000);
+  });
+
+  return castSdkPromise;
 }
 
 export interface CastMediaOptions {
@@ -68,22 +118,29 @@ export function useChromecast(
     onRemoteEndedRef.current = onRemoteEnded;
   }, [onRemoteEnded]);
 
-  // 1. Inicialización del SDK de Google Cast
+  // 1. Inicialización del SDK de Google Cast.
+  // Desktop loads it after the first render; Android defers the external SDK
+  // until the user actually taps Cast so low-end startup stays cheap.
   useEffect(() => {
     const setupRemotePlayer = () => {
-      if (!window.cast?.framework || !window.chrome?.cast) return;
+      if (!window.cast?.framework || !window.chrome?.cast || remotePlayerRef.current) return;
       try {
         const context = window.cast.framework.CastContext.getInstance();
+        if (!(window as any).__gcast_initialized) {
+          context.setOptions({
+            receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+            autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+            androidReceiverCompatible: false,
+          });
+          (window as any).__gcast_initialized = true;
+        }
         setIsCastAvailable(true);
 
-        // Crear RemotePlayer y su controlador
         const player = new window.cast.framework.RemotePlayer();
         const controller = new window.cast.framework.RemotePlayerController(player);
-
         remotePlayerRef.current = player;
         remotePlayerControllerRef.current = controller;
 
-        // Listener de conexión
         controller.addEventListener(
           window.cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
           () => {
@@ -100,15 +157,11 @@ export function useChromecast(
           }
         );
 
-        // Listener de Play/Pause
         controller.addEventListener(
           window.cast.framework.RemotePlayerEventType.IS_PAUSED_CHANGED,
-          () => {
-            setRemoteIsPaused(Boolean(player.isPaused));
-          }
+          () => setRemoteIsPaused(Boolean(player.isPaused))
         );
 
-        // Listener de tiempo actual
         controller.addEventListener(
           window.cast.framework.RemotePlayerEventType.CURRENT_TIME_CHANGED,
           () => {
@@ -118,7 +171,6 @@ export function useChromecast(
           }
         );
 
-        // Listener de cambio de estado (detectar fin de episodio en Chromecast)
         controller.addEventListener(
           window.cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
           () => {
@@ -141,22 +193,15 @@ export function useChromecast(
               idleReason === window.chrome?.cast?.media?.IdleReason?.FINISHED ||
               idleReason === 'FINISHED' ||
               (state === 'IDLE' && duration > 0 && currentTime >= duration - 2);
-
-            if (isFinished) {
-              onRemoteEndedRef.current?.();
-            }
+            if (isFinished) onRemoteEndedRef.current?.();
           }
         );
 
-        // Listener de duración
         controller.addEventListener(
           window.cast.framework.RemotePlayerEventType.DURATION_CHANGED,
-          () => {
-            setRemoteDuration(Number(player.duration || 0));
-          }
+          () => setRemoteDuration(Number(player.duration || 0))
         );
 
-        // Estado inicial de sesión si ya estaba conectada
         const currentSession = context.getCurrentSession();
         if (currentSession) {
           setIsCasting(true);
@@ -167,58 +212,50 @@ export function useChromecast(
       }
     };
 
-    const initCast = () => {
-      if (!window.cast?.framework || !window.chrome?.cast) return;
-      try {
+    const onReady = () => setupRemotePlayer();
+    window.addEventListener('google-cast-ready', onReady);
+
+    if (window.cast?.framework && window.chrome?.cast) {
+      setupRemotePlayer();
+    } else if (!isNativeShell()) {
+      const schedule = typeof window.requestIdleCallback === 'function'
+        ? window.requestIdleCallback(() => { void ensureGoogleCastSdk().then((ready) => ready && setupRemotePlayer()); }, { timeout: 2500 })
+        : window.setTimeout(() => { void ensureGoogleCastSdk().then((ready) => ready && setupRemotePlayer()); }, 1500);
+      return () => {
+        window.removeEventListener('google-cast-ready', onReady);
+        if (typeof schedule === 'number') {
+          if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(schedule);
+          else window.clearTimeout(schedule);
+        }
+      };
+    }
+
+    return () => window.removeEventListener('google-cast-ready', onReady);
+  }, []);
+
+  // 2. Solicitar conexión directa a dispositivo
+  const requestCastSession = useCallback(async () => {
+    try {
+      if (!window.cast?.framework || !window.chrome?.cast) {
+        const ready = await ensureGoogleCastSdk();
+        if (!ready) {
+          setRemoteLoadState('error');
+          setRemoteLoadError('Google Cast no está disponible en este dispositivo.');
+          return;
+        }
+        window.dispatchEvent(new CustomEvent('google-cast-ready'));
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+
+      if (window.cast?.framework) {
         const context = window.cast.framework.CastContext.getInstance();
-        if (!(window as any).__gcast_initialized) {
+        if (!(window as any).__gcast_initialized && window.chrome?.cast) {
           context.setOptions({
             receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
             autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
             androidReceiverCompatible: false,
           });
           (window as any).__gcast_initialized = true;
-        }
-      } catch (e) {
-        // Ignorar si ya estaba inicializado
-      }
-      setupRemotePlayer();
-    };
-
-    if (window.cast?.framework && window.chrome?.cast) {
-      initCast();
-    } else {
-      const prev = window.__onGCastApiAvailable;
-      window.__onGCastApiAvailable = (isAvailable: boolean) => {
-        if (typeof prev === 'function') {
-          try { prev(isAvailable); } catch (_) {}
-        }
-        if (isAvailable) initCast();
-      };
-      window.addEventListener('google-cast-initialized', initCast);
-      window.addEventListener('google-cast-ready', initCast);
-    }
-
-    return () => {
-      window.removeEventListener('google-cast-initialized', initCast);
-      window.removeEventListener('google-cast-ready', initCast);
-    };
-  }, [onRemoteTimeUpdate]);
-
-  // 2. Solicitar conexión directa a dispositivo
-  const requestCastSession = useCallback(async () => {
-    try {
-      if (window.cast?.framework) {
-        const context = window.cast.framework.CastContext.getInstance();
-        if (!(window as any).__gcast_initialized && window.chrome?.cast) {
-          try {
-            context.setOptions({
-              receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-              autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-              androidReceiverCompatible: false,
-            });
-            (window as any).__gcast_initialized = true;
-          } catch (_) {}
         }
         await context.requestSession().catch((err: any) => {
           if (err !== "cancel") {
@@ -227,6 +264,7 @@ export function useChromecast(
         });
         return;
       }
+
       if (window.chrome?.cast?.requestSession) {
         window.chrome.cast.requestSession(
           (session: any) => {
@@ -234,15 +272,15 @@ export function useChromecast(
             setDeviceName(session?.receiver?.friendlyName || "TV");
           },
           (err: any) => {
-            if (err?.code !== "cancel") {
-              console.warn("[Chromecast] Request error:", err);
-            }
+            if (err?.code !== "cancel") console.warn("[Chromecast] Request error:", err);
           }
         );
       }
     } catch (err: any) {
       if (err !== 'cancel') {
         console.warn("[Chromecast] Error invocando selector nativo:", err);
+        setRemoteLoadState('error');
+        setRemoteLoadError('No se pudo abrir el selector de dispositivos.');
       }
     }
   }, []);

@@ -3622,12 +3622,21 @@ async function startServer() {
           method: 'GET' | 'HEAD',
           extraHeaders?: Record<string, string>
         ) => {
+          // The browser's Range header describes the media chunk it wants,
+          // not the metadata probe.  Sending it on HEAD makes providers such
+          // as Pixeldrain report Content-Length: 2 for `bytes=0-1`, which
+          // poisons the proxy's total-size calculation and breaks playback.
+          const metadataHeaders = method === 'HEAD'
+            ? Object.fromEntries(
+                Object.entries(reqHeaders).filter(([name]) => name.toLowerCase() !== 'range'),
+              )
+            : reqHeaders;
           let currentUrl = targetUrl;
           for (let hop = 0; hop <= MAX_PROXY_REDIRECTS; hop++) {
             const response = await request(currentUrl, {
               method,
               redirect: 'manual',
-              headers: hop === 0 && extraHeaders ? { ...reqHeaders, ...extraHeaders } : reqHeaders,
+              headers: hop === 0 && extraHeaders ? { ...metadataHeaders, ...extraHeaders } : metadataHeaders,
               ...profileConnectOpts,
             });
             const status = response.statusCode;

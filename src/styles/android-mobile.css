@@ -1355,6 +1355,7 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .feature h1
 
 html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .site-header,
 html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .mobile-nav-sheet,
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .native-player-more-backdrop,
 html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .native-player-more-sheet {
   transition: none !important;
   animation: none !important;

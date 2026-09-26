@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Plus, Heart, Clock, ListPlus, Check, Sparkles, FolderPlus } from "lucide-react";
 import { useUserLists, type UserListData } from "../hooks/useUserLists";
+import { isNativeShell, nativeHaptic } from "../utils/runtime";
 
 interface AddToListModalProps {
   isOpen: boolean;
@@ -15,6 +16,15 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
   const [newListName, setNewListName] = useState<string>("");
   const [newListDesc, setNewListDesc] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const nativeShell = isNativeShell();
+
+  const closeSheet = () => {
+    if (nativeShell && window.history.state?.meristream_native_overlay === "add-to-list" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    onClose();
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -25,8 +35,18 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen || !nativeShell) return;
+    if (window.history.state?.meristream_native_overlay !== "add-to-list") {
+      window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: "add-to-list" }, "");
+    }
+    const onPopState = () => onClose();
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [isOpen, nativeShell, onClose]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) onClose();
+      if (e.key === "Escape" && isOpen) closeSheet();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -37,6 +57,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
   const showId = String(show.id);
 
   const handleToggleList = async (list: UserListData) => {
+    nativeHaptic(4);
     const active = isInList(list.id, showId);
     if (active) {
       await removeShowFromList(list.id, showId);
@@ -68,12 +89,12 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
       role="dialog"
       aria-modal="true"
       aria-label="Añadir a lista"
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-      onClick={onClose}
+      className="add-to-list-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      onClick={closeSheet}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xl text-white space-y-5 animate-in zoom-in-95 duration-200"
+        className="add-to-list-panel w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xl text-white space-y-5 animate-in zoom-in-95 duration-200"
       >
         {/* HEADER */}
         <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
@@ -88,7 +109,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={closeSheet}
             aria-label="Cerrar modal"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
           >
@@ -160,7 +181,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, onClose,
         {!isCreating ? (
           <button
             type="button"
-            onClick={() => setIsCreating(true)}
+            onClick={() => { nativeHaptic(4); setIsCreating(true); }}
             className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-dashed border-zinc-700 hover:border-amber-400/60 bg-zinc-950/40 hover:bg-amber-500/5 text-xs font-semibold text-zinc-300 hover:text-amber-300 transition"
           >
             <Plus size={15} />

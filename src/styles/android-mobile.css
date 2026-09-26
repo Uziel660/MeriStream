@@ -227,11 +227,22 @@ html[data-native-shell='android'] .mobile-nav-genres .mobile-nav-item {
 
 html[data-native-shell='android'] .mobile-nav-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0,1fr));
   gap: .4rem;
   padding-top: .55rem;
   margin-top: .45rem;
   border-top: 1px solid rgba(255,255,255,.07);
+}
+
+html[data-native-shell='android'] .mobile-nav-actions .mobile-nav-action {
+  min-width: 0;
+  min-height: 3.2rem;
+  flex-direction: column;
+  gap: .22rem;
+  padding: .42rem .3rem;
+  text-align: center;
+  font-size: .65rem;
+  line-height: 1.1;
 }
 
 /* Reduce visual work that is disproportionately expensive on low-end WebViews. */

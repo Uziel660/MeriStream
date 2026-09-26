@@ -185,7 +185,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const lastNativeTapRef = useRef<{ at: number; x: number } | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
-  const wakeLockRef = useRef<any>(null);
 
   // Identificador creciente por intento (protección contra carreras): cualquier
   // temporizador o promesa que termine después de cambiar de servidor se ignora.
@@ -2746,7 +2745,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     showTapFeedback(isPlaying ? 'Pausa' : 'Reproducir');
   };
 
-  const handlePlayerDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handlePlayerDoubleClick = () => {
     if (isScreenLocked || nativeShell) return;
     void toggleFullscreen();
   };

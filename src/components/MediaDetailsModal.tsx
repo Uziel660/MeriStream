@@ -17,7 +17,7 @@ import { getAppPreferences } from '../utils/appPreferences';
 import { useUserLists } from '../hooks/useUserLists';
 import { useAuth } from '../contexts/AuthContext';
 import { AddToListModal } from './AddToListModal';
-import { isNativeLowCostPresentation, isNativeShell, nativeHaptic, nativeShare } from '../utils/runtime';
+import { isNativeLowCostPresentation, isNativeShell, nativeHaptic, nativeShare, publicAppUrl } from '../utils/runtime';
 
 const LazyReportControl = React.lazy(() => import('./ReportControl'));
 
@@ -753,7 +753,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                                 void nativeShare({
                                   title,
                                   text: `Mira ${title} en MeriStream`,
-                                  url: window.location.href,
+                                  url: publicAppUrl(),
                                   dialogTitle: 'Compartir desde MeriStream',
                                 });
                               }}

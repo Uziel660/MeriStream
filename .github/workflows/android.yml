@@ -86,6 +86,7 @@ jobs:
         with:
           name: meristream-android-emulator-evidence
           path: |
+            meristream-startup.png
             meristream-emulator.png
             meristream-catalog-seeded.png
             meristream-menu.png
@@ -144,6 +145,7 @@ jobs:
           name: meristream-android-low-end-evidence
           path: |
             meristream-low-end-start.txt
+            meristream-low-end-startup.png
             meristream-low-end-player.png
             meristream-low-end-meminfo.txt
             meristream-low-end-logcat.txt

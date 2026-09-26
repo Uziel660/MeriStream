@@ -14,7 +14,7 @@ import {
   MessageSquare,
   Radio,
 } from 'lucide-react';
-import { isNativeShell, nativeHaptic } from '../utils/runtime';
+import { isNativeShell, nativeHaptic, nativeShare } from '../utils/runtime';
 import type {
   WatchPartyRoom,
   WatchPartyParticipant,
@@ -183,6 +183,17 @@ export function WatchPartyPanel({
     }
   }, [shareUrl]);
 
+  const handleNativeShare = useCallback(async () => {
+    if (!shareUrl) return;
+    const shared = await nativeShare({
+      title: 'Watch Party · MeriStream',
+      text: roomCode ? `Únete a mi Watch Party en MeriStream · Sala ${roomCode}` : 'Únete a mi Watch Party en MeriStream',
+      url: shareUrl,
+      dialogTitle: 'Compartir Watch Party',
+    });
+    if (!shared) handleCopyShareLink();
+  }, [shareUrl, roomCode, handleCopyShareLink]);
+
   const handleSendMessage = useCallback(
     (e?: React.FormEvent) => {
       if (e) e.preventDefault();
@@ -319,13 +330,13 @@ export function WatchPartyPanel({
               />
               <button
                 type="button"
-                onClick={handleCopyShareLink}
+                onClick={nativeShell ? handleNativeShare : handleCopyShareLink}
                 data-testid="copy-share-link-button"
-                aria-label={shareCopied ? 'Enlace copiado' : 'Copiar enlace de la sala'}
-                title={shareCopied ? '¡Enlace copiado!' : 'Copiar enlace de la sala'}
+                aria-label={nativeShell ? 'Compartir enlace de la sala' : (shareCopied ? 'Enlace copiado' : 'Copiar enlace de la sala')}
+                title={nativeShell ? 'Compartir sala' : (shareCopied ? '¡Enlace copiado!' : 'Copiar enlace de la sala')}
                 className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold text-amber-300 transition hover:bg-zinc-800 hover:text-amber-200"
               >
-                {shareCopied ? 'Copiado' : 'Copiar enlace'}
+                {nativeShell ? 'Compartir' : (shareCopied ? 'Copiado' : 'Copiar enlace')}
               </button>
             </div>
           )}

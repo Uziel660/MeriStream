@@ -217,7 +217,9 @@ try {
     const menuReady = await ensureMobileMenuOpen();
     if (!menuReady) throw new Error('Could not open mobile navigation before Explorar');
     await delay(120);
-    const result = await clickMobileMenuAction('^explorar
+    const result = await clickMobileMenuAction('explorar', '.mobile-nav-item');
+    if (!result?.clicked) throw new Error(`Explorar item was not found. Navigation items: ${JSON.stringify(result?.labels || [])}`);
+    await delay(900);
     const filtersOpened = await evaluate(call, `(() => {
       const trigger = document.querySelector('.native-explore-filter-trigger');
       if (!trigger) return false;

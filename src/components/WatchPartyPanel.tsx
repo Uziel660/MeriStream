@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Radio,
 } from 'lucide-react';
+import { isNativeShell, nativeHaptic } from '../utils/runtime';
 import type {
   WatchPartyRoom,
   WatchPartyParticipant,
@@ -53,6 +54,7 @@ export function WatchPartyPanel({
   disconnect,
   hostName,
 }: WatchPartyPanelProps) {
+  const nativeShell = isNativeShell();
   const [inputText, setInputText] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -199,8 +201,8 @@ export function WatchPartyPanel({
         initial={isMobile ? { y: '100%' } : { x: '100%' }}
         animate={isMobile ? { y: 0 } : { x: 0 }}
         exit={isMobile ? { y: '100%' } : { x: '100%' }}
-        transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-        className={`fixed z-[9999] flex flex-col bg-zinc-950/98 backdrop-blur-xl shadow-2xl text-zinc-100 select-none overflow-hidden border border-zinc-800 ${
+        transition={nativeShell ? { duration: 0.14 } : { type: 'spring', damping: 28, stiffness: 260 }}
+        className={`watch-party-panel fixed z-[9999] flex flex-col bg-zinc-950/98 backdrop-blur-xl shadow-2xl text-zinc-100 select-none overflow-hidden border border-zinc-800 ${
           isMobile
             ? 'bottom-0 inset-x-0 w-full max-w-full max-h-[70vh] h-[65vh] border-t rounded-t-xl overflow-x-hidden'
             : 'right-0 top-0 bottom-0 w-80 md:w-96 max-w-[360px] h-full border-l'
@@ -476,7 +478,7 @@ export function WatchPartyPanel({
             <button
               key={emoji}
               type="button"
-              onClick={() => handleQuickReaction(emoji)}
+              onClick={() => { nativeHaptic(4); handleQuickReaction(emoji); }}
               data-testid={`quick-emoji-${emoji}`}
               aria-label={`Reacción ${emoji}`}
               title={`Reaccionar con ${emoji}`}

@@ -58,6 +58,7 @@ import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryC
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
 import {
   backendUrl,
+  publicAppUrl,
   isNativeShell,
   nativeHaptic,
   nativeLockLandscape,
@@ -4259,7 +4260,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                               void nativeShare({
                                 title,
                                 text: `Estoy viendo ${title} en MeriStream`,
-                                url: window.location.href,
+                                url: publicAppUrl(),
                                 dialogTitle: 'Compartir desde MeriStream',
                               });
                             }}

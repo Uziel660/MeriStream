@@ -1155,6 +1155,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return true;
     };
 
+    const providerIsKnownDegraded = /doramasflix/i.test(
+      `${server.sourceSite || ''} ${server.provider || ''} ${server.url || ''}`,
+    );
+
     resolutionPromise
       .then((res: any) => {
         if (cancelled || attemptId !== attemptIdRef.current) return;
@@ -1178,7 +1182,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           // reintento: reintentar una vez la misma fuente antes de pasar al
           // siguiente proveedor evita el patrón "primer servidor falla,
           // segundo también, primer servidor sí funciona al volver a pulsar".
-          if (retryJitOnceBeforeFailover()) return;
+          if (!providerIsKnownDegraded && retryJitOnceBeforeFailover()) return;
           jitCompletedRef.current.delete(jitKey);
           setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
           setDeliveryState('error');
@@ -1263,7 +1267,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (cancelled || attemptId !== attemptIdRef.current) return;
         // La fuente puede recuperarse cuando el proveedor vuelve a responder.
         // No memorizamos este fallo como una resolución permanente.
-        if (retryJitOnceBeforeFailover()) return;
+        if (!providerIsKnownDegraded && retryJitOnceBeforeFailover()) return;
         jitCompletedRef.current.delete(jitKey);
         setCanonicalResolveError(
           isUnresolvedCanonical(server.url)

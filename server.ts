@@ -4178,9 +4178,11 @@ async function startServer() {
 
       const safeRankedStreams = rankedStreams.map((stream) => {
         const provider = stream.source_site || siteFromDomain(hostOfStreamUrl(url)) || stream.provider;
-        if (!Array.isArray(stream.subtitles)) return stream;
+        const safeUrl = stream.type === "direct" ? browserSafeDirectUrl(stream.url) : stream.url;
+        if (!Array.isArray(stream.subtitles) && safeUrl === stream.url) return stream;
         return {
           ...stream,
+          url: safeUrl,
           subtitles: proxyResolvedSubtitles({ subtitles: stream.subtitles }, provider).subtitles || [],
         };
       });
@@ -4197,8 +4199,8 @@ async function startServer() {
 
       res.json({
         url,
-        stream_url: finalStreamUrl,
-        all_available_streams: all,
+        stream_url: browserSafeDirectUrl(finalStreamUrl),
+        all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
         title: extracted.title,
         resolved: isResolved,
         requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,

@@ -1047,6 +1047,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // caliente vía episode-servers/resolve-embed. Se intenta UNA vez por servidor.
   const jitInFlightRef = useRef<Set<string>>(new Set());
   const jitCompletedRef = useRef<Set<string>>(new Set());
+  // El primer reintento JIT debe volver a ejecutar este efecto. Antes solo se
+  // limpiaban los sets de control, pero ninguna dependencia cambiaba y una
+  // fuente embed sin enlaces quedaba mostrando "Resolviendo..." para siempre.
+  const [jitRetryVersion, setJitRetryVersion] = useState(0);
 
   // Resolver únicamente el servidor activo. Esto evita que una fuente vencida
   // del índice 0 sobrescriba o dispare failover sobre otro candidato que el
@@ -1140,6 +1144,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       jitRetryCountsRef.current.set(jitKey, previous + 1);
       jitInFlightRef.current.delete(jitKey);
       jitCompletedRef.current.delete(jitKey);
+      setJitRetryVersion((version) => version + 1);
       setServers((prev) => prev.map((candidate) =>
         candidate.id === targetId
           ? { ...candidate, notPlayable: false, failure_reason: undefined }
@@ -1275,7 +1280,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError]);
+  }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError, jitRetryVersion]);
 
   // 2. CAMBIO DE SERVIDOR MANUAL O POR FAILOVER AUTOMÁTICO
   const handleServerChange = (index: number, isAutoFailover = false, isPartySync = false) => {

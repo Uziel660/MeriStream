@@ -81,11 +81,32 @@ fs.writeFileSync(activityPath, activity, 'utf8');
 console.log('Enabled Android WebView inspection for debuggable builds only.');
 
 
-const mainActivityPath = path.resolve('android/app/src/main/java/me/merith/meristream/MainActivity.java');
-if (fs.existsSync(mainActivityPath)) {
-  let java = fs.readFileSync(mainActivityPath, 'utf8');
-  if (!java.includes('setWebContentsDebuggingEnabled')) {
-    java = `package me.merith.meristream;
+function findMainActivity(dir) {
+  if (!fs.existsSync(dir)) return null;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const candidate = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = findMainActivity(candidate);
+      if (nested) return nested;
+    } else if (entry.name === 'MainActivity.java') {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+const mainActivityPath = findMainActivity(path.resolve('android/app/src/main/java'));
+if (!mainActivityPath) {
+  throw new Error('Could not locate generated Capacitor MainActivity.java');
+}
+
+let java = fs.readFileSync(mainActivityPath, 'utf8');
+if (!java.includes('setWebContentsDebuggingEnabled')) {
+  const packageMatch = java.match(/^package\s+([^;]+);/m);
+  if (!packageMatch) throw new Error(\`Could not detect Java package in \${mainActivityPath}\`);
+  const packageName = packageMatch[1];
+
+  java = \`package \${packageName};
 
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -100,10 +121,16 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Expose the installed debug APK's WebView before Capacitor creates it,
+        // enabling deterministic DOM/media assertions from CI. Release APKs
+        // remain non-debuggable and never execute this branch.
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
         super.onCreate(savedInstanceState);
 
-        // Keep the app visually continuous with MeriStream instead of showing
-        // bright browser-like Android system chrome.
+        // Keep Android system chrome visually continuous with MeriStream.
         getWindow().setStatusBarColor(Color.rgb(5, 6, 8));
         getWindow().setNavigationBarColor(Color.rgb(5, 6, 8));
 
@@ -124,16 +151,9 @@ public class MainActivity extends BridgeActivity {
             }
             getWindow().getDecorView().setSystemUiVisibility(flags);
         }
-
-        // Debug builds expose the installed Capacitor WebView to Chrome DevTools
-        // so CI can inspect the actual APK DOM and playback state. Release builds
-        // remain unaffected.
-        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            WebView.setWebContentsDebuggingEnabled(true);
-        }
     }
 }
-`;
-    fs.writeFileSync(mainActivityPath, java, 'utf8');
-  }
+\`;
+  fs.writeFileSync(mainActivityPath, java, 'utf8');
 }
+console.log(\`Patched MainActivity: \${path.relative(process.cwd(), mainActivityPath)}\`);

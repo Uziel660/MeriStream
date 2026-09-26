@@ -224,6 +224,55 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
       requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
     });
   };
+
+
+  // Android hardware Back should close transient header surfaces immediately.
+  // Relying only on popstate makes the UI timing depend on the WebView history
+  // implementation (notably Android 15), so consume the native event here,
+  // close React state synchronously, and then discard the overlay history entry.
+  useEffect(() => {
+    if (!isNativeShell()) return;
+
+    const onNativeBack = (event: Event) => {
+      const nativeEvent = event as CustomEvent<{ canGoBack?: boolean }>;
+
+      const consumeOverlay = (
+        overlay: 'search' | 'nav' | 'account' | 'preferences',
+        close: () => void,
+        restoreFocus?: () => void,
+      ) => {
+        nativeEvent.preventDefault();
+        close();
+
+        if (window.history.state?.meristream_native_overlay === overlay && window.history.length > 1) {
+          window.history.back();
+        } else {
+          clearNativeOverlayMarker(overlay);
+        }
+
+        if (restoreFocus) requestAnimationFrame(restoreFocus);
+      };
+
+      if (preferencesOpen) {
+        consumeOverlay('preferences', () => setPreferencesOpen(false), () => preferencesTriggerRef.current?.focus());
+        return;
+      }
+      if (mobileSearchOpen) {
+        consumeOverlay('search', () => setMobileSearchOpen(false), () => mobileSearchTriggerRef.current?.focus());
+        return;
+      }
+      if (mobileNavOpen) {
+        consumeOverlay('nav', () => setMobileNavOpen(false), () => mobileNavTriggerRef.current?.focus());
+        return;
+      }
+      if (isUserMenuOpen) {
+        consumeOverlay('account', () => setIsUserMenuOpen(false), () => accountTriggerRef.current?.focus());
+      }
+    };
+
+    window.addEventListener('meristream:native-back', onNativeBack as EventListener);
+    return () => window.removeEventListener('meristream:native-back', onNativeBack as EventListener);
+  }, [preferencesOpen, mobileSearchOpen, mobileNavOpen, isUserMenuOpen]);
   const handleSelectTab = (id: string) => {
     nativeHaptic();
     clearNativeOverlayMarker();

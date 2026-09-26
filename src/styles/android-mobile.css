@@ -667,3 +667,23 @@ html[data-native-shell='android'] .preferences-panel {
     -webkit-line-clamp: 3;
   }
 }
+
+
+/* A native app does not need a website footer. Removing it also prevents the
+ * catalog error/empty states from looking like a web page inside a WebView. */
+html[data-native-shell='android'] .site-footer {
+  display: none !important;
+}
+
+html[data-native-shell='android'] #main-content {
+  padding-bottom: max(1.25rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important;
+}
+
+html[data-native-shell='android'] #main-content > .max-w-2xl.py-20 {
+  min-height: calc(100dvh - 5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 2.5rem !important;
+  padding-bottom: 2.5rem !important;
+}

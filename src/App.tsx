@@ -2621,8 +2621,14 @@ export function App() {
                 <AlertCircle size={36} className="stroke-[1.6]" />
               </div>
               <div className="space-y-2">
-                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">No se pudo cargar el catálogo</h2>
-                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">{catalogError}</p>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {nativeShell ? 'No pudimos conectar con MeriStream' : 'No se pudo cargar el catálogo'}
+                </h2>
+                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">
+                  {nativeShell
+                    ? 'Comprueba tu conexión e inténtalo otra vez. Tu biblioteca y tus preferencias siguen guardadas.'
+                    : catalogError}
+                </p>
               </div>
               <button type="button" onClick={loadCatalog} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-amber-300 transition-colors">
                 <RefreshCw size={15} /> Reintentar

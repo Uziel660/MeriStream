@@ -1,0 +1,304 @@
+/* MeriStream Android native presentation layer
+ * Loaded last and activated only when runtime.ts detects Capacitor.
+ * The React feature tree stays shared with the web app; this file changes
+ * presentation cost and mobile information density only.
+ */
+
+html[data-native-shell='android'] {
+  background: #050608;
+  color-scheme: dark;
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeSpeed;
+}
+
+html[data-native-shell='android'],
+html[data-native-shell='android'] body,
+html[data-native-shell='android'] #root {
+  min-height: 100%;
+  min-height: 100dvh;
+  background: #050608;
+}
+
+html[data-native-shell='android'] body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* One compact app bar. The desktop/tablet two-row navigation remains intact. */
+html[data-native-shell='android'] .site-header {
+  position: sticky !important;
+  top: 0;
+  z-index: 90;
+  border-bottom: 1px solid rgba(255,255,255,.07) !important;
+  background: rgba(5,6,8,.96) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: transform 150ms ease, background-color 150ms ease !important;
+  contain: layout paint;
+}
+
+html[data-native-shell='android'] .site-header.is-chrome-hidden:not(.has-search-open):not(.has-mobile-nav-open) {
+  transform: translate3d(0,-110%,0);
+}
+
+html[data-native-shell='android'] .header-inner {
+  max-width: none !important;
+  width: 100%;
+  padding-inline: max(.6rem, env(safe-area-inset-left)) max(.6rem, env(safe-area-inset-right)) !important;
+}
+
+html[data-native-shell='android'] .header-top {
+  min-height: calc(3.45rem + env(safe-area-inset-top)) !important;
+  height: calc(3.45rem + env(safe-area-inset-top)) !important;
+  padding: env(safe-area-inset-top) 0 0 !important;
+  gap: .35rem !important;
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+}
+
+html[data-native-shell='android'] .brand {
+  min-width: 0;
+  font-size: 1.2rem !important;
+  letter-spacing: -.04em;
+}
+
+html[data-native-shell='android'] .brand-symbol {
+  width: 1.8rem !important;
+  height: 1.8rem !important;
+  border-radius: .55rem !important;
+}
+
+html[data-native-shell='android'] .header-bottom {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .mobile-nav-trigger {
+  display: inline-flex !important;
+}
+
+html[data-native-shell='android'] .header-watchparty-trigger,
+html[data-native-shell='android'] .preferences-trigger {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .ui-icon-button,
+html[data-native-shell='android'] .account-trigger,
+html[data-native-shell='android'] .account-login {
+  min-width: 2.5rem !important;
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  border-radius: .8rem !important;
+}
+
+html[data-native-shell='android'] .account-name,
+html[data-native-shell='android'] .account-trigger > svg {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .header-search {
+  position: fixed !important;
+  z-index: 120 !important;
+  top: max(.45rem, env(safe-area-inset-top)) !important;
+  left: max(.55rem, env(safe-area-inset-left)) !important;
+  right: max(.55rem, env(safe-area-inset-right)) !important;
+  width: auto !important;
+  height: 2.85rem !important;
+  margin: 0 !important;
+  border-radius: .85rem !important;
+  background: #111318 !important;
+  box-shadow: 0 10px 32px rgba(0,0,0,.36) !important;
+  transform: translateY(-130%) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+html[data-native-shell='android'] .header-search.is-mobile-open {
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+html[data-native-shell='android'] .mobile-nav-sheet {
+  position: fixed;
+  z-index: 115;
+  top: calc(3.55rem + env(safe-area-inset-top));
+  left: max(.55rem, env(safe-area-inset-left));
+  right: max(.55rem, env(safe-area-inset-right));
+  max-height: calc(100dvh - 4.4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: .65rem;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 1rem;
+  background: #111318;
+  box-shadow: 0 18px 44px rgba(0,0,0,.45);
+}
+
+html[data-native-shell='android'] .mobile-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: .4rem;
+}
+
+html[data-native-shell='android'] .mobile-nav-item,
+html[data-native-shell='android'] .mobile-nav-action {
+  min-height: 2.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .45rem .55rem;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: .75rem;
+  background: #181b21;
+  color: #d8dbe1;
+  font-size: .74rem;
+  font-weight: 650;
+}
+
+html[data-native-shell='android'] .mobile-nav-item.is-active {
+  background: rgba(251,191,36,.13);
+  border-color: rgba(251,191,36,.34);
+  color: #fff;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres {
+  display: flex;
+  gap: .4rem;
+  overflow-x: auto;
+  padding: .55rem 0 .15rem;
+  scrollbar-width: none;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres .mobile-nav-item {
+  flex: 0 0 auto;
+  min-height: 2.35rem;
+  padding-inline: .75rem;
+}
+
+html[data-native-shell='android'] .mobile-nav-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .4rem;
+  padding-top: .55rem;
+  margin-top: .45rem;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+
+/* Reduce visual work that is disproportionately expensive on low-end WebViews. */
+html[data-native-shell='android'] .media-poster-image,
+html[data-native-shell='android'] .media-card,
+html[data-native-shell='android'] .feature,
+html[data-native-shell='android'] .continue-card {
+  transform: none !important;
+  transition-property: opacity, color, background-color, border-color !important;
+  transition-duration: 110ms !important;
+}
+
+html[data-native-shell='android'] .media-card,
+html[data-native-shell='android'] .continue-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 190px 310px;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-sm,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-md,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-lg,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-xl,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-sm,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-md,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-lg,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .animate-pulse,
+html[data-native-shell='android'][data-ms-performance='low'] .animate-spin:not([role='status']) {
+  animation-duration: 1.25s !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-2xl,
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-xl,
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-lg {
+  box-shadow: none !important;
+}
+
+/* Player is a native screen, never a card/modal. */
+html[data-native-shell='android'] [data-player-root] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+html[data-native-shell='android'] [data-player-root] video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000;
+}
+
+/* Mobile player: keep essentials visible, push secondary actions to menus. */
+@media (max-width: 639px) {
+  html[data-native-shell='android'] [data-player-topbar] {
+    padding-inline: .45rem !important;
+    padding-top: max(.45rem, env(safe-area-inset-top)) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child {
+    max-width: calc(100% - 7.5rem) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'] {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] {
+    padding-inline: .45rem !important;
+    padding-bottom: max(.45rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] button {
+    min-width: 2rem !important;
+    min-height: 2rem !important;
+  }
+}
+
+@media (max-width: 380px) {
+  html[data-native-shell='android'] .brand > span:last-child {
+    display: none;
+  }
+
+  html[data-native-shell='android'] .mobile-nav-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-native-shell='android'] .site-header {
+    transition: none !important;
+  }
+}

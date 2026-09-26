@@ -966,3 +966,86 @@ html[data-native-shell='android'] .media-row .row-navigation {
 html[data-native-shell='android'] .poster-rail {
   overscroll-behavior-inline: contain;
 }
+
+
+/* Watch Party and add-to-list use native touch sheets. */
+html[data-native-shell='android'] .watch-party-join-overlay,
+html[data-native-shell='android'] .add-to-list-overlay {
+  align-items: flex-end !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,.58) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel,
+html[data-native-shell='android'] .add-to-list-panel {
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(92dvh, 46rem) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 !important;
+  padding-bottom: max(.55rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.3rem 1.3rem 0 0 !important;
+  background: #0c0f14 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+  animation: ms-native-sheet-in 170ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel::before,
+html[data-native-shell='android'] .add-to-list-panel::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: .25rem;
+  margin: .55rem auto .05rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .watch-party-join-panel button,
+html[data-native-shell='android'] .add-to-list-panel button {
+  min-height: 2.75rem;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel input,
+html[data-native-shell='android'] .add-to-list-panel input {
+  min-height: 3rem;
+  font-size: 16px;
+}
+
+html[data-native-shell='android'] .watch-party-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 -16px 44px rgba(0,0,0,.48) !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .watch-party-panel {
+  transition: none !important;
+}
+
+@media (max-width: 640px) {
+  html[data-native-shell='android'] .watch-party-panel {
+    height: min(72dvh, 34rem) !important;
+    max-height: calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+    padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 1.2rem 1.2rem 0 0 !important;
+  }
+
+  html[data-native-shell='android'] .watch-party-panel [data-testid='emoji-reaction-bar'] button,
+  html[data-native-shell='android'] .watch-party-panel [data-testid='send-message-button'],
+  html[data-native-shell='android'] .watch-party-panel [data-testid='close-panel-button'] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  html[data-native-shell='android'] .watch-party-panel [data-testid='chat-text-input'] {
+    min-height: 2.9rem;
+    font-size: 16px !important;
+  }
+}

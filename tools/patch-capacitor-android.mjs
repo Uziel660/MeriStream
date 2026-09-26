@@ -42,3 +42,40 @@ if (!patchedMain) {
 
 fs.writeFileSync(stylesPath, xml, 'utf8');
 console.log('Patched Capacitor Android window chrome for MeriStream.');
+
+
+const activityPath = path.resolve('android/app/src/main/java/me/merith/meristream/MainActivity.java');
+if (!fs.existsSync(activityPath)) {
+  throw new Error(`Capacitor Android MainActivity not found at ${activityPath}`);
+}
+
+let activity = fs.readFileSync(activityPath, 'utf8');
+if (!activity.includes('WebView.setWebContentsDebuggingEnabled')) {
+  activity = activity
+    .replace(
+      'import com.getcapacitor.BridgeActivity;',
+      `import com.getcapacitor.BridgeActivity;
+import android.content.pm.ApplicationInfo;
+import android.os.Bundle;
+import android.webkit.WebView;`,
+    )
+    .replace(
+      'public class MainActivity extends BridgeActivity {}',
+      `public class MainActivity extends BridgeActivity {
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+      WebView.setWebContentsDebuggingEnabled(true);
+    }
+  }
+}`,
+    );
+}
+
+if (!activity.includes('WebView.setWebContentsDebuggingEnabled')) {
+  throw new Error('Could not patch MainActivity for debug-only WebView inspection');
+}
+
+fs.writeFileSync(activityPath, activity, 'utf8');
+console.log('Enabled Android WebView inspection for debuggable builds only.');

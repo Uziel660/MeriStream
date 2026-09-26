@@ -7,3 +7,4 @@ export const nativeAppBinding: any = null;
 export const nativeHapticsBinding: any = null;
 export const nativeScreenOrientationBinding: any = null;
 export const nativeSystemBarsBinding: any = null;
+export const nativeShareBinding: any = null;

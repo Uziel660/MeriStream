@@ -54,6 +54,8 @@ jobs:
         run: npm ci
       - name: Install Capacitor toolchain without changing lockfile
         run: npm run android:deps
+      - name: Validate Android smoke harness syntax
+        run: node --check tools/android-webview-smoke.mjs
       - name: Build Android frontend
         run: npm run android:build
       - name: Create Android project and apply native window polish

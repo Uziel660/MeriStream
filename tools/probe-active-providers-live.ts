@@ -5,6 +5,7 @@ import { EmbedResolvers } from "../server/resolvers";
 type ProbeCase = { provider: string; adapter: string; title: string; url: string };
 type MediaProbe = {
   status?: number;
+  requiresBackendProxy?: boolean;
   contentType?: string | null;
   host?: string | null;
   hls?: boolean;
@@ -15,8 +16,11 @@ type MediaProbe = {
 
 const CASES: ProbeCase[] = [
   { provider: "doramasflix", adapter: "doramasflix", title: "Mousetrap 1x1", url: "https://doramasflix.io/capitulos/mousetrap-1x1" },
+  { provider: "doramasflix", adapter: "doramasflix", title: "Penthouse 1x1", url: "https://doramasflix.io/capitulos/penthouse-1x1" },
   { provider: "archive-org", adapter: "archive_org", title: "Big Buck Bunny", url: "https://archive.org/details/BigBuckBunny_328" },
+  { provider: "archive-org", adapter: "archive_org", title: "His Girl Friday", url: "https://archive.org/details/his_girl_friday" },
   { provider: "tioanime", adapter: "tioanime", title: "Naruto 1", url: "https://tioanime.com/ver/naruto-1" },
+  { provider: "tioanime", adapter: "tioanime", title: "Bleach 1", url: "https://tioanime.com/ver/bleach-1" },
 ];
 
 const UA = "MeriStream-active-provider-probe/2026-09";
@@ -75,6 +79,13 @@ async function fetchWithTimeout(url: string, headers: Record<string, string> = {
 
 async function probeMedia(url: string, headers: Record<string, string> = {}): Promise<MediaProbe> {
   try {
+    // Mega and some protected hosts intentionally resolve to MeriStream's
+    // server-side relay. This live probe runs without the Express server, so a
+    // relative /api route is a valid "requires backend proxy" outcome, not a
+    // malformed third-party stream.
+    if (url.startsWith('/api/')) {
+      return { host: 'meristream-backend', requiresBackendProxy: true };
+    }
     if (/\.m3u8(?:[?#]|$)/i.test(url) || url.includes("/m3u8/")) {
       const manifest = await fetchWithTimeout(url, headers);
       const bytes = await readPrefix(manifest);
@@ -168,9 +179,14 @@ for (const item of CASES) {
       const ok = Boolean(
         resolved.direct
         && !media.error
-        && (media.status === 200 || media.status === 206)
-        && (media.segmentStatus === undefined || media.segmentStatus === 200 || media.segmentStatus === 206)
-        && (media.bytesRead || 0) > 0
+        && (
+          media.requiresBackendProxy === true
+          || (
+            (media.status === 200 || media.status === 206)
+            && (media.segmentStatus === undefined || media.segmentStatus === 200 || media.segmentStatus === 206)
+            && (media.bytesRead || 0) > 0
+          )
+        )
       );
       attempts.push({
         candidateHost: hostOf(candidate),

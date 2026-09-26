@@ -18,6 +18,20 @@ capture_logcat() {
   adb logcat -d > "${PREFIX}-logcat.txt" 2>/dev/null || true
 }
 
+
+# GitHub's Pixel emulator can occasionally surface launcher/Quickstep ANR
+# dialogs while the tested Activity itself is healthy. Those OS-owned dialogs
+# steal Back presses and cover screenshots, so disable them for deterministic
+# UI evidence. This does not suppress MeriStream crashes: logcat + foreground
+# checks below still fail the smoke on app process failures.
+suppress_emulator_system_dialogs() {
+  adb shell settings put global hide_error_dialogs 1 >/dev/null 2>&1 || true
+  adb shell settings put global show_first_crash_dialog 0 >/dev/null 2>&1 || true
+  adb shell settings put global show_restart_in_crash_dialog 0 >/dev/null 2>&1 || true
+  adb shell settings put secure anr_show_background 0 >/dev/null 2>&1 || true
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+}
+
 assert_app_foreground() {
   local activity_dump window_dump
   activity_dump="$(adb shell dumpsys activity activities 2>/dev/null || true)"
@@ -38,11 +52,14 @@ assert_app_foreground() {
 trap capture_logcat EXIT
 
 echo "Installing: $APK_PATH"
+suppress_emulator_system_dialogs
 adb install -r "$APK_PATH"
 adb logcat -c
 adb shell am force-stop me.merith.meristream
 adb shell am start -W -n me.merith.meristream/.MainActivity | tee "${PREFIX}-start.txt"
 sleep "$START_DELAY"
+suppress_emulator_system_dialogs
+sleep 1
 
 # The activity must still be the foreground Android surface. Android 10 and
 # Android 15 expose different dumpsys field names, so check both families.

@@ -9,6 +9,7 @@ on:
       - "package-lock.json"
       - "capacitor.config.json"
       - "tools/patch-capacitor-android.mjs"
+      - "tools/generate-native-plugin-bindings.mjs"
       - "tools/android-webview-smoke.mjs"
       - "tools/android-emulator-smoke.sh"
       - ".github/workflows/android.yml"

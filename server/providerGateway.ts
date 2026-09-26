@@ -7,6 +7,7 @@ import {
   renditionPreferenceScore,
 } from "./providers/providerPolicy";
 import { getHostHealth, isHostBlacklisted } from "./scrapers/hostHealth";
+import { getDoramasflixHealth } from "./scrapers/adapters/DoramasflixAdapter";
 import { isBlacklistedHost } from "./utils/streamSorter";
 import { getDirectStreamProviders } from "./providers/api";
 import type {
@@ -594,7 +595,20 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
     const ranked = dedupeAndRank([...sources, ...database.direct], req);
     const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
       .some((source) => normalizeProviderId(source.provider) === "zokoanime");
-    const databaseFallbacks = [...database.fallbackCandidates];
+    // Doramasflix publishes a canonical page even when its own link service is
+    // down. Keeping that page as the first candidate makes the player wait on a
+    // locator that cannot resolve and looks like an infinite loading spinner.
+    // Once the adapter has observed an upstream failure, temporarily suppress
+    // only that provider and let the next fallback (normally VidSrc) start.
+    // The short TTL keeps recovery automatic when Doramasflix comes back.
+    const doramasHealth = getDoramasflixHealth();
+    const doramasRecentlyDegraded = doramasHealth.state === "degraded"
+      && typeof doramasHealth.lastCheckedAt === "number"
+      && Date.now() - doramasHealth.lastCheckedAt < 90_000;
+    const databaseFallbacks = database.fallbackCandidates.filter((source) => {
+      if (!doramasRecentlyDegraded) return true;
+      return normalizeProviderId(source.provider) !== "doramasflix";
+    });
     // Expose VidSrc's deterministic locator whenever the direct probe did not
     // produce a playable source. A mirror may take several seconds to answer
     // (or be rejected by the server-side health probe) even though the same

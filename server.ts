@@ -59,7 +59,7 @@ import {
   DeliveryPlanner,
   ResolutionCoordinator,
 } from "./server/deliveryPlanner";
-import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
+import { classifySourceKind, isDirectMedia as isDirectMediaUrl, parseStreamExpiry } from "./server/resolutionMetadata";
 import { isInvalidCatalogSource, sanitizeCatalogLandingPages } from "./server/catalogIntegrity";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -158,6 +158,8 @@ import {
   listCatalogReports,
   updateCatalogReport,
 } from "./server/catalogReports";
+
+const isDirectMedia = (url: string): boolean => EmbedResolvers.isDirectMediaUrl(url) || isDirectMediaUrl(url);
 
 const deliveryPlanner = new DeliveryPlanner();
 

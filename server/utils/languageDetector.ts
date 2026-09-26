@@ -20,6 +20,41 @@ export interface LanguageHints {
   subtitle_language?: string;
 }
 
+/**
+ * DoramasYT usa la etiqueta `sub-espanol` incluso en sus fichas dobladas.
+ * La señal fiable está en el slug del episodio: `-latino-episodio-N` y
+ * `-castellano-episodio-N` son pistas de audio dobladas, mientras que el
+ * resto de episodios publicados con `sub-espanol` conservan el audio
+ * original y llevan subtítulos en español.
+ */
+export function detectDoramasytLanguageHints(url: unknown): LanguageHints | undefined {
+  const raw = clean(url);
+  if (!raw) return undefined;
+  let pathname = raw;
+  let isDoramasyt = false;
+  try {
+    const parsed = new URL(raw);
+    pathname = parsed.pathname;
+    isDoramasyt = /(?:^|\.)doramasyt\.com$/i.test(parsed.hostname);
+  } catch {
+    // Mantener el valor original permite clasificar slugs parciales en tests
+    // y en manifests antiguos.
+    isDoramasyt = /^\/ver\//i.test(raw) || /^ver\//i.test(raw);
+  }
+  const path = pathname.toLowerCase();
+  if (!isDoramasyt) return undefined;
+  if (/-latino-episodio-\d+(?:[/?#]|$)/i.test(path)) {
+    return { language: "dub", audio_language: "es-419" };
+  }
+  if (/-castellano-episodio-\d+(?:[/?#]|$)/i.test(path)) {
+    return { language: "dub", audio_language: "es-ES" };
+  }
+  if (/\/ver\/[^/?#]+-episodio-\d+/i.test(path)) {
+    return { language: "sub", subtitle_language: "es" };
+  }
+  return undefined;
+}
+
 const LANGUAGE_ALIASES: Record<string, string> = {
   es: "es",
   spa: "es",

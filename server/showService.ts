@@ -17,6 +17,7 @@ import {
 } from "./showEpisodePolicy";
 import { PROVIDER_POLICIES, isProviderAllowedInMainPath, normalizeProviderId } from "./providers/providerPolicy";
 import { getCatalogPolicy, normalizeShowProviderOverrides } from "./catalogPolicy";
+import { detectDoramasytLanguageHints } from "./utils/languageDetector";
 import {
   enqueueWrite,
   enqueueShowCreate,
@@ -384,7 +385,7 @@ export async function syncEpisodeSources(
           source_site: site,
           url: rawUrl,
           link_type: linkType,
-          language: src.language ?? null,
+          language: src.language ?? defaultRendition.language ?? null,
           audio_language: src.audio_language ?? defaultRendition.audio_language ?? null,
           subtitle_language: src.subtitle_language ?? defaultRendition.subtitle_language ?? null,
           subtitles: src.subtitles ?? undefined,
@@ -408,7 +409,9 @@ export async function syncEpisodeSources(
       // canónico que no existían en la primera pasada. Actualizar solo esos
       // huecos conserva el estado de salud/verified y evita duplicar enlaces.
       const evidence: Record<string, unknown> = {};
-      if (src.language && existing.language !== src.language) evidence.language = src.language;
+      if ((src.language || defaultRendition.language) && existing.language !== (src.language || defaultRendition.language)) {
+        evidence.language = src.language || defaultRendition.language;
+      }
       const audioLanguage = src.audio_language || defaultRendition.audio_language;
       const subtitleLanguage = src.subtitle_language || defaultRendition.subtitle_language;
       if (audioLanguage && existing.audio_language !== audioLanguage) evidence.audio_language = audioLanguage;
@@ -1264,8 +1267,11 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
   });
 }
 
-function defaultRenditionForSource(sourceSite: string, url: string): Pick<SourceLinkInput, "audio_language" | "subtitle_language"> {
+function defaultRenditionForSource(sourceSite: string, url: string): Pick<SourceLinkInput, "language" | "audio_language" | "subtitle_language"> {
   const provider = normalizeProviderId(sourceSite);
+  if (provider === "doramasyt") {
+    return detectDoramasytLanguageHints(url) || {};
+  }
   if (provider === "latanime") {
     const isCastellano = /(?:-|\b)castellano\b/i.test(url);
     const isCatalan = /(?:-|\b)catalan\b|-catala\b/i.test(url);

@@ -37,4 +37,23 @@ describe("catalogFusion", () => {
     ], "site");
     expect(episodes.map((episode) => episode.number)).toEqual([1, 3]);
   });
+
+  it("marca las variantes de idioma de DoramasYT sin cambiar sus URLs", () => {
+    const episode = normalizeExtractedEpisode({
+      number: 1,
+      title: "Capítulo 1",
+      url: "https://www.doramasyt.com/ver/demo-latino-episodio-1",
+      sources: [{
+        url: "https://www.doramasyt.com/ver/demo-latino-episodio-1",
+        source_site: "doramasyt",
+      }],
+    }, "doramasyt");
+
+    expect(episode?.url).toBe("https://www.doramasyt.com/ver/demo-latino-episodio-1");
+    expect(episode?.sources?.[0]).toMatchObject({
+      source_site: "doramasyt",
+      language: "dub",
+      audio_language: "es-419",
+    });
+  });
 });

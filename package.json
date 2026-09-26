@@ -22,6 +22,7 @@
     "repair:tmdb": "npx tsx tools/repair-tmdb-identities.ts",
     "repair:tmdb:safe": "npx tsx tools/repair-tmdb-identities-safe.ts",
     "repair:source-languages": "npx tsx tools/repair-source-languages.ts",
+    "repair:doramasyt-languages": "npx tsx tools/repair-doramasyt-languages.ts",
     "repair:anime-identities": "npx tsx tools/repair-anime-identities.ts",
     "repair:catalog:ids": "npx tsx tools/repair-catalog-identities.ts",
     "verify:catalog:ids": "npx tsx tools/verify-catalog-identities.ts",

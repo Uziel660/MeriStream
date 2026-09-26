@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectLanguageHints, normalizeLanguageCode } from "./languageDetector";
+import { detectDoramasytLanguageHints, detectLanguageHints, normalizeLanguageCode } from "./languageDetector";
 
 describe("languageDetector", () => {
   it("normalizes common BCP-47 and catalog aliases", () => {
@@ -44,6 +44,16 @@ describe("languageDetector", () => {
     const sub = detectLanguageHints({ title: "Bleach Sub Español", url: "https://cdn.example/ep" });
     expect(sub).toMatchObject({ language: "sub", subtitle_language: "es" });
     expect(sub).not.toHaveProperty("audio_language");
+  });
+
+  it("distinguishes DoramasYT Latino/Castellano fichas from original audio", () => {
+    expect(detectDoramasytLanguageHints("https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-latino-episodio-1"))
+      .toEqual({ language: "dub", audio_language: "es-419" });
+    expect(detectDoramasytLanguageHints("https://www.doramasyt.com/ver/demo-castellano-episodio-1"))
+      .toEqual({ language: "dub", audio_language: "es-ES" });
+    expect(detectDoramasytLanguageHints("https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-episodio-1"))
+      .toEqual({ language: "sub", subtitle_language: "es" });
+    expect(detectDoramasytLanguageHints("https://other.example/ver/demo-latino-episodio-1")).toBeUndefined();
   });
 
   it("preserves explicit adapter metadata", () => {

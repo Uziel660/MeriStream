@@ -31,6 +31,11 @@ export function nativeHaptic(pattern: number | number[] = 6): void {
   try { navigator.vibrate(pattern); } catch {}
 }
 
+export function isNativeLowCostPresentation(): boolean {
+  if (!isNativeShell() || typeof document === 'undefined') return false;
+  return document.documentElement.dataset.msPerformance !== 'quality';
+}
+
 export function backendBaseOrigin(): string {
   if (configuredOrigin) return configuredOrigin;
   if (isNativeShell()) return 'https://stream.merith.me';

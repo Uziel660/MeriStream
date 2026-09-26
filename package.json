@@ -38,7 +38,7 @@
     "test:e2e:live": "cross-env LIVE_SCRAPER_E2E=1 playwright test --project=chromium",
     "test:e2e:list": "playwright test --project=chromium --list",
     "build:client": "vite build",
-    "android:deps": "npm install --no-save @capacitor/cli@8 @capacitor/core@8 @capacitor/android@8 @capacitor/app@8 @capacitor/haptics@8 @capacitor/screen-orientation@8 && node tools/generate-native-plugin-bindings.mjs",
+    "android:deps": "npm install --no-save @capacitor/cli@8 @capacitor/core@8 @capacitor/android@8 @capacitor/app@8 @capacitor/haptics@8 @capacitor/screen-orientation@8 @capacitor/share@8 && node tools/generate-native-plugin-bindings.mjs",
     "android:add": "npx cap add android && npm run android:patch",
     "android:sync": "npm run android:build && npm run android:patch && npx cap sync android",
     "android:open": "npx cap open android",

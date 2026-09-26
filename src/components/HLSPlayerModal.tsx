@@ -29,6 +29,7 @@ import {
   Unlock,
   Users,
   MoreVertical,
+  Share2,
 } from 'lucide-react';
 import { api, getAuthToken, type PlaybackResolution } from '../api/client';
 import { useChromecast } from '../hooks/useChromecast';
@@ -61,6 +62,7 @@ import {
   nativeHaptic,
   nativeLockLandscape,
   nativeSetImmersive,
+  nativeShare,
   nativeUnlockOrientation,
 } from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
@@ -4238,6 +4240,22 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           )}
                           <button type="button" onClick={() => { toggleMute(); setActiveMenu('none'); }} className="mobile-player-more-action">
                             {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} {isMuted ? 'Activar audio' : 'Silenciar'}
+                          </button>
+                          <button
+                            type="button"
+                            className="mobile-player-more-action"
+                            onClick={() => {
+                              const title = props.title || media?.title || 'MeriStream';
+                              setActiveMenu('none');
+                              void nativeShare({
+                                title,
+                                text: `Estoy viendo ${title} en MeriStream`,
+                                url: window.location.href,
+                                dialogTitle: 'Compartir desde MeriStream',
+                              });
+                            }}
+                          >
+                            <Share2 size={14} /> Compartir
                           </button>
                           <button
                             type="button"

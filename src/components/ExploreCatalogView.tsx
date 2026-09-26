@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Film, ListFilter } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Film, ListFilter, SlidersHorizontal, X } from 'lucide-react';
 import type { Show } from '../types';
 import { MediaCard } from './MediaCard';
 import { CatalogFilters, type SortMode } from './CatalogFilters';
 import { FilterMenu } from './FilterMenu';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import { normalizeText } from '../utils/searchUtils';
+import { isNativeShell, nativeHaptic } from '../utils/runtime';
 
 const CANONICAL_FALLBACK_GENRES: string[] = [
   'Acción',
@@ -67,6 +68,9 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
 }) => {
   const { isGenreHidden, isShowHidden } = useHiddenGenres();
   const autoLoadSentinelRef = useRef<HTMLDivElement | null>(null);
+  const nativeShell = isNativeShell();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const activeFilterCount = Number(Boolean(genreFilter)) + Number(yearFilter !== null) + Number(sortBy !== 'recientes');
 
   const validGenres = useMemo(() => {
     const source = (allGenresList && allGenresList.length > 0) ? allGenresList : CANONICAL_FALLBACK_GENRES;
@@ -146,21 +150,88 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
         <span className="catalog-count" aria-live="polite">{filteredShows.length} {filteredShows.length === 1 ? 'título' : 'títulos'}</span>
       </div>
 
-      <div className="catalog-toolbar catalog-toolbar--explore" aria-label="Filtros del catálogo">
-        <FilterMenu
-          ariaLabel="Filtrar por género"
-          icon={<ListFilter size={14} />}
-          value={genreFilter || ''}
-          placeholder="Todos los géneros"
-          options={[{ value: '', label: 'Todos los géneros' }, ...validGenres.map((genre) => ({
-            value: genre,
-            label: genre,
-          }))]}
-          onChange={(value) => onGenreFilter(value || null)}
-        />
-        <CatalogFilters years={availableYears} year={yearFilter} onYear={onYearFilter} sort={sortBy} onSort={onSortBy} />
-        {genreFilter && <button type="button" className="filter-clear" onClick={() => onGenreFilter(null)}>Quitar género</button>}
-      </div>
+      {nativeShell ? (
+        <>
+          <div className="native-explore-toolbar" aria-label="Filtros del catálogo">
+            <button
+              type="button"
+              className={`native-explore-filter-trigger ${activeFilterCount > 0 ? 'is-active' : ''}`}
+              onClick={() => {
+                nativeHaptic();
+                setMobileFiltersOpen(true);
+              }}
+            >
+              <SlidersHorizontal size={16} />
+              <span>Filtros</span>
+              {activeFilterCount > 0 && <span className="native-filter-count">{activeFilterCount}</span>}
+            </button>
+            {genreFilter && <span className="native-filter-chip">{genreFilter}</span>}
+            {yearFilter !== null && <span className="native-filter-chip">{yearFilter}</span>}
+            {sortBy !== 'recientes' && <span className="native-filter-chip">{sortBy === 'rating' ? 'Rating' : sortBy === 'anio' ? 'Más nuevas' : 'A → Z'}</span>}
+          </div>
+
+          {mobileFiltersOpen && (
+            <>
+              <button
+                type="button"
+                className="native-explore-filter-backdrop"
+                aria-label="Cerrar filtros"
+                onClick={() => setMobileFiltersOpen(false)}
+              />
+              <section className="native-explore-filter-sheet" role="dialog" aria-modal="true" aria-label="Filtros del catálogo">
+                <div className="native-sheet-handle" />
+                <div className="native-filter-sheet-heading">
+                  <div>
+                    <p>Explorar</p>
+                    <h3>Filtros</h3>
+                  </div>
+                  <button type="button" onClick={() => setMobileFiltersOpen(false)} aria-label="Cerrar filtros"><X size={18} /></button>
+                </div>
+
+                <div className="native-filter-sheet-controls">
+                  <FilterMenu
+                    ariaLabel="Filtrar por género"
+                    icon={<ListFilter size={14} />}
+                    value={genreFilter || ''}
+                    placeholder="Todos los géneros"
+                    options={[{ value: '', label: 'Todos los géneros' }, ...validGenres.map((genre) => ({
+                      value: genre,
+                      label: genre,
+                    }))]}
+                    onChange={(value) => onGenreFilter(value || null)}
+                  />
+                  <CatalogFilters years={availableYears} year={yearFilter} onYear={onYearFilter} sort={sortBy} onSort={onSortBy} />
+                </div>
+
+                <div className="native-filter-sheet-actions">
+                  <button type="button" className="native-filter-reset" onClick={resetFilters} disabled={activeFilterCount === 0}>
+                    Restablecer
+                  </button>
+                  <button type="button" className="native-filter-apply" onClick={() => { nativeHaptic(); setMobileFiltersOpen(false); }}>
+                    Ver {filteredShows.length} {filteredShows.length === 1 ? 'título' : 'títulos'}
+                  </button>
+                </div>
+              </section>
+            </>
+          )}
+        </>
+      ) : (
+        <div className="catalog-toolbar catalog-toolbar--explore" aria-label="Filtros del catálogo">
+          <FilterMenu
+            ariaLabel="Filtrar por género"
+            icon={<ListFilter size={14} />}
+            value={genreFilter || ''}
+            placeholder="Todos los géneros"
+            options={[{ value: '', label: 'Todos los géneros' }, ...validGenres.map((genre) => ({
+              value: genre,
+              label: genre,
+            }))]}
+            onChange={(value) => onGenreFilter(value || null)}
+          />
+          <CatalogFilters years={availableYears} year={yearFilter} onYear={onYearFilter} sort={sortBy} onSort={onSortBy} />
+          {genreFilter && <button type="button" className="filter-clear" onClick={() => onGenreFilter(null)}>Quitar género</button>}
+        </div>
+      )}
 
       {filteredShows.length === 0 ? (
         isLoadingMore ? (

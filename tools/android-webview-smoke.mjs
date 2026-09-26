@@ -304,7 +304,7 @@ try {
       return true;
     })()`);
     if (!opened) throw new Error('Player More button was not found');
-    await delay(500);
+    await delay(250);
     const state = await evaluate(call, `(() => {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
       const sheet = document.querySelector('.native-player-more-sheet');
@@ -361,9 +361,6 @@ try {
       return {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
-        legacyWebView: document.documentElement.dataset.nativeLegacyWebview === 'true',
-        nativeRenderMode: document.documentElement.dataset.nativePlayerMoreRenderMode || null,
-        videoPlayback: video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null,
         sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
         viewport: { width: innerWidth, height: innerHeight },
         lastReachable,
@@ -380,41 +377,20 @@ try {
       };
     })()`);
     if (!state?.visible) throw new Error('Player More sheet did not open');
-    if (state.legacyWebView && state.nativeRenderMode !== 'software') {
-      throw new Error(`Legacy Android did not enable the temporary software text-rendering fallback: ${JSON.stringify({ nativeRenderMode: state.nativeRenderMode })}`);
-    }
     if (!state.sheetBounds || state.sheetBounds.top < -1 || state.sheetBounds.right > state.viewport.width + 1 || state.sheetBounds.bottom > state.viewport.height + 1 || !state.lastReachable) {
       throw new Error(`Player More actions are clipped or unreachable: ${JSON.stringify(state)}`);
     }
     if (!state.labels.some((label) => /compartir/i.test(label))) {
       throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
     }
-    await delay(700);
-    const playbackAfterRenderSwitch = await evaluate(call, `(() => {
-      const video = document.querySelector('[data-player-root] video');
-      return video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null;
-    })()`);
-    state.videoProgressWhileOpen = playbackAfterRenderSwitch && state.videoPlayback
-      ? playbackAfterRenderSwitch.currentTime - state.videoPlayback.currentTime
-      : null;
-    if (!playbackAfterRenderSwitch || playbackAfterRenderSwitch.paused || playbackAfterRenderSwitch.readyState < 2 || state.videoProgressWhileOpen < 0.15) {
-      throw new Error(`Playback stalled while the More sheet was open: ${JSON.stringify({ before: state.videoPlayback, after: playbackAfterRenderSwitch, delta: state.videoProgressWhileOpen })}`);
-    }
     console.log(JSON.stringify({ action, ...state }));
   } else if (action === 'assert-player-more-closed') {
     await delay(250);
-    const state = await evaluate(call, `({
-      visible: Boolean(document.querySelector('.mobile-player-more-action')),
-      player: Boolean(document.querySelector('[data-player-root]')),
-      legacyWebView: document.documentElement.dataset.nativeLegacyWebview === 'true',
-      nativeRenderMode: document.documentElement.dataset.nativePlayerMoreRenderMode || null,
-    })`);
-    console.log(JSON.stringify({ action, ...state }));
-    if (state.visible) throw new Error('Android Back did not close Player More controls');
-    if (!state.player) throw new Error('Android Back closed the player instead of the top-most controls');
-    if (state.legacyWebView && state.nativeRenderMode !== 'default') {
-      throw new Error(`Legacy Android did not restore normal rendering after closing More: ${JSON.stringify(state)}`);
-    }
+    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
+    const player = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
+    console.log(JSON.stringify({ action, visible, player }));
+    if (visible) throw new Error('Android Back did not close Player More controls');
+    if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
   } else if (action === 'open-player-party') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

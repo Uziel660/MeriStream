@@ -8,7 +8,7 @@ import { App } from '@capacitor/app';
 import { Haptics } from '@capacitor/haptics';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { Share } from '@capacitor/share';
-import { SystemBars, registerPlugin } from '@capacitor/core';
+import { SystemBars } from '@capacitor/core';
 
 export const nativeBindingsReady = true;
 export const nativeAppBinding: any = App;
@@ -16,7 +16,6 @@ export const nativeHapticsBinding: any = Haptics;
 export const nativeScreenOrientationBinding: any = ScreenOrientation;
 export const nativeShareBinding: any = Share;
 export const nativeSystemBarsBinding: any = SystemBars;
-export const nativeAndroidRenderCompatibilityBinding: any = registerPlugin('AndroidRenderCompatibility');
 `;
 
 fs.writeFileSync(target, source, 'utf8');

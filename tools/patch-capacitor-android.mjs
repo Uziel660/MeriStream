@@ -168,8 +168,6 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(AndroidRenderCompatibilityPlugin.class);
-
         // Enable inspection only for debuggable APKs, before Capacitor creates
         // the WebView. Release builds keep WebView debugging disabled.
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
@@ -227,43 +225,3 @@ public class MainActivity extends BridgeActivity {
 
 fs.writeFileSync(activityPath, activity, 'utf8');
 console.log(`Patched MainActivity: ${path.relative(process.cwd(), activityPath)}`);
-
-const rendererPlugin = `package ${packageName};
-
-import android.os.Build;
-import android.view.View;
-import android.webkit.WebView;
-
-import com.getcapacitor.Plugin;
-import com.getcapacitor.PluginCall;
-import com.getcapacitor.PluginMethod;
-import com.getcapacitor.annotation.CapacitorPlugin;
-
-@CapacitorPlugin(name = "AndroidRenderCompatibility")
-public class AndroidRenderCompatibilityPlugin extends Plugin {
-    @PluginMethod
-    public void setMoreMenuOpen(PluginCall call) {
-        boolean open = call.getBoolean("open", false);
-        getActivity().runOnUiThread(() -> {
-            WebView webView = getBridge() != null ? getBridge().getWebView() : null;
-            if (webView == null) {
-                call.reject("Android WebView is unavailable");
-                return;
-            }
-
-            boolean useSoftwareLayer = open && Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q;
-            webView.setLayerType(useSoftwareLayer ? View.LAYER_TYPE_SOFTWARE : View.LAYER_TYPE_NONE, null);
-            String renderMode = useSoftwareLayer ? "software" : "default";
-            webView.evaluateJavascript(
-                "document.documentElement.dataset.nativePlayerMoreRenderMode='" + renderMode + "'",
-                null
-            );
-            call.resolve();
-        });
-    }
-}
-`;
-
-const rendererPluginPath = path.join(path.dirname(activityPath), 'AndroidRenderCompatibilityPlugin.java');
-fs.writeFileSync(rendererPluginPath, rendererPlugin, 'utf8');
-console.log(`Generated Android renderer compatibility plugin: ${path.relative(process.cwd(), rendererPluginPath)}`);

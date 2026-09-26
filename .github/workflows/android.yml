@@ -139,6 +139,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
+          target: google_apis_playstore
           arch: x86_64
           profile: pixel_2
           cores: 2
@@ -146,7 +147,9 @@ jobs:
           heap-size: 256M
           emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash tools/android-emulator-smoke.sh low-end low-end-apk/app-debug.apk
+          script: |
+            adb shell dumpsys webviewupdate > meristream-low-end-webview.txt
+            bash tools/android-emulator-smoke.sh low-end low-end-apk/app-debug.apk
 
       - name: Upload low-end evidence
         if: always()
@@ -160,5 +163,6 @@ jobs:
             meristream-low-end-player-more.png
             meristream-low-end-meminfo.txt
             meristream-low-end-logcat.txt
+            meristream-low-end-webview.txt
             meristream-low-end-performance.txt
           if-no-files-found: warn

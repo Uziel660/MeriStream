@@ -315,6 +315,7 @@ html[data-native-shell='android'][data-ms-performance='low'] .shadow-lg {
 
 /* Player is a native screen, never a card/modal. */
 html[data-native-shell='android'] [data-player-root] {
+  touch-action: manipulation;
   position: fixed !important;
   inset: 0 !important;
   width: 100vw !important;

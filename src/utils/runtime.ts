@@ -134,6 +134,14 @@ export function installNativeBackBridge(): void {
   nativeBackBridgeInstalled = true;
 
   const listener = app.addListener('backButton', (event: { canGoBack?: boolean }) => {
+    // Give the top-most React surface one synchronous chance to consume Back
+    // (player menus, Watch Party drawer, etc.) before changing history.
+    const uiEvent = new CustomEvent('meristream:native-back', {
+      cancelable: true,
+      detail: event,
+    });
+    if (!window.dispatchEvent(uiEvent)) return;
+
     const state = window.history.state || {};
     const route = String(state.meristream_route || '');
     const hasTransientOverlay = Boolean(state.meristream_native_overlay);

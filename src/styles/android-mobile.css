@@ -1373,19 +1373,15 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] [data-playe
 html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
   max-height: 72vh;
   padding: .55rem .65rem;
+  /* Chrome 74 sometimes leaves the accelerated scroll layer unpainted until
+   * it moves, so keep this short menu in the normal painting flow. */
+  -webkit-overflow-scrolling: auto;
 }
 
 /* Chrome 74 has no flex gap; leave room between each action's icon and label. */
 html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-player-more-action svg {
   margin-right: .35rem;
   flex: none;
-}
-
-/* Chrome 74 may promote the playing video above fixed WebView content and
- * erase the More sheet's painted controls. Keep audio playing while the sheet
- * is open, but release the video surface until it closes. */
-html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-root][data-player-more-open='true'] video {
-  visibility: hidden !important;
 }
 
 @media (orientation: landscape) {

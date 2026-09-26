@@ -4168,6 +4168,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* PICTURE IN PICTURE */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={togglePictureInPicture}
                     className={`p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition hidden sm:inline-flex ${
                       isPipActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-300 hover:text-white'
@@ -4190,7 +4191,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                   {/* Android/mobile overflow: secondary actions stay available
                       without occupying the control row permanently. */}
-                  <div className="relative sm:hidden">
+                  <div className="relative sm:hidden" data-mobile-player-overflow>
                     <button
                       type="button"
                       onClick={() => setActiveMenu((m) => (m === 'more' ? 'none' : 'more'))}

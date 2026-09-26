@@ -339,6 +339,33 @@ html[data-native-shell='android'] [data-player-root] video {
   background: #000;
 }
 
+/* Android remains a phone/tablet app after rotating to landscape. Do not
+ * let width-based desktop breakpoints repopulate the player with controls. */
+html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'],
+html[data-native-shell='android'] [data-player-controls] [data-mobile-player-secondary],
+html[data-native-shell='android'] [data-player-controls] .quality-server-shortcut {
+  display: none !important;
+}
+
+html[data-native-shell='android'] [data-player-controls] [data-mobile-player-overflow] {
+  display: block !important;
+}
+
+html[data-native-shell='android'] .mobile-player-more-action {
+  min-height: 2.65rem !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .4rem .5rem !important;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: .65rem;
+  background: #181b21;
+  color: #e1e4e8;
+  font-size: .7rem;
+  font-weight: 650;
+}
+
 /* Mobile player: keep essentials visible, push secondary actions to menus. */
 @media (max-width: 639px) {
   html[data-native-shell='android'] [data-player-topbar] {

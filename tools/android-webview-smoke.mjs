@@ -121,15 +121,16 @@ try {
       const height = wide ? 900 : 720;
       const titleSize = wide ? 96 : 54;
       const titleY = wide ? 670 : 570;
+      const posterText = wide ? '' : `<text x="42" y="490" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="5">${subtitle.toUpperCase()}</text>
+        <text x="42" y="${titleY}" fill="#fff" font-family="Arial,sans-serif" font-size="${titleSize}" font-weight="700">${title}</text>
+        <text x="46" y="620" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="17" letter-spacing="4">MERISTREAM</text>`;
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
         <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>
         <rect width="100%" height="100%" fill="url(#bg)"/>
         <circle cx="${wide ? 1210 : 370}" cy="${wide ? 220 : 210}" r="${wide ? 280 : 150}" fill="#fff" fill-opacity=".12"/>
         <path d="M0 ${wide ? 700 : 530} Q${wide ? 650 : 190} ${wide ? 400 : 370} ${width} ${wide ? 600 : 440} V${height} H0Z" fill="#07090f" fill-opacity=".52"/>
         <path d="M0 ${wide ? 760 : 590} Q${wide ? 700 : 220} ${wide ? 590 : 490} ${width} ${wide ? 710 : 540}" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="${wide ? 4 : 3}"/>
-        <text x="${wide ? 96 : 42}" y="${wide ? 570 : 490}" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="${wide ? 30 : 20}" font-weight="700" letter-spacing="${wide ? 8 : 5}">${subtitle.toUpperCase()}</text>
-        <text x="${wide ? 96 : 42}" y="${titleY}" fill="#fff" font-family="Arial,sans-serif" font-size="${titleSize}" font-weight="700">${title}</text>
-        <text x="${wide ? 100 : 46}" y="${wide ? 625 : 620}" fill="#fff" fill-opacity=".78" font-family="Arial,sans-serif" font-size="${wide ? 23 : 17}" letter-spacing="${wide ? 5 : 4}">MERISTREAM</text>
+        ${posterText}
       </svg>`;
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
     };
@@ -168,19 +169,28 @@ try {
     await call('Page.reload', { ignoreCache: true });
     let state = null;
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      state = await evaluate(call, `(() => ({
-        cards: document.querySelectorAll('.media-card').length,
-        images: [...document.querySelectorAll('.media-card img')].filter((image) => image.complete && image.naturalWidth > 0).length,
-        hero: (() => {
-          const image = document.querySelector('.feature-art img.feature-image');
-          return Boolean(image?.complete && image.naturalWidth > 0);
-        })()
-      }))()`);
-      if (state?.cards >= 2 && state.images >= 2 && state.hero) break;
+      state = await evaluate(call, `(async () => {
+        const cards = [...document.querySelectorAll('.media-card')];
+        const visibleCards = cards.filter((card) => {
+          const bounds = card.getBoundingClientRect();
+          return bounds.bottom > 0 && bounds.top < innerHeight && bounds.right > 0 && bounds.left < innerWidth;
+        });
+        const images = visibleCards.map((card) => card.querySelector('.media-poster-image')).filter(Boolean);
+        const hero = document.querySelector('.feature-art img.feature-image');
+        await Promise.all([...images, hero].filter(Boolean).map((image) => image.decode ? image.decode().catch(() => {}) : Promise.resolve()));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return {
+          cards: cards.length,
+          visibleCards: visibleCards.length,
+          images: images.filter((image) => image.complete && image.naturalWidth > 0).length,
+          hero: Boolean(hero?.complete && hero.naturalWidth > 0)
+        };
+      })()`);
+      if (state?.cards >= 2 && state.visibleCards >= 2 && state.images >= 2 && state.hero) break;
       await delay(250);
     }
     console.log(JSON.stringify({ action, ...state }));
-    if (state?.cards < 2 || state.images < 2 || !state.hero) throw new Error('Seeded catalog artwork did not finish rendering');
+    if (state?.cards < 2 || state.visibleCards < 2 || state.images < 2 || !state.hero) throw new Error('Seeded catalog artwork did not finish rendering');
   } else if (action === 'open-menu') {
     const opened = await evaluate(call, `(() => {
       const button = document.querySelector('.mobile-nav-trigger');
@@ -484,15 +494,21 @@ try {
     console.log(JSON.stringify({ action, state }));
     if (state.selector || !state.player) throw new Error('Android Back did not close only the player selector');
   } else if (action === 'assert-player-closed') {
-    await delay(400);
-    const state = await evaluate(call, `({
-      player: Boolean(document.querySelector('[data-player-root]')),
-      catalog: Boolean(document.querySelector('.site-header')),
-      route: location.pathname + location.search,
-      historyState: window.history.state,
-    })`);
+    const startedAt = Date.now();
+    let state = null;
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      state = await evaluate(call, `({
+        player: Boolean(document.querySelector('[data-player-root]')),
+        catalog: Boolean(document.querySelector('.site-header')),
+        route: location.pathname + location.search,
+        historyState: window.history.state,
+      })`);
+      if (!state.player && state.catalog && state.route === '/') break;
+      await delay(200);
+    }
+    state.returnToCatalogMs = Date.now() - startedAt;
     console.log(JSON.stringify({ action, state }));
-    if (state.player || !state.catalog) throw new Error('Android Back did not return from the player to the catalog');
+    if (state.player || !state.catalog || state.route !== '/') throw new Error('Android Back did not return from the player to the catalog');
   } else if (action === 'assert-native-player') {
     await delay(500);
     const state = await evaluate(call, `({
@@ -543,7 +559,9 @@ try {
     if (!state?.found || !state.player) throw new Error('Player/video is not mounted');
     if (state.error) throw new Error(`Video error ${state.error.code}: ${state.error.message || 'unknown'}`);
     if (state.readyState < 2) throw new Error(`Video never reached HAVE_CURRENT_DATA (readyState=${state.readyState})`);
+    if (state.paused) throw new Error('HLS playback paused before the player screenshot was captured');
     if (state.currentTime <= 0.25) throw new Error(`Video did not make playback progress (currentTime=${state.currentTime})`);
+    if (state.videoWidth <= 0 || state.videoHeight <= 0) throw new Error(`HLS video frame has no decoded dimensions (${state.videoWidth}x${state.videoHeight})`);
   } else if (action === 'performance') {
     const metrics = await evaluate(call, `(() => {
       const nav = performance.getEntriesByType('navigation')[0] || {};

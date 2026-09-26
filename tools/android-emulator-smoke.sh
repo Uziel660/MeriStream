@@ -173,8 +173,8 @@ DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-native-player
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs play
 sleep "$PLAY_DELAY"
-adb exec-out screencap -p > "${PREFIX}-player.png" || true
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
+adb exec-out screencap -p > "${PREFIX}-player.png" || true
 
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
 # Low-end Android 10 can take more than two seconds to finish a WebView/GPU

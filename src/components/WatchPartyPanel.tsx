@@ -79,6 +79,16 @@ export function WatchPartyPanel({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    if (!nativeShell || !isOpen) return;
+    const onNativeBack = (event: Event) => {
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('meristream:native-back', onNativeBack);
+    return () => window.removeEventListener('meristream:native-back', onNativeBack);
+  }, [nativeShell, isOpen, onClose]);
+
   // Autoscroll chat on new messages
   useEffect(() => {
     if (isOpen && chatScrollRef.current) {

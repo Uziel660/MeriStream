@@ -19,7 +19,10 @@
  * resolvers.ts).
  */
 const TIERS: ReadonlyArray<{ tier: number; tokens: readonly string[] }> = [
-  { tier: 1, tokens: ["streamwish", "premilkyway", "sfastwish", "flaswish", "yourupload", "vidcache", "ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos.", "zilla-networks", "/api/v1/stream/mega"] },
+  // The internal Mega proxy is intentionally left out of tier 1.  Mega is a
+  // last-resort source and the proxy can be blocked at the server IP; placing
+  // it first made the player try a known fragile route before a healthy mirror.
+  { tier: 1, tokens: ["streamwish", "premilkyway", "sfastwish", "flaswish", "yourupload", "vidcache", "ugc-cdn-caching", "goodstream", "acek-cdn", "uqload", "vimeos.", "zilla-networks"] },
   // Genéricos AnimeFLV verificados sin 403 en validador y Doodstream
   // Byse locators are the stable Gnula pages that JIT-resolve to SprintCDN HLS.
   { tier: 2, tokens: ["ducvomes.com", "playmudos.com", "doodstream", "dood", "byse"] },

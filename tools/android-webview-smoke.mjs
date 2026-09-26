@@ -187,10 +187,15 @@ try {
     await delay(120);
     const result = await clickMobileMenuAction('ingresar');
     if (!result?.clicked) throw new Error(`Login action was not found. Mobile actions: ${JSON.stringify(result?.labels || [])}`);
-    await delay(350);
-    const visible = await evaluate(call, `Boolean(document.querySelector('.auth-panel'))`);
-    if (!visible) throw new Error('Auth sheet did not open');
-    console.log(JSON.stringify({ action, opened: visible }));
+    let ready = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      ready = await evaluate(call, `Boolean(document.querySelector('.auth-panel #auth-username')) && !Boolean(document.querySelector('.deferred-overlay-fallback'))`);
+      if (ready) break;
+      await delay(250);
+    }
+    if (!ready) throw new Error('Login form did not finish loading');
+    await delay(500);
+    console.log(JSON.stringify({ action, opened: ready }));
   } else if (action === 'assert-auth-closed') {
     await delay(250);
     const visible = await evaluate(call, `Boolean(document.querySelector('.auth-panel'))`);

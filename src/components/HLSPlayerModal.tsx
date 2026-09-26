@@ -4202,8 +4202,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       <MoreVertical size={17} />
                     </button>
                     {activeMenu === 'more' && (
-                      <div className="absolute bottom-10 right-0 z-[110] w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-zinc-700/80 bg-zinc-900/98 p-2 shadow-2xl">
-                        <div className="grid grid-cols-2 gap-1.5">
+                      <>
+                        <button
+                          type="button"
+                          className="native-player-more-backdrop"
+                          aria-label="Cerrar más controles"
+                          onClick={() => setActiveMenu('none')}
+                        />
+                        <div className="native-player-more-sheet">
+                          <div className="native-player-more-handle" />
+                          <div className="grid grid-cols-2 gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
@@ -4326,7 +4334,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                             </div>
                           </div>
                         )}
-                      </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

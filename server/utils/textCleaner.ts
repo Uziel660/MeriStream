@@ -48,7 +48,7 @@ const HTML_ENTITY_MAP: Record<string, string> = {
 };
 
 // Lista de marcas y dominios de adaptadores/scrapers para limpieza y detección automática
-export const SCRAPER_BRAND_REGEX = /\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|lat-anime|doramasflix|doramasia|cuevana\d*|pelisplus|monoschinos|animesonline|tvmaze)\b/i;
+export const SCRAPER_BRAND_REGEX = /\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|lat-anime|doramasflix|doramasia|tudorama|cuevana\d*|pelisplus|monoschinos|animesonline|tvmaze)\b/i;
 
 /**
  * Limpia y normaliza una descripción de obra o episodio.

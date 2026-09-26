@@ -11,6 +11,7 @@ import {
   checkExpiredDirectStream,
   isDoramasflixPageUrl,
   isDoramasiaPageUrl,
+  isTudoramaPageUrl,
   isAnimeAv1PageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
@@ -49,6 +50,12 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(isDoramasiaPageUrl("https://evil-doramasia.com/capitulos/demo")).toBe(false);
     });
 
+    it("identifies Tudorama canonical pages without matching lookalike hosts", () => {
+      expect(isTudoramaPageUrl("https://tudorama.com/ver/volvere-por-ti-cap-1-sub-esp/")).toBe(true);
+      expect(isPlatformPageUrl("https://tudorama.com/pelicula/hear-me-our-summer/")).toBe(true);
+      expect(isTudoramaPageUrl("https://evil-tudorama.com/ver/demo")).toBe(false);
+    });
+
     it("does not classify direct media URLs as platform pages", () => {
       expect(isPlatformPageUrl("https://lamovie.org/stream.m3u8")).toBe(false);
       expect(isPlatformPageUrl("https://www.cinecalidad.am/video.mp4")).toBe(false);
@@ -67,6 +74,10 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       const tioplusResolver = providerResolverRegistry.findResolver("https://tioplus.app/pelicula/avatar/");
       expect(tioplusResolver).toBeDefined();
       expect(tioplusResolver?.name).toBe("TioPlus");
+
+      const tudoramaResolver = providerResolverRegistry.findResolver("https://tudorama.com/ver/volvere-por-ti-cap-1-sub-esp/");
+      expect(tudoramaResolver).toBeDefined();
+      expect(tudoramaResolver?.name).toBe("Tudorama");
     });
   });
 

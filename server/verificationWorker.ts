@@ -140,6 +140,8 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   doramasflix: "https://doramasflix.io/doramas",
   doramasflix_peliculas: "https://doramasflix.io/peliculas",
   doramasflix_variedades: "https://doramasflix.io/variedades",
+  tudorama: "https://tudorama.com/genero/series/",
+  tudorama_peliculas: "https://tudorama.com/genero/peliculas/",
   lamovie_movies: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
   lamovie_series: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24",
   lamovie_animes: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24",

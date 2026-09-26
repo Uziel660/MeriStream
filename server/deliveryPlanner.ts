@@ -47,6 +47,7 @@ export class DeliveryPlanner {
       "doramasflix",
       "doramasia",
       "doramasyt",
+      "tudorama",
       "streamtape",
       "streamtape cdn",
       "doodstream",

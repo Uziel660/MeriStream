@@ -6,6 +6,22 @@ import { dedupeCatalogItems } from "./catalogIntegrity";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
+    id: "doramas-tudorama",
+    name: "Tudorama (Catálogo asiático)",
+    category: "series",
+    description: "Catálogo WordPress paginado de Tudorama con episodios y servidores resueltos JIT.",
+    example_url: "https://tudorama.com/genero/series/",
+    icon: "Tv",
+  },
+  {
+    id: "movies-tudorama",
+    name: "Tudorama Películas",
+    category: "movies",
+    description: "Películas de Tudorama con locators canónicos y servidores WStream consultados al reproducir.",
+    example_url: "https://tudorama.com/genero/peliculas/",
+    icon: "Film",
+  },
+  {
     id: "doramas-doramasia",
     name: "Doramasia (Catálogo asiático)",
     category: "series",

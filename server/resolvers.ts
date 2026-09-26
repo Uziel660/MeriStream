@@ -27,6 +27,7 @@ import {
   isVerAnimesPageUrl,
   isDoramasflixPageUrl,
   isDoramasiaPageUrl,
+  isTudoramaPageUrl,
   isTubePelisPageUrl,
   resolvePlatformPage,
   resolveLaMoviePage,
@@ -41,6 +42,7 @@ import {
   resolveVerAnimesPage,
   resolveDoramasflixPage,
   resolveDoramasiaPage,
+  resolveTudoramaPage,
   resolveTubePelisPage,
 } from "./platformPageResolvers";
 
@@ -2091,6 +2093,20 @@ export class ProviderResolverRegistry {
         requiresHeaders: false,
       },
       resolve: async (locator) => resolveDoramasiaPage(locator),
+    });
+
+    // 29. Tudorama Platform Pages
+    this.register({
+      name: "Tudorama",
+      matches: (url) => isTudoramaPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveTudoramaPage(locator),
     });
 
     // 28. TubePelis Platform Pages

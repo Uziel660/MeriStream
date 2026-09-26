@@ -120,6 +120,7 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('gnula.cc') ||
     lower.includes('doramasflix.') ||
     lower.includes('doramasia.') ||
+    lower.includes('tudorama.') ||
     lower.includes('the.tube') ||
     lower.includes('they.tube') ||
     lower.includes('animeav1.com/media/')

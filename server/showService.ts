@@ -1272,6 +1272,11 @@ function defaultRenditionForSource(sourceSite: string, url: string): Pick<Source
   if (provider === "doramasyt") {
     return detectDoramasytLanguageHints(url) || {};
   }
+  if (provider === "tudorama") {
+    if (/(?:-latino|\blatino\b)/i.test(url)) return { language: "dub", audio_language: "es-419" };
+    if (/(?:sub[-_]?esp|sub[-_]?espanol|subtitulado)/i.test(url)) return { language: "sub", subtitle_language: "es" };
+    return {};
+  }
   if (provider === "latanime") {
     const isCastellano = /(?:-|\b)castellano\b/i.test(url);
     const isCatalan = /(?:-|\b)catalan\b|-catala\b/i.test(url);

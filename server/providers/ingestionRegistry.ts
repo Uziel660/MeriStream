@@ -28,6 +28,14 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/variedades", name: "Doramasflix Variedades (mantenido · secundario)" },
   { providerId: "doramasia", targetUrl: "https://doramasia.com/doramas", name: "Doramasia Doramas (GraphQL · principal)" },
   { providerId: "doramasia", targetUrl: "https://doramasia.com/peliculas", name: "Doramasia Películas (GraphQL · principal)" },
+  // Tudorama expone índices WordPress separados por tipo. Las taxonomías de
+  // idioma (espanol-latino/sub-espanol) son vistas cruzadas y no se importan
+  // como raíces adicionales para no duplicar fichas.
+  { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/series/", name: "Tudorama Series (HTML paginado · principal)" },
+  { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/cdrama/", name: "Tudorama C-Dramas (HTML paginado · principal)" },
+  { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/jdrama/", name: "Tudorama J-Dramas (HTML paginado · principal)" },
+  { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/reality-show/", name: "Tudorama Reality Shows (HTML paginado · principal)" },
+  { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/peliculas/", name: "Tudorama Películas (HTML paginado · principal)" },
   // Archive.org remains an explicit public-domain/open-license source for EN.
   { providerId: "archive-org", targetUrl: "https://archive.org/details/movies", name: "Internet Archive (contenido abierto)" },
 ];

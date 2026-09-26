@@ -7,6 +7,7 @@ import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import { useUserLists } from '../hooks/useUserLists';
 import type { Show } from '../types';
+import { isNativeLowCostPresentation } from '../utils/runtime';
 
 interface HeroBannerProps {
   media: Show;
@@ -24,7 +25,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
     setHydratedVisuals(null);
 
     const tmdbId = Number(media?.tmdb_id);
-    if (media?.logo_url || !Number.isInteger(tmdbId) || tmdbId <= 0) return;
+    // On Android the catalog already has enough artwork to render immediately.
+    // Skip this decorative metadata request on balanced/low modes so first
+    // interaction and poster loading win on inexpensive devices.
+    if (isNativeLowCostPresentation() || media?.logo_url || !Number.isInteger(tmdbId) || tmdbId <= 0) return;
 
     const rawKind = `${media.kind || ''} ${media.category || ''}`.toLowerCase();
     const kind = rawKind.includes('movie') || rawKind.includes('pel') || rawKind.includes('cine')

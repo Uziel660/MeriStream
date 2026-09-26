@@ -177,7 +177,14 @@ adb exec-out screencap -p > "${PREFIX}-player.png" || true
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
 
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
-sleep 1
+# Low-end Android 10 can take more than two seconds to finish a WebView/GPU
+# frame after the side sheet opens. Let the full text/icon layer paint before
+# collecting the visual evidence; the Android 15 emulator settles quickly.
+if [[ "$MODE" == "low-end" ]]; then
+  sleep 4
+else
+  sleep 1
+fi
 adb exec-out screencap -p > "${PREFIX}-player-more.png" || true
 adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed

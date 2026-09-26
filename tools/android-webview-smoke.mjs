@@ -330,6 +330,40 @@ try {
     if (state.error) throw new Error(`Video error ${state.error.code}: ${state.error.message || 'unknown'}`);
     if (state.readyState < 2) throw new Error(`Video never reached HAVE_CURRENT_DATA (readyState=${state.readyState})`);
     if (state.currentTime <= 0.25) throw new Error(`Video did not make playback progress (currentTime=${state.currentTime})`);
+  } else if (action === 'performance') {
+    const metrics = await evaluate(call, `(() => {
+      const nav = performance.getEntriesByType('navigation')[0] || {};
+      const paints = Object.fromEntries(performance.getEntriesByType('paint').map((entry) => [entry.name, Math.round(entry.startTime)]));
+      const resources = performance.getEntriesByType('resource');
+      const resourceBytes = resources.reduce((sum, entry) => sum + Number(entry.transferSize || 0), 0);
+      const memory = performance.memory || null;
+      return {
+        shell: document.documentElement.dataset.nativeShell || null,
+        performanceMode: document.documentElement.dataset.msPerformance || null,
+        nativeBindings: document.documentElement.dataset.nativeBindings || null,
+        navigation: {
+          responseEnd: Math.round(Number(nav.responseEnd || 0)),
+          domContentLoaded: Math.round(Number(nav.domContentLoadedEventEnd || 0)),
+          loadEventEnd: Math.round(Number(nav.loadEventEnd || 0)),
+        },
+        paints,
+        domNodes: document.getElementsByTagName('*').length,
+        images: document.images.length,
+        resources: resources.length,
+        resourceTransferBytes: Math.round(resourceBytes),
+        jsHeap: memory ? {
+          used: Number(memory.usedJSHeapSize || 0),
+          total: Number(memory.totalJSHeapSize || 0),
+          limit: Number(memory.jsHeapSizeLimit || 0),
+        } : null,
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      };
+    })()`);
+    console.log(JSON.stringify({ action, metrics }, null, 2));
+  } else if (action === 'assert-low-end-mode') {
+    const mode = await evaluate(call, `document.documentElement.dataset.msPerformance || null`);
+    console.log(JSON.stringify({ action, mode }));
+    if (mode !== 'low') throw new Error(`Constrained Android did not select low performance mode (got ${mode})`);
   } else {
     const state = await evaluate(call, `({
       url: location.href,

@@ -35,12 +35,12 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
   } = useUserLists();
   const nativeShell = isNativeShell();
 
-  const pushListOverlay = (overlay: 'list-create' | 'list-edit') => {
+  const pushListOverlay = (overlay: 'list-create' | 'list-edit' | 'list-delete') => {
     if (!nativeShell) return;
     window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: overlay }, '');
   };
 
-  const closeListOverlay = (overlay: 'list-create' | 'list-edit', close: () => void) => {
+  const closeListOverlay = (overlay: 'list-create' | 'list-edit' | 'list-delete', close: () => void) => {
     nativeHaptic(4);
     if (nativeShell && window.history.state?.meristream_native_overlay === overlay && window.history.length > 1) {
       window.history.back();
@@ -60,6 +60,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editName, setEditName] = useState<string>("");
   const [editDesc, setEditDesc] = useState<string>("");
+  const [deleteListId, setDeleteListId] = useState<string | null>(null);
 
   // Lista activa
   const currentList = useMemo(() => {
@@ -119,16 +120,22 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
     const onPopState = () => {
       setIsCreatingModal(false);
       setEditingListId(null);
+      setDeleteListId(null);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [nativeShell]);
 
+  const requestDeleteList = (listId: string) => {
+    nativeHaptic();
+    setDeleteListId(listId);
+    pushListOverlay('list-delete');
+  };
+
   const handleDeleteList = async (listId: string) => {
-    if (window.confirm("¿Seguro que deseas eliminar esta lista personalizada?")) {
-      await deleteList(listId);
-      setActiveListId(favorites?.id || "guest-favorites");
-    }
+    await deleteList(listId);
+    setActiveListId(favorites?.id || "guest-favorites");
+    closeListOverlay('list-delete', () => setDeleteListId(null));
   };
 
   return (
@@ -234,7 +241,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDeleteList(currentList.id)}
+                  onClick={() => requestDeleteList(currentList.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-medium border border-rose-500/20 transition"
                 >
                   <Trash2 size={13} />
@@ -380,7 +387,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          className="native-list-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
           onClick={() => closeListOverlay('list-edit', () => setEditingListId(null))}
         >
           <div
@@ -440,6 +447,44 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteListId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-list-title"
+          className="native-list-modal-overlay fixed inset-0 z-[65] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => closeListOverlay('list-delete', () => setDeleteListId(null))}
+        >
+          <div
+            className="native-list-modal-panel w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h3 id="delete-list-title" className="text-base font-bold text-white">Eliminar lista</h3>
+              <p className="text-xs leading-relaxed text-zinc-400">
+                Se eliminará la lista personalizada. Tus títulos y el progreso de reproducción no se borrarán.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => closeListOverlay('list-delete', () => setDeleteListId(null))}
+                className="min-h-11 px-4 rounded-xl text-xs font-semibold text-zinc-300 bg-zinc-800 border border-zinc-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteList(deleteListId)}
+                className="min-h-11 px-4 rounded-xl text-xs font-bold text-white bg-rose-600"
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}

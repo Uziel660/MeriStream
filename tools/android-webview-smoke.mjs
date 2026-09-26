@@ -183,7 +183,7 @@ try {
           cards: cards.length,
           visibleCards: visibleCards.length,
           images: images.filter((image) => image.complete && image.naturalWidth > 0).length,
-          hero: Boolean(hero?.complete && hero.naturalWidth > 0)
+          hero: Boolean(hero && hero.complete && hero.naturalWidth > 0)
         };
       })()`);
       if (state?.cards >= 2 && state.visibleCards >= 2 && state.images >= 2 && state.hero) break;

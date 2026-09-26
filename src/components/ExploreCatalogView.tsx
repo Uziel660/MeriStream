@@ -72,6 +72,32 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const activeFilterCount = Number(Boolean(genreFilter)) + Number(yearFilter !== null) + Number(sortBy !== 'recientes');
 
+  const openMobileFilters = () => {
+    nativeHaptic();
+    if (nativeShell) {
+      const state = window.history.state || {};
+      if (!state.meristream_native_overlay) {
+        window.history.pushState({ ...state, meristream_native_overlay: 'explore-filters' }, '');
+      }
+    }
+    setMobileFiltersOpen(true);
+  };
+
+  const closeMobileFilters = () => {
+    if (nativeShell && window.history.state?.meristream_native_overlay === 'explore-filters' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    setMobileFiltersOpen(false);
+  };
+
+  useEffect(() => {
+    if (!nativeShell) return;
+    const onPopState = () => setMobileFiltersOpen(false);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [nativeShell]);
+
   const validGenres = useMemo(() => {
     const source = (allGenresList && allGenresList.length > 0) ? allGenresList : CANONICAL_FALLBACK_GENRES;
     return source
@@ -156,10 +182,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
             <button
               type="button"
               className={`native-explore-filter-trigger ${activeFilterCount > 0 ? 'is-active' : ''}`}
-              onClick={() => {
-                nativeHaptic();
-                setMobileFiltersOpen(true);
-              }}
+              onClick={openMobileFilters}
             >
               <SlidersHorizontal size={16} />
               <span>Filtros</span>
@@ -176,7 +199,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
                 type="button"
                 className="native-explore-filter-backdrop"
                 aria-label="Cerrar filtros"
-                onClick={() => setMobileFiltersOpen(false)}
+                onClick={closeMobileFilters}
               />
               <section className="native-explore-filter-sheet" role="dialog" aria-modal="true" aria-label="Filtros del catálogo">
                 <div className="native-sheet-handle" />
@@ -185,7 +208,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
                     <p>Explorar</p>
                     <h3>Filtros</h3>
                   </div>
-                  <button type="button" onClick={() => setMobileFiltersOpen(false)} aria-label="Cerrar filtros"><X size={18} /></button>
+                  <button type="button" onClick={closeMobileFilters} aria-label="Cerrar filtros"><X size={18} /></button>
                 </div>
 
                 <div className="native-filter-sheet-controls">
@@ -207,7 +230,7 @@ export const ExploreCatalogView: React.FC<ExploreCatalogViewProps> = ({
                   <button type="button" className="native-filter-reset" onClick={resetFilters} disabled={activeFilterCount === 0}>
                     Restablecer
                   </button>
-                  <button type="button" className="native-filter-apply" onClick={() => { nativeHaptic(); setMobileFiltersOpen(false); }}>
+                  <button type="button" className="native-filter-apply" onClick={() => { nativeHaptic(); closeMobileFilters(); }}>
                     Ver {filteredShows.length} {filteredShows.length === 1 ? 'título' : 'títulos'}
                   </button>
                 </div>

@@ -50,7 +50,7 @@ export function WatchPartyJoinModal({
       window.history.back();
       return;
     }
-    closeSheet();
+    onClose();
   }, [nativeShell, onClose]);
 
   // Reset state when opening
@@ -67,7 +67,7 @@ export function WatchPartyJoinModal({
     if (window.history.state?.meristream_native_overlay !== 'watch-party-join') {
       window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: 'watch-party-join' }, '');
     }
-    const onPopState = () => closeSheet();
+    const onPopState = () => onClose();
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [isOpen, nativeShell, onClose]);

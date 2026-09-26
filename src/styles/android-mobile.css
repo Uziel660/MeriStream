@@ -387,6 +387,9 @@ html[data-native-shell='android'] [data-player-topbar] > div:first-child {
 }
 
 html[data-native-shell='android'] [data-player-controls] {
+  /* Layout containment makes fixed descendants relative to this short bar,
+   * clipping the More sheet below the landscape viewport. */
+  contain: none !important;
   padding-inline: max(.45rem, var(--safe-area-inset-left, 0px)) max(.45rem, var(--safe-area-inset-right, 0px)) !important;
   padding-bottom: max(.45rem, var(--safe-area-inset-bottom, 0px)) !important;
 }
@@ -1347,6 +1350,16 @@ html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-per
 html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .native-player-more-sheet {
   transition: none !important;
   animation: none !important;
+}
+
+/* Older WebViews can miss the generated button reset and paint bare player
+ * controls with the white Android ButtonFace. Keep the small primary row
+ * readable without changing the menus or the video pipeline. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-action-row] > div > button,
+html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-action-row] > div > div > button {
+  background-color: #15191e !important;
+  color: #e8ebef !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
 }
 
 

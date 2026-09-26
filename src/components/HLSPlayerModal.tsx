@@ -744,11 +744,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         nativeEvent.stopImmediatePropagation();
       };
 
-      if (subtitleSettingsOpen) {
-        consumePlayerLayer();
-        setSubtitleSettingsOpen(false);
-        return;
-      }
       // Mobile overflow is rendered inside the controls tree. Consume Android
       // Back here before any player/history navigation can run.
       if (activeMenu === 'more') {
@@ -757,9 +752,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setControlsVisible(true);
         return;
       }
-      if (activeMenu !== 'none') {
+      if (subtitleSettingsOpen) {
         consumePlayerLayer();
-        setActiveMenu('none');
+        setSubtitleSettingsOpen(false);
+        return;
+      }
+      if (isJoinModalOpen) {
+        consumePlayerLayer();
+        setIsJoinModalOpen(false);
         return;
       }
       if (isWatchPartyPanelOpen) {
@@ -767,9 +767,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setIsWatchPartyPanelOpen(false);
         return;
       }
-      if (isJoinModalOpen) {
+      if (activeMenu !== 'none') {
         consumePlayerLayer();
-        setIsJoinModalOpen(false);
+        setActiveMenu('none');
         return;
       }
       if (isScreenLocked) {
@@ -780,7 +780,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
     window.addEventListener('meristream:native-back', onNativeBack);
     return () => window.removeEventListener('meristream:native-back', onNativeBack);
-  }, [nativeShell, subtitleSettingsOpen, activeMenu, isWatchPartyPanelOpen, isScreenLocked]);
+  }, [nativeShell, subtitleSettingsOpen, activeMenu, isJoinModalOpen, isWatchPartyPanelOpen, isScreenLocked]);
 
   useEffect(() => {
     const propCode = props.initialPartyRoomCode || props.partyRoomCode;
@@ -3663,7 +3663,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
 
               {/* FILA DE BOTONES DE CONTROL Y MENÚS */}
-              <div className="flex items-center justify-between gap-1 sm:gap-3 w-full">
+              <div data-player-action-row className="flex items-center justify-between gap-1 sm:gap-3 w-full">
                 {/* LADO IZQUIERDO: PLAY/PAUSE, SALTOS +/- 10S, VOLUMEN, TIEMPO */}
                 <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
                   <button
@@ -4055,7 +4055,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       <Settings size={15} className="sm:w-[17px] sm:h-[17px]" />
                     </button>
                     {activeMenu === 'quality' && (
-                      <div className="absolute bottom-10 right-0 z-[100] w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                      <div data-player-menu="quality" className="absolute bottom-10 right-0 z-[100] w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                         {/* ACCESO RÁPIDO: cambio de servidor desde la tuerquita de configuración */}
                         {showServerSelector && servers.length > 1 && (
                           <button

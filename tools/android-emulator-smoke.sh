@@ -176,13 +176,22 @@ sleep "$PLAY_DELAY"
 adb exec-out screencap -p > "${PREFIX}-player.png" || true
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
 
-if [[ "$MODE" == "full" ]]; then
-  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
-  sleep 1
-  adb exec-out screencap -p > meristream-player-more.png || true
-  adb shell input keyevent 4
-  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
-fi
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
+sleep 1
+adb exec-out screencap -p > "${PREFIX}-player-more.png" || true
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
+
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-party
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-party-closed
+
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-quality
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-quality-closed
+
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-closed
 
 adb shell dumpsys meminfo me.merith.meristream > "${PREFIX}-meminfo.txt" || true
 capture_logcat

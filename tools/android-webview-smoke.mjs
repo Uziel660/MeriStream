@@ -288,12 +288,24 @@ try {
     await delay(250);
     const state = await evaluate(call, `(() => {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
+      const sheet = document.querySelector('.native-player-more-sheet');
+      const bounds = sheet?.getBoundingClientRect();
+      if (sheet) sheet.scrollTop = sheet.scrollHeight;
+      const lastBounds = actions[actions.length - 1]?.getBoundingClientRect();
+      const lastReachable = Boolean(bounds && lastBounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
+      if (sheet) sheet.scrollTop = 0;
       return {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
+        sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
+        viewport: { width: innerWidth, height: innerHeight },
+        lastReachable,
       };
     })()`);
     if (!state?.visible) throw new Error('Player More sheet did not open');
+    if (!state.sheetBounds || state.sheetBounds.top < -1 || state.sheetBounds.right > state.viewport.width + 1 || state.sheetBounds.bottom > state.viewport.height + 1 || !state.lastReachable) {
+      throw new Error(`Player More actions are clipped or unreachable: ${JSON.stringify(state)}`);
+    }
     if (!state.labels.some((label) => /compartir/i.test(label))) {
       throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
     }
@@ -305,12 +317,71 @@ try {
     console.log(JSON.stringify({ action, visible, player }));
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'open-player-party') {
+    const opened = await evaluate(call, `(() => {
+      document.querySelector('button[aria-label="Más controles"]')?.click();
+      const action = [...document.querySelectorAll('.mobile-player-more-action')].find((node) => /ver en grupo|watch party/i.test(node.textContent || ''));
+      action?.click();
+      return Boolean(action);
+    })()`);
+    if (!opened) throw new Error('Player Watch Party action was not found');
+    await delay(300);
+    const state = await evaluate(call, `({
+      join: Boolean(document.querySelector('.watch-party-join-panel')),
+      player: Boolean(document.querySelector('[data-player-root]')),
+      historyOverlay: window.history.state?.meristream_native_overlay || null,
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (!state.join || !state.player || state.historyOverlay === 'watch-party-join') {
+      throw new Error(`Player Watch Party has the wrong layer or history state: ${JSON.stringify(state)}`);
+    }
+  } else if (action === 'assert-player-party-closed') {
+    await delay(250);
+    const state = await evaluate(call, `({
+      join: Boolean(document.querySelector('.watch-party-join-panel')),
+      player: Boolean(document.querySelector('[data-player-root]')),
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (state.join || !state.player) throw new Error('Android Back did not close only the player Watch Party sheet');
+  } else if (action === 'open-player-quality') {
+    const opened = await evaluate(call, `(() => {
+      const button = document.querySelector('[data-player-controls] button[title="Calidad de video"]');
+      button?.click();
+      return Boolean(button);
+    })()`);
+    if (!opened) throw new Error('Player quality selector button was not found');
+    await delay(200);
+    const visible = await evaluate(call, `Boolean(document.querySelector('[data-player-menu="quality"]'))`);
+    if (!visible) throw new Error('Player quality selector did not open');
+    console.log(JSON.stringify({ action, visible }));
+  } else if (action === 'assert-player-quality-closed') {
+    await delay(250);
+    const state = await evaluate(call, `({
+      selector: Boolean(document.querySelector('[data-player-menu="quality"]')),
+      player: Boolean(document.querySelector('[data-player-root]')),
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (state.selector || !state.player) throw new Error('Android Back did not close only the player selector');
+  } else if (action === 'assert-player-closed') {
+    await delay(400);
+    const state = await evaluate(call, `({
+      player: Boolean(document.querySelector('[data-player-root]')),
+      catalog: Boolean(document.querySelector('.site-header')),
+      route: location.pathname + location.search,
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (state.player || !state.catalog) throw new Error('Android Back did not return from the player to the catalog');
   } else if (action === 'assert-native-player') {
     await delay(500);
     const state = await evaluate(call, `({
       nativeShell: document.documentElement.dataset.nativeShell || null,
       nativeBindings: document.documentElement.dataset.nativeBindings || null,
       player: Boolean(document.querySelector('[data-player-root]')),
+      legacyWebview: document.documentElement.dataset.nativeLegacyWebview || null,
+      playButtonBackground: (() => {
+        const button = document.querySelector('[data-player-action-row] button[aria-label="Pausar"], [data-player-action-row] button[aria-label="Reproducir"]');
+        return button ? getComputedStyle(button).backgroundColor : null;
+      })(),
       orientation: (screen.orientation && screen.orientation.type) || null,
       viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
       fullscreen: Boolean(document.fullscreenElement)
@@ -319,6 +390,9 @@ try {
     if (state.nativeShell !== 'android') throw new Error('Native Android shell marker is missing');
     if (state.nativeBindings !== 'ready') throw new Error(`Native Capacitor bindings are not ready: ${state.nativeBindings}`);
     if (!state.player) throw new Error('Player is not mounted');
+    if (state.legacyWebview === 'true' && Number(state.playButtonBackground?.match(/\d+/)?.[0] || 255) > 100) {
+      throw new Error(`Legacy WebView painted a light native player button: ${state.playButtonBackground}`);
+    }
     const landscape = String(state.orientation || '').startsWith('landscape')
       || Number((state.viewport && state.viewport.width) || 0) > Number((state.viewport && state.viewport.height) || 0);
     if (!landscape) throw new Error(`Player did not enter landscape: ${JSON.stringify(state)}`);

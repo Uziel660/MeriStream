@@ -44,9 +44,10 @@ export function WatchPartyJoinModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const nativeShell = isNativeShell();
+  const isInsidePlayer = () => typeof document !== 'undefined' && Boolean(document.querySelector('[data-player-root]'));
 
   const closeSheet = useCallback(() => {
-    if (nativeShell && window.history.state?.meristream_native_overlay === 'watch-party-join' && window.history.length > 1) {
+    if (nativeShell && !isInsidePlayer() && window.history.state?.meristream_native_overlay === 'watch-party-join' && window.history.length > 1) {
       window.history.back();
       return;
     }
@@ -64,6 +65,9 @@ export function WatchPartyJoinModal({
 
   useEffect(() => {
     if (!isOpen || !nativeShell) return;
+    // The player owns Android Back for its child overlays. A second history
+    // entry here would make the next Back pop a duplicate player route.
+    if (isInsidePlayer()) return;
     if (window.history.state?.meristream_native_overlay !== 'watch-party-join') {
       window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: 'watch-party-join' }, '');
     }

@@ -126,6 +126,83 @@ try {
     const visible = await evaluate(call, `Boolean(document.querySelector('.preferences-panel'))`);
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Preferences');
+  } else if (action === 'open-auth') {
+    const opened = await evaluate(call, `(() => {
+      const button = document.querySelector('.account-login');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Account/login button was not found');
+    await delay(350);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.auth-panel'))`);
+    if (!visible) throw new Error('Auth sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-auth-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.auth-panel'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Auth');
+  } else if (action === 'open-lists') {
+    const opened = await evaluate(call, `(() => {
+      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      const buttons = [...document.querySelectorAll('.mobile-nav-item')];
+      const target = buttons.find((button) => /mis listas/i.test(button.textContent || ''));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Mis Listas navigation item was not found');
+    await delay(900);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.my-lists-view'))`);
+    if (!visible) throw new Error('Mis Listas surface did not render');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'open-list-create') {
+    const opened = await evaluate(call, `(() => {
+      const root = document.querySelector('.my-lists-view');
+      if (!root) return false;
+      const target = [...root.querySelectorAll('button')].find((button) => /nueva lista/i.test(button.textContent || ''));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Nueva Lista action was not found');
+    await delay(350);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-list-modal-panel'))`);
+    if (!visible) throw new Error('Create-list sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-list-modal-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-list-modal-panel'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close list editor');
+  } else if (action === 'open-explore-filters') {
+    const opened = await evaluate(call, `(() => {
+      if (!document.querySelector('.mobile-nav-sheet')) document.querySelector('.mobile-nav-trigger')?.click();
+      const buttons = [...document.querySelectorAll('.mobile-nav-item')];
+      const target = buttons.find((button) => /^explorar$/i.test((button.textContent || '').trim()));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Explorar navigation item was not found');
+    await delay(900);
+    const filtersOpened = await evaluate(call, `(() => {
+      const trigger = document.querySelector('.native-explore-filter-trigger');
+      if (!trigger) return false;
+      trigger.click();
+      return true;
+    })()`);
+    if (!filtersOpened) throw new Error('Explore filter trigger was not found');
+    await delay(350);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
+    if (!visible) throw new Error('Explore filter sheet did not open');
+    console.log(JSON.stringify({ action, opened: visible }));
+  } else if (action === 'assert-explore-filters-closed') {
+    await delay(250);
+    const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
+    console.log(JSON.stringify({ action, visible }));
+    if (visible) throw new Error('Android Back did not close Explore filters');
   } else if (action === 'open-player') {
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);

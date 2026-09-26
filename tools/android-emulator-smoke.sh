@@ -73,6 +73,12 @@ cat "/tmp/${PREFIX}-webview-pages.json"
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs state
 
 if [[ "$MODE" == "full" ]]; then
+  # Production can be Cloudflare-challenged from GitHub-hosted IPs. Seed the
+  # app's own local catalog cache so UI screenshots remain deterministic and
+  # exercise the real production React tree without mocking components.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs seed-catalog
+  adb exec-out screencap -p > meristream-catalog-seeded.png || true
+
   # Native navigation sheet.
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-menu
   sleep 1
@@ -86,6 +92,26 @@ if [[ "$MODE" == "full" ]]; then
   adb exec-out screencap -p > meristream-preferences.png
   adb shell input keyevent 4
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-preferences-closed
+
+  # Login/register is a native bottom sheet and must honor hardware Back.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-auth
+  adb exec-out screencap -p > meristream-auth.png || true
+  adb shell input keyevent 4
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-auth-closed
+
+  # Explore filters are condensed into a touch-first sheet.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-filters
+  adb exec-out screencap -p > meristream-explore-filters.png || true
+  adb shell input keyevent 4
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-explore-filters-closed
+
+  # Guest lists must remain reachable and list creation should feel native.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-lists
+  adb exec-out screencap -p > meristream-lists.png || true
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-list-create
+  adb exec-out screencap -p > meristream-list-create.png || true
+  adb shell input keyevent 4
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-list-modal-closed
 fi
 
 # Public HLS playback smoke, independent from the production Cloudflare gate.

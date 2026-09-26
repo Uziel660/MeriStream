@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { HeroBanner } from './components/HeroBanner';
@@ -7,11 +7,8 @@ import { MediaRow } from './components/MediaRow';
 import { CatalogFilters, type SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
-import { WatchPartyJoinModal } from './components/WatchPartyJoinModal';
 import type { WatchProgress } from './components/ContinueWatching';
 import { BentoCollection } from './components/BentoCollection';
-import { ExploreCatalogView } from './components/ExploreCatalogView';
-import { MyListsView } from './components/MyListsView';
 import { useAuth } from './contexts/AuthContext';
 import { useHiddenGenres } from './hooks/useHiddenGenres';
 import { thumbBackdropUrl } from './utils/imageSizes';
@@ -24,6 +21,14 @@ import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
 import { isNativeShell } from './utils/runtime';
+
+const LazyExploreCatalogView = lazy(() => import('./components/ExploreCatalogView').then((module) => ({ default: module.ExploreCatalogView })));
+const LazyMyListsView = lazy(() => import('./components/MyListsView').then((module) => ({ default: module.MyListsView })));
+const LazyWatchPartyJoinModal = lazy(() => import('./components/WatchPartyJoinModal').then((module) => ({ default: module.WatchPartyJoinModal })));
+
+const deferredSurfaceFallback = (
+  <div className="py-14 text-center text-xs text-zinc-500" role="status" aria-live="polite">Cargando…</div>
+);
 
 const getContinueWatchingStorageKey = (userId?: string | null): string =>
   userId ? `meristream_continue_watching_${userId}` : 'meristream_guest_continue_watching_v1';
@@ -2382,13 +2387,15 @@ export function App() {
                   )}
                 </section>
               ) : activeFilter === 'my-lists' ? (
-                <MyListsView
-                  onSelectMedia={handleOpenDetails}
-                  onExploreCatalog={() => {
-                    handleSelectCategory('explore');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                />
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyMyListsView
+                    onSelectMedia={handleOpenDetails}
+                    onExploreCatalog={() => {
+                      handleSelectCategory('explore');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                </Suspense>
               ) : activeFilter === 'recommendations' ? (
                 <section className="space-y-10">
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
@@ -2436,7 +2443,8 @@ export function App() {
                 </section>
               ) : activeFilter === 'explore' ? (
                 /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
-                <ExploreCatalogView
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyExploreCatalogView
                   shows={shows}
                   allGenresList={allGenresList}
                   showsCountByGenre={showsCountByGenre}
@@ -2452,7 +2460,8 @@ export function App() {
                   isLoadingMore={exploreIsLoadingMore}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
-                />
+                  />
+                </Suspense>
               ) : activeFilter !== 'all' ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
@@ -2707,13 +2716,15 @@ export function App() {
       />
 
       {/* MODAL GLOBAL DE WATCH PARTY (ACCESIBLE DIRECTAMENTE DESDE EL HEADER) */}
-      <WatchPartyJoinModal
+      <Suspense fallback={null}>
+        <LazyWatchPartyJoinModal
         isOpen={isGlobalWatchPartyOpen}
         onClose={() => setIsGlobalWatchPartyOpen(false)}
         isAuthenticated={isAuthenticated}
         onRequireAuth={openAuthModal}
         onJoin={handleJoinWatchPartyFromHeader}
       />
+      </Suspense>
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}
       {playingStreamData && (

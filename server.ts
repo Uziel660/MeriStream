@@ -3663,6 +3663,14 @@ async function startServer() {
         // host contra el que luego sirven los chunks por rango.
         const { response: metadataResponse, finalUrl } = await followWithRedirects('HEAD');
         const contentLengthHeader = metadataResponse.headers['content-length'];
+        const metadataContentRange = metadataResponse.headers['content-range'];
+        const metadataRangeText = Array.isArray(metadataContentRange)
+          ? metadataContentRange[0]
+          : String(metadataContentRange || '');
+        // Some CDNs answer HEAD as if it were the client's ranged request.
+        // Prefer the total from Content-Range (`bytes 0-1/TOTAL`) whenever it
+        // is present instead of treating the requested chunk as the whole file.
+        const rangedTotal = /\/([0-9]+)\s*$/i.exec(metadataRangeText)?.[1];
 
         if (!contentLengthHeader) {
           // Sin Content-Length no hay base para calcular rangos: passthrough puro.
@@ -3682,7 +3690,7 @@ async function startServer() {
           return;
         }
 
-        const totalFileSize = Number(contentLengthHeader);
+        const totalFileSize = Number(rangedTotal || contentLengthHeader);
         if (!Number.isSafeInteger(totalFileSize) || totalFileSize <= 0) {
           logProxyRequest({
             targetUrl,

@@ -1375,22 +1375,10 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .native-pla
   padding: .55rem .65rem;
 }
 
-/* Keep the sheet sections above the playing video layer in legacy WebViews. */
-html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet > * {
-  position: relative;
-  z-index: 1;
-}
-
 /* Chrome 74 has no flex gap; leave room between each action's icon and label. */
 html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-player-more-action svg {
   margin-right: .35rem;
   flex: none;
-}
-
-/* The legacy WebView can paint the fullscreen backdrop above portal content.
- * Keep the More controls touchable and readable on Android 10. */
-html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-backdrop {
-  display: none !important;
 }
 
 @media (orientation: landscape) {

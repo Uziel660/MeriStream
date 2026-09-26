@@ -294,7 +294,47 @@ try {
     const state = await evaluate(call, `(() => {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
       const sheet = document.querySelector('.native-player-more-sheet');
+      const backdrop = document.querySelector('.native-player-more-backdrop');
+      const video = document.querySelector('[data-player-root] video');
       const bounds = sheet ? sheet.getBoundingClientRect() : null;
+      const styleSummary = (node) => {
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const x = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2));
+        const y = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+        return {
+          tag: node.tagName,
+          className: typeof node.className === 'string' ? node.className : '',
+          text: (node.textContent || '').trim().slice(0, 48),
+          bounds: { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+          style: {
+            display: style.display,
+            position: style.position,
+            zIndex: style.zIndex,
+            color: style.color,
+            webkitTextFillColor: style.webkitTextFillColor,
+            backgroundColor: style.backgroundColor,
+            opacity: style.opacity,
+            visibility: style.visibility,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            transform: style.transform,
+          },
+          svg: node.querySelector('svg') ? {
+            display: getComputedStyle(node.querySelector('svg')).display,
+            color: getComputedStyle(node.querySelector('svg')).color,
+            stroke: getComputedStyle(node.querySelector('svg')).stroke,
+            opacity: getComputedStyle(node.querySelector('svg')).opacity,
+          } : null,
+          hitStack: document.elementsFromPoint(x, y).slice(0, 4).map((element) => ({
+            tag: element.tagName,
+            className: typeof element.className === 'string' ? element.className : '',
+            zIndex: getComputedStyle(element).zIndex,
+          })),
+        };
+      };
       const lastAction = actions[actions.length - 1];
       let lastBounds = lastAction ? lastAction.getBoundingClientRect() : null;
       let lastReachable = Boolean(bounds && lastBounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
@@ -312,6 +352,12 @@ try {
         lastReachable,
         scrollHeight: sheet ? sheet.scrollHeight : null,
         clientHeight: sheet ? sheet.clientHeight : null,
+        paintDiagnostics: {
+          sheet: styleSummary(sheet),
+          backdrop: styleSummary(backdrop),
+          video: styleSummary(video),
+          actions: [actions[0], actions[1], actions[2], lastAction].filter(Boolean).map(styleSummary),
+        },
       };
     })()`);
     if (!state?.visible) throw new Error('Player More sheet did not open');

@@ -2842,6 +2842,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           {/* ACCIONES SUPERIORES: CAMBIO RÁPIDO DE SERVIDORES Y APERTURA EXTERNA */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* BOTÓN Y BADGE DE WATCH PARTY */}
+            <div data-player-secondary-action="true">
             {teleparty.isInRoom ? (
               <button
                 type="button"
@@ -2867,6 +2868,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 <span className="hidden sm:inline">Watch Party</span>
               </button>
             )}
+            </div>
 
             {/* VIEWER MODE INDICATOR BADGE */}
             {isViewerMode && (
@@ -2882,6 +2884,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
             )}
 
+            <div data-player-secondary-action="true">
             <ReportControl
               title={props.title || media?.title || 'esta obra'}
               showId={props.showId || null}
@@ -2893,10 +2896,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               sourceUrl={activeServer?.canonical_locator || null}
               compact
             />
+            </div>
             {/* La cascada selecciona automáticamente, pero el selector queda
                 disponible cuando existen varias fuentes. */}
             {showServerSelector && servers.length > 1 && (
-              <div className="relative">
+              <div className="relative" data-player-secondary-action="true">
                 <button
                   type="button"
                   onClick={() => setActiveMenu((m) => (m === 'servers' ? 'none' : 'servers'))}
@@ -3795,7 +3799,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           <button
                             type="button"
                             onClick={() => setActiveMenu('servers')}
-                            className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
+                            className="quality-server-shortcut flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
                           >
                             <span className="flex items-center gap-1.5 font-semibold">
                               <Server size={12} />
@@ -3924,6 +3928,28 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     {activeMenu === 'more' && (
                       <div className="absolute bottom-10 right-0 z-[110] w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-zinc-700/80 bg-zinc-900/98 p-2 shadow-2xl">
                         <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenu('none');
+                              if (teleparty.isInRoom) setIsWatchPartyPanelOpen(true);
+                              else setIsJoinModalOpen(true);
+                            }}
+                            className="mobile-player-more-action"
+                          >
+                            <Users size={14} /> {teleparty.isInRoom ? 'Watch Party' : 'Ver en grupo'}
+                          </button>
+                          <ReportControl
+                            title={props.title || media?.title || 'esta obra'}
+                            showId={props.showId || null}
+                            tmdbId={props.tmdbId || null}
+                            kind={props.kind || null}
+                            episodeId={props.episodeId || null}
+                            episodeNumber={props.episodeNumber || null}
+                            sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+                            sourceUrl={activeServer?.canonical_locator || null}
+                            className="mobile-player-more-action"
+                          />
                           <button type="button" onClick={() => { seekOffset(-10); setActiveMenu('none'); }} className="mobile-player-more-action">
                             <RotateCcw size={14} /> -10 s
                           </button>
@@ -3974,6 +4000,38 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                             ))}
                           </div>
                         </div>
+                        {servers.length > 1 && (
+                          <div className="mt-2 border-t border-zinc-800 pt-2">
+                            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Servidores</span>
+                            <div className="max-h-40 space-y-1 overflow-y-auto overscroll-contain">
+                              {servers.map((server, index) => {
+                                const status = serverHealthMap[server.id] || 'unverified';
+                                return (
+                                  <button
+                                    key={server.id}
+                                    type="button"
+                                    onClick={() => {
+                                      handleServerChange(index);
+                                      setActiveMenu('none');
+                                    }}
+                                    className={`flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
+                                      activeServerIndex === index ? 'bg-emerald-500/12 text-emerald-300' : 'bg-zinc-800/70 text-zinc-200'
+                                    }`}
+                                  >
+                                    <span className={`h-2 w-2 shrink-0 rounded-full ${
+                                      status === 'online' ? 'bg-emerald-400' : status === 'failed' ? 'bg-rose-400' : status === 'checking' ? 'bg-amber-400' : 'bg-zinc-500'
+                                    }`} />
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {server.sourceSite ? String(server.sourceSite).toUpperCase() : server.provider || server.label}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500">{index + 1}/{servers.length}</span>
+                                    {activeServerIndex === index && <Check size={13} />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

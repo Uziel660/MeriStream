@@ -90,9 +90,23 @@ jobs:
 
             # Attach Chrome DevTools Protocol to the debug WebView. This lets CI
             # inspect the same React tree rendered by the installed APK.
-            SOCKET="$(adb shell cat /proc/net/unix | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r')"
-            test -n "$SOCKET"
+            PID="$(adb shell pidof me.merith.meristream | tr -d '\r')"
+            test -n "$PID"
+            adb shell dumpsys package me.merith.meristream | grep -E "DEBUGGABLE|flags=" | head -8 || true
+            SOCKET="$(adb shell cat /proc/net/unix 2>/dev/null | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r' || true)"
+            if [ -z "$SOCKET" ]; then
+              SOCKET="webview_devtools_remote_$PID"
+            fi
+            echo "Using WebView DevTools socket: $SOCKET"
+            adb forward --remove tcp:9222 >/dev/null 2>&1 || true
             adb forward tcp:9222 "localabstract:$SOCKET"
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if curl -fsS http://127.0.0.1:9222/json >/tmp/webview-pages.json 2>/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            cat /tmp/webview-pages.json
             node tools/android-webview-smoke.mjs state
 
             # Visual audit of the native bottom-sheet navigation.

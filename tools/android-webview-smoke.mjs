@@ -277,9 +277,18 @@ try {
     })()`);
     if (!opened) throw new Error('Player More button was not found');
     await delay(250);
-    const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);
-    if (!visible) throw new Error('Player More sheet did not open');
-    console.log(JSON.stringify({ action, opened: visible }));
+    const state = await evaluate(call, `(() => {
+      const actions = [...document.querySelectorAll('.mobile-player-more-action')];
+      return {
+        visible: actions.length > 0,
+        labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
+      };
+    })()`);
+    if (!state?.visible) throw new Error('Player More sheet did not open');
+    if (!state.labels.some((label) => /compartir/i.test(label))) {
+      throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
+    }
+    console.log(JSON.stringify({ action, ...state }));
   } else if (action === 'assert-player-more-closed') {
     await delay(250);
     const visible = await evaluate(call, `Boolean(document.querySelector('.mobile-player-more-action'))`);

@@ -3,6 +3,7 @@ import {
   nativeBindingsReady,
   nativeHapticsBinding,
   nativeScreenOrientationBinding,
+  nativeShareBinding,
   nativeSystemBarsBinding,
 } from './nativePluginBindings';
 
@@ -27,7 +28,9 @@ function nativePlugin(name: string): any | null {
         ? nativeScreenOrientationBinding
         : name === 'SystemBars'
           ? nativeSystemBarsBinding
-          : null;
+          : name === 'Share'
+            ? nativeShareBinding
+            : null;
   if (imported) return imported;
 
   // Fallback only for bridge-provided/built-in plugins. Official plugins use
@@ -100,6 +103,29 @@ export async function nativeUnlockOrientation(): Promise<void> {
     const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
     orientation?.unlock?.();
   } catch {}
+}
+
+export async function nativeShare(options: { title?: string; text?: string; url?: string; dialogTitle?: string }): Promise<boolean> {
+  if (isNativeShell()) {
+    const share = nativePlugin('Share');
+    if (typeof share?.share === 'function') {
+      try {
+        await share.share(options);
+        nativeHaptic(4);
+        return true;
+      } catch {
+        // The user cancelling the share sheet is not a playback/app failure.
+      }
+    }
+  }
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title: options.title, text: options.text, url: options.url });
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 export async function nativeSetImmersive(hidden: boolean): Promise<void> {

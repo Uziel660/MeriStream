@@ -1100,14 +1100,23 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           const streamUrl = typeof episodeResult.stream_url === 'string' ? episodeResult.stream_url : '';
           const resolvedUrl = first?.url || (isMediaUrl(streamUrl) ? streamUrl : '');
           const resolved = Boolean(episodeResult.resolved && resolvedUrl && resolvedUrl !== locator && isMediaUrl(resolvedUrl));
+          // Tudorama's HLS manifests are signed against the resolver's origin
+          // and can return a misleading 404 when the browser fetches them
+          // directly. Keep the canonical page as the renewable locator and
+          // enter the MeriStream proxy session before attaching HLS.js.
+          const tudoramaSource = /(?:^|\/\/)(?:www\.)?tudorama\.com\//i.test(locator)
+            || /tudorama/i.test(`${first?.provider || ''} ${first?.source_site || ''}`);
+          const deliveryMode = first?.delivery_mode === 'proxy_required' || tudoramaSource
+            ? 'proxy_required' as const
+            : (resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const);
           const pageResolution = {
             url: resolved ? resolvedUrl : locator,
             original_url: locator,
             canonical_locator: locator,
             resolved,
             type: resolved && first?.type !== 'embed' ? 'direct' as const : 'embed' as const,
-            delivery_mode: resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const,
-            is_proxyable: resolved,
+            delivery_mode: deliveryMode,
+            is_proxyable: resolved || tudoramaSource,
             is_refreshable: true,
             resolution_id: first?.resolution_id,
             generation: first?.generation,

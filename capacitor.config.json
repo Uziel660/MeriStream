@@ -9,6 +9,12 @@
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK",
+      "hidden": false,
+      "animation": "NONE"
     }
   }
 }

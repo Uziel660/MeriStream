@@ -295,11 +295,15 @@ try {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
       const sheet = document.querySelector('.native-player-more-sheet');
       const bounds = sheet ? sheet.getBoundingClientRect() : null;
-      if (sheet) sheet.scrollTop = sheet.scrollHeight;
       const lastAction = actions[actions.length - 1];
-      const lastBounds = lastAction ? lastAction.getBoundingClientRect() : null;
-      const lastReachable = Boolean(bounds && lastBounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
-      if (sheet) sheet.scrollTop = 0;
+      let lastBounds = lastAction ? lastAction.getBoundingClientRect() : null;
+      let lastReachable = Boolean(bounds && lastBounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
+      if (sheet && lastAction && !lastReachable) {
+        sheet.scrollTop = sheet.scrollHeight;
+        lastBounds = lastAction.getBoundingClientRect();
+        lastReachable = Boolean(bounds && lastBounds.top >= bounds.top - 1 && lastBounds.bottom <= bounds.bottom + 1);
+        sheet.scrollTop = 0;
+      }
       return {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),

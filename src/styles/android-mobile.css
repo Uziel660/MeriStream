@@ -1375,6 +1375,12 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .native-pla
   padding: .55rem .65rem;
 }
 
+/* Chrome 74 has no flex gap; leave room between each action's icon and label. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-player-more-action svg {
+  margin-right: .35rem;
+  flex: none;
+}
+
 @media (orientation: landscape) {
   html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
     width: 22rem;

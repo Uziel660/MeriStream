@@ -243,11 +243,46 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     });
 
     let episodes = this.extractEpisodes(html, url);
-    if (episodes.length === 0) {
-      // DoramasYT carga las fichas largas vía AJAX. El intento es acotado y
-      // tolera que Cloudflare bloquee el POST: el capítulo directo sigue
-      // funcionando y no se inventan episodios cuando el índice no responde.
-      episodes = await this.extractAjaxEpisodes(url, html);
+    // DoramasYT deja un enlace SSR de “Ver Ahora” aunque la ficha tenga
+    // muchos capítulos. Cuando existe el índice AJAX siempre lo consultamos y
+    // fusionamos por número para no importar una serie con solo el capítulo 1.
+    if (/data-ajax=["']/i.test(html)) {
+      // El intento es acotado y tolera que Cloudflare bloquee el POST: el
+      // capítulo directo sigue funcionando y no se inventan episodios cuando
+      // el índice no responde.
+      const ajaxEpisodes = await this.extractAjaxEpisodes(url, html);
+      if (ajaxEpisodes.length > 0) {
+        // The AJAX index is authoritative. Some fichas expose alternate
+        // language slugs for the same episode number and an SSR teaser that
+        // points to episode 0; collapse those variants by number and keep the
+        // URL whose slug best matches the detail page.
+        const merged = new Map<number, ExtractedEpisode>();
+        const ajaxUrls = new Set(ajaxEpisodes.map((episode) => episode.url));
+        for (const episode of ajaxEpisodes) {
+          const current = merged.get(episode.number);
+          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
+            merged.set(episode.number, episode);
+          }
+        }
+        for (const episode of episodes) {
+          if (ajaxUrls.has(episode.url)) continue;
+          const current = merged.get(episode.number);
+          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
+            merged.set(episode.number, episode);
+          }
+        }
+        episodes = Array.from(merged.values()).sort((a, b) => a.number - b.number);
+      }
+      if (episodes.length > 1) {
+        const uniqueNumbers = new Map<number, ExtractedEpisode>();
+        for (const episode of episodes) {
+          const current = uniqueNumbers.get(episode.number);
+          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
+            uniqueNumbers.set(episode.number, episode);
+          }
+        }
+        episodes = Array.from(uniqueNumbers.values()).sort((a, b) => a.number - b.number);
+      }
     }
 
     const isMovie = /\/pel[ií]cula/i.test(url) || /\bpel[ií]cula\b/i.test(title) || episodes.length === 0 && /pel[ií]cula/i.test(description);
@@ -289,7 +324,7 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     const ajaxMatch = html.match(/data-ajax=["']([^"']+)["']/i);
     if (!ajaxMatch) return [];
     const ajaxUrl = this.resolveRelativeUrl(ajaxMatch[1], detailUrl);
-    const csrf = html.match(/name=["']csrf-token["'][^>]+content=["']([^"']+)["']/i)?.[1] || "";
+    let csrf = html.match(/name=["']csrf-token["'][^>]+content=["']([^"']+)["']/i)?.[1] || "";
     if (!ajaxUrl || !csrf) return [];
 
     const post = async (target: string, body: URLSearchParams, cookie = ""): Promise<any | null> => {
@@ -325,6 +360,12 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     let cookie = "";
     try {
       const page = await fetch(detailUrl, { headers: COMMON_HEADERS });
+      // La cookie Laravel y el meta CSRF deben salir de la misma respuesta.
+      // Reutilizar el token del HTML anterior provoca 419 aunque la página sea
+      // accesible, porque DoramasYT rota ambos valores por visita.
+      const freshHtml = await page.text().catch(() => "");
+      const freshCsrf = freshHtml.match(/name=["']csrf-token["'][^>]+content=["']([^"']+)["']/i)?.[1] || "";
+      if (freshCsrf) csrf = freshCsrf;
       const setCookie = page.headers.get("set-cookie");
       if (setCookie) cookie = setCookie.split(",").map((v) => v.split(";")[0]).join("; ");
     } catch {}
@@ -505,11 +546,28 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     return Number.isFinite(number) ? number : null;
   }
 
+  private episodeMatchScore(episodeUrl: string, detailUrl: string): number {
+    try {
+      const detailSlug = new URL(detailUrl).pathname.split("/").filter(Boolean).pop()!
+        .replace(/-sub-espanol$/i, "");
+      const episodeSlug = new URL(episodeUrl).pathname.split("/").filter(Boolean).pop()!
+        .replace(/-episodio-\d+$/i, "");
+      if (!detailSlug || !episodeSlug) return 0;
+      if (episodeSlug === detailSlug) return 20;
+      if (episodeSlug.startsWith(`${detailSlug}-`)) return 15;
+      if (detailSlug.startsWith(`${episodeSlug}-`)) return 10;
+      const detailWords = new Set(detailSlug.split("-"));
+      return episodeSlug.split("-").filter((word) => detailWords.has(word)).length;
+    } catch {
+      return 0;
+    }
+  }
+
   private episodeUrlFromDetail(detailUrl: string, episode: number): string {
     try {
       const parsed = new URL(detailUrl);
       const slug = parsed.pathname.split("/").filter(Boolean).pop() || "dorama";
-      const base = slug.replace(/-sub-espanol$/i, "").replace(/-latino$/i, "");
+      const base = slug.replace(/-sub-espanol$/i, "");
       return `${parsed.origin}/ver/${base}-episodio-${episode}`;
     } catch {
       return `${BASE_URL}/ver/episodio-${episode}`;
@@ -542,6 +600,3 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     return DIRECT_MEDIA.test(url) || url.includes("/api/v1/stream/mega");
   }
 }
-
-
-

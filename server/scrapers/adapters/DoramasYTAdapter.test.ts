@@ -48,6 +48,34 @@ describe("DoramasYTAdapter", () => {
     expect(result.episodes.map((episode) => episode.number)).toEqual([1, 2]);
   });
 
+  it("merges the AJAX episode index with the SSR teaser link", async () => {
+    const adapter = new DoramasYTAdapter();
+    vi.spyOn(adapter as any, "fetchHtml").mockResolvedValue(fixture('<meta property="og:title" content="Our Sticky Love Online en Español - DoramasYT"><h1>Our Sticky Love</h1><section class="caplist" data-ajax="https://www.doramasyt.com/ajax/ajax_pagination/2273"></section><a href="/ver/our-sticky-love-episodio-1">Ver Ahora</a>'));
+    vi.spyOn(adapter as any, "extractAjaxEpisodes").mockResolvedValue([
+      { number: 1, title: "Capítulo 1", url: "https://www.doramasyt.com/ver/our-sticky-love-episodio-1", server_name: "DoramasYT" },
+      { number: 2, title: "Capítulo 2", url: "https://www.doramasyt.com/ver/our-sticky-love-episodio-2", server_name: "DoramasYT" },
+      { number: 3, title: "Capítulo 3", url: "https://www.doramasyt.com/ver/our-sticky-love-episodio-3", server_name: "DoramasYT" },
+    ]);
+
+    const result = await adapter.analyze("https://www.doramasyt.com/dorama/our-sticky-love-sub-espanol", "detail");
+    expect(result.episodes.map((episode) => episode.number)).toEqual([1, 2, 3]);
+  });
+
+  it("collapses alternate language URLs for the same episode number", async () => {
+    const adapter = new DoramasYTAdapter();
+    vi.spyOn(adapter as any, "fetchHtml").mockResolvedValue(fixture('<meta property="og:title" content="Qué le ocurre a la secretaria Kim Latino"><section data-ajax="https://www.doramasyt.com/ajax/ajax_pagination/1"></section>'));
+    vi.spyOn(adapter as any, "extractAjaxEpisodes").mockResolvedValue([
+      { number: 1, title: "Capítulo 1", url: "https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-episodio-1", server_name: "DoramasYT" },
+      { number: 1, title: "Capítulo 1", url: "https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-latino-episodio-1", server_name: "DoramasYT" },
+      { number: 2, title: "Capítulo 2", url: "https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-episodio-2", server_name: "DoramasYT" },
+      { number: 2, title: "Capítulo 2", url: "https://www.doramasyt.com/ver/whats-wrong-with-secretary-kim-latino-episodio-2", server_name: "DoramasYT" },
+    ]);
+
+    const result = await adapter.analyze("https://www.doramasyt.com/dorama/whats-wrong-with-secretary-kim-latino-sub-espanol", "detail");
+    expect(result.episodes.map((episode) => episode.number)).toEqual([1, 2]);
+    expect(result.episodes.every((episode) => episode.url.includes("-latino-"))).toBe(true);
+  });
+
   it("resolves Mega and Pixeldrain while discarding posters and download-only links", async () => {
     const adapter = new DoramasYTAdapter();
     const mega = "https://mega.nz/file/abc123#key123";

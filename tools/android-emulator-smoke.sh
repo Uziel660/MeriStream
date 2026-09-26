@@ -124,6 +124,8 @@ if [[ "$MODE" == "full" ]]; then
   # app's own local catalog cache so UI screenshots remain deterministic and
   # exercise the real production React tree without mocking components.
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs seed-catalog
+  # Let Android paint decoded poster textures before taking the catalog screenshot.
+  sleep 1
   adb exec-out screencap -p > meristream-catalog-seeded.png || true
 
   # Native navigation sheet.

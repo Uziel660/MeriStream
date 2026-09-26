@@ -279,6 +279,7 @@ try {
     const state = await evaluate(call, `({
       url: location.href,
       nativeShell: document.documentElement.dataset.nativeShell || null,
+      nativeBindings: document.documentElement.dataset.nativeBindings || null,
       performance: document.documentElement.dataset.msPerformance || null,
       menuOpen: Boolean(document.querySelector('.mobile-nav-sheet')),
       preferencesOpen: Boolean(document.querySelector('.preferences-panel')),
@@ -287,6 +288,9 @@ try {
       title: document.title
     })`);
     console.log(JSON.stringify({ action, state }, null, 2));
+    if (state?.nativeShell === 'android' && state?.nativeBindings !== 'ready') {
+      throw new Error(`Android build did not bundle official native plugin bindings (state=${state?.nativeBindings})`);
+    }
   }
 } finally {
   ws.close();

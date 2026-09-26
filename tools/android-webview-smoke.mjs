@@ -86,13 +86,25 @@ try {
   await call('Runtime.enable');
   await call('Page.enable');
 
-  const ensureMobileMenuOpen = async () => evaluate(call, `(() => {
-    if (document.querySelector('.mobile-nav-sheet')) return true;
-    const trigger = document.querySelector('.mobile-nav-trigger');
-    if (!trigger) return false;
-    trigger.click();
-    return Boolean(document.querySelector('.mobile-nav-sheet'));
-  })()`);
+  const ensureMobileMenuOpen = async () => {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const ready = await evaluate(call, `(() => {
+        if (document.querySelector('.mobile-nav-sheet')) return { open: true, trigger: true, route: location.href };
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        window.dispatchEvent(new Event('scroll'));
+        const trigger = document.querySelector('.mobile-nav-trigger');
+        if (!trigger) return { open: false, trigger: false, route: location.href };
+        trigger.click();
+        return { open: Boolean(document.querySelector('.mobile-nav-sheet')), trigger: true, route: location.href };
+      })()`);
+      if (ready?.open) return true;
+      if (attempt === 0 || attempt === 5 || attempt === 11) {
+        console.log(JSON.stringify({ action: 'ensure-mobile-menu', attempt, ...ready }));
+      }
+      await delay(180);
+    }
+    return false;
+  };
 
   const clickMobileMenuAction = async (pattern, selector = '.mobile-nav-action') => evaluate(call, `(() => {
     const nodes = [...document.querySelectorAll(${JSON.stringify(selector)})];

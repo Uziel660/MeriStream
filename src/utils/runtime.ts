@@ -215,6 +215,17 @@ export function backendUrl(pathOrUrl: string): string {
   return `${origin}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
+export function publicAppUrl(pathOrQuery?: string): string {
+  if (typeof window === 'undefined') return pathOrQuery || '';
+  const origin = isNativeShell() ? backendBaseOrigin() : window.location.origin;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  try {
+    return new URL(pathOrQuery || current || '/', origin || window.location.origin).toString();
+  } catch {
+    return pathOrQuery || current;
+  }
+}
+
 export function backendWsUrl(path = '/ws/watch-party'): string {
   const httpOrigin = backendBaseOrigin()
     || (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:3010');

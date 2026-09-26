@@ -8,11 +8,9 @@ import type { SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
 import type { WatchProgress } from './components/ContinueWatching';
-import { BentoCollection } from './components/BentoCollection';
 import { useAuth } from './contexts/AuthContext';
 import { useHiddenGenres } from './hooks/useHiddenGenres';
 import { thumbBackdropUrl } from './utils/imageSizes';
-import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
 import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
@@ -22,6 +20,7 @@ import type { Show, Episode } from './types';
 import { isNativeShell } from './utils/runtime';
 
 const LazyCatalogFilters = lazy(() => import('./components/CatalogFilters').then((module) => ({ default: module.CatalogFilters })));
+const LazyBentoCollection = lazy(() => import('./components/BentoCollection').then((module) => ({ default: module.BentoCollection })));
 const LazyExploreCatalogView = lazy(() => import('./components/ExploreCatalogView').then((module) => ({ default: module.ExploreCatalogView })));
 const LazyMyListsView = lazy(() => import('./components/MyListsView').then((module) => ({ default: module.MyListsView })));
 const LazyWatchPartyJoinModal = lazy(() => import('./components/WatchPartyJoinModal').then((module) => ({ default: module.WatchPartyJoinModal })));
@@ -2630,11 +2629,13 @@ export function App() {
 
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
                   {homeSections.topRatedShows.length >= 3 && (
-                    <BentoCollection
-                      title="Destacados por la crítica"
-                      items={homeSections.topRatedShows}
-                      onSelectMedia={handleOpenDetails}
-                    />
+                    <Suspense fallback={null}>
+                      <LazyBentoCollection
+                        title="Destacados por la crítica"
+                        items={homeSections.topRatedShows}
+                        onSelectMedia={handleOpenDetails}
+                      />
+                    </Suspense>
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN RESTANTES (ej. Descubrimientos o Género Favorito) */}
@@ -2932,7 +2933,8 @@ export function App() {
           setIsAdminOpen(false);
           loadCatalog();
         }}
-        onPlayDirect={(streamResult: any) => {
+        onPlayDirect={async (streamResult: any) => {
+          const { isEmbedUrl } = await import('./utils/streamOptimizer');
           const candidates: string[] = (
             streamResult.all_streams ||
             streamResult.all_available_streams ||

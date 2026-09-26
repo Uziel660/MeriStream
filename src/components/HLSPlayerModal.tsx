@@ -179,6 +179,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // dash.js se carga solo cuando se selecciona un manifiesto MPD.
   const dashRef = useRef<any>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastNativeTapRef = useRef<{ at: number; x: number } | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
   const wakeLockRef = useRef<any>(null);
@@ -2708,27 +2709,42 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     }
   };
 
-  const handlePlayerDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (isScreenLocked) return;
-    if (!isNativeShell()) {
-      void toggleFullscreen();
-      return;
-    }
+  const showTapFeedback = (message: string) => {
+    setFailoverNotice(message);
+    window.setTimeout(() => setFailoverNotice((current) => current === message ? null : current), 650);
+  };
+
+  const handleNativePlayerPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!nativeShell || event.pointerType === 'mouse' || isScreenLocked) return;
+    const now = performance.now();
+    const previous = lastNativeTapRef.current;
+    lastNativeTapRef.current = { at: now, x: event.clientX };
+
+    if (!previous || now - previous.at > 330 || Math.abs(event.clientX - previous.x) > 96) return;
+    lastNativeTapRef.current = null;
     nativeHaptic(8);
+
     const rect = event.currentTarget.getBoundingClientRect();
     const position = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
-    if (position < 0.38) {
+    if (position < 0.36) {
       seekOffset(-10);
-      setFailoverNotice('−10 s');
-      setTimeout(() => setFailoverNotice(null), 650);
+      showTapFeedback('−10 s');
       return;
     }
-    if (position > 0.62) {
+    if (position > 0.64) {
       seekOffset(10);
-      setFailoverNotice('+10 s');
-      setTimeout(() => setFailoverNotice(null), 650);
+      showTapFeedback('+10 s');
       return;
     }
+
+    // The native player is already immersive. A center double-tap toggles
+    // playback instead of unexpectedly leaving fullscreen.
+    togglePlay();
+    showTapFeedback(isPlaying ? 'Pausa' : 'Reproducir');
+  };
+
+  const handlePlayerDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (isScreenLocked || nativeShell) return;
     void toggleFullscreen();
   };
 
@@ -3344,6 +3360,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             }
             if (activeServer && !activeServer.isEmbed) togglePlay();
           }}
+          onPointerUp={nativeShell ? handleNativePlayerPointerUp : undefined}
           onDoubleClick={isScreenLocked ? undefined : handlePlayerDoubleClick}
         >
           {isLoadingStream && (

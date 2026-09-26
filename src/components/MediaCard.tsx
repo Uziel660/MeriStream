@@ -80,6 +80,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
               toggleFavorite(media);
             }
           }}
+          data-card-favorite
           className={`absolute top-2 left-2 z-20 p-2 rounded-full transition-all duration-200 backdrop-blur-md shadow-lg cursor-pointer ${
             isFav
               ? 'opacity-100 bg-rose-600 text-white scale-105 shadow-rose-600/30 ring-2 ring-rose-400/50'

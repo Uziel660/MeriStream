@@ -1312,3 +1312,90 @@ html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-per
   transition: none !important;
   animation: none !important;
 }
+
+
+/* Phone-landscape player density. A 2 GB Android 10 emulator exposed that
+ * desktop-ish vertical spacing still wastes too much of a short landscape
+ * viewport even though playback itself is healthy. */
+@media (orientation: landscape) and (max-height: 620px) {
+  html[data-native-shell='android'] [data-player-topbar] {
+    min-height: 0 !important;
+    padding-top: max(.22rem, var(--safe-area-inset-top, 0px)) !important;
+    padding-bottom: .22rem !important;
+    background: linear-gradient(to bottom, rgba(0,0,0,.88), rgba(0,0,0,.32), transparent) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child {
+    max-width: calc(100% - 1rem) !important;
+    min-width: 0 !important;
+    gap: .4rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child > button {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    min-width: 2.25rem !important;
+    min-height: 2.25rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child > div {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] h3 {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-family: Arial, Roboto, "Segoe UI", sans-serif !important;
+    font-size: .78rem !important;
+    line-height: 1.15 !important;
+    letter-spacing: 0 !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] h3 + div {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] {
+    padding-top: .35rem !important;
+    padding-bottom: max(.28rem, var(--safe-area-inset-bottom, 0px)) !important;
+    background: linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.38), transparent) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] > div:first-of-type {
+    margin-bottom: .25rem !important;
+    font-size: .68rem !important;
+    line-height: 1 !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] > div:first-of-type > span:last-child {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] button {
+    min-width: 2.25rem !important;
+    min-height: 2.25rem !important;
+    padding: .3rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] [data-player-scrubber-thumb] {
+    width: .78rem !important;
+    height: .78rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] .group.relative.h-1\.5,
+  html[data-native-shell='android'] [data-player-controls] .group.relative.h-2 {
+    margin-bottom: .35rem !important;
+  }
+
+  html[data-native-shell='android'] .mobile-player-more-action {
+    min-height: 2.35rem !important;
+    padding: .35rem .45rem !important;
+    font-size: .66rem !important;
+  }
+}

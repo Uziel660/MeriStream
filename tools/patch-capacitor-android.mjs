@@ -44,16 +44,18 @@ function setStyleItem(styleName, itemName, value) {
   if (start < 0) return false;
   const end = xml.indexOf('</style>', start);
   if (end < 0) throw new Error(`Malformed Android style: ${styleName}`);
-  let block = xml.slice(start, end);
-  const escapedName = itemName.replace(/[.*+?^$()|[\]\\]/g, '\\injectIntoStyle('AppTheme.NoActionBarLaunch');
 
-fs.writeFileSync(stylesPath, xml, 'utf8');
-console.log('Patched Capacitor Android window chrome for MeriStream.');
-');
-  const itemPattern = new RegExp(`<item\\s+name=["']${escapedName}["']>[^<]*<\\/item>`);
+  let block = xml.slice(start, end);
+  const itemToken = `<item name="${itemName}">`;
+  const itemStart = block.indexOf(itemToken);
   const nextItem = `<item name="${itemName}">${value}</item>`;
-  if (itemPattern.test(block)) block = block.replace(itemPattern, nextItem);
-  else block += `\n        ${nextItem}`;
+  if (itemStart >= 0) {
+    const itemEnd = block.indexOf('</item>', itemStart);
+    if (itemEnd < 0) throw new Error(`Malformed Android style item: ${itemName}`);
+    block = block.slice(0, itemStart) + nextItem + block.slice(itemEnd + '</item>'.length);
+  } else {
+    block += `\n        ${nextItem}`;
+  }
   xml = xml.slice(0, start) + block + xml.slice(end);
   return true;
 }

@@ -132,7 +132,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
   };
 
   return (
-    <section className="space-y-8 animate-in fade-in duration-300">
+    <section className="my-lists-view space-y-8 animate-in fade-in duration-300">
       {/* CABECERA PRINCIPAL */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
         <div>

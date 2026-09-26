@@ -113,6 +113,13 @@ if [[ "$MODE" == "full" ]]; then
   adb shell input keyevent 4
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-preferences-closed
 
+  # Watch Party create/join must also behave as a native sheet.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-watch-party
+  sleep 1
+  adb exec-out screencap -p > meristream-watch-party.png || true
+  adb shell input keyevent 4
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-watch-party-closed
+
   # Login/register is a native bottom sheet and must honor hardware Back.
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-auth
   adb exec-out screencap -p > meristream-auth.png || true
@@ -136,10 +143,19 @@ fi
 
 # Public HLS playback smoke, independent from the production Cloudflare gate.
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-native-player
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs play
 sleep "$PLAY_DELAY"
 adb exec-out screencap -p > "${PREFIX}-player.png" || true
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
+
+if [[ "$MODE" == "full" ]]; then
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-more
+  sleep 1
+  adb exec-out screencap -p > meristream-player-more.png || true
+  adb shell input keyevent 4
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
+fi
 
 adb shell dumpsys meminfo me.merith.meristream > "${PREFIX}-meminfo.txt" || true
 capture_logcat

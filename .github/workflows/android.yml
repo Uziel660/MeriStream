@@ -106,6 +106,7 @@ jobs:
             meristream-start.txt
             meristream-meminfo.txt
             meristream-logcat.txt
+            meristream-performance.txt
           if-no-files-found: warn
 
 
@@ -155,4 +156,5 @@ jobs:
             meristream-low-end-player.png
             meristream-low-end-meminfo.txt
             meristream-low-end-logcat.txt
+            meristream-low-end-performance.txt
           if-no-files-found: warn

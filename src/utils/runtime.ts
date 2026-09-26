@@ -9,6 +9,18 @@ export function isNativeShell(): boolean {
     && Boolean((window as any).Capacitor?.isNativePlatform?.());
 }
 
+/**
+ * Marks the Capacitor build before React renders so presentation CSS can use a
+ * native-only surface without forking the web application. This keeps Android
+ * updateable from the same React tree while allowing true mobile chrome.
+ */
+export function initializeNativePresentation(): void {
+  if (!isNativeShell() || typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.dataset.nativeShell = 'android';
+  root.classList.add('native-shell', 'native-shell-android');
+}
+
 export function backendBaseOrigin(): string {
   if (configuredOrigin) return configuredOrigin;
   if (isNativeShell()) return 'https://stream.merith.me';

@@ -735,31 +735,45 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (!nativeShell) return;
     const onNativeBack = (event: Event) => {
       const nativeEvent = event as CustomEvent;
-      if (subtitleSettingsOpen) {
+      const consumePlayerLayer = () => {
+        // preventDefault makes dispatchEvent() report the Back as consumed to
+        // the native bridge. stopImmediatePropagation keeps lower-priority
+        // window listeners (for example the catalog header) from reacting to
+        // the same hardware Back after the player has already handled it.
         nativeEvent.preventDefault();
+        nativeEvent.stopImmediatePropagation();
+      };
+
+      if (subtitleSettingsOpen) {
+        consumePlayerLayer();
         setSubtitleSettingsOpen(false);
         return;
       }
       // Mobile overflow is rendered inside the controls tree. Consume Android
       // Back here before any player/history navigation can run.
       if (activeMenu === 'more') {
-        nativeEvent.preventDefault();
+        consumePlayerLayer();
         setActiveMenu('none');
         setControlsVisible(true);
         return;
       }
       if (activeMenu !== 'none') {
-        nativeEvent.preventDefault();
+        consumePlayerLayer();
         setActiveMenu('none');
         return;
       }
       if (isWatchPartyPanelOpen) {
-        nativeEvent.preventDefault();
+        consumePlayerLayer();
         setIsWatchPartyPanelOpen(false);
         return;
       }
+      if (isJoinModalOpen) {
+        consumePlayerLayer();
+        setIsJoinModalOpen(false);
+        return;
+      }
       if (isScreenLocked) {
-        nativeEvent.preventDefault();
+        consumePlayerLayer();
         setIsScreenLocked(false);
         setShowLockWidget(false);
       }
@@ -2530,6 +2544,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       void nativeUnlockOrientation();
     };
   }, [props.isOpen, nativeShell]);
+
+  // Android may consume the first Back press itself while immersive system bars
+  // are hidden. When a player-owned overlay is visible, temporarily expose the
+  // system bars so hardware Back reaches MeriStream and closes the top-most
+  // layer. As soon as the overlay is gone the video returns to immersive mode.
+  const hasNativePlayerOverlay = subtitleSettingsOpen
+    || activeMenu !== 'none'
+    || isWatchPartyPanelOpen
+    || isJoinModalOpen;
+
+  useEffect(() => {
+    if (!props.isOpen || !nativeShell) return;
+    void nativeSetImmersive(!hasNativePlayerOverlay);
+  }, [props.isOpen, nativeShell, hasNativePlayerOverlay]);
 
   // Controles de Acción de Reproducción
   const enterNativeImmersive = async () => {

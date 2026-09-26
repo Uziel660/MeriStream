@@ -107,6 +107,7 @@ import {
 } from "./server/rateLimiter";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
 import { resolveByTmdb } from "./server/providerGateway";
+import { getDoramasflixHealth } from "./server/scrapers/adapters/DoramasflixAdapter";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
@@ -1794,6 +1795,17 @@ async function startServer() {
       const status = /obligatorio|no válido/i.test(message) ? 400 : 500;
       res.status(status).json({ error: message });
     }
+  });
+
+  // Estado mínimo público de proveedores upstream. No expone credenciales ni
+  // URLs firmadas; permite que el reproductor y soporte distingan una caída
+  // del proveedor de un fallo local de MeriStream.
+  app.get("/api/v1/providers/health", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      generated_at: new Date().toISOString(),
+      providers: { doramasflix: getDoramasflixHealth() },
+    });
   });
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
@@ -4852,6 +4864,9 @@ async function startServer() {
       hosts: getHostStats(),
       hostHealth: listHostHealth(),
       playerHealth: getProviderHealthStats(),
+      upstreamProviders: {
+        doramasflix: getDoramasflixHealth(),
+      },
     });
   });
 

@@ -5,15 +5,39 @@ import { EmbedResolvers } from "../../resolvers";
 import { MediaValidator } from "../../validator";
 import { enrichUniversalMetadata, type EnrichedMetadata } from "../../metadataEngine";
 import { ExternalIdResolver } from "../../subtitles/ExternalIdResolver";
+import { logPlayerEvent } from "../../networkLogger";
 
 const BASE_URL = "https://doramasflix.io";
 const GRAPHQL_URL = "https://user-api.fluxcedene.net/graphql";
 const GRAPHQL_APP = "com.asiapp.doramasgo";
 const CATALOG_PAGE_SIZE = 24;
-// Nuevo Next-Action vigente (descubierto live 2026-08-29 via Playwright intercept: getEpisodeLinks)
-const NEXT_ACTION_ID = "406bdec544eeb53cbefa09322cbda67963eb850496";
-const NEXT_ACTION_FALLBACK = "40c3671ad750012fd1bcbcb050c7894f427d37a8b1";
+// Next Server Actions cambian con cada build de Doramasflix. Estos IDs solo
+// sirven como fallback cuando el sitio no publica a tiempo todos sus chunks.
+const KNOWN_NEXT_ACTION_IDS = [
+  "40ded3561bfc76fcccd51c5807cc144d44a2dd719e", // vigente observado en vivo
+  "406bdec544eeb53cbefa09322cbda67963eb850496",
+  "40c3671ad750012fd1bcbcb050c7894f427d37a8b1",
+] as const;
+const NEXT_ACTION_ID = KNOWN_NEXT_ACTION_IDS[0];
+const NEXT_ACTION_FALLBACK = KNOWN_NEXT_ACTION_IDS[1];
 const externalIdResolver = new ExternalIdResolver();
+
+type DoramasflixHealth = {
+  state: "unknown" | "online" | "degraded";
+  lastCheckedAt?: number;
+  lastStatus?: number;
+  reason?: string;
+};
+
+let doramasflixHealth: DoramasflixHealth = { state: "unknown" };
+
+function recordDoramasflixHealth(next: Omit<DoramasflixHealth, "lastCheckedAt">): void {
+  doramasflixHealth = { ...next, lastCheckedAt: Date.now() };
+}
+
+export function getDoramasflixHealth(): DoramasflixHealth {
+  return { ...doramasflixHealth };
+}
 
 export class DoramasflixAdapter extends BaseScraperAdapter {
   readonly id = "doramasflix";
@@ -205,11 +229,22 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         },
         body: JSON.stringify({ query, variables }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        recordDoramasflixHealth({ state: "degraded", lastStatus: response.status, reason: `graphql_http_${response.status}` });
+        return null;
+      }
       const payload = await response.json() as { errors?: unknown[]; data?: unknown };
-      if (Array.isArray(payload.errors) && payload.errors.length > 0) return null;
+      if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+        recordDoramasflixHealth({ state: "degraded", reason: "graphql_errors" });
+        return null;
+      }
+      recordDoramasflixHealth({ state: "online" });
       return payload;
-    } catch {
+    } catch (error) {
+      recordDoramasflixHealth({
+        state: "degraded",
+        reason: error instanceof Error && error.name === "AbortError" ? "graphql_timeout" : "graphql_network_error",
+      });
       return null;
     } finally {
       clearTimeout(timer);
@@ -623,14 +658,22 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    */
   private async discoverNextActionId(html: string): Promise<string> {
     const chunkRegex = /\/_next\/static\/chunks\/[^"']+\.js/g;
-    const chunks = [...new Set(html.match(chunkRegex) || [])].slice(0, 8);
+    // No limitar a los primeros chunks: Doramasflix mueve la referencia de
+    // getEpisodeLinks entre builds y en la versión actual está después del
+    // octavo archivo. El límite evita que HTML corrupto dispare una tormenta.
+    const chunks = [...new Set(html.match(chunkRegex) || [])].slice(0, 64);
     if (chunks.length === 0) return NEXT_ACTION_ID;
 
     const controllers: AbortController[] = [];
     const timers: NodeJS.Timeout[] = [];
     try {
-      const results = await Promise.all(
-        chunks.map(async (c) => {
+      // Ocho workers cubren todos los chunks en paralelo sin abrir una
+      // conexión por cada asset. Así el descubrimiento no suma un timeout por
+      // cada grupo de archivos cuando el chunk vigente está al final.
+      let nextIndex = 0;
+      const worker = async (): Promise<string | null> => {
+        while (nextIndex < chunks.length) {
+          const c = chunks[nextIndex++];
           const controller = new AbortController();
           controllers.push(controller);
           const timer = setTimeout(() => controller.abort(), 3500);
@@ -640,14 +683,18 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
             const res = await fetch(full, { signal: controller.signal, headers: COMMON_HEADERS });
             if (!res.ok) return null;
             const text = await res.text();
-            const m = text.match(/createServerReference\("([a-f0-9]{40,64})"[^)]*"getEpisodeLinks"/);
-            return m ? m[1] : null;
+            const reference = text.match(/createServerReference\(\s*["']([a-f0-9]{40,64})["'][\s\S]{0,1200}?getEpisodeLinks/i);
+            return reference?.[1] || null;
           } catch {
             return null;
           } finally {
             clearTimeout(timer);
           }
-        })
+        }
+        return null;
+      };
+      const results = await Promise.all(
+        Array.from({ length: Math.min(8, chunks.length) }, () => worker()),
       );
       const found = results.find((v): v is string => !!v);
       if (found) return found;
@@ -655,9 +702,9 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       for (const t of timers) clearTimeout(t);
       for (const c of controllers) try { c.abort(); } catch {}
     }
-    const hexInHtml = html.match(/[a-f0-9]{40,42}/gi);
-    if (hexInHtml?.includes(NEXT_ACTION_ID)) return NEXT_ACTION_ID;
-    return NEXT_ACTION_ID;
+    const hexInHtml = html.match(/[a-f0-9]{40,64}/gi) || [];
+    const known = KNOWN_NEXT_ACTION_IDS.find((candidate) => hexInHtml.includes(candidate));
+    return known || NEXT_ACTION_ID;
   }
 
   /**
@@ -787,7 +834,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
         if (discovered && /^[a-f0-9]{40,64}$/i.test(discovered)) actionId = discovered;
       } catch {}
 
-      const tryActions = [actionId, NEXT_ACTION_FALLBACK].filter((v, i, a) => v && a.indexOf(v) === i);
+      const tryActions = [actionId, ...KNOWN_NEXT_ACTION_IDS].filter((v, i, a) => v && a.indexOf(v) === i);
 
       for (let attempt = 0; attempt < 2 && finalReachable.length === 0; attempt++) {
         let actionText: string | null = null;
@@ -850,6 +897,22 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       }
 
       if (finalReachable.length === 0) {
+        recordDoramasflixHealth({
+          state: doramasflixHealth.state === "online" ? "degraded" : doramasflixHealth.state,
+          lastStatus: doramasflixHealth.lastStatus,
+          reason: doramasflixHealth.lastStatus ? `upstream_http_${doramasflixHealth.lastStatus}` : "no_reachable_sources",
+        });
+        try {
+          logPlayerEvent({
+            eventType: "scraper_failed",
+            provider: "Doramasflix",
+            serverUrl: cleanUrl,
+            reason: doramasflixHealth.lastStatus ? `upstream_http_${doramasflixHealth.lastStatus}` : "no_reachable_sources",
+            details: "La página cargó, pero no hubo enlaces directos reproducibles.",
+          });
+        } catch {
+          // La telemetría no debe convertir un fallo de proveedor en un 500.
+        }
         return {
           stream_url: "",
           all_available_streams: [],

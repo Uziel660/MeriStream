@@ -53,6 +53,12 @@ describe("DeliveryPlanner", () => {
     expect(planner.classify(meta({ url: "https://notdirect.example/video.m3u8" }))).toBe("direct_trial");
   });
 
+  it("relays unstable providers before exposing their CDN to mobile browsers", () => {
+    expect(planner.classify(meta({ provider: "Doramasflix", url: "https://cdn.example/video.m3u8" }))).toBe("proxy_required");
+    expect(planner.classify(meta({ provider: "Streamtape CDN", url: "https://cdn.example/video.m3u8" }))).toBe("proxy_required");
+    expect(planner.classify(meta({ provider: "VidHide", url: "https://cdn.example/video.m3u8" }))).toBe("proxy_required");
+  });
+
   it("serializes defensively without mutating resolver metadata", () => {
     const source = meta({ requiredHeaders: { Referer: "https://embed.test/" } });
     const response = buildResolveDeliveryResponse(source, "regex_fast", planner);

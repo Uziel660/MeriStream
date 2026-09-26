@@ -7,6 +7,8 @@ export type DeliveryMode = "direct" | "direct_trial" | "proxy_required" | "embed
 export interface DeliveryPlannerOptions {
   /** Provider names that have been verified to play directly in a browser. */
   directProviders?: readonly string[];
+  /** Provider names that should use the server relay before exposing a CDN to the browser. */
+  proxyProviders?: readonly string[];
   /** Exact hosts or parent domains that have been verified to support browser playback. */
   directHosts?: readonly string[];
 }
@@ -33,10 +35,24 @@ function matchesHost(hostname: string, configuredHost: string): boolean {
  */
 export class DeliveryPlanner {
   private readonly directProviders: ReadonlySet<string>;
+  private readonly proxyProviders: ReadonlySet<string>;
   private readonly directHosts: readonly string[];
 
   constructor(options: DeliveryPlannerOptions = {}) {
     this.directProviders = new Set((options.directProviders ?? []).map(normalizeIdentity).filter(Boolean));
+    // Estos proveedores suelen entregar URLs firmadas, hotlink-protected o
+    // inestables. Relaying them desde MeriStream evita que el móvil dependa
+    // directamente del CDN externo. La lista es deliberadamente acotada.
+    this.proxyProviders = new Set([
+      "doramasflix",
+      "streamtape",
+      "streamtape cdn",
+      "doodstream",
+      "doodstream cdn",
+      "vidhide",
+      "vidhide cdn",
+      ...(options.proxyProviders ?? []),
+    ].map(normalizeIdentity).filter(Boolean));
     this.directHosts = Object.freeze([...(options.directHosts ?? [])]);
   }
 
@@ -44,6 +60,11 @@ export class DeliveryPlanner {
     if (!meta.resolved || meta.is_proxyable === false || meta.type === "embed") return "embed";
     if (meta.requiredHeaders && Object.keys(meta.requiredHeaders).length > 0) return "proxy_required";
     if (hasExplicitHostProfile(meta.url)) return "proxy_required";
+
+    const provider = normalizeIdentity(meta.provider);
+    if (provider && [...this.proxyProviders].some((candidate) =>
+      provider === candidate || provider.includes(candidate) || candidate.includes(provider),
+    )) return "proxy_required";
 
     if (this.directProviders.has(normalizeIdentity(meta.provider))) return "direct";
     const hostname = hostnameOf(meta.url);

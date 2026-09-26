@@ -117,6 +117,12 @@ DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs performance | tee "${PRE
 
 if [[ "$MODE" == "low-end" ]]; then
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-low-end-mode
+  # Capture the actual catalog UI on Android 10 even when GitHub's public
+  # backend request is challenged. This uses the same local fixture as the
+  # Android 15 visual run and leaves performance measurement above untouched.
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs seed-catalog
+  sleep 1
+  adb exec-out screencap -p > "${PREFIX}-catalog-seeded.png" || true
 fi
 
 if [[ "$MODE" == "full" ]]; then

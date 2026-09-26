@@ -159,6 +159,7 @@ jobs:
           path: |
             meristream-low-end-start.txt
             meristream-low-end-startup.png
+            meristream-low-end-catalog-seeded.png
             meristream-low-end-player.png
             meristream-low-end-player-more.png
             meristream-low-end-meminfo.txt

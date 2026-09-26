@@ -3259,13 +3259,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               showLockWidgetTemporarily();
               return;
             }
-            if (activeServer && !activeServer.isEmbed) {
-              if (activeMenu !== 'none') {
-                setActiveMenu('none');
-              } else {
-                togglePlay();
-              }
+            if (activeMenu !== 'none') {
+              setActiveMenu('none');
+              return;
             }
+            if (nativeShell) {
+              // Mobile streaming convention: a single tap reveals controls;
+              // play/pause is explicit, while double-tap handles seeking.
+              showControlsTemporarily();
+              return;
+            }
+            if (activeServer && !activeServer.isEmbed) togglePlay();
           }}
           onDoubleClick={isScreenLocked ? undefined : handlePlayerDoubleClick}
         >
@@ -3556,6 +3560,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                 {/* THUMB DE SEGUIMIENTO */}
                 <div
+                  data-player-scrubber-thumb
                   className={`absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity ${
                     isViewerMode ? 'hidden' : ''
                   }`}

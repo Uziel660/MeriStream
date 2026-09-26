@@ -729,6 +729,7 @@ html[data-native-shell='android'] .preferences-panel {
   width: 100% !important;
   max-width: none !important;
   max-height: min(92dvh, 52rem) !important;
+  overflow-x: hidden !important;
   margin: 0 !important;
   padding: 1rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.8rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
   border: 1px solid rgba(255,255,255,.09) !important;
@@ -737,6 +738,13 @@ html[data-native-shell='android'] .preferences-panel {
   background: #0c0f14 !important;
   box-shadow: 0 -18px 48px rgba(0,0,0,.52) !important;
   animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+/* The web footer uses -mx-5 to reach a 1.25rem panel edge. Android reduces
+ * that padding to 1rem, so the old negative margin creates horizontal scroll. */
+html[data-native-shell='android'] .preferences-panel > .sticky {
+  margin-inline: 0 !important;
+  padding-inline: 0 !important;
 }
 
 @media (max-width: 639px) {

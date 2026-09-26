@@ -240,7 +240,7 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const exploreTab = MAIN_QUICK_FILTERS.find(f => f.id === 'explore')!;
 
   return (
-    <header id="main-unified-header" className={`site-header ${atTop ? 'is-at-top' : ''} ${mobileSearchOpen ? 'has-search-open' : ''} ${mobileNavOpen ? 'has-mobile-nav-open' : ''} ${mobileChromeHidden ? 'is-chrome-hidden' : ''}`}>
+    <header id="main-unified-header" className={`site-header ${atTop ? 'is-at-top' : ''} ${mobileSearchOpen ? 'has-search-open' : ''} ${mobileNavOpen ? 'has-mobile-nav-open' : ''} ${isUserMenuOpen ? 'has-account-open' : ''} ${mobileChromeHidden ? 'is-chrome-hidden' : ''}`}>
       <div className="header-inner">
         <div className="header-top">
           <a href="/" onClick={e => { e.preventDefault(); handleSelectTab('all'); }} className="brand" aria-label="MeriStream, inicio">

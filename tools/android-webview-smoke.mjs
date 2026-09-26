@@ -318,8 +318,9 @@ try {
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
   } else if (action === 'open-player-party') {
+    await evaluate(call, `document.querySelector('button[aria-label="Más controles"]')?.click()`);
+    await delay(200);
     const opened = await evaluate(call, `(() => {
-      document.querySelector('button[aria-label="Más controles"]')?.click();
       const action = [...document.querySelectorAll('.mobile-player-more-action')].find((node) => /ver en grupo|watch party/i.test(node.textContent || ''));
       action?.click();
       return Boolean(action);

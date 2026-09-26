@@ -727,27 +727,72 @@ html[data-native-shell='android'] .preferences-panel {
 
 @media (max-width: 639px) {
   html[data-native-shell='android'] .catalog-content {
-    gap: 1.35rem !important;
+    gap: 1.15rem !important;
   }
 
   html[data-native-shell='android'] .feature {
-    margin-top: .55rem !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin-top: .35rem !important;
+    padding-bottom: .75rem !important;
+    border-bottom: 0 !important;
   }
 
   html[data-native-shell='android'] .feature-art {
-    height: clamp(12.5rem, 54vw, 17rem) !important;
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: clamp(10.5rem, 42vw, 13.5rem) !important;
     border-radius: .7rem !important;
   }
 
   html[data-native-shell='android'] .feature-content {
-    padding-top: .8rem !important;
+    width: 100% !important;
+    height: auto !important;
+    padding: .72rem .95rem 0 !important;
+    margin: 0 !important;
+  }
+
+  html[data-native-shell='android'] .feature .eyebrow,
+  html[data-native-shell='android'] .feature-genres {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .feature-meta {
+    margin: 0 0 .42rem !important;
+    gap: .4rem !important;
+  }
+
+  html[data-native-shell='android'] .feature h1,
+  html[data-native-shell='android'] .feature-title {
+    max-width: 11ch !important;
+    margin: 0 !important;
+    font-size: clamp(2rem, 10vw, 3rem) !important;
+    line-height: .9 !important;
+    letter-spacing: -.055em !important;
   }
 
   html[data-native-shell='android'] .feature-synopsis {
+    max-width: none !important;
+    margin-top: .55rem !important;
     display: -webkit-box;
     overflow: hidden;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
+    font-size: .82rem !important;
+    line-height: 1.45 !important;
+  }
+
+  html[data-native-shell='android'] .feature-actions {
+    margin-top: .72rem !important;
+    gap: .45rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-actions .button-primary,
+  html[data-native-shell='android'] .feature-actions .button-secondary {
+    min-height: 2.65rem !important;
+    padding: .58rem .8rem !important;
+    font-size: .78rem !important;
   }
 }
 

@@ -741,6 +741,16 @@ html[data-native-shell='android'] .preferences-panel {
     gap: 1.15rem !important;
   }
 
+  /* The web immersive layout intentionally pulls the home rails upward into
+   * the full-bleed hero. Android uses an in-flow compact hero, so that negative
+   * overlap would place "Recién agregados" on top of the hero actions. Keep a
+   * clean native separation instead. */
+  html[data-native-shell='android'] .catalog-content-home {
+    margin-top: 0 !important;
+    padding-top: 1rem !important;
+    background: #07080d !important;
+  }
+
   html[data-native-shell='android'] .feature {
     height: auto !important;
     min-height: 0 !important;

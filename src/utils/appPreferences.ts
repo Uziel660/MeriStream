@@ -1,3 +1,5 @@
+import { isNativeShell } from './runtime';
+
 export type PreferredQuality = 'auto' | '1080p' | '720p' | '480p';
 export type SubtitlePosition = 'bottom' | 'center' | 'top' | 'custom';
 export type ContrastMode = 'standard' | 'high';
@@ -73,6 +75,19 @@ function normalizeInterfaceStyle(value: unknown): InterfaceStyle {
   return value === 'glass' || value === 'noir' || value === 'aurora' ? value : 'cinematic';
 }
 
+function effectivePerformanceMode(mode: PerformanceMode): PerformanceMode {
+  if (mode !== 'auto' || !isNativeShell() || typeof navigator === 'undefined') return mode;
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const memory = Number(nav.deviceMemory || 0);
+  const cores = Number(nav.hardwareConcurrency || 0);
+
+  // Android defaults to a cheap presentation path. Very constrained devices
+  // get the low-cost layer; everything else uses balanced mode. Users can
+  // still explicitly choose quality/low/balanced in Preferences.
+  if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4)) return 'low';
+  return 'balanced';
+}
+
 function clampPosition(value: unknown, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -124,7 +139,8 @@ export function applyAppPreferencesToDocument(userId?: string | null): AppPrefer
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.msContrast = preferences.contrast;
     document.documentElement.dataset.msReduceMotion = preferences.reduceMotion ? 'true' : 'false';
-    document.documentElement.dataset.msPerformance = preferences.performanceMode;
+    document.documentElement.dataset.msPerformancePreference = preferences.performanceMode;
+    document.documentElement.dataset.msPerformance = effectivePerformanceMode(preferences.performanceMode);
     document.documentElement.dataset.msStyle = preferences.interfaceStyle;
   }
   if (typeof window !== 'undefined') {

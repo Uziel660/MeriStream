@@ -972,33 +972,61 @@ export function App() {
     }
 
     if (isAuthenticated && user?.id) {
-      api.getProgress().then((res) => {
-        if (Array.isArray(res?.items) && res.items.length > 0) {
-          const serverItems = res.items as WatchProgress[];
-          const mergedMap = new Map<string, WatchProgress>();
-          for (const item of serverItems) mergedMap.set(item.episodeId, item);
-          for (const item of local) {
-            const existing = mergedMap.get(item.episodeId);
-            if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
-              mergedMap.set(item.episodeId, item);
+      let cancelled = false;
+      const syncRemoteProgress = () => {
+        if (cancelled) return;
+        api.getProgress().then((res) => {
+          if (cancelled) return;
+          if (Array.isArray(res?.items) && res.items.length > 0) {
+            const serverItems = res.items as WatchProgress[];
+            const mergedMap = new Map<string, WatchProgress>();
+            for (const item of serverItems) mergedMap.set(item.episodeId, item);
+            for (const item of local) {
+              const existing = mergedMap.get(item.episodeId);
+              if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
+                mergedMap.set(item.episodeId, item);
+              }
             }
+            const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
+            setContinueWatchingItems(mergedList);
+            try {
+              localStorage.setItem(key, JSON.stringify(mergedList));
+            } catch {}
+          } else if (local.length > 0) {
+            local.forEach((item) => {
+              api.saveProgress(item).catch(() => {});
+            });
           }
-          const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
-          setContinueWatchingItems(mergedList);
-          try {
-            localStorage.setItem(key, JSON.stringify(mergedList));
-          } catch {}
-        } else if (local.length > 0) {
-          // Si el servidor está vacío pero tenemos progreso local, sincronizar al servidor
-          local.forEach((item) => {
-            api.saveProgress(item).catch(() => {});
-          });
-        }
-      }).catch((e) => {
-        console.warn('Error sincronizando progreso con servidor:', e);
-      });
+        }).catch((e) => {
+          if (!cancelled) console.warn('Error sincronizando progreso con servidor:', e);
+        });
+      };
+
+      if (!nativeShell) {
+        syncRemoteProgress();
+        return () => { cancelled = true; };
+      }
+
+      // The local list is already rendered. Let the first Android frame and
+      // catalog image work settle before competing for bridge/network time.
+      const win = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      let timeoutId: number | null = null;
+      let idleId: number | null = null;
+      if (typeof win.requestIdleCallback === 'function') {
+        idleId = win.requestIdleCallback(syncRemoteProgress, { timeout: 1600 });
+      } else {
+        timeoutId = window.setTimeout(syncRemoteProgress, 650);
+      }
+      return () => {
+        cancelled = true;
+        if (idleId !== null) win.cancelIdleCallback?.(idleId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+      };
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, nativeShell]);
 
   // Cargar rieles de recomendación personalizadas del algoritmo y el Hero Pick
   const fetchRecommendations = useCallback(async (forceRefresh = false) => {
@@ -1039,8 +1067,35 @@ export function App() {
   }, [isShowHidden, user?.id]);
 
   useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations, user]);
+    const recommendationKey = user?.id ? String(user.id) : 'anonymous';
+    const cached = readRecommendationCache(recommendationKey);
+
+    // Cached recommendations are cheap and useful immediately. A cold network
+    // recommendation request is non-critical on Android, so schedule it after
+    // first interaction/paint rather than racing the catalog and images.
+    if (cached || !nativeShell || activeFilter === 'recommendations') {
+      void fetchRecommendations();
+      return;
+    }
+
+    const win = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const run = () => { void fetchRecommendations(); };
+    if (typeof win.requestIdleCallback === 'function') {
+      idleId = win.requestIdleCallback(run, { timeout: 1800 });
+    } else {
+      timeoutId = window.setTimeout(run, 800);
+    }
+
+    return () => {
+      if (idleId !== null) win.cancelIdleCallback?.(idleId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [fetchRecommendations, user?.id, nativeShell, activeFilter]);
 
   // Eliminar un item de "Seguir Viendo" del estado, storage y servidor
   const removeContinueWatchingItem = useCallback((episodeIdOrShowId: string, showId?: string) => {
@@ -1287,7 +1342,7 @@ export function App() {
       false,
       1,
       false,
-      HOME_CATALOG_FIRST_BATCH_SIZE,
+      nativeShell ? PUBLIC_CATALOG_BATCH_SIZE : HOME_CATALOG_FIRST_BATCH_SIZE,
     );
     if (!firstBatch?.usedPublicCatalog || !firstBatch.hasMore) return;
 

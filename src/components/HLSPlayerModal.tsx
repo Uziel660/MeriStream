@@ -2445,10 +2445,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   // 5. ATAJOS DE TECLADO Y FULLSCREEN
   useEffect(() => {
+    if (nativeShell) return;
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
+  }, [nativeShell]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2555,9 +2556,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   useEffect(() => {
     if (!props.isOpen || !nativeShell) return;
+    setIsFullscreen(true);
     void nativeSetImmersive(true);
     void nativeLockLandscape();
     return () => {
+      setIsFullscreen(false);
       void nativeSetImmersive(false);
       void nativeUnlockOrientation();
     };
@@ -2566,26 +2569,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // Controles de Acción de Reproducción
   const enterNativeImmersive = async () => {
     if (!isNativeShell()) return;
-    const node = containerRef.current;
+    setIsFullscreen(true);
     await nativeSetImmersive(true);
     await nativeLockLandscape();
-    try {
-      if (node && !document.fullscreenElement && typeof node.requestFullscreen === 'function') {
-        await node.requestFullscreen();
-      }
-    } catch {
-      // Native SystemBars + orientation already provide immersive playback
-      // when WebView fullscreen requires a stricter user-activation window.
-    }
   };
 
   const leaveNativeImmersive = () => {
     if (!isNativeShell()) return;
+    setIsFullscreen(false);
     void nativeSetImmersive(false);
     void nativeUnlockOrientation();
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
   };
 
   const togglePlay = () => {
@@ -2695,17 +2688,18 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const toggleFullscreen = async () => {
     const node = containerRef.current;
     if (!node) return;
-    if (document.fullscreenElement) {
-      try {
-        await document.exitFullscreen();
-      } finally {
-        if (isNativeShell()) {
-          await nativeSetImmersive(false);
-          await nativeUnlockOrientation();
-        }
+
+    if (nativeShell) {
+      if (isFullscreen) {
+        leaveNativeImmersive();
+      } else {
+        await enterNativeImmersive();
       }
-    } else if (isNativeShell()) {
-      await enterNativeImmersive();
+      return;
+    }
+
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
     } else {
       await node.requestFullscreen();
     }

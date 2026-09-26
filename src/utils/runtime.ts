@@ -150,7 +150,10 @@ export function installNativeBackBridge(): void {
       || Boolean(window.location.search)
       || Boolean(window.location.hash);
 
-    if ((hasTransientOverlay || hasRoutedScreen || hasCatalogState) && event?.canGoBack !== false) {
+    // Our React shell owns these history entries. Android's canGoBack value
+    // describes the WebView stack and can be false even while a MeriStream
+    // transient route is intentionally waiting to be popped.
+    if (hasTransientOverlay || hasRoutedScreen || hasCatalogState) {
       window.history.back();
       return;
     }

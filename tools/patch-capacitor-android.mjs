@@ -38,8 +38,90 @@ if (!injectIntoStyle('AppTheme.NoActionBar')) {
 }
 injectIntoStyle('AppTheme.NoActionBarLaunch');
 
+function setStyleItem(styleName, itemName, value) {
+  const startToken = `<style name="${styleName}"`;
+  const start = xml.indexOf(startToken);
+  if (start < 0) return false;
+  const end = xml.indexOf('</style>', start);
+  if (end < 0) throw new Error(`Malformed Android style: ${styleName}`);
+  let block = xml.slice(start, end);
+  const escapedName = itemName.replace(/[.*+?^$()|[\]\\]/g, '\\injectIntoStyle('AppTheme.NoActionBarLaunch');
+
 fs.writeFileSync(stylesPath, xml, 'utf8');
 console.log('Patched Capacitor Android window chrome for MeriStream.');
+');
+  const itemPattern = new RegExp(`<item\\s+name=["']${escapedName}["']>[^<]*<\\/item>`);
+  const nextItem = `<item name="${itemName}">${value}</item>`;
+  if (itemPattern.test(block)) block = block.replace(itemPattern, nextItem);
+  else block += `\n        ${nextItem}`;
+  xml = xml.slice(0, start) + block + xml.slice(end);
+  return true;
+}
+
+// Brand the OS-owned launch window as well as the WebView surface.
+setStyleItem('AppTheme.NoActionBarLaunch', 'android:background', '@drawable/meristream_splash');
+setStyleItem('AppTheme.NoActionBarLaunch', 'windowSplashScreenBackground', '@color/meristream_splash_background');
+setStyleItem('AppTheme.NoActionBarLaunch', 'windowSplashScreenAnimatedIcon', '@drawable/meristream_launcher_foreground');
+setStyleItem('AppTheme.NoActionBarLaunch', 'postSplashScreenTheme', '@style/AppTheme.NoActionBar');
+
+fs.writeFileSync(stylesPath, xml, 'utf8');
+console.log('Patched Capacitor Android window chrome for MeriStream.');
+
+const resRoot = path.resolve('android/app/src/main/res');
+const ensureDir = (relative) => fs.mkdirSync(path.join(resRoot, relative), { recursive: true });
+for (const dir of ['values', 'drawable', 'mipmap-anydpi', 'mipmap-anydpi-v26']) ensureDir(dir);
+
+const brandColors = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="meristream_splash_background">#050608</color>
+    <color name="meristream_launcher_background">#050608</color>
+</resources>
+`;
+
+const launcherVector = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,18 A36,36 0,1 1,53.9,18"
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#F4B33F"
+        android:strokeWidth="7"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M48,36 L77,54 L48,72 Z"
+        android:fillColor="#F4B33F" />
+</vector>
+`;
+
+const splashDrawable = `<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/meristream_splash_background" />
+    <item
+        android:drawable="@drawable/meristream_launcher_foreground"
+        android:gravity="center"
+        android:width="108dp"
+        android:height="108dp" />
+</layer-list>
+`;
+
+const adaptiveIcon = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/meristream_launcher_background" />
+    <foreground android:drawable="@drawable/meristream_launcher_foreground" />
+</adaptive-icon>
+`;
+
+fs.writeFileSync(path.join(resRoot, 'values/meristream_brand.xml'), brandColors, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'drawable/meristream_launcher_foreground.xml'), launcherVector, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'drawable/meristream_splash.xml'), splashDrawable, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'mipmap-anydpi/ic_launcher.xml'), launcherVector, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'mipmap-anydpi/ic_launcher_round.xml'), launcherVector, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'mipmap-anydpi-v26/ic_launcher.xml'), adaptiveIcon, 'utf8');
+fs.writeFileSync(path.join(resRoot, 'mipmap-anydpi-v26/ic_launcher_round.xml'), adaptiveIcon, 'utf8');
+console.log('Generated MeriStream adaptive launcher icon and native splash.');
 
 function findMainActivity(dir) {
   if (!fs.existsSync(dir)) return null;

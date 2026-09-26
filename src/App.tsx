@@ -23,6 +23,7 @@ import { displayEpisodeTitle } from './utils/episodeLabels';
 import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
+import { isNativeShell } from './utils/runtime';
 
 const getContinueWatchingStorageKey = (userId?: string | null): string =>
   userId ? `meristream_continue_watching_${userId}` : 'meristream_guest_continue_watching_v1';
@@ -636,16 +637,19 @@ export function mergeSearchCatalogRows(localRows: Show[], publicRows: Show[]): S
 export function App() {
   const { user, isAuthenticated, openAuthModal } = useAuth();
   const { isGenreHidden, isShowHidden } = useHiddenGenres();
+  const nativeShell = isNativeShell();
+  const browseGridBatchSize = nativeShell ? 36 : 100;
+  const homeGridBatchSize = nativeShell ? 24 : HOME_GRID_INITIAL_SIZE;
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => readAppUrlState().searchQuery);
   const [serverSearchResults, setServerSearchResults] = useState<Show[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>(() => readAppUrlState().filter);
-  const [gridPageSize, setGridPageSize] = useState(100);
+  const [gridPageSize, setGridPageSize] = useState(() => browseGridBatchSize);
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
-  const [catalogPageSize, setCatalogPageSize] = useState(HOME_GRID_INITIAL_SIZE);
+  const [catalogPageSize, setCatalogPageSize] = useState(() => homeGridBatchSize);
   const [publicCatalogPage, setPublicCatalogPage] = useState(1);
   const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
   const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
@@ -1296,7 +1300,7 @@ export function App() {
       // `kind=all&limit=60` consumes three TMDB pages per request. The state
       // stores the last page already consumed, so continue at the next one.
       await fetchFreshCatalog(true, publicCatalogPage + 1, true);
-      setCatalogPageSize((previous) => previous + PUBLIC_CATALOG_BATCH_SIZE);
+      setCatalogPageSize((previous) => previous + (nativeShell ? homeGridBatchSize : PUBLIC_CATALOG_BATCH_SIZE));
     } finally {
       setIsLoadingMoreCatalog(false);
     }
@@ -1384,8 +1388,8 @@ export function App() {
 
   const handleSelectCategory = (filter: string) => {
     setActiveFilter(filter);
-    setGridPageSize(100);
-    if (filter === 'all') setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setGridPageSize(browseGridBatchSize);
+    if (filter === 'all') setCatalogPageSize(homeGridBatchSize);
 
     navigateAppRoute(
       '/',
@@ -1409,7 +1413,7 @@ export function App() {
 
   const handleExploreGenreFilter = (genre: string | null) => {
     setExploreGenreFilter(genre);
-    setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize(homeGridBatchSize);
     navigateAppRoute('/', { filter: 'explore', genre: genre || null }, 'replace', 'catalog');
     if (!genre) return;
     const genreKey = publicGenreKey(genre);
@@ -2143,7 +2147,7 @@ export function App() {
     ? isLoadingMorePublicGenre[exploreGenreKey]
     : isLoadingMoreCatalog);
   const loadMoreExploreCatalog = (hasHiddenItems = false) => {
-    setCatalogPageSize((previous) => previous + HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize((previous) => previous + homeGridBatchSize);
     if (hasHiddenItems) return Promise.resolve();
     return exploreGenreId
       ? loadMorePublicGenre(exploreGenreKey)
@@ -2242,7 +2246,7 @@ export function App() {
       // No hacemos una petición si todavía hay obras ya descargadas que el
       // usuario aún no ha recorrido: basta con ampliar la ventana renderizada.
       const request = activeCategoryHasHiddenLocal
-        ? Promise.resolve(setGridPageSize((previous) => previous + 100))
+        ? Promise.resolve(setGridPageSize((previous) => previous + browseGridBatchSize))
         : activeFilter === 'all'
           ? loadMorePublicCatalog()
           : activeFilter === 'explore'
@@ -2328,9 +2332,9 @@ export function App() {
                     className="search-filter-bar"
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
                   />
 
                   {filteredShows.length === 0 ? (
@@ -2344,7 +2348,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="search-empty-reset"
                       >
@@ -2367,7 +2371,7 @@ export function App() {
                         <div className="flex justify-center pt-6">
                           <button
                             type="button"
-                            onClick={() => setGridPageSize(prev => prev + 100)}
+                            onClick={() => setGridPageSize(prev => prev + browseGridBatchSize)}
                             className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
                           >
                             Cargar más ({filteredShows.length - gridPageSize} restantes)
@@ -2439,9 +2443,9 @@ export function App() {
                   genreFilter={exploreGenreFilter}
                   onGenreFilter={handleExploreGenreFilter}
                   yearFilter={yearFilter}
-                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(browseGridBatchSize); }}
                   sortBy={sortBy}
-                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
+                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(browseGridBatchSize); }}
                   catalogPageSize={catalogPageSize}
                   onLoadMore={loadMoreExploreCatalog}
                   hasMore={exploreHasMore}
@@ -2463,9 +2467,9 @@ export function App() {
                   <CatalogFilters
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
                   />
 
                   {filteredShows.length === 0 && activeRemoteLoading ? (
@@ -2485,7 +2489,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="text-xs text-amber-400 hover:underline font-semibold"
                       >

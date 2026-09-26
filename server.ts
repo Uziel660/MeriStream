@@ -3991,6 +3991,16 @@ async function startServer() {
       }
 
       const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
+      const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
+      // Pixeldrain's API file response is a valid MP4 for server-side range
+      // checks but is blocked by Chromium's ORB when the player requests it
+      // cross-origin. Keep its stable locator and relay the bytes through our
+      // CORS proxy so the browser receives the same media without a provider
+      // redirect or an expiring signed URL.
+      const browserSafeDirectUrl = (value: string): string => {
+        if (!/^https?:\/\/(?:www\.)?pixeldrain\.com\/api\/file\//i.test(value)) return value;
+        return `/api/v1/proxy/stream?referer=${encodeURIComponent(url)}&url=${encodeURIComponent(value)}${sourceSite ? `&provider=${encodeURIComponent(sourceSite)}` : ''}`;
+      };
 
       // LatAnime's adapter already validates direct HLS candidates against the
       // manifest and first segment. Do not spend another 3s per fallback embed
@@ -4004,10 +4014,10 @@ async function startServer() {
         ? extracted.stream_url
         : "";
       if (fastDirect) {
-        const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
         const fastRankedStreams = rankedBase
           .map((stream) => ({
             ...stream,
+            url: stream.type === "direct" ? browserSafeDirectUrl(stream.url) : stream.url,
             provider: sourceSite,
             source_site: sourceSite,
             original_url: url,
@@ -4041,8 +4051,8 @@ async function startServer() {
         });
         return res.json({
           url,
-          stream_url: fastDirect,
-          all_available_streams: all,
+          stream_url: browserSafeDirectUrl(fastDirect),
+          all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
           title: extracted.title,
           resolved: true,
           ranked_streams: safeFastRanked,

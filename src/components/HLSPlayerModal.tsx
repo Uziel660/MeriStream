@@ -740,6 +740,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         setSubtitleSettingsOpen(false);
         return;
       }
+      // Mobile overflow is rendered inside the controls tree. Consume Android
+      // Back here before any player/history navigation can run.
+      if (activeMenu === 'more') {
+        nativeEvent.preventDefault();
+        setActiveMenu('none');
+        setControlsVisible(true);
+        return;
+      }
       if (activeMenu !== 'none') {
         nativeEvent.preventDefault();
         setActiveMenu('none');

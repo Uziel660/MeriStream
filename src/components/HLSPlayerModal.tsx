@@ -65,6 +65,7 @@ import {
   nativeLockLandscape,
   nativeSetImmersive,
   nativeShare,
+  setNativePlayerMoreRendering,
   nativeUnlockOrientation,
 } from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
@@ -2561,6 +2562,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (!props.isOpen || !nativeShell) return;
     void nativeSetImmersive(!hasNativePlayerOverlay);
   }, [props.isOpen, nativeShell, hasNativePlayerOverlay]);
+
+  useEffect(() => {
+    if (!nativeShell || document.documentElement.dataset.nativeLegacyWebview !== 'true') return;
+    setNativePlayerMoreRendering(activeMenu === 'more');
+    return () => {
+      if (activeMenu === 'more') setNativePlayerMoreRendering(false);
+    };
+  }, [activeMenu, nativeShell]);
 
   // Controles de Acción de Reproducción
   const enterNativeImmersive = async () => {

@@ -1,5 +1,6 @@
 import {
   nativeAppBinding,
+  nativeAndroidRenderCompatibilityBinding,
   nativeBindingsReady,
   nativeHapticsBinding,
   nativeScreenOrientationBinding,
@@ -30,7 +31,9 @@ function nativePlugin(name: string): any | null {
           ? nativeSystemBarsBinding
           : name === 'Share'
             ? nativeShareBinding
-            : null;
+            : name === 'AndroidRenderCompatibility'
+              ? nativeAndroidRenderCompatibilityBinding
+              : null;
   if (imported) return imported;
 
   // Fallback only for bridge-provided/built-in plugins. Official plugins use
@@ -148,6 +151,19 @@ export async function nativeSetImmersive(hidden: boolean): Promise<void> {
   } catch {
     // CSS/Java system-bar fallbacks remain active when the plugin is absent.
   }
+}
+
+/**
+ * Older Android WebViews can lose GPU-painted text in the player's More sheet.
+ * Switch only that short-lived legacy overlay to software rendering, then
+ * restore normal WebView acceleration as soon as the sheet closes.
+ */
+export function setNativePlayerMoreRendering(open: boolean): void {
+  if (!isNativeShell()) return;
+  const renderer = nativePlugin('AndroidRenderCompatibility');
+  if (typeof renderer?.setMoreMenuOpen !== 'function') return;
+  const task = renderer.setMoreMenuOpen({ open });
+  if (task?.catch) task.catch(() => {});
 }
 
 let nativeBackBridgeInstalled = false;

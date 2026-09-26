@@ -146,20 +146,24 @@ export class TudoramaAdapter extends BaseScraperAdapter {
   }
 
   private async fetchEpisodes(postId: string, season: number, nonce: string, results: number, offset: number, referer: string): Promise<any | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
     try {
-      const response = await fetch(AJAX_URL, { method: "POST", headers: { ...COMMON_HEADERS, Accept: "application/json, text/javascript, */*; q=0.01", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", Referer: referer, Origin: BASE_URL }, body: new URLSearchParams({ action: "corvus_get_episodes", nonce, post_id: postId, season: String(season), results: String(results), offset: String(offset), order: "DESC" }).toString() });
+      const response = await fetch(AJAX_URL, { method: "POST", signal: controller.signal, headers: { ...COMMON_HEADERS, Accept: "application/json, text/javascript, */*; q=0.01", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", Referer: referer, Origin: BASE_URL }, body: new URLSearchParams({ action: "corvus_get_episodes", nonce, post_id: postId, season: String(season), results: String(results), offset: String(offset), order: "DESC" }).toString() });
       return response.ok ? await response.json() : null;
-    } catch { return null; }
+    } catch { return null; } finally { clearTimeout(timer); }
   }
 
   private async fetchServers(postId: string, nonce: string, referer: string): Promise<Array<{ url: string; name?: string; lang?: string; type?: string; server?: string }>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
     try {
-      const response = await fetch(AJAX_URL, { method: "POST", headers: { ...COMMON_HEADERS, Accept: "application/json, text/javascript, */*; q=0.01", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", Referer: referer, Origin: BASE_URL }, body: new URLSearchParams({ action: "corvus_get_servers", nonce, post_id: postId }).toString() });
+      const response = await fetch(AJAX_URL, { method: "POST", signal: controller.signal, headers: { ...COMMON_HEADERS, Accept: "application/json, text/javascript, */*; q=0.01", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", Referer: referer, Origin: BASE_URL }, body: new URLSearchParams({ action: "corvus_get_servers", nonce, post_id: postId }).toString() });
       if (!response.ok) return [];
       const payload = await response.json();
       const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
       return rows.filter((row: any) => row && typeof row.url === "string").map((row: any) => ({ url: row.url, name: row.name, lang: row.lang, type: row.type, server: row.server }));
-    } catch { return []; }
+    } catch { return []; } finally { clearTimeout(timer); }
   }
 
   private async unwrapServer(url: string, referer: string): Promise<string | null> {

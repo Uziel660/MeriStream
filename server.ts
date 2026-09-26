@@ -433,6 +433,7 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
   return sortStreamsByPriority(
     entries.map((url) => ({
       url,
+      type: EmbedResolvers.isDirectMediaUrl(url) ? "direct" as const : "embed" as const,
       tier: getStreamTier(url),
       host: (() => {
         try {

@@ -2476,6 +2476,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, [onClose, props, isAppRoutedPlayer]);
 
+  useEffect(() => {
+    if (!props.isOpen || !nativeShell) return;
+    void nativeSetImmersive(true);
+    void nativeLockLandscape();
+    return () => {
+      void nativeSetImmersive(false);
+      void nativeUnlockOrientation();
+    };
+  }, [props.isOpen, nativeShell]);
+
   // Controles de Acción de Reproducción
   const enterNativeImmersive = async () => {
     if (!isNativeShell()) return;

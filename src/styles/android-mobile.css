@@ -567,3 +567,103 @@ html[data-native-shell='android'] .feature-actions .button-secondary {
     contain: layout paint style;
   }
 }
+
+
+/* Account and preferences use mobile sheets instead of desktop popovers. */
+html[data-native-shell='android'] .site-header.has-account-open {
+  contain: none !important;
+}
+
+html[data-native-shell='android'] .native-account-backdrop {
+  position: fixed;
+  z-index: 108;
+  inset: 0;
+  display: block !important;
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  padding: 0;
+  background: rgba(0,0,0,.54);
+  animation: ms-native-fade-in 140ms ease-out both;
+}
+
+html[data-native-shell='android'] .account-menu {
+  position: fixed !important;
+  z-index: 116 !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(78dvh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 !important;
+  padding: 1.15rem max(.8rem, env(safe-area-inset-right)) max(.85rem, env(safe-area-inset-bottom)) max(.8rem, env(safe-area-inset-left)) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.25rem 1.25rem 0 0 !important;
+  background: #111318 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .account-menu::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: .25rem;
+  margin: -.55rem auto .7rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .preferences-overlay {
+  align-items: flex-end !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,.58) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'] .preferences-panel {
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(92dvh, 52rem) !important;
+  margin: 0 !important;
+  padding: 1rem max(1rem, env(safe-area-inset-right)) max(.8rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.3rem 1.3rem 0 0 !important;
+  background: #0c0f14 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.52) !important;
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@media (max-width: 639px) {
+  html[data-native-shell='android'] .catalog-content {
+    gap: 1.35rem !important;
+  }
+
+  html[data-native-shell='android'] .feature {
+    margin-top: .55rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-art {
+    height: clamp(12.5rem, 54vw, 17rem) !important;
+    border-radius: .7rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-content {
+    padding-top: .8rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-synopsis {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+}

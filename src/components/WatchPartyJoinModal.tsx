@@ -50,7 +50,7 @@ export function WatchPartyJoinModal({
       window.history.back();
       return;
     }
-    onClose();
+    closeSheet();
   }, [nativeShell, onClose]);
 
   // Reset state when opening
@@ -67,7 +67,7 @@ export function WatchPartyJoinModal({
     if (window.history.state?.meristream_native_overlay !== 'watch-party-join') {
       window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: 'watch-party-join' }, '');
     }
-    const onPopState = () => onClose();
+    const onPopState = () => closeSheet();
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [isOpen, nativeShell, onClose]);
@@ -82,7 +82,7 @@ export function WatchPartyJoinModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, closeSheet]);
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
@@ -167,7 +167,7 @@ export function WatchPartyJoinModal({
 
       if (onJoinRoom) await onJoinRoom(code);
       if (onJoin) onJoin(code);
-      onClose();
+      closeSheet();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Error al crear la sala. Inténtalo de nuevo.');
     } finally {
@@ -188,7 +188,7 @@ export function WatchPartyJoinModal({
         try {
           await onJoinRoom(code);
           if (onJoin) onJoin(code);
-          onClose();
+          closeSheet();
         } catch (err: any) {
           setErrorMessage(err?.message || 'Error al unirse a la sala.');
         } finally {
@@ -231,14 +231,14 @@ export function WatchPartyJoinModal({
         }
 
         if (onJoin) onJoin(code);
-        onClose();
+        closeSheet();
       } catch (err: any) {
         if (err?.message?.includes('no existe') || err?.message?.includes('llena') || err?.message?.includes('expirado')) {
           setErrorMessage(err.message);
         } else {
           // If network or fallback, allow joining via onJoin
           if (onJoin) onJoin(code);
-          onClose();
+          closeSheet();
         }
       } finally {
         setIsSubmitting(false);

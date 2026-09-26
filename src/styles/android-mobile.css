@@ -50,13 +50,13 @@ html[data-native-shell='android'] .site-header.has-mobile-nav-open {
 html[data-native-shell='android'] .header-inner {
   max-width: none !important;
   width: 100%;
-  padding-inline: max(.6rem, env(safe-area-inset-left)) max(.6rem, env(safe-area-inset-right)) !important;
+  padding-inline: max(.6rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(.6rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) !important;
 }
 
 html[data-native-shell='android'] .header-top {
-  min-height: calc(3.45rem + env(safe-area-inset-top)) !important;
-  height: calc(3.45rem + env(safe-area-inset-top)) !important;
-  padding: env(safe-area-inset-top) 0 0 !important;
+  min-height: calc(3.45rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  height: calc(3.45rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) 0 0 !important;
   gap: .35rem !important;
   display: grid !important;
   grid-template-columns: minmax(0,1fr) auto !important;
@@ -106,9 +106,9 @@ html[data-native-shell='android'] .account-trigger > svg {
 html[data-native-shell='android'] .header-search {
   position: fixed !important;
   z-index: 120 !important;
-  top: max(.45rem, env(safe-area-inset-top)) !important;
-  left: max(.55rem, env(safe-area-inset-left)) !important;
-  right: max(.55rem, env(safe-area-inset-right)) !important;
+  top: max(.45rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  left: max(.55rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+  right: max(.55rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) !important;
   width: auto !important;
   height: 2.85rem !important;
   margin: 0 !important;
@@ -150,7 +150,7 @@ html[data-native-shell='android'] .mobile-nav-sheet {
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 1.15rem max(.75rem, env(safe-area-inset-right)) max(.8rem, env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left));
+  padding: 1.15rem max(.75rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.8rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.75rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
   border: 1px solid rgba(255,255,255,.09);
   border-bottom: 0;
   border-radius: 1.35rem 1.35rem 0 0;
@@ -342,7 +342,7 @@ html[data-native-shell='android'] [data-player-root] video {
 @media (max-width: 639px) {
   html[data-native-shell='android'] [data-player-topbar] {
     padding-inline: .45rem !important;
-    padding-top: max(.45rem, env(safe-area-inset-top)) !important;
+    padding-top: max(.45rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
   }
 
   html[data-native-shell='android'] [data-player-topbar] > div:first-child {
@@ -372,7 +372,7 @@ html[data-native-shell='android'] [data-player-root] video {
 
   html[data-native-shell='android'] [data-player-controls] {
     padding-inline: .45rem !important;
-    padding-bottom: max(.45rem, env(safe-area-inset-bottom)) !important;
+    padding-bottom: max(.45rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important;
   }
 
   html[data-native-shell='android'] [data-player-controls] button {
@@ -504,7 +504,7 @@ html[data-native-shell='android'] .feature-actions .button-secondary {
     max-height: min(72dvh, 32rem);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: .55rem .7rem max(.75rem, env(safe-area-inset-bottom));
+    padding: .55rem .7rem max(.75rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     border: 1px solid rgba(255,255,255,.1);
     border-bottom: 0;
     border-radius: 1.25rem 1.25rem 0 0;
@@ -600,7 +600,7 @@ html[data-native-shell='android'] .account-menu {
   overflow-y: auto;
   overscroll-behavior: contain;
   margin: 0 !important;
-  padding: 1.15rem max(.8rem, env(safe-area-inset-right)) max(.85rem, env(safe-area-inset-bottom)) max(.8rem, env(safe-area-inset-left)) !important;
+  padding: 1.15rem max(.8rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.85rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.8rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
   border: 1px solid rgba(255,255,255,.09) !important;
   border-bottom: 0 !important;
   border-radius: 1.25rem 1.25rem 0 0 !important;
@@ -633,7 +633,7 @@ html[data-native-shell='android'] .preferences-panel {
   max-width: none !important;
   max-height: min(92dvh, 52rem) !important;
   margin: 0 !important;
-  padding: 1rem max(1rem, env(safe-area-inset-right)) max(.8rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)) !important;
+  padding: 1rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.8rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
   border: 1px solid rgba(255,255,255,.09) !important;
   border-bottom: 0 !important;
   border-radius: 1.3rem 1.3rem 0 0 !important;

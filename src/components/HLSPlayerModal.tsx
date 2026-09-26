@@ -180,6 +180,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
+  const wakeLockRef = useRef<any>(null);
 
   // Identificador creciente por intento (protección contra carreras): cualquier
   // temporizador o promesa que termine después de cambiar de servidor se ignora.
@@ -2768,6 +2769,52 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const effectiveDuration = isCasting && castDuration > 0 ? castDuration : duration;
   const effectiveIsPlaying = isCasting ? !castIsPaused : isPlaying;
   const progressPct = effectiveDuration > 0 ? (effectiveCurrentTime / effectiveDuration) * 100 : 0;
+
+  useEffect(() => {
+    if (!nativeShell || typeof navigator === 'undefined') return;
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request?: (type: 'screen') => Promise<any> } }).wakeLock;
+    let cancelled = false;
+
+    const release = async () => {
+      const lock = wakeLockRef.current;
+      wakeLockRef.current = null;
+      if (lock?.release) {
+        try { await lock.release(); } catch {}
+      }
+    };
+
+    const acquire = async () => {
+      if (cancelled || !effectiveIsPlaying || document.visibilityState !== 'visible' || !wakeLock?.request || wakeLockRef.current) return;
+      try {
+        const lock = await wakeLock.request('screen');
+        if (cancelled || !effectiveIsPlaying) {
+          try { await lock.release?.(); } catch {}
+          return;
+        }
+        wakeLockRef.current = lock;
+        lock?.addEventListener?.('release', () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+      } catch {
+        // Wake Lock is optional; playback remains fully functional without it.
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && effectiveIsPlaying) void acquire();
+      else void release();
+    };
+
+    if (effectiveIsPlaying) void acquire();
+    else void release();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void release();
+    };
+  }, [nativeShell, effectiveIsPlaying]);
   const bufferedPct = isCasting ? 100 : (effectiveDuration > 0 ? (bufferedEnd / effectiveDuration) * 100 : 0);
   const subtitleIsCustomPosition = appPreferences.subtitlePosition === 'custom';
   const subtitlePositionClass = subtitleIsCustomPosition

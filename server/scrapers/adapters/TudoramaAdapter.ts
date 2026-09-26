@@ -229,7 +229,12 @@ export class TudoramaAdapter extends BaseScraperAdapter {
   private isSameSite(url: string): boolean { try { const host = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return host === SITE_HOST || host.endsWith(`.${SITE_HOST}`); } catch { return false; } }
   protected resolveRelativeUrl(value: string, base: string): string { try { return new URL(value, base).toString(); } catch { return value; } }
   private yearFromText(value: string): number { const m = value.match(/\b(?:19|20)\d{2}\b/); return m ? Number(m[0]) : 0; }
-  private episodeNumber(value: string): number | null { const m = value.match(/(?:episodio|episode|cap(?:itulo|ítulo)?|ep)[-\s_.]*(\d+)/i) || value.match(/s\d+[^\d]+(\d+)/i); return m ? Number(m[1]) : null; }
+  private episodeNumber(value: string): number | null {
+    const m = value.match(/(?:episodio|episode|cap(?:itulo|título)?|ep)[-\s_.]*(\d+)/i) ||
+      value.match(/(?:^|[-_])s?\d+x(\d+)/i) ||
+      value.match(/(?:^|[-_])\d+x(\d+)/i);
+    return m ? Number(m[1]) : null;
+  }
   private seasonNumber(value: string): number | null { const m = value.match(/(?:season|temporada|s)[\s_-]*(\d+)/i); return m ? Number(m[1]) : null; }
   private episodeScore(episodeUrl: string, detailUrl: string): number { return this.pathOf(episodeUrl).includes(this.lastPathPart(detailUrl)) ? 2 : 1; }
   private postIdFromBody(html: string): string { return html.match(/postid-(\d+)/i)?.[1] || ""; }

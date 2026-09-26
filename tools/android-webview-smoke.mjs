@@ -86,7 +86,39 @@ try {
   await call('Runtime.enable');
   await call('Page.enable');
 
-  if (action === 'open-menu') {
+  if (action === 'seed-catalog') {
+    await evaluate(call, `(() => {
+      const sample = [
+        {
+          id: 'tmdb-movie-550', tmdb_id: 550, title: 'MeriStream Movie',
+          normalized_title: 'meristream movie', category: 'movie', kind: 'movie',
+          year: 2026, rating: 8.4, genres: 'Drama', status: 'Finalizado',
+          poster_url: '', banner_url: '', backdrop_url: '',
+          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+        },
+        {
+          id: 'tmdb-series-1396', tmdb_id: 1396, title: 'MeriStream Series',
+          normalized_title: 'meristream series', category: 'series', kind: 'series',
+          year: 2026, rating: 8.7, genres: 'Drama', status: 'Emisión',
+          poster_url: '', banner_url: '', backdrop_url: '',
+          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+        },
+        {
+          id: 'tmdb-anime-21', tmdb_id: 21, title: 'MeriStream Anime',
+          normalized_title: 'meristream anime', category: 'anime', kind: 'anime',
+          year: 2026, rating: 8.2, genres: 'Animación, Acción', status: 'Emisión',
+          poster_url: '', banner_url: '', backdrop_url: '',
+          sources: { master_m3u8: '', fallback_mp4: null, qualities: [], subtitles: [] }
+        }
+      ];
+      localStorage.setItem('nitiflix_catalog_cache_v5', JSON.stringify({ data: sample, timestamp: Date.now() }));
+      return true;
+    })()`);
+    await call('Page.reload', { ignoreCache: true });
+    await delay(1800);
+    const count = await evaluate(call, `document.querySelectorAll('.media-card').length`);
+    console.log(JSON.stringify({ action, cards: count }));
+  } else if (action === 'open-menu') {
     const opened = await evaluate(call, `(() => {
       const button = document.querySelector('.mobile-nav-trigger');
       if (!button) return false;

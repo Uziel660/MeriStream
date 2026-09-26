@@ -1,7 +1,7 @@
 // src/components/MediaDetailsModal.tsx
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw, ChevronDown, Film, Heart, Clock, ListPlus, Edit3, SkipForward, MoreHorizontal } from 'lucide-react';
+import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw, ChevronDown, Film, Heart, Clock, ListPlus, Edit3, SkipForward, MoreHorizontal, Share2 } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { heroBackdropSrcSet, heroBackdropUrl } from '../utils/imageSizes';
@@ -17,7 +17,7 @@ import { getAppPreferences } from '../utils/appPreferences';
 import { useUserLists } from '../hooks/useUserLists';
 import { useAuth } from '../contexts/AuthContext';
 import { AddToListModal } from './AddToListModal';
-import { isNativeLowCostPresentation, isNativeShell, nativeHaptic } from '../utils/runtime';
+import { isNativeLowCostPresentation, isNativeShell, nativeHaptic, nativeShare } from '../utils/runtime';
 
 const LazyReportControl = React.lazy(() => import('./ReportControl'));
 
@@ -743,6 +743,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                             <button type="button" className="native-details-action" onClick={() => { setMobileActionsOpen(false); setAddToListModalOpen(true); }}>
                               <ListPlus size={17} />
                               <span>Guardar en una lista</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="native-details-action"
+                              onClick={() => {
+                                const title = cleanDisplayTitle(show.title);
+                                setMobileActionsOpen(false);
+                                void nativeShare({
+                                  title,
+                                  text: `Mira ${title} en MeriStream`,
+                                  url: window.location.href,
+                                  dialogTitle: 'Compartir desde MeriStream',
+                                });
+                              }}
+                            >
+                              <Share2 size={17} />
+                              <span>Compartir</span>
                             </button>
                             {user?.is_admin && (
                               <button

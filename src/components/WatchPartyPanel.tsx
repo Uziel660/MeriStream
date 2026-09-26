@@ -14,7 +14,7 @@ import {
   MessageSquare,
   Radio,
 } from 'lucide-react';
-import { backendBaseOrigin, isNativeShell, nativeHaptic, nativeShare } from '../utils/runtime';
+import { isNativeShell, nativeHaptic, nativeShare, publicAppUrl } from '../utils/runtime';
 import type {
   WatchPartyRoom,
   WatchPartyParticipant,
@@ -121,8 +121,7 @@ export function WatchPartyPanel({
 
   const shareUrl = useMemo(() => {
     if (!roomCode || typeof window === 'undefined') return '';
-    const publicOrigin = nativeShell ? backendBaseOrigin() : window.location.origin;
-    const url = new URL(publicOrigin || window.location.origin);
+    const url = new URL(publicAppUrl('/'));
     url.searchParams.set('party', roomCode);
     return url.toString();
   }, [roomCode, nativeShell]);

@@ -55,19 +55,19 @@ function findMainActivity(dir) {
   return null;
 }
 
-const mainActivityPath = findMainActivity(path.resolve('android/app/src/main/java'));
-if (!mainActivityPath) {
+const activityPath = findMainActivity(path.resolve('android/app/src/main/java'));
+if (!activityPath) {
   throw new Error('Could not locate generated Capacitor MainActivity.java');
 }
 
-const originalJava = fs.readFileSync(mainActivityPath, 'utf8');
-const packageMatch = originalJava.match(/^package\s+([^;]+);/m);
+const originalActivity = fs.readFileSync(activityPath, 'utf8');
+const packageMatch = originalActivity.match(/^package\s+([^;]+);/m);
 if (!packageMatch) {
-  throw new Error(`Could not detect Java package in ${mainActivityPath}`);
+  throw new Error(`Could not detect Java package in ${activityPath}`);
 }
 const packageName = packageMatch[1];
 
-const java = `package ${packageName};
+const activity = `package ${packageName};
 
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -81,16 +81,16 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        // Deterministic CI inspection is available only in debuggable builds.
-        // Release APKs never expose their WebView through this branch.
+    public void onCreate(Bundle savedInstanceState) {
+        // Enable inspection only for debuggable APKs, before Capacitor creates
+        // the WebView. Release builds keep WebView debugging disabled.
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             WebView.setWebContentsDebuggingEnabled(true);
         }
 
         super.onCreate(savedInstanceState);
 
-        // Make the native system bars visually continuous with MeriStream.
+        // Keep Android system chrome visually continuous with MeriStream.
         getWindow().setStatusBarColor(Color.rgb(5, 6, 8));
         getWindow().setNavigationBarColor(Color.rgb(5, 6, 8));
 
@@ -115,5 +115,5 @@ public class MainActivity extends BridgeActivity {
 }
 `;
 
-fs.writeFileSync(mainActivityPath, java, 'utf8');
-console.log(`Patched MainActivity: ${path.relative(process.cwd(), mainActivityPath)}`);
+fs.writeFileSync(activityPath, activity, 'utf8');
+console.log(`Patched MainActivity: ${path.relative(process.cwd(), activityPath)}`);

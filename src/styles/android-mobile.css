@@ -1373,14 +1373,9 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] [data-playe
 html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
   max-height: 72vh;
   padding: .55rem .65rem;
-  isolation: isolate;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
 }
 
-/* Android 10's WebView can composite the playing video above descendants of a
- * fixed portal. Give each direct sheet section its own ordered paint layer so
- * labels and icons stay visible over the video surface. */
+/* Keep the sheet sections above the playing video layer in legacy WebViews. */
 html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet > * {
   position: relative;
   z-index: 1;

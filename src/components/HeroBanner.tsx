@@ -113,6 +113,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
           <button type="button" onClick={onMoreInfo} className="button-secondary"><Info size={18} />Más información</button>
           <button
             type="button"
+            data-hero-secondary-action
             onClick={() => toggleFavorite(visualMedia)}
             className={`button-secondary flex items-center gap-2 ${
               isFav ? 'text-rose-400 border-rose-500/50 bg-rose-500/10' : ''

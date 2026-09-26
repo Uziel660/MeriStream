@@ -6,6 +6,22 @@ import { dedupeCatalogItems } from "./catalogIntegrity";
 
 export const PRESET_SOURCES: ScraperPreset[] = [
   {
+    id: "doramas-doramasia",
+    name: "Doramasia (Catálogo asiático)",
+    category: "series",
+    description: "Catálogo GraphQL de doramas coreanos, chinos, tailandeses y japoneses con subtítulos en español y variantes de audio cuando están publicadas.",
+    example_url: "https://doramasia.com/doramas",
+    icon: "Tv",
+  },
+  {
+    id: "movies-doramasia",
+    name: "Doramasia Películas",
+    category: "movies",
+    description: "Películas asiáticas con enlaces JIT y servidores Primeload/Streamwish priorizados.",
+    example_url: "https://doramasia.com/peliculas",
+    icon: "Film",
+  },
+  {
     id: "doramas-doramasflix",
     name: "Doramasflix (Doramas / K-Dramas)",
     category: "series",

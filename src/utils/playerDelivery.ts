@@ -94,6 +94,7 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('/series/') ||
     lower.includes('/serie/') ||
     lower.includes('/pelicula/') ||
+    lower.includes('/peliculas/') ||
     lower.includes('/ver-pelicula/') ||
     lower.includes('/ver-serie/') ||
     lower.includes('/ver-anime/') ||
@@ -118,6 +119,7 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('gnula.se') ||
     lower.includes('gnula.cc') ||
     lower.includes('doramasflix.') ||
+    lower.includes('doramasia.') ||
     lower.includes('the.tube') ||
     lower.includes('they.tube') ||
     lower.includes('animeav1.com/media/')

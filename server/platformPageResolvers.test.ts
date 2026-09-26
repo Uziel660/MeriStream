@@ -10,6 +10,7 @@ import {
   resolveTioPlusPage,
   checkExpiredDirectStream,
   isDoramasflixPageUrl,
+  isDoramasiaPageUrl,
   isAnimeAv1PageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
@@ -40,6 +41,12 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
       expect(isPlatformPageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
       expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen")).toBe(false);
+    });
+
+    it("identifies Doramasia canonical pages without matching lookalike hosts", () => {
+      expect(isDoramasiaPageUrl("https://doramasia.com/capitulos/four-hands-two-sonatas-1x1")).toBe(true);
+      expect(isPlatformPageUrl("https://doramasia.com/peliculas/us-in-the-end")).toBe(true);
+      expect(isDoramasiaPageUrl("https://evil-doramasia.com/capitulos/demo")).toBe(false);
     });
 
     it("does not classify direct media URLs as platform pages", () => {

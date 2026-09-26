@@ -130,6 +130,8 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('hianimes.se/') ||
       lower.includes('doramasflix.') ||
       lower.includes('doramasyt.com/ver/') ||
+      lower.includes('doramasia.com/capitulos/') ||
+      lower.includes('doramasia.com/peliculas/') ||
       lower.includes('gnulahd.nu/') ||
       lower.includes('gnula.nu/') ||
       lower.includes('gnula.se/') ||

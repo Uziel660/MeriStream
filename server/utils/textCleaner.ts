@@ -48,7 +48,7 @@ const HTML_ENTITY_MAP: Record<string, string> = {
 };
 
 // Lista de marcas y dominios de adaptadores/scrapers para limpieza y detección automática
-export const SCRAPER_BRAND_REGEX = /\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|lat-anime|doramasflix|cuevana\d*|pelisplus|monoschinos|animesonline|tvmaze)\b/i;
+export const SCRAPER_BRAND_REGEX = /\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|lat-anime|doramasflix|doramasia|cuevana\d*|pelisplus|monoschinos|animesonline|tvmaze)\b/i;
 
 /**
  * Limpia y normaliza una descripción de obra o episodio.
@@ -106,7 +106,7 @@ export function cleanDescription(rawDescription?: string | null, title?: string 
   // 5. Quitar frases promocionales de scrapers (ej. "Ver en VerAnimes", "Ver dorama ... online sub español en Doramasflix")
   text = text
     .replace(/^(?:sinopsis|descripci[oó]n|resumen|overview|summary)\s*:\s*/i, "")
-    .replace(/(?:ver|mira|disfruta)\s+(?:dorama|pel[ií]cula|anime|serie)?\s*[^.]*?\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|doramasflix|cuevana|pelisplus)\b[^.]*?\./gi, "")
+    .replace(/(?:ver|mira|disfruta)\s+(?:dorama|pel[ií]cula|anime|serie)?\s*[^.]*?\b(veranimes|cinecalidad|tioanime|tioplus|tubepelis|lamovie|animeflv|jkanime|latanime|doramasflix|doramasia|cuevana|pelisplus)\b[^.]*?\./gi, "")
     .replace(/ver\s+(?:dorama|anime|pel[ií]cula)?\s+.*?sub\s+español\s+online\s+.*?doramasflix/gi, "")
     .replace(/💖\s*Doramasflix/gi, "")
     .replace(/💓\s*dorama/gi, "");

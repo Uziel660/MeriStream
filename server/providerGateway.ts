@@ -53,7 +53,7 @@ export interface GatewayFallbackCandidate {
 }
 
 const SPANISH_LOCAL = new Set([
-  "cinecalidad", "gnula", "latanime", "tioanime", "doramasflix",
+  "cinecalidad", "gnula", "latanime", "tioanime", "doramasflix", "doramasia",
 ]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
 // Cuando ya existe una fuente local recuperable, un API externo lento no debe

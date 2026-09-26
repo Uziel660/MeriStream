@@ -26,6 +26,8 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/doramas", name: "Doramasflix Doramas (mantenido · secundario)" },
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/peliculas", name: "Doramasflix Películas (mantenido · secundario)" },
   { providerId: "doramasflix", targetUrl: "https://doramasflix.io/variedades", name: "Doramasflix Variedades (mantenido · secundario)" },
+  { providerId: "doramasia", targetUrl: "https://doramasia.com/doramas", name: "Doramasia Doramas (GraphQL · principal)" },
+  { providerId: "doramasia", targetUrl: "https://doramasia.com/peliculas", name: "Doramasia Películas (GraphQL · principal)" },
   // Archive.org remains an explicit public-domain/open-license source for EN.
   { providerId: "archive-org", targetUrl: "https://archive.org/details/movies", name: "Internet Archive (contenido abierto)" },
 ];

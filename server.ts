@@ -3952,7 +3952,7 @@ async function startServer() {
         try {
           const pathname = new URL(u).pathname.toLowerCase();
           return (
-            /\/(ver|watch|episode|ep|capitulo)\//.test(pathname) &&
+            /\/(ver|watch|episode|ep|capitulo|capitulos|pelicula|peliculas)\//.test(pathname) &&
             !/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u)
           );
         } catch {

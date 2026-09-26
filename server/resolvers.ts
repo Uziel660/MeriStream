@@ -26,6 +26,7 @@ import {
   isAnimeAv1PageUrl,
   isVerAnimesPageUrl,
   isDoramasflixPageUrl,
+  isDoramasiaPageUrl,
   isTubePelisPageUrl,
   resolvePlatformPage,
   resolveLaMoviePage,
@@ -39,6 +40,7 @@ import {
   resolveAnimeAv1Page,
   resolveVerAnimesPage,
   resolveDoramasflixPage,
+  resolveDoramasiaPage,
   resolveTubePelisPage,
 } from "./platformPageResolvers";
 
@@ -2075,6 +2077,20 @@ export class ProviderResolverRegistry {
         requiresHeaders: false,
       },
       resolve: async (locator) => resolveDoramasflixPage(locator),
+    });
+
+    // 28. Doramasia Platform Pages
+    this.register({
+      name: "Doramasia",
+      matches: (url) => isDoramasiaPageUrl(url),
+      capabilities: {
+        supportsDirect: true,
+        supportsProxy: true,
+        supportsEmbed: true,
+        renewable: true,
+        requiresHeaders: false,
+      },
+      resolve: async (locator) => resolveDoramasiaPage(locator),
     });
 
     // 28. TubePelis Platform Pages

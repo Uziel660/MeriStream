@@ -78,7 +78,7 @@ describe("provider policy v2", () => {
 
   it("does not enqueue retired crawlers in the normal ingestion registry", () => {
     const ids = getEnabledIngestionTargets().map((target) => target.providerId);
-    expect(ids).toEqual(["cinecalidad", "latanime", "tioanime", "gnula", "gnula", "gnula", "doramasflix", "doramasflix", "doramasflix", "archive-org"]);
+    expect(ids).toEqual(["cinecalidad", "latanime", "tioanime", "gnula", "gnula", "gnula", "doramasflix", "doramasflix", "doramasflix", "doramasia", "doramasia", "archive-org"]);
     expect(ids).not.toContain("lamovie");
   });
 });

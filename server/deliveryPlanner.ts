@@ -45,6 +45,7 @@ export class DeliveryPlanner {
     // directamente del CDN externo. La lista es deliberadamente acotada.
     this.proxyProviders = new Set([
       "doramasflix",
+      "doramasia",
       "doramasyt",
       "streamtape",
       "streamtape cdn",

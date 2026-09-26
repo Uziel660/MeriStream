@@ -54,8 +54,8 @@ jobs:
         run: npm ci
       - name: Install Capacitor toolchain without changing lockfile
         run: npm run android:deps
-      - name: Build frontend
-        run: npm run build:client
+      - name: Build Android frontend
+        run: npm run android:build
       - name: Create Android project and apply native window polish
         run: npm run android:add
       - name: Sync frontend into Android

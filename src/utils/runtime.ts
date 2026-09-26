@@ -9,6 +9,17 @@ export function isNativeShell(): boolean {
     && Boolean((window as any).Capacitor?.isNativePlatform?.());
 }
 
+function nativePlugin(name: string): any | null {
+  if (!isNativeShell() || typeof window === 'undefined') return null;
+  const capacitor = (window as any).Capacitor;
+  try {
+    if (typeof capacitor?.isPluginAvailable === 'function' && !capacitor.isPluginAvailable(name)) return null;
+  } catch {
+    // Older bridges can omit isPluginAvailable while still exposing Plugins.
+  }
+  return capacitor?.Plugins?.[name] || null;
+}
+
 /**
  * Marks the Capacitor build before React renders so presentation CSS can use a
  * native-only surface without forking the web application. This keeps Android
@@ -27,8 +38,107 @@ export function initializeNativePresentation(): void {
  * so the shared web build stays untouched. Unsupported devices simply ignore it.
  */
 export function nativeHaptic(pattern: number | number[] = 6): void {
-  if (!isNativeShell() || typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
-  try { navigator.vibrate(pattern); } catch {}
+  if (!isNativeShell()) return;
+  const haptics = nativePlugin('Haptics');
+  if (haptics) {
+    const duration = Array.isArray(pattern) ? Math.max(6, Number(pattern[0] || 6)) : Number(pattern || 6);
+    const task = duration <= 20 && typeof haptics.impact === 'function'
+      ? haptics.impact({ style: 'LIGHT' })
+      : typeof haptics.vibrate === 'function'
+        ? haptics.vibrate({ duration: Math.max(20, duration) })
+        : null;
+    if (task?.catch) task.catch(() => {});
+    if (task) return;
+  }
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try { navigator.vibrate(pattern); } catch {}
+  }
+}
+
+export async function nativeLockLandscape(): Promise<void> {
+  if (!isNativeShell()) return;
+  const plugin = nativePlugin('ScreenOrientation');
+  if (typeof plugin?.lock === 'function') {
+    try {
+      await plugin.lock({ orientation: 'landscape' });
+      return;
+    } catch {}
+  }
+  try {
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> };
+    await orientation?.lock?.('landscape');
+  } catch {}
+}
+
+export async function nativeUnlockOrientation(): Promise<void> {
+  if (!isNativeShell()) return;
+  const plugin = nativePlugin('ScreenOrientation');
+  if (typeof plugin?.unlock === 'function') {
+    try {
+      await plugin.unlock();
+      return;
+    } catch {}
+  }
+  try {
+    const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
+    orientation?.unlock?.();
+  } catch {}
+}
+
+export async function nativeSetImmersive(hidden: boolean): Promise<void> {
+  if (!isNativeShell()) return;
+  const systemBars = nativePlugin('SystemBars');
+  try {
+    if (hidden && typeof systemBars?.hide === 'function') {
+      await systemBars.hide();
+    } else if (!hidden && typeof systemBars?.show === 'function') {
+      await systemBars.show();
+      if (typeof systemBars?.setStyle === 'function') {
+        await systemBars.setStyle({ style: 'DARK' });
+      }
+    }
+  } catch {
+    // CSS/Java system-bar fallbacks remain active when the plugin is absent.
+  }
+}
+
+let nativeBackBridgeInstalled = false;
+
+/**
+ * Android hardware Back is part of the app navigation contract. Temporary
+ * sheets and routed player/details screens consume Back first; pressing Back
+ * at the catalog root minimizes the app instead of walking through stale
+ * same-origin WebView entries.
+ */
+export function installNativeBackBridge(): void {
+  if (!isNativeShell() || nativeBackBridgeInstalled || typeof window === 'undefined') return;
+  const app = nativePlugin('App');
+  if (typeof app?.addListener !== 'function') return;
+  nativeBackBridgeInstalled = true;
+
+  const listener = app.addListener('backButton', (event: { canGoBack?: boolean }) => {
+    const state = window.history.state || {};
+    const route = String(state.meristream_route || '');
+    const hasTransientOverlay = Boolean(state.meristream_native_overlay);
+    const hasRoutedScreen = route === 'player' || route === 'details';
+    const hasCatalogState = window.location.pathname !== '/'
+      || Boolean(window.location.search)
+      || Boolean(window.location.hash);
+
+    if ((hasTransientOverlay || hasRoutedScreen || hasCatalogState) && event?.canGoBack !== false) {
+      window.history.back();
+      return;
+    }
+
+    if (typeof app.minimizeApp === 'function') {
+      const task = app.minimizeApp();
+      if (task?.catch) task.catch(() => {});
+      return;
+    }
+
+    if (event?.canGoBack) window.history.back();
+  });
+  if (listener?.catch) listener.catch(() => { nativeBackBridgeInstalled = false; });
 }
 
 export function isNativeLowCostPresentation(): boolean {

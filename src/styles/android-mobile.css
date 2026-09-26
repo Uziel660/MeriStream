@@ -1117,6 +1117,34 @@ html[data-native-shell='android'] .poster-rail {
   overscroll-behavior-inline: contain;
 }
 
+/* Android 10's bundled WebView predates CSS clamp(). Keep the compact native
+ * hero, page gutters, and swipe rails sized correctly on that runtime too. */
+@supports not (width: clamp(1px, 2vw, 3px)) {
+  html[data-native-shell='android'] {
+    --page-gutter: 20px;
+  }
+
+  @media (max-width: 639px) {
+    html[data-native-shell='android'] .header-inner {
+      padding-left: .6rem !important;
+      padding-right: .6rem !important;
+    }
+
+    html[data-native-shell='android'] .feature-art {
+      height: 10.5rem !important;
+    }
+
+    html[data-native-shell='android'] .feature h1,
+    html[data-native-shell='android'] .feature-title {
+      font-size: 2.25rem !important;
+    }
+
+    html[data-native-shell='android'] .poster-rail {
+      grid-auto-columns: 39vw !important;
+    }
+  }
+}
+
 
 /* Watch Party and add-to-list use native touch sheets. */
 html[data-native-shell='android'] .watch-party-join-overlay,

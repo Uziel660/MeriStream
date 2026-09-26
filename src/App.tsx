@@ -2687,7 +2687,7 @@ export function App() {
                     : catalogError}
                 </p>
               </div>
-              <button type="button" onClick={loadCatalog} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-amber-300 transition-colors">
+              <button type="button" onClick={loadCatalog} className="mx-auto flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300">
                 <RefreshCw size={15} /> Reintentar
               </button>
             </div>

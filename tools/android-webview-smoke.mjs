@@ -163,6 +163,8 @@ try {
     ];
     await evaluate(call, `(() => {
       const sample = ${JSON.stringify(sample)};
+      window.history.scrollRestoration = 'manual';
+      window.scrollTo(0, 0);
       localStorage.setItem('nitiflix_catalog_cache_v5', JSON.stringify({ data: sample, timestamp: Date.now() }));
       return true;
     })()`);
@@ -189,8 +191,32 @@ try {
       if (state?.cards >= 2 && state.visibleCards >= 2 && state.images >= 2 && state.hero) break;
       await delay(250);
     }
-    console.log(JSON.stringify({ action, ...state }));
+    const viewportState = await evaluate(call, `(async () => {
+      window.scrollTo(0, 0);
+      window.dispatchEvent(new Event('scroll'));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const headerElement = document.querySelector('.site-header');
+      const heroElement = document.querySelector('.feature-art');
+      const header = headerElement ? headerElement.getBoundingClientRect() : null;
+      const heroArt = heroElement ? heroElement.getBoundingClientRect() : null;
+      const cards = [...document.querySelectorAll('.media-row .media-card')].slice(0, 2);
+      const ratingRights = cards.map((card) => {
+        const rating = card.querySelector('.media-card-meta .rating');
+        return rating ? rating.getBoundingClientRect().right : 0;
+      });
+      return {
+        scrollY: window.scrollY,
+        viewportWidth: window.innerWidth,
+        headerBottom: header ? header.bottom : 0,
+        heroHeight: heroArt ? heroArt.height : 0,
+        posterWidths: cards.map((card) => card.getBoundingClientRect().width),
+        ratingRights
+      };
+    })()`);
+    console.log(JSON.stringify({ action, ...state, ...viewportState }));
     if (state?.cards < 2 || state.visibleCards < 2 || state.images < 2 || !state.hero) throw new Error('Seeded catalog artwork did not finish rendering');
+    if (viewportState?.scrollY !== 0 || viewportState.headerBottom <= 0 || viewportState.heroHeight < 100) throw new Error(`Catalog screenshot did not return to its complete top-of-page layout: ${JSON.stringify(viewportState)}`);
+    if (viewportState.posterWidths.some((width) => width > viewportState.viewportWidth * 0.5) || viewportState.ratingRights.some((right) => right > viewportState.viewportWidth)) throw new Error(`Mobile catalog cards overflow the viewport: ${JSON.stringify(viewportState)}`);
   } else if (action === 'open-menu') {
     const opened = await evaluate(call, `(() => {
       const button = document.querySelector('.mobile-nav-trigger');

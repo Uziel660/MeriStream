@@ -174,6 +174,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setVideoNode(node);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wakeLockRef = useRef<any>(null);
   const hlsRef = useRef<Hls | null>(null);
   // dash.js se carga solo cuando se selecciona un manifiesto MPD.
   const dashRef = useRef<any>(null);
@@ -229,6 +230,49 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [isPipActive, setIsPipActive] = useState(false);
   const [hasEnded, setHasEnded] = useState(false);
+
+  useEffect(() => {
+    if (!nativeShell || typeof navigator === 'undefined') return;
+    const wakeLockApi = (navigator as Navigator & { wakeLock?: { request?: (type: 'screen') => Promise<any> } }).wakeLock;
+    if (!wakeLockApi?.request) return;
+
+    let disposed = false;
+    const release = async () => {
+      const lock = wakeLockRef.current;
+      wakeLockRef.current = null;
+      if (!lock) return;
+      try { await lock.release?.(); } catch {}
+    };
+    const acquire = async () => {
+      if (disposed || !isPlaying || document.visibilityState !== 'visible' || wakeLockRef.current) return;
+      try {
+        const lock = await wakeLockApi.request?.('screen');
+        if (disposed || !isPlaying) {
+          try { await lock?.release?.(); } catch {}
+          return;
+        }
+        wakeLockRef.current = lock || null;
+        lock?.addEventListener?.('release', () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        }, { once: true });
+      } catch {
+        // Wake Lock is best-effort. Playback must never depend on it.
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && isPlaying) void acquire();
+      else void release();
+    };
+
+    if (isPlaying) void acquire();
+    else void release();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void release();
+    };
+  }, [nativeShell, isPlaying]);
 
   useEffect(() => {
     setHasEnded(false);

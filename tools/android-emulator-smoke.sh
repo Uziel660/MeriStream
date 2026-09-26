@@ -17,6 +17,24 @@ fi
 capture_logcat() {
   adb logcat -d > "${PREFIX}-logcat.txt" 2>/dev/null || true
 }
+
+assert_app_foreground() {
+  local activity_dump window_dump
+  activity_dump="$(adb shell dumpsys activity activities 2>/dev/null || true)"
+  window_dump="$(adb shell dumpsys window windows 2>/dev/null || true)"
+
+  if printf '%s\n' "$activity_dump" | grep -E "topResumedActivity=.*me\.merith\.meristream/.MainActivity|mResumedActivity:.*me\.merith\.meristream/.MainActivity|ResumedActivity:.*me\.merith\.meristream/.MainActivity" >/dev/null; then
+    return 0
+  fi
+  if printf '%s\n' "$window_dump" | grep -E "mCurrentFocus=.*me\.merith\.meristream/.MainActivity|mFocusedApp=.*me\.merith\.meristream/.MainActivity" >/dev/null; then
+    return 0
+  fi
+
+  echo "MeriStream is not detected as the foreground Activity."
+  printf '%s\n' "$activity_dump" | grep -E "Resumed|meristream|MainActivity" | tail -40 || true
+  printf '%s\n' "$window_dump" | grep -E "CurrentFocus|FocusedApp|meristream" | tail -40 || true
+  return 1
+}
 trap capture_logcat EXIT
 
 echo "Installing: $APK_PATH"
@@ -26,8 +44,10 @@ adb shell am force-stop me.merith.meristream
 adb shell am start -W -n me.merith.meristream/.MainActivity | tee "${PREFIX}-start.txt"
 sleep "$START_DELAY"
 
-# The activity must still be the foreground Android surface.
-adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
+# The activity must still be the foreground Android surface. Android 10 and
+# Android 15 expose different dumpsys field names, so check both families.
+adb exec-out screencap -p > "${PREFIX}-startup.png" || true
+assert_app_foreground
 adb shell ps -A | grep -i meristream || true
 
 if [[ "$MODE" == "full" ]]; then
@@ -123,7 +143,7 @@ DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player
 
 adb shell dumpsys meminfo me.merith.meristream > "${PREFIX}-meminfo.txt" || true
 capture_logcat
-adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
+assert_app_foreground
 ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" "${PREFIX}-logcat.txt"
 
 echo "Android ${MODE} smoke completed successfully."

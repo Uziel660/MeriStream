@@ -224,8 +224,13 @@ describe("TioPlusAdapter (tioplus.app)", () => {
       expect(isUnplayable("https://strp2p.com/e/abc#token")).toBe(true);
       expect(isUnplayable("https://4meplayer.pro/embed/xyz")).toBe(true);
       expect(isUnplayable("https://upns.pro/player/123")).toBe(true);
+      // TurboViPlay/TurboSPlayer actualmente entrega playlists cuyas "segments"
+      // son imágenes de Googleusercontent, no vídeo reproducible.
+      expect(isUnplayable("https://cdn2.turboviplay.com/file/master.m3u8")).toBe(true);
+      expect(isUnplayable("https://gs13.turbosplayer.com/file/master.m3u8")).toBe(true);
       expect(isUnplayable("https://vidhideplus.com/v/abc")).toBe(false);
       expect(isUnplayable("https://cdn.example.com/video.m3u8")).toBe(false);
+      expect(isUnplayable("https://acek-cdn.com/file/master.m3u8")).toBe(false);
     });
 
     it("decodeDataVideos preserva orden y decodifica base64 a URLs http", () => {

@@ -36,6 +36,13 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/jdrama/", name: "Tudorama J-Dramas (HTML paginado · principal)" },
   { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/reality-show/", name: "Tudorama Reality Shows (HTML paginado · principal)" },
   { providerId: "tudorama", targetUrl: "https://tudorama.com/genero/peliculas/", name: "Tudorama Películas (HTML paginado · principal)" },
+  // TioPlus expone cuatro índices independientes con paginación /N. Las
+  // raíces se importan por separado y el guardado deduplica por URL, tipo y
+  // año para conservar los solapes legítimos de Doramas/Series.
+  { providerId: "tioplus", targetUrl: "https://tioplus.app/peliculas", name: "TioPlus Películas (HTML paginado · principal)" },
+  { providerId: "tioplus", targetUrl: "https://tioplus.app/series", name: "TioPlus Series (HTML paginado · principal)" },
+  { providerId: "tioplus", targetUrl: "https://tioplus.app/doramas", name: "TioPlus Doramas (HTML paginado · principal)" },
+  { providerId: "tioplus", targetUrl: "https://tioplus.app/animes", name: "TioPlus Anime (HTML paginado · principal)" },
   // Archive.org remains an explicit public-domain/open-license source for EN.
   { providerId: "archive-org", targetUrl: "https://archive.org/details/movies", name: "Internet Archive (contenido abierto)" },
 ];
@@ -52,7 +59,6 @@ export const LEGACY_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "lamovie", targetUrl: "https://lamovie.org/peliculas", name: "LaMovie (legacy)" },
   { providerId: "tioanime", targetUrl: "https://tioanime.com/directorio", name: "TioAnime (fallback de ZokoAnime)" },
   { providerId: "veranimes", targetUrl: "https://wwv.veranimes.net", name: "VerAnimes (legacy)" },
-  { providerId: "tioplus", targetUrl: "https://tioplus.app/peliculas", name: "TioPlus (legacy)" },
   { providerId: "tubepelis", targetUrl: "https://tubepelis.com/peliculas", name: "TubePelis (legacy)" },
 ];
 

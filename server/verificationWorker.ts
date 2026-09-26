@@ -137,6 +137,9 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   latanime: "https://latanime.org/animes",
   cinecalidad: "https://www.cinecalidad.am/",
   tioplus: "https://tioplus.app/peliculas",
+  tioplus_series: "https://tioplus.app/series",
+  tioplus_doramas: "https://tioplus.app/doramas",
+  tioplus_animes: "https://tioplus.app/animes",
   doramasflix: "https://doramasflix.io/doramas",
   doramasflix_peliculas: "https://doramasflix.io/peliculas",
   doramasflix_variedades: "https://doramasflix.io/variedades",
@@ -157,10 +160,10 @@ const SUPPORTED_CATEGORIES = ["anime", "movie", "movies", "series"] as const;
 
 /** Plataformas típicas por categoría (scope_mode="category", fase novedades). */
 const CATEGORY_PLATFORM_MAP: Record<string, string[]> = {
-  anime: ["animeflv", "tioanime", "latanime", "lamovie_animes"],
+  anime: ["animeflv", "tioanime", "latanime", "lamovie_animes", "tioplus_animes"],
   movie: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
   movies: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
-  series: ["lamovie_series", "doramasflix", "doramasflix_variedades"],
+  series: ["lamovie_series", "doramasflix", "doramasflix_variedades", "tioplus_series", "tioplus_doramas"],
 };
 
 function defaultConfig(): VerificationConfig {

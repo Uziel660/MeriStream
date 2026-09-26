@@ -618,7 +618,11 @@ export async function resolveTioPlusPage(
   locator: string,
   options?: PlatformPageResolveOptions
 ): Promise<PlatformPlaybackResolution> {
-  return resolvePlatformPage(locator, options);
+  const streamExtractor = options?.streamExtractor ?? (async (url: string) => {
+    const { TioPlusAdapter } = await import("./scrapers/adapters/TioPlusAdapter");
+    return new TioPlusAdapter().extractStream(url);
+  });
+  return resolvePlatformPage(locator, { ...options, streamExtractor });
 }
 
 /** Resolutor específico para animeflv */

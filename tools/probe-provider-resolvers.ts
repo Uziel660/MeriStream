@@ -32,12 +32,12 @@ const SAMPLES = [
   // Two independent works per active page provider. One healthy title should
   // not hide a title-specific outage, and one stale title should not condemn
   // the whole provider.
-  { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/bolt/" },
-  { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/thunderbolts/" },
-  { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/ver/una-pelicula-de-amor-y-guerra/" },
-  { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/ver/coyote-vs-acme/" },
-  { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/mushoku-tensei-jobless-reincarnation-s3-castellano-episodio-1" },
-  { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/kimetsu-no-yaiba-episodio-1" },
+  { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/carrera-contra-el-tiempo/" },
+  { provider: "cinecalidad", adapter: "cinecalidad", url: "https://www.cinecalidad.am/ver-pelicula/lego-star-wars-the-mandalorian/" },
+  { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/linternas-1x02/" },
+  { provider: "gnula", adapter: "gnula", url: "https://ww3.gnulahd.nu/bleach-1x01/" },
+  { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/link-click-temporada-4-episodio-2" },
+  { provider: "latanime", adapter: "latanime", url: "https://latanime.org/ver/mobile-suit-gundam-hathaway-castellano-episodio-1" },
   { provider: "zokoanime", adapter: "zokoanime", url: "https://zokoanime.video/stream/mal/32281/1/sub" },
   { provider: "zokoanime", adapter: "zokoanime", url: "https://zokoanime.video/stream/mal/40746/1/sub" },
 ];

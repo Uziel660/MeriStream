@@ -272,8 +272,24 @@ html[data-native-shell='android'] [data-player-root] video {
     max-width: calc(100% - 7.5rem) !important;
   }
 
-  html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'] {
+  html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'],
+  html[data-native-shell='android'] [data-player-controls] [data-mobile-player-secondary] {
     display: none !important;
+  }
+
+  html[data-native-shell='android'] .mobile-player-more-action {
+    min-height: 2.65rem !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    padding: .4rem .5rem !important;
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: .65rem;
+    background: #181b21;
+    color: #e1e4e8;
+    font-size: .7rem;
+    font-weight: 650;
   }
 
   html[data-native-shell='android'] [data-player-controls] {

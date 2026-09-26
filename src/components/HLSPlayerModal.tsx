@@ -1,5 +1,5 @@
 // src/components/HLSPlayerModal.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import type { Level } from 'hls.js';
 import {
@@ -88,7 +88,8 @@ import {
   MSG_NO_SERVERS,
   type DeliveryState,
 } from '../utils/playerDelivery';
-import ReportControl from './ReportControl';
+
+const LazyReportControl = lazy(() => import('./ReportControl'));
 
 export interface HLSPlayerMedia {
   id?: string;
@@ -163,6 +164,7 @@ function formatTime(seconds: number): string {
 }
 
 export function HLSPlayerModal(props: HLSPlayerModalProps) {
+  const nativeShell = isNativeShell();
   const { media, onClose, directSource = null } = props;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -2999,19 +3001,23 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
             )}
 
-            <div data-player-secondary-action="true">
-            <ReportControl
-              title={props.title || media?.title || 'esta obra'}
-              showId={props.showId || null}
-              tmdbId={props.tmdbId || null}
-              kind={props.kind || null}
-              episodeId={props.episodeId || null}
-              episodeNumber={props.episodeNumber || null}
-              sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
-              sourceUrl={activeServer?.canonical_locator || null}
-              compact
-            />
-            </div>
+            {!nativeShell && (
+              <div data-player-secondary-action="true">
+                <Suspense fallback={null}>
+                  <LazyReportControl
+                    title={props.title || media?.title || 'esta obra'}
+                    showId={props.showId || null}
+                    tmdbId={props.tmdbId || null}
+                    kind={props.kind || null}
+                    episodeId={props.episodeId || null}
+                    episodeNumber={props.episodeNumber || null}
+                    sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+                    sourceUrl={activeServer?.canonical_locator || null}
+                    compact
+                  />
+                </Suspense>
+              </div>
+            )}
             {/* La cascada selecciona automáticamente, pero el selector queda
                 disponible cuando existen varias fuentes. */}
             {showServerSelector && servers.length > 1 && (
@@ -4054,17 +4060,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           >
                             <Users size={14} /> {teleparty.isInRoom ? 'Watch Party' : 'Ver en grupo'}
                           </button>
-                          <ReportControl
-                            title={props.title || media?.title || 'esta obra'}
-                            showId={props.showId || null}
-                            tmdbId={props.tmdbId || null}
-                            kind={props.kind || null}
-                            episodeId={props.episodeId || null}
-                            episodeNumber={props.episodeNumber || null}
-                            sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
-                            sourceUrl={activeServer?.canonical_locator || null}
-                            className="mobile-player-more-action"
-                          />
+                          <Suspense fallback={<div className="mobile-player-more-action opacity-60">Cargando reporte…</div>}>
+                            <LazyReportControl
+                              title={props.title || media?.title || 'esta obra'}
+                              showId={props.showId || null}
+                              tmdbId={props.tmdbId || null}
+                              kind={props.kind || null}
+                              episodeId={props.episodeId || null}
+                              episodeNumber={props.episodeNumber || null}
+                              sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+                              sourceUrl={activeServer?.canonical_locator || null}
+                              className="mobile-player-more-action"
+                            />
+                          </Suspense>
                           <button type="button" onClick={() => { seekOffset(-10); setActiveMenu('none'); }} className="mobile-player-more-action">
                             <RotateCcw size={14} /> -10 s
                           </button>

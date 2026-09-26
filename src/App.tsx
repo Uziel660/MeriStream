@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } fro
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
-import { CatalogFilters, type SortMode } from './components/CatalogFilters';
+import type { SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
 import type { WatchProgress } from './components/ContinueWatching';
@@ -17,11 +17,11 @@ import { api } from './api/client';
 import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
-import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
 import { isNativeShell } from './utils/runtime';
 
+const LazyCatalogFilters = lazy(() => import('./components/CatalogFilters').then((module) => ({ default: module.CatalogFilters })));
 const LazyExploreCatalogView = lazy(() => import('./components/ExploreCatalogView').then((module) => ({ default: module.ExploreCatalogView })));
 const LazyMyListsView = lazy(() => import('./components/MyListsView').then((module) => ({ default: module.MyListsView })));
 const LazyWatchPartyJoinModal = lazy(() => import('./components/WatchPartyJoinModal').then((module) => ({ default: module.WatchPartyJoinModal })));
@@ -1676,6 +1676,7 @@ export function App() {
         kind: gatewayKind,
       };
       const preferences = getAppPreferences(user?.id);
+      const { createPlaybackRequests } = await import('./utils/playbackBootstrap');
       const playbackRequests = createPlaybackRequests({
         show: playbackShow,
         episode,
@@ -2388,14 +2389,14 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     className="search-filter-bar"
                     years={availableYears}
                     year={yearFilter}
                     onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
                     onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
-                  />
+                  /></Suspense>
 
                   {filteredShows.length === 0 ? (
                     <div className="search-empty-state">
@@ -2528,13 +2529,13 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     years={availableYears}
                     year={yearFilter}
                     onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
                     onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
-                  />
+                  /></Suspense>
 
                   {filteredShows.length === 0 && activeRemoteLoading ? (
                     <div className="py-20 text-center space-y-3" role="status" aria-live="polite">

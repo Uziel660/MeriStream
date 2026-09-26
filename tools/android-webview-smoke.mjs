@@ -361,6 +361,7 @@ try {
       return {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
+        videoPlayback: video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null,
         sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
         viewport: { width: innerWidth, height: innerHeight },
         lastReachable,
@@ -382,6 +383,17 @@ try {
     }
     if (!state.labels.some((label) => /compartir/i.test(label))) {
       throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
+    }
+    await delay(700);
+    const playbackAfterOpen = await evaluate(call, `(() => {
+      const video = document.querySelector('[data-player-root] video');
+      return video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null;
+    })()`);
+    state.videoProgressWhileOpen = playbackAfterOpen && state.videoPlayback
+      ? playbackAfterOpen.currentTime - state.videoPlayback.currentTime
+      : null;
+    if (!playbackAfterOpen || playbackAfterOpen.paused || playbackAfterOpen.readyState < 2 || state.videoProgressWhileOpen < 0.15) {
+      throw new Error(`Playback stopped while player More controls were open: ${JSON.stringify({ before: state.videoPlayback, after: playbackAfterOpen, delta: state.videoProgressWhileOpen })}`);
     }
     console.log(JSON.stringify({ action, ...state }));
   } else if (action === 'assert-player-more-closed') {

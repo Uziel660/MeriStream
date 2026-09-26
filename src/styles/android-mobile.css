@@ -850,3 +850,30 @@ html[data-native-shell='android'] .native-filter-apply {
   background: #f4b33f;
   color: #171006;
 }
+
+
+/* Continue Watching is touch-first: tap the card to resume. */
+@media (pointer: coarse) {
+  html[data-native-shell='android'] .continue-play {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-remove {
+    opacity: .78 !important;
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    background: rgba(5,6,8,.76) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-card img {
+    transform: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-details {
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+  }
+}

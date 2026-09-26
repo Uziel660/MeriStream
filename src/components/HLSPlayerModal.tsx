@@ -299,6 +299,35 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [hoverTime, setHoverTime] = useState<{ time: number; posPercent: number } | null>(null);
   const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers' | 'more'>('none');
 
+  useEffect(() => {
+    if (!nativeShell) return;
+    const onNativeBack = (event: Event) => {
+      const nativeEvent = event as CustomEvent;
+      if (subtitleSettingsOpen) {
+        nativeEvent.preventDefault();
+        setSubtitleSettingsOpen(false);
+        return;
+      }
+      if (activeMenu !== 'none') {
+        nativeEvent.preventDefault();
+        setActiveMenu('none');
+        return;
+      }
+      if (isWatchPartyPanelOpen) {
+        nativeEvent.preventDefault();
+        setIsWatchPartyPanelOpen(false);
+        return;
+      }
+      if (isScreenLocked) {
+        nativeEvent.preventDefault();
+        setIsScreenLocked(false);
+        setShowLockWidget(false);
+      }
+    };
+    window.addEventListener('meristream:native-back', onNativeBack);
+    return () => window.removeEventListener('meristream:native-back', onNativeBack);
+  }, [nativeShell, subtitleSettingsOpen, activeMenu, isWatchPartyPanelOpen, isScreenLocked]);
+
   // Menús de Configuración de Video
   const [qualityLevels, setQualityLevels] = useState<{ index: number; label: string; height?: number }[]>([]);
   const [activeQuality, setActiveQuality] = useState<number>(-1); // -1 = Auto

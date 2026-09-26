@@ -687,3 +687,166 @@ html[data-native-shell='android'] #main-content > .max-w-2xl.py-20 {
   padding-top: 2.5rem !important;
   padding-bottom: 2.5rem !important;
 }
+
+
+/* Explore keeps one compact filter entry point on phones. */
+html[data-native-shell='android'] .native-explore-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  overflow-x: auto;
+  padding: .15rem 0 .55rem;
+  scrollbar-width: none;
+}
+html[data-native-shell='android'] .native-explore-toolbar::-webkit-scrollbar { display: none; }
+
+html[data-native-shell='android'] .native-explore-filter-trigger,
+html[data-native-shell='android'] .native-filter-chip {
+  flex: 0 0 auto;
+  min-height: 2.45rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 999px;
+  background: #151820;
+  color: #d7dbe0;
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+html[data-native-shell='android'] .native-explore-filter-trigger {
+  padding: .45rem .75rem;
+}
+html[data-native-shell='android'] .native-explore-filter-trigger.is-active {
+  border-color: rgba(245,158,11,.42);
+  background: rgba(245,158,11,.11);
+  color: #fff;
+}
+html[data-native-shell='android'] .native-filter-count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #111;
+  font-size: .64rem;
+  font-weight: 900;
+}
+html[data-native-shell='android'] .native-filter-chip {
+  min-height: 2.2rem;
+  padding: .38rem .65rem;
+  color: #aeb5bd;
+}
+
+html[data-native-shell='android'] .native-explore-filter-backdrop {
+  position: fixed;
+  z-index: 145;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(0,0,0,.58);
+  animation: ms-native-fade-in 140ms ease-out both;
+}
+
+html[data-native-shell='android'] .native-explore-filter-sheet {
+  position: fixed;
+  z-index: 146;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(82dvh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: .6rem max(.9rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.9rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.9rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  border: 1px solid rgba(255,255,255,.1);
+  border-bottom: 0;
+  border-radius: 1.3rem 1.3rem 0 0;
+  background: #0f1218;
+  box-shadow: 0 -20px 56px rgba(0,0,0,.55);
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .native-sheet-handle {
+  width: 2.4rem;
+  height: .25rem;
+  margin: .05rem auto .6rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .native-filter-sheet-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: .8rem;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+html[data-native-shell='android'] .native-filter-sheet-heading p {
+  color: #f5b13d;
+  font-size: .62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+html[data-native-shell='android'] .native-filter-sheet-heading h3 {
+  margin-top: .12rem;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+html[data-native-shell='android'] .native-filter-sheet-heading button {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: .75rem;
+  background: #1a1e25;
+  color: #d6dae0;
+}
+
+html[data-native-shell='android'] .native-filter-sheet-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .65rem;
+  padding: .85rem 0;
+}
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-menu,
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-trigger {
+  width: 100%;
+}
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-trigger {
+  min-height: 3rem;
+  justify-content: flex-start;
+}
+
+html[data-native-shell='android'] .native-filter-sheet-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: .8fr 1.2fr;
+  gap: .55rem;
+  padding-top: .65rem;
+  background: #0f1218;
+}
+html[data-native-shell='android'] .native-filter-reset,
+html[data-native-shell='android'] .native-filter-apply {
+  min-height: 2.9rem;
+  border-radius: .8rem;
+  font-size: .76rem;
+  font-weight: 800;
+}
+html[data-native-shell='android'] .native-filter-reset {
+  border: 1px solid rgba(255,255,255,.1);
+  background: #181b21;
+  color: #c8cdd3;
+}
+html[data-native-shell='android'] .native-filter-reset:disabled { opacity: .4; }
+html[data-native-shell='android'] .native-filter-apply {
+  border: 0;
+  background: #f4b33f;
+  color: #171006;
+}

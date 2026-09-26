@@ -75,7 +75,8 @@ describe("DoramasiaAdapter", () => {
       .mockResolvedValueOnce(jsonResponse({ data: { getEpisodeLinks: { links_online: [
         { server: "Filemoon", link: token("https://filemoon.sx/e/dead") },
         { server: "Primeload", is_recommended: true, link: token("https://primeload.co/embed/good") },
-      ] } } }));
+      ] } } }))
+      .mockResolvedValueOnce(new Response("#EXTM3U\n", { status: 200 }));
     vi.spyOn(EmbedResolvers, "resolveWithMeta").mockResolvedValue({
       resolved: true,
       url: "https://cdn.example/video/master.m3u8",

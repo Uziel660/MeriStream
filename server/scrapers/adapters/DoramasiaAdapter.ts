@@ -280,14 +280,53 @@ export class DoramasiaAdapter extends BaseScraperAdapter {
           EmbedResolvers.resolveWithMeta(locator),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("resolver timeout")), 6000)),
         ]);
-        if (meta.resolved && meta.url && !BLACKLISTED_SERVERS.test(meta.url)) return meta.url;
+        if (meta.resolved && meta.url && !BLACKLISTED_SERVERS.test(meta.url)) {
+          if (!this.isDirectMediaUrl(meta.url) || await this.isDirectReachable(meta.url, locator)) return meta.url;
+          // A signed CDN URL can be returned as "resolved" while already
+          // rejected by the upstream edge (Primeload currently does this).
+          // Do not pass that dead URL or its same embed into the player.
+          return /primeload/i.test(locator) ? null : locator;
+        }
       } catch {
         // Keep the stable embed as a fallback; the platform resolver may know
         // a newer host-specific strategy than this adapter.
       }
       return locator;
     }));
-    return [...new Set(resolved.filter((url) => !BLACKLISTED_SERVERS.test(url)))];
+    return [...new Set(resolved.filter((url): url is string => typeof url === "string" && url.length > 0 && !BLACKLISTED_SERVERS.test(url)))];
+  }
+
+  private isDirectMediaUrl(url: string): boolean {
+    return /\.(?:m3u8|mpd|mp4|webm|mkv)(?:[?#]|$)/i.test(url)
+      || /\/m3u8\/|hls-vod|\/get_video|tapecontent\.net|\/api\/v1\/stream\/mega/i.test(url);
+  }
+
+  private async isDirectReachable(url: string, locator: string): Promise<boolean> {
+    if (!this.isDirectMediaUrl(url)) return false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    try {
+      const referer = (() => {
+        try { return `${new URL(locator).origin}/`; } catch { return `${BASE_URL}/`; }
+      })();
+      const response = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": COMMON_HEADERS["User-Agent"],
+          Accept: "application/vnd.apple.mpegurl,application/x-mpegURL,video/*,*/*;q=0.8",
+          Referer: referer,
+          Range: "bytes=0-4095",
+        },
+      });
+      if (!(response.status === 200 || response.status === 206)) return false;
+      const body = (await response.text()).slice(0, 256).toLowerCase();
+      return !body.includes("token validation failed") && !body.includes('"error"') && (!/\.m3u8(?:[?#]|$)/i.test(url) || body.includes("#extm3u"));
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async fetchGraphql(query: string, variables: Record<string, unknown>, referer: string): Promise<GraphqlPayload | null> {

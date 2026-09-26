@@ -431,7 +431,6 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
   return sortStreamsByPriority(
     entries.map((url) => ({
       url,
-      type: (/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(url) || /pixeldrain\.com\/api\/file\//i.test(url) || /\/api\/v1\/stream\/mega/i.test(url) ? "direct" : "embed") as "direct" | "embed",
       tier: getStreamTier(url),
       host: (() => {
         try {
@@ -3227,6 +3226,7 @@ async function startServer() {
           /\.(?:m3u8|mpd|mp4|webm|mkv)(?:[?#]|$)/i.test(value) ||
           /\/get_video(?:\?|$)/i.test(value) ||
           /tapecontent\.net/i.test(value) ||
+          /pixeldrain\.com\/api\/file\//i.test(value) ||
           /\/m3u8\//i.test(value) ||
           /hls-vod/i.test(value)
         );
@@ -3924,7 +3924,6 @@ async function startServer() {
 
       // Una fuente directa con extensiÃ³n de media es resoluble aunque coincida con la URL
       // pedida (caso archive.org/details â†’ .mp4 directo): el player nativo sÃ­ la reproduce.
-      const isDirectMedia = (u: string) => /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes(".m3u8") || u.includes("/m3u8/") || /pixeldrain\.com\/api\/file\//i.test(u) || /\/api\/v1\/stream\/mega/i.test(u);
 
       const realStreams = all.filter((u) => (u !== url || isDirectMedia(u)) && !isSourcePage(u));
 

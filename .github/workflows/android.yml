@@ -157,3 +157,80 @@ jobs:
             meristream-window.xml
             meristream-logcat.txt
           if-no-files-found: warn
+
+
+  low-end-android-smoke:
+    name: Android 10 / 2 GB smoke
+    needs: build-android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download already-built APK
+        uses: actions/download-artifact@v4
+        with:
+          name: meristream-android-debug
+          path: low-end-apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Exercise APK on constrained Android 10 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          disable-animations: true
+          script: |
+            adb install -r low-end-apk/app-debug.apk
+            adb logcat -c
+            trap 'adb logcat -d > meristream-low-end-logcat.txt 2>/dev/null || true' EXIT
+            adb shell am force-stop me.merith.meristream
+            adb shell am start -W -n me.merith.meristream/.MainActivity | tee meristream-low-end-start.txt
+            sleep 12
+            adb shell dumpsys activity activities | grep -E "topResumedActivity=.*me.merith.meristream/.MainActivity"
+
+            SOCKET="$(adb shell cat /proc/net/unix 2>/dev/null | grep -o 'webview_devtools_remote_[^ ]*' | head -1 | tr -d '\r' || true)"
+            test -n "$SOCKET"
+            adb forward --remove tcp:9222 >/dev/null 2>&1 || true
+            adb forward tcp:9222 "localabstract:$SOCKET"
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if curl -fsS http://127.0.0.1:9222/json >/tmp/low-end-webview-pages.json 2>/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            cat /tmp/low-end-webview-pages.json
+
+            node tools/android-webview-smoke.mjs state
+            node tools/android-webview-smoke.mjs open-player
+            node tools/android-webview-smoke.mjs play
+            sleep 6
+            node tools/android-webview-smoke.mjs assert-player
+
+            adb shell dumpsys meminfo me.merith.meristream > meristream-low-end-meminfo.txt || true
+            adb exec-out screencap -p > meristream-low-end-player.png || true
+            adb logcat -d > meristream-low-end-logcat.txt || true
+            ! grep -E "FATAL EXCEPTION.*me\.merith\.meristream|Process: me\.merith\.meristream" meristream-low-end-logcat.txt
+
+      - name: Upload low-end evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-low-end-evidence
+          path: |
+            meristream-low-end-start.txt
+            meristream-low-end-player.png
+            meristream-low-end-meminfo.txt
+            meristream-low-end-logcat.txt
+          if-no-files-found: warn

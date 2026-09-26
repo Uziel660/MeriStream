@@ -1,5 +1,6 @@
 // src/components/HLSPlayerModal.tsx
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type Hls from 'hls.js';
 import type { Level } from 'hls.js';
 import {
@@ -4189,7 +4190,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     >
                       <MoreVertical size={17} />
                     </button>
-                    {activeMenu === 'more' && (
+                    {activeMenu === 'more' && nativeShell && typeof document !== 'undefined' && createPortal((
                       <>
                         <button
                           type="button"
@@ -4324,7 +4325,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                         )}
                         </div>
                       </>
-                    )}
+                    ), document.body)}
                   </div>
                 </div>
               </div>

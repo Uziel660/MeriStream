@@ -411,7 +411,7 @@ html[data-native-shell='android'] [data-player-controls] input[type='range'] {
 
 html[data-native-shell='android'] .native-player-more-backdrop {
   position: fixed;
-  z-index: 108;
+  z-index: 10000;
   inset: 0;
   width: 100vw;
   height: 100dvh;
@@ -423,7 +423,7 @@ html[data-native-shell='android'] .native-player-more-backdrop {
 
 html[data-native-shell='android'] .native-player-more-sheet {
   position: fixed !important;
-  z-index: 110;
+  z-index: 10001;
   left: 0;
   right: 0;
   bottom: 0;

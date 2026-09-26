@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Info, Star, Heart } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
-import { heroBackdropSrcSet, heroBackdropUrl } from '../utils/imageSizes';
+import { heroBackdropSrcSet, heroBackdropUrl, sizedImageUrl } from '../utils/imageSizes';
 import { cleanDisplayTitle } from '../utils/textCleaner';
 import { SmartImage } from './SmartImage';
 import { useHiddenGenres } from '../hooks/useHiddenGenres';
@@ -20,6 +20,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
   const [hydratedVisuals, setHydratedVisuals] = useState<Partial<Show> | null>(null);
   const { isFavorite, toggleFavorite } = useUserLists();
   const isFav = media ? isFavorite(media.id) : false;
+  const lowCostPresentation = isNativeLowCostPresentation();
 
   useEffect(() => {
     setHydratedVisuals(null);
@@ -28,7 +29,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
     // On Android the catalog already has enough artwork to render immediately.
     // Skip this decorative metadata request on balanced/low modes so first
     // interaction and poster loading win on inexpensive devices.
-    if (isNativeLowCostPresentation() || media?.logo_url || !Number.isInteger(tmdbId) || tmdbId <= 0) return;
+    if (lowCostPresentation || media?.logo_url || !Number.isInteger(tmdbId) || tmdbId <= 0) return;
 
     const rawKind = `${media.kind || ''} ${media.category || ''}`.toLowerCase();
     const kind = rawKind.includes('movie') || rawKind.includes('pel') || rawKind.includes('cine')
@@ -57,7 +58,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
     return () => {
       cancelled = true;
     };
-  }, [media?.id, media?.tmdb_id, media?.logo_url]);
+  }, [media?.id, media?.tmdb_id, media?.logo_url, lowCostPresentation]);
 
   if (!media) return null;
 
@@ -73,8 +74,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ media, onPlay, onMoreInf
     <section className="feature" aria-label="Título destacado">
       <div className="feature-art">
         <SmartImage
-          src={heroBackdropUrl(visualMedia)}
-          srcSet={heroBackdropSrcSet(visualMedia)}
+          src={lowCostPresentation ? sizedImageUrl(heroBackdropUrl(visualMedia), 'w780') : heroBackdropUrl(visualMedia)}
+          srcSet={lowCostPresentation ? undefined : heroBackdropSrcSet(visualMedia)}
           sizes="100vw"
           alt=""
           className="feature-image"

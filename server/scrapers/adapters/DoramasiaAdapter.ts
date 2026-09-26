@@ -226,8 +226,10 @@ export class DoramasiaAdapter extends BaseScraperAdapter {
         if (Array.isArray(nextItems)) raw.push(...nextItems);
       }
 
-      const hasOnlineMarker = raw.some((item: any) => Number(item?.count_links) > 0);
-      const selected = hasOnlineMarker ? raw.filter((item: any) => Number(item?.count_links) > 0) : raw;
+      // Doramasia lists future episodes before publishing their links. They
+      // must not enter the playable catalog: importing those locators makes
+      // the UI spin forever until the upstream episode is released.
+      const selected = raw.filter((item: any) => Number(item?.count_links) > 0);
       for (const item of selected) {
         const slug = typeof item?.slug === "string" ? item.slug.trim() : "";
         const number = Number(item?.episode_number);

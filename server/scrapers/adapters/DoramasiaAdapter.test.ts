@@ -63,6 +63,19 @@ describe("DoramasiaAdapter", () => {
     expect(result.tmdb_id).toBe(123);
   });
 
+  it("does not publish future episodes with no playable links", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ data: { detailDorama: {
+        _id: "future-1", name: "Future", name_es: "Futuro", seasons: [{ season_number: 1 }],
+      } } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { paginationEpisode: {
+        pageInfo: { pageCount: 1 },
+        items: [{ slug: "future-1x1", episode_number: 1, season_number: 1, count_links: null }],
+      } } }));
+    const result = await new DoramasiaAdapter().analyze("https://doramasia.com/doramas/future", "detail");
+    expect(result.episodes).toEqual([]);
+  });
+
   it("decodes signed links just in time, resolves supported servers and drops dead hosts", async () => {
     const token = (link: string) => {
       const payload = Buffer.from(JSON.stringify({ link: Buffer.from(link).toString("base64") })).toString("base64url");

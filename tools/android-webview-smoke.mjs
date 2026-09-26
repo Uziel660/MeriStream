@@ -310,6 +310,8 @@ try {
         sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
         viewport: { width: innerWidth, height: innerHeight },
         lastReachable,
+        scrollHeight: sheet ? sheet.scrollHeight : null,
+        clientHeight: sheet ? sheet.clientHeight : null,
       };
     })()`);
     if (!state?.visible) throw new Error('Player More sheet did not open');

@@ -1373,9 +1373,6 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] [data-playe
 html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
   max-height: 72vh;
   padding: .55rem .65rem;
-  /* Chrome 74 sometimes leaves the accelerated scroll layer unpainted until
-   * it moves, so keep this short menu in the normal painting flow. */
-  -webkit-overflow-scrolling: auto;
 }
 
 /* Chrome 74 has no flex gap; leave room between each action's icon and label. */
@@ -1391,6 +1388,9 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-pla
     height: 100vh;
     max-height: 100vh;
     padding: .65rem;
+    /* The action grid fits in this viewport. Avoid Chrome 74's unpainted
+     * scroll layer while retaining its separate server-list scroller. */
+    overflow-y: visible;
   }
 }
 

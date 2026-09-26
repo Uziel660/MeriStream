@@ -2423,7 +2423,7 @@ export function App() {
                             key={item.id}
                             media={item}
                             onSelectMedia={handleOpenDetails}
-                            imageLoading={index < 12 ? 'eager' : 'lazy'}
+                            imageLoading={index < (nativeShell ? 4 : 12) ? 'eager' : 'lazy'}
                           />
                         ))}
                       </div>

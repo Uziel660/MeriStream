@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Radio,
 } from 'lucide-react';
+import { isNativeShell, nativeHaptic, nativeShare, publicAppUrl } from '../utils/runtime';
 import type {
   WatchPartyRoom,
   WatchPartyParticipant,
@@ -53,6 +54,7 @@ export function WatchPartyPanel({
   disconnect,
   hostName,
 }: WatchPartyPanelProps) {
+  const nativeShell = isNativeShell();
   const [inputText, setInputText] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -76,6 +78,16 @@ export function WatchPartyPanel({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!nativeShell || !isOpen) return;
+    const onNativeBack = (event: Event) => {
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('meristream:native-back', onNativeBack);
+    return () => window.removeEventListener('meristream:native-back', onNativeBack);
+  }, [nativeShell, isOpen, onClose]);
 
   // Autoscroll chat on new messages
   useEffect(() => {
@@ -109,10 +121,10 @@ export function WatchPartyPanel({
 
   const shareUrl = useMemo(() => {
     if (!roomCode || typeof window === 'undefined') return '';
-    const url = new URL(window.location.origin);
+    const url = new URL(publicAppUrl('/'));
     url.searchParams.set('party', roomCode);
     return url.toString();
-  }, [roomCode]);
+  }, [roomCode, nativeShell]);
 
   const hostUsername = useMemo(() => {
     if (hostName) return hostName;
@@ -171,6 +183,17 @@ export function WatchPartyPanel({
     }
   }, [shareUrl]);
 
+  const handleNativeShare = useCallback(async () => {
+    if (!shareUrl) return;
+    const shared = await nativeShare({
+      title: 'Watch Party · MeriStream',
+      text: roomCode ? `Únete a mi Watch Party en MeriStream · Sala ${roomCode}` : 'Únete a mi Watch Party en MeriStream',
+      url: shareUrl,
+      dialogTitle: 'Compartir Watch Party',
+    });
+    if (!shared) handleCopyShareLink();
+  }, [shareUrl, roomCode, handleCopyShareLink]);
+
   const handleSendMessage = useCallback(
     (e?: React.FormEvent) => {
       if (e) e.preventDefault();
@@ -199,8 +222,8 @@ export function WatchPartyPanel({
         initial={isMobile ? { y: '100%' } : { x: '100%' }}
         animate={isMobile ? { y: 0 } : { x: 0 }}
         exit={isMobile ? { y: '100%' } : { x: '100%' }}
-        transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-        className={`fixed z-[9999] flex flex-col bg-zinc-950/98 backdrop-blur-xl shadow-2xl text-zinc-100 select-none overflow-hidden border border-zinc-800 ${
+        transition={nativeShell ? { duration: 0.14 } : { type: 'spring', damping: 28, stiffness: 260 }}
+        className={`watch-party-panel fixed z-[9999] flex flex-col bg-zinc-950/98 backdrop-blur-xl shadow-2xl text-zinc-100 select-none overflow-hidden border border-zinc-800 ${
           isMobile
             ? 'bottom-0 inset-x-0 w-full max-w-full max-h-[70vh] h-[65vh] border-t rounded-t-xl overflow-x-hidden'
             : 'right-0 top-0 bottom-0 w-80 md:w-96 max-w-[360px] h-full border-l'
@@ -307,13 +330,13 @@ export function WatchPartyPanel({
               />
               <button
                 type="button"
-                onClick={handleCopyShareLink}
+                onClick={nativeShell ? handleNativeShare : handleCopyShareLink}
                 data-testid="copy-share-link-button"
-                aria-label={shareCopied ? 'Enlace copiado' : 'Copiar enlace de la sala'}
-                title={shareCopied ? '¡Enlace copiado!' : 'Copiar enlace de la sala'}
+                aria-label={nativeShell ? 'Compartir enlace de la sala' : (shareCopied ? 'Enlace copiado' : 'Copiar enlace de la sala')}
+                title={nativeShell ? 'Compartir sala' : (shareCopied ? '¡Enlace copiado!' : 'Copiar enlace de la sala')}
                 className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold text-amber-300 transition hover:bg-zinc-800 hover:text-amber-200"
               >
-                {shareCopied ? 'Copiado' : 'Copiar enlace'}
+                {nativeShell ? 'Compartir' : (shareCopied ? 'Copiado' : 'Copiar enlace')}
               </button>
             </div>
           )}
@@ -476,7 +499,7 @@ export function WatchPartyPanel({
             <button
               key={emoji}
               type="button"
-              onClick={() => handleQuickReaction(emoji)}
+              onClick={() => { nativeHaptic(4); handleQuickReaction(emoji); }}
               data-testid={`quick-emoji-${emoji}`}
               aria-label={`Reacción ${emoji}`}
               title={`Reaccionar con ${emoji}`}

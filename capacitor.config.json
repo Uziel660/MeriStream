@@ -1,0 +1,32 @@
+{
+  "appId": "me.merith.meristream",
+  "appName": "MeriStream",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK",
+      "hidden": false,
+      "animation": "NONE"
+    },
+    "Keyboard": {
+      "resizeOnFullScreen": true
+    }
+  },
+  "android": {
+    "includePlugins": [
+      "@capacitor/app",
+      "@capacitor/haptics",
+      "@capacitor/screen-orientation",
+      "@capacitor/share",
+      "@capacitor/keyboard"
+    ]
+  }
+}

@@ -37,16 +37,18 @@ function useActivated(active: boolean): boolean {
   return activated;
 }
 
-function DeferredOverlayFallback({ label }: { label: string }) {
+function DeferredOverlayFallback({ label, mobileSheet = false }: { label: string; mobileSheet?: boolean }) {
   return (
     <div
-      className="fixed inset-0 z-[140] grid place-items-center bg-black/70 backdrop-blur-sm"
+      className={`deferred-overlay-fallback fixed inset-0 z-[140] grid place-items-center bg-black/70 backdrop-blur-sm ${mobileSheet ? 'deferred-overlay-fallback--sheet' : ''}`}
       role="status"
       aria-live="polite"
       aria-label={label}
     >
-      <div className="rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs font-medium text-zinc-300 shadow-2xl">
-        {label}
+      <div className="deferred-overlay-fallback-card rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs font-medium text-zinc-300 shadow-2xl">
+        <span className="deferred-overlay-fallback-handle" aria-hidden="true" />
+        <span className="deferred-overlay-fallback-spinner" aria-hidden="true" />
+        <span>{label}</span>
       </div>
     </div>
   );
@@ -98,7 +100,7 @@ export function AuthModal() {
   if (!activated) return null;
 
   return (
-    <Suspense fallback={isAuthModalOpen ? <DeferredOverlayFallback label="Preparando acceso…" /> : null}>
+    <Suspense fallback={isAuthModalOpen ? <DeferredOverlayFallback label="Preparando acceso…" mobileSheet /> : null}>
       <LazyAuthModal />
     </Suspense>
   );

@@ -1,6 +1,8 @@
 // src/components/HLSPlayerModal.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Hls, { Level } from 'hls.js';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type Hls from 'hls.js';
+import type { Level } from 'hls.js';
 import {
   X,
   Play,
@@ -27,6 +29,8 @@ import {
   Lock,
   Unlock,
   Users,
+  MoreVertical,
+  Share2,
 } from 'lucide-react';
 import { api, getAuthToken, type PlaybackResolution } from '../api/client';
 import { useChromecast } from '../hooks/useChromecast';
@@ -53,6 +57,16 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
+import {
+  backendUrl,
+  publicAppUrl,
+  isNativeShell,
+  nativeHaptic,
+  nativeLockLandscape,
+  nativeSetImmersive,
+  nativeShare,
+  nativeUnlockOrientation,
+} from '../utils/runtime';
 import { normalizePlayerLanguage, playerLanguageLabel } from '../utils/playerLanguages';
 import {
   applyResolution,
@@ -78,7 +92,8 @@ import {
   MSG_NO_SERVERS,
   type DeliveryState,
 } from '../utils/playerDelivery';
-import ReportControl from './ReportControl';
+
+const LazyReportControl = lazy(() => import('./ReportControl'));
 
 export interface HLSPlayerMedia {
   id?: string;
@@ -153,6 +168,7 @@ function formatTime(seconds: number): string {
 }
 
 export function HLSPlayerModal(props: HLSPlayerModalProps) {
+  const nativeShell = isNativeShell();
   const { media, onClose, directSource = null } = props;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -162,10 +178,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setVideoNode(node);
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const overflowMenuRef = useRef<HTMLDivElement>(null);
+  const wakeLockRef = useRef<any>(null);
   const hlsRef = useRef<Hls | null>(null);
   // dash.js se carga solo cuando se selecciona un manifiesto MPD.
   const dashRef = useRef<any>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastNativeTapRef = useRef<{ at: number; x: number } | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const autoFailoverCountRef = useRef<number>(0);
 
@@ -284,7 +303,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [showLockWidget, setShowLockWidget] = useState(false);
   const lockWidgetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [hoverTime, setHoverTime] = useState<{ time: number; posPercent: number } | null>(null);
-  const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers'>('none');
+  const [activeMenu, setActiveMenu] = useState<'none' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'servers' | 'more'>('none');
 
   // Menús de Configuración de Video
   const [qualityLevels, setQualityLevels] = useState<{ index: number; label: string; height?: number }[]>([]);
@@ -369,15 +388,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   })();
   const subtitleSignature = subtitleTracks.map((track) => `${track.id}:${track.url}`).join('|');
   const hasBurnedInSubtitles = servers[activeServerIndex]?.subtitle_mode === 'burned_in';
-  const subtitleSourceUrl = (track: SubtitleTrack): string => {
-    const parsedUrl = new URL(track.url, window.location.href);
-    if (parsedUrl.origin === window.location.origin) return parsedUrl.toString();
-    const isOpenSubtitles = /(^|\.)opensubtitles\.(org|com)$/i.test(parsedUrl.hostname);
-    if (isOpenSubtitles) {
-      return `/api/v1/proxy/subtitle?url=${encodeURIComponent(parsedUrl.toString())}`;
-    }
-    return `/api/v1/proxy/stream?referer=${encodeURIComponent(`${parsedUrl.origin}/`)}&url=${encodeURIComponent(parsedUrl.toString())}`;
-  };
+  const subtitleSourceUrl = (track: SubtitleTrack): string => backendUrl(track.url);
 
   const activeSubtitleTrack = activeSubtitleId === 'off'
     ? undefined
@@ -541,8 +552,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
         const previousSessionId = activeSessionIdRef.current;
         activeSessionIdRef.current = session.session_id;
-        setActiveSessionUrl(session.playback_url);
-        castUrl = session.playback_url;
+        setActiveSessionUrl(backendUrl(session.playback_url));
+        castUrl = backendUrl(session.playback_url);
         if (previousSessionId && previousSessionId !== session.session_id) {
           void api.closeProxySession(previousSessionId);
         }
@@ -721,6 +732,57 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const pendingPartyMediaRef = useRef<WatchPartyMedia | null>(null);
   const partyMediaRevisionRef = useRef(0);
   const [partyMediaRevision, setPartyMediaRevision] = useState(0);
+
+  useEffect(() => {
+    if (!nativeShell) return;
+    const onNativeBack = (event: Event) => {
+      const nativeEvent = event as CustomEvent;
+      const consumePlayerLayer = () => {
+        // preventDefault makes dispatchEvent() report the Back as consumed to
+        // the native bridge. stopImmediatePropagation keeps lower-priority
+        // window listeners (for example the catalog header) from reacting to
+        // the same hardware Back after the player has already handled it.
+        nativeEvent.preventDefault();
+        nativeEvent.stopImmediatePropagation();
+      };
+
+      // Mobile overflow is rendered inside the controls tree. Consume Android
+      // Back here before any player/history navigation can run.
+      if (activeMenu === 'more') {
+        consumePlayerLayer();
+        setActiveMenu('none');
+        setControlsVisible(true);
+        return;
+      }
+      if (subtitleSettingsOpen) {
+        consumePlayerLayer();
+        setSubtitleSettingsOpen(false);
+        return;
+      }
+      if (isJoinModalOpen) {
+        consumePlayerLayer();
+        setIsJoinModalOpen(false);
+        return;
+      }
+      if (isWatchPartyPanelOpen) {
+        consumePlayerLayer();
+        setIsWatchPartyPanelOpen(false);
+        return;
+      }
+      if (activeMenu !== 'none') {
+        consumePlayerLayer();
+        setActiveMenu('none');
+        return;
+      }
+      if (isScreenLocked) {
+        consumePlayerLayer();
+        setIsScreenLocked(false);
+        setShowLockWidget(false);
+      }
+    };
+    window.addEventListener('meristream:native-back', onNativeBack);
+    return () => window.removeEventListener('meristream:native-back', onNativeBack);
+  }, [nativeShell, subtitleSettingsOpen, activeMenu, isJoinModalOpen, isWatchPartyPanelOpen, isScreenLocked]);
 
   useEffect(() => {
     const propCode = props.initialPartyRoomCode || props.partyRoomCode;
@@ -1588,13 +1650,31 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     };
 
-    const setupHls = (playUrl: string) => {
+    const setupHls = async (playUrl: string) => {
       if (!video) return;
       const isHlsUrl = playUrl.includes('.m3u8') || playUrl.includes('/m3u8/');
-      if (isHlsUrl && Hls.isSupported()) {
+      if (!isHlsUrl) return;
+
+      // Native HLS (Safari / WebViews that expose it) should not download
+      // hls.js at all. Android WebView normally falls through to the lazy
+      // import below.
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = playUrl;
+        return;
+      }
+
+      try {
+        const hlsModule = await import('hls.js');
+        if (attemptId !== attemptIdRef.current) return;
+        const HlsCtor = hlsModule.default;
+        if (!HlsCtor.isSupported()) {
+          video.src = playUrl;
+          return;
+        }
+
         const deviceMemory = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8);
         const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4 || deviceMemory <= 4;
-        const hls = new Hls({
+        const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
           // Mantener menos segmentos en memoria en equipos modestos reduce
@@ -1820,10 +1900,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           }
         };
 
-        hls.on(Hls.Events.MANIFEST_PARSED, handleManifestParsed);
-        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, handleAudioTracksUpdated);
-        hls.on(Hls.Events.LEVEL_SWITCHED, handleLevelSwitched);
-        hls.on(Hls.Events.ERROR, handleHlsError);
+        hls.on(HlsCtor.Events.MANIFEST_PARSED, handleManifestParsed);
+        hls.on(HlsCtor.Events.AUDIO_TRACKS_UPDATED, handleAudioTracksUpdated);
+        hls.on(HlsCtor.Events.LEVEL_SWITCHED, handleLevelSwitched);
+        hls.on(HlsCtor.Events.ERROR, handleHlsError);
+      } catch (error) {
+        if (attemptId !== attemptIdRef.current) return;
+        console.warn('No se pudo cargar hls.js; intentando reproducción nativa', error);
+        video.src = playUrl;
       }
     }; // end setupHls
 
@@ -1835,7 +1919,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return;
     }
     const capability = getDeliveryCapability(url, activeServer?.provider);
-    let finalUrl = url;
+    let finalUrl = backendUrl(url);
 
     // Hacia el proxy SOLO si una marca previa o la resolución lo exige
     const intent = nextDeliveryIntent(activeServer, capability);
@@ -1876,7 +1960,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             return;
           }
           activeSessionIdRef.current = session.session_id;
-          finalUrl = session.playback_url;
+          finalUrl = backendUrl(session.playback_url);
           setActiveSessionUrl(finalUrl);
           // Conservar la metadata de la sesión en el servidor activo.
           setServers((prev) => {
@@ -1910,8 +1994,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
           const sessionIsHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
           const sessionIsDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
-          if (sessionIsHls && Hls.isSupported()) {
-            setupHls(finalUrl);
+          if (sessionIsHls) {
+            void setupHls(finalUrl);
           } else if (sessionIsDash) {
             void setupDash(finalUrl);
           } else {
@@ -1982,8 +2066,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const isHls = finalUrl.includes('.m3u8') || finalUrl.includes('/m3u8/');
     const isDash = /\.mpd(?:[?#]|$)/i.test(finalUrl);
-    if (isHls && Hls.isSupported()) {
-      setupHls(finalUrl);
+    if (isHls) {
+      void setupHls(finalUrl);
     } else if (isDash) {
       void setupDash(finalUrl);
     } else if (isNativeMediaUrl(finalUrl)) {
@@ -2360,10 +2444,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   // 5. ATAJOS DE TECLADO Y FULLSCREEN
   useEffect(() => {
+    if (nativeShell) return;
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
+  }, [nativeShell]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2420,6 +2505,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     /^\/(?:ver|watch|reproducir|player)(?:\/|$)/i.test(window.location.pathname)
     || new URLSearchParams(window.location.search).get('view') === 'player'
     || new URLSearchParams(window.location.search).get('player') === '1'
+    || new URLSearchParams(window.location.search).has('test_player')
   );
   const handleClose = useCallback(() => {
     if (isClosingRef.current) return;
@@ -2430,6 +2516,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (window.history.state?.meristream_view === 'player' && !isAppRoutedPlayer) {
       window.history.back();
     }
+    leaveNativeImmersive();
     onClose();
   }, [onClose, props, isAppRoutedPlayer]);
 
@@ -2467,8 +2554,49 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     };
   }, [onClose, props, isAppRoutedPlayer]);
 
+  useEffect(() => {
+    if (!props.isOpen || !nativeShell) return;
+    setIsFullscreen(true);
+    void nativeSetImmersive(true);
+    void nativeLockLandscape();
+    return () => {
+      setIsFullscreen(false);
+      void nativeSetImmersive(false);
+      void nativeUnlockOrientation();
+    };
+  }, [props.isOpen, nativeShell]);
+
+  // Android may consume the first Back press itself while immersive system bars
+  // are hidden. When a player-owned overlay is visible, temporarily expose the
+  // system bars so hardware Back reaches MeriStream and closes the top-most
+  // layer. As soon as the overlay is gone the video returns to immersive mode.
+  const hasNativePlayerOverlay = subtitleSettingsOpen
+    || activeMenu !== 'none'
+    || isWatchPartyPanelOpen
+    || isJoinModalOpen;
+
+  useEffect(() => {
+    if (!props.isOpen || !nativeShell) return;
+    void nativeSetImmersive(!hasNativePlayerOverlay);
+  }, [props.isOpen, nativeShell, hasNativePlayerOverlay]);
+
   // Controles de Acción de Reproducción
+  const enterNativeImmersive = async () => {
+    if (!isNativeShell()) return;
+    setIsFullscreen(true);
+    await nativeSetImmersive(true);
+    await nativeLockLandscape();
+  };
+
+  const leaveNativeImmersive = () => {
+    if (!isNativeShell()) return;
+    setIsFullscreen(false);
+    void nativeSetImmersive(false);
+    void nativeUnlockOrientation();
+  };
+
   const togglePlay = () => {
+    nativeHaptic(4);
     if (isViewerMode) {
       showViewerLockNotice('Reproducción controlada por el anfitrión');
       return;
@@ -2481,6 +2609,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
+      void enterNativeImmersive();
       video.play().catch(() => {});
     } else {
       video.pause();
@@ -2570,14 +2699,63 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setHoverTime(null);
   };
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const node = containerRef.current;
     if (!node) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      node.requestFullscreen();
+
+    if (nativeShell) {
+      if (isFullscreen) {
+        leaveNativeImmersive();
+      } else {
+        await enterNativeImmersive();
+      }
+      return;
     }
+
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await node.requestFullscreen();
+    }
+  };
+
+  const showTapFeedback = (message: string) => {
+    setFailoverNotice(message);
+    window.setTimeout(() => setFailoverNotice((current) => current === message ? null : current), 650);
+  };
+
+  const handleNativePlayerPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!nativeShell || event.pointerType === 'mouse' || isScreenLocked) return;
+    const now = performance.now();
+    const previous = lastNativeTapRef.current;
+    lastNativeTapRef.current = { at: now, x: event.clientX };
+
+    if (!previous || now - previous.at > 330 || Math.abs(event.clientX - previous.x) > 96) return;
+    lastNativeTapRef.current = null;
+    nativeHaptic(8);
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+    if (position < 0.36) {
+      seekOffset(-10);
+      showTapFeedback('−10 s');
+      return;
+    }
+    if (position > 0.64) {
+      seekOffset(10);
+      showTapFeedback('+10 s');
+      return;
+    }
+
+    // The native player is already immersive. A center double-tap toggles
+    // playback instead of unexpectedly leaving fullscreen.
+    togglePlay();
+    showTapFeedback(isPlaying ? 'Pausa' : 'Reproducir');
+  };
+
+  const handlePlayerDoubleClick = () => {
+    if (isScreenLocked || nativeShell) return;
+    void toggleFullscreen();
   };
 
   const togglePictureInPicture = async () => {
@@ -2690,6 +2868,52 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const effectiveDuration = isCasting && castDuration > 0 ? castDuration : duration;
   const effectiveIsPlaying = isCasting ? !castIsPaused : isPlaying;
   const progressPct = effectiveDuration > 0 ? (effectiveCurrentTime / effectiveDuration) * 100 : 0;
+
+  useEffect(() => {
+    if (!nativeShell || typeof navigator === 'undefined') return;
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request?: (type: 'screen') => Promise<any> } }).wakeLock;
+    let cancelled = false;
+
+    const release = async () => {
+      const lock = wakeLockRef.current;
+      wakeLockRef.current = null;
+      if (lock?.release) {
+        try { await lock.release(); } catch {}
+      }
+    };
+
+    const acquire = async () => {
+      if (cancelled || !effectiveIsPlaying || document.visibilityState !== 'visible' || !wakeLock?.request || wakeLockRef.current) return;
+      try {
+        const lock = await wakeLock.request('screen');
+        if (cancelled || !effectiveIsPlaying) {
+          try { await lock.release?.(); } catch {}
+          return;
+        }
+        wakeLockRef.current = lock;
+        lock?.addEventListener?.('release', () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+      } catch {
+        // Wake Lock is optional; playback remains fully functional without it.
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && effectiveIsPlaying) void acquire();
+      else void release();
+    };
+
+    if (effectiveIsPlaying) void acquire();
+    else void release();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void release();
+    };
+  }, [nativeShell, effectiveIsPlaying]);
   const bufferedPct = isCasting ? 100 : (effectiveDuration > 0 ? (bufferedEnd / effectiveDuration) * 100 : 0);
   const subtitleIsCustomPosition = appPreferences.subtitlePosition === 'custom';
   const subtitlePositionClass = subtitleIsCustomPosition
@@ -2711,6 +2935,102 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     : appPreferences.subtitleScale === 'small'
     ? 'text-sm sm:text-base'
     : 'text-base sm:text-lg';
+
+  // Android / browser Media Session integration. On capable WebViews this
+  // exposes playback to headset buttons, lock-screen controls and the media
+  // notification without creating a second native player implementation.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    const poster = props.posterUrl || media?.poster_url || props.item?.poster_url || '';
+    const showName = props.showTitle || media?.showTitle || media?.title || 'MeriStream';
+    try {
+      session.metadata = new MediaMetadata({
+        title: displayTitle,
+        artist: showName,
+        album: props.episodeNumber ? `Episodio ${props.episodeNumber}` : 'MeriStream',
+        ...(poster ? { artwork: [{ src: poster }] } : {}),
+      });
+    } catch {}
+
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try { session.setActionHandler(action, handler); } catch {}
+    };
+
+    setHandler('play', () => {
+      if (isCasting) castPlay();
+      else void videoRef.current?.play().catch(() => {});
+    });
+    setHandler('pause', () => {
+      if (isCasting) castPause();
+      else videoRef.current?.pause();
+    });
+    setHandler('seekbackward', (details) => {
+      const delta = Number(details.seekOffset || 10);
+      if (isCasting) castSeek(Math.max(0, castCurrentTime - delta));
+      else if (videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - delta);
+    });
+    setHandler('seekforward', (details) => {
+      const delta = Number(details.seekOffset || 10);
+      const max = isCasting ? (castDuration || duration || Number.MAX_SAFE_INTEGER) : (videoRef.current?.duration || duration || Number.MAX_SAFE_INTEGER);
+      if (isCasting) castSeek(Math.min(max, castCurrentTime + delta));
+      else if (videoRef.current) videoRef.current.currentTime = Math.min(max, videoRef.current.currentTime + delta);
+    });
+    setHandler('seekto', (details) => {
+      if (typeof details.seekTime !== 'number') return;
+      if (isCasting) castSeek(details.seekTime);
+      else if (videoRef.current) videoRef.current.currentTime = details.seekTime;
+    });
+    if (props.onNextEpisode) {
+      setHandler('nexttrack', () => props.onNextEpisode?.());
+    }
+
+    return () => {
+      for (const action of ['play', 'pause', 'seekbackward', 'seekforward', 'seekto', 'nexttrack'] as MediaSessionAction[]) {
+        setHandler(action, null);
+      }
+      try { session.metadata = null; } catch {}
+    };
+  }, [
+    displayTitle,
+    props.posterUrl,
+    props.showTitle,
+    props.episodeNumber,
+    props.onNextEpisode,
+    props.item?.poster_url,
+    media?.poster_url,
+    media?.showTitle,
+    media?.title,
+    isCasting,
+    castCurrentTime,
+    castDuration,
+    duration,
+    castPlay,
+    castPause,
+    castSeek,
+  ]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    try {
+      session.playbackState = effectiveIsPlaying ? 'playing' : 'paused';
+    } catch {}
+    if (
+      effectiveDuration > 0
+      && Number.isFinite(effectiveDuration)
+      && Number.isFinite(effectiveCurrentTime)
+      && typeof session.setPositionState === 'function'
+    ) {
+      try {
+        session.setPositionState({
+          duration: effectiveDuration,
+          playbackRate: playbackRate || 1,
+          position: Math.min(effectiveDuration, Math.max(0, effectiveCurrentTime)),
+        });
+      } catch {}
+    }
+  }, [effectiveCurrentTime, effectiveDuration, effectiveIsPlaying, playbackRate]);
 
   // REINTENTO REAL: reinicia el estado del servidor activo y fuerza el
   // pipeline completo (re-resolve JIT si aplica → attachSource). Antes el
@@ -2747,6 +3067,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   return (
     <div
       ref={containerRef}
+      data-player-root
       className={`fixed inset-0 z-[9999] flex h-full w-full min-h-[100dvh] flex-col justify-between bg-black select-none overflow-hidden ${
         !controlsVisible && isPlaying ? 'cursor-none' : ''
       }`}
@@ -2794,6 +3115,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           {/* ACCIONES SUPERIORES: CAMBIO RÁPIDO DE SERVIDORES Y APERTURA EXTERNA */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* BOTÓN Y BADGE DE WATCH PARTY */}
+            <div data-player-secondary-action="true">
             {teleparty.isInRoom ? (
               <button
                 type="button"
@@ -2819,6 +3141,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 <span className="hidden sm:inline">Watch Party</span>
               </button>
             )}
+            </div>
 
             {/* VIEWER MODE INDICATOR BADGE */}
             {isViewerMode && (
@@ -2834,21 +3157,27 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
             )}
 
-            <ReportControl
-              title={props.title || media?.title || 'esta obra'}
-              showId={props.showId || null}
-              tmdbId={props.tmdbId || null}
-              kind={props.kind || null}
-              episodeId={props.episodeId || null}
-              episodeNumber={props.episodeNumber || null}
-              sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
-              sourceUrl={activeServer?.canonical_locator || null}
-              compact
-            />
+            {!nativeShell && (
+              <div data-player-secondary-action="true">
+                <Suspense fallback={null}>
+                  <LazyReportControl
+                    title={props.title || media?.title || 'esta obra'}
+                    showId={props.showId || null}
+                    tmdbId={props.tmdbId || null}
+                    kind={props.kind || null}
+                    episodeId={props.episodeId || null}
+                    episodeNumber={props.episodeNumber || null}
+                    sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+                    sourceUrl={activeServer?.canonical_locator || null}
+                    compact
+                  />
+                </Suspense>
+              </div>
+            )}
             {/* La cascada selecciona automáticamente, pero el selector queda
                 disponible cuando existen varias fuentes. */}
             {showServerSelector && servers.length > 1 && (
-              <div className="relative">
+              <div className="relative" data-player-secondary-action="true">
                 <button
                   type="button"
                   onClick={() => setActiveMenu((m) => (m === 'servers' ? 'none' : 'servers'))}
@@ -3029,15 +3358,20 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               showLockWidgetTemporarily();
               return;
             }
-            if (activeServer && !activeServer.isEmbed) {
-              if (activeMenu !== 'none') {
-                setActiveMenu('none');
-              } else {
-                togglePlay();
-              }
+            if (activeMenu !== 'none') {
+              setActiveMenu('none');
+              return;
             }
+            if (nativeShell) {
+              // Mobile streaming convention: a single tap reveals controls;
+              // play/pause is explicit, while double-tap handles seeking.
+              showControlsTemporarily();
+              return;
+            }
+            if (activeServer && !activeServer.isEmbed) togglePlay();
           }}
-          onDoubleClick={isScreenLocked ? undefined : toggleFullscreen}
+          onPointerUp={nativeShell ? handleNativePlayerPointerUp : undefined}
+          onDoubleClick={isScreenLocked ? undefined : handlePlayerDoubleClick}
         >
           {isLoadingStream && (
             <div className="flex flex-col items-center gap-4 text-white z-20 animate-in fade-in duration-200">
@@ -3326,6 +3660,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
                 {/* THUMB DE SEGUIMIENTO */}
                 <div
+                  data-player-scrubber-thumb
                   className={`absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity ${
                     isViewerMode ? 'hidden' : ''
                   }`}
@@ -3349,7 +3684,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
               </div>
 
               {/* FILA DE BOTONES DE CONTROL Y MENÚS */}
-              <div className="flex items-center justify-between gap-1 sm:gap-3 w-full">
+              <div data-player-action-row className="flex items-center justify-between gap-1 sm:gap-3 w-full">
                 {/* LADO IZQUIERDO: PLAY/PAUSE, SALTOS +/- 10S, VOLUMEN, TIEMPO */}
                 <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
                   <button
@@ -3372,6 +3707,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   <button
                     type="button"
                     onClick={() => seekOffset(-10)}
+                    data-mobile-player-secondary
                     disabled={isViewerMode}
                     aria-label="Retroceder 10 segundos"
                     className={`text-zinc-400 hover:text-white transition p-0.5 sm:p-1 ${
@@ -3385,6 +3721,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   <button
                     type="button"
                     onClick={() => seekOffset(10)}
+                    data-mobile-player-secondary
                     disabled={isViewerMode}
                     aria-label="Adelantar 10 segundos"
                     className={`text-zinc-400 hover:text-white transition p-0.5 sm:p-1 ${
@@ -3400,6 +3737,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                     <button
                       type="button"
                       onClick={props.onNextEpisode}
+                      data-mobile-player-secondary
                       aria-label="Reproducir siguiente episodio"
                       className="text-zinc-300 hover:text-amber-400 transition flex items-center p-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg sm:bg-white/5 sm:hover:bg-white/10 sm:border sm:border-white/10 text-xs font-semibold"
                       title="Siguiente episodio"
@@ -3410,7 +3748,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   )}
 
                   {/* CONTROL DE VOLUMEN */}
-                  <div className="flex items-center gap-0.5 group/vol">
+                  <div className="flex items-center gap-0.5 group/vol" data-mobile-player-secondary>
                     <button
                       type="button"
                       onClick={toggleMute}
@@ -3686,7 +4024,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   )}
 
                   {/* MENÚ DE VELOCIDAD DE REPRODUCCIÓN */}
-                  <div className="relative">
+                  <div className="relative" data-mobile-player-secondary>
                     <button
                       type="button"
                       onClick={() => setActiveMenu((m) => (m === 'speed' ? 'none' : 'speed'))}
@@ -3738,13 +4076,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                       <Settings size={15} className="sm:w-[17px] sm:h-[17px]" />
                     </button>
                     {activeMenu === 'quality' && (
-                      <div className="absolute bottom-10 right-0 z-[100] w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                      <div data-player-menu="quality" className="absolute bottom-10 right-0 z-[100] w-44 rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-1.5 shadow-2xl backdrop-blur-xl">
                         {/* ACCESO RÁPIDO: cambio de servidor desde la tuerquita de configuración */}
                         {showServerSelector && servers.length > 1 && (
                           <button
                             type="button"
                             onClick={() => setActiveMenu('servers')}
-                            className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
+                            className="quality-server-shortcut flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-lg transition text-amber-300 hover:bg-zinc-800/60 border-b border-zinc-800 rounded-b-none mb-1 pb-2"
                           >
                             <span className="flex items-center gap-1.5 font-semibold">
                               <Server size={12} />
@@ -3790,6 +4128,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* BOTÓN TRANSMITIR A CHROMECAST / SMART TV */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={() => {
                       if (isCasting) {
                         endCastSession();
@@ -3825,6 +4164,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* BLOQUEO DE PANTALLA / MODO FOCUS */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={handleLockScreen}
                     className="p-0.5 sm:p-1.5 rounded-md sm:rounded-lg text-zinc-300 hover:text-white hover:bg-zinc-800/60 transition"
                     title="Bloquear pantalla (Modo Focus)"
@@ -3836,6 +4176,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* PICTURE IN PICTURE */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={togglePictureInPicture}
                     className={`p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition hidden sm:inline-flex ${
                       isPipActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-300 hover:text-white'
@@ -3848,12 +4189,163 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   {/* PANTALLA COMPLETA */}
                   <button
                     type="button"
+                    data-mobile-player-secondary
                     onClick={toggleFullscreen}
                     className="text-zinc-300 hover:text-white p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition"
                     title="Pantalla completa (F)"
                   >
                     {isFullscreen ? <Minimize size={14} className="sm:w-[17px] sm:h-[17px]" /> : <Maximize size={14} className="sm:w-[17px] sm:h-[17px]" />}
                   </button>
+
+                  {/* Android/mobile overflow: secondary actions stay available
+                      without occupying the control row permanently. */}
+                  <div ref={overflowMenuRef} className="relative sm:hidden" data-mobile-player-overflow>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu((m) => (m === 'more' ? 'none' : 'more'))}
+                      className={`p-1 rounded-md transition ${activeMenu === 'more' ? 'bg-zinc-800 text-white' : 'text-zinc-300'}`}
+                      aria-label="Más controles"
+                      title="Más controles"
+                    >
+                      <MoreVertical size={17} />
+                    </button>
+                    {activeMenu === 'more' && typeof document !== 'undefined' && overflowMenuRef.current && createPortal((
+                      <>
+                        <button
+                          type="button"
+                          className="native-player-more-backdrop"
+                          aria-label="Cerrar más controles"
+                          onClick={() => setActiveMenu('none')}
+                        />
+                        <div className="native-player-more-sheet">
+                          <div className="native-player-more-handle" />
+                          <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenu('none');
+                              if (teleparty.isInRoom) setIsWatchPartyPanelOpen(true);
+                              else setIsJoinModalOpen(true);
+                            }}
+                            className="mobile-player-more-action"
+                          >
+                            <Users size={14} /> {teleparty.isInRoom ? 'Watch Party' : 'Ver en grupo'}
+                          </button>
+                          <Suspense fallback={<div className="mobile-player-more-action opacity-60">Cargando reporte…</div>}>
+                            <LazyReportControl
+                              title={props.title || media?.title || 'esta obra'}
+                              showId={props.showId || null}
+                              tmdbId={props.tmdbId || null}
+                              kind={props.kind || null}
+                              episodeId={props.episodeId || null}
+                              episodeNumber={props.episodeNumber || null}
+                              sourceProvider={activeServer?.sourceSite || activeServer?.provider || null}
+                              sourceUrl={activeServer?.canonical_locator || null}
+                              className="mobile-player-more-action"
+                            />
+                          </Suspense>
+                          <button type="button" onClick={() => { seekOffset(-10); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            <RotateCcw size={14} /> -10 s
+                          </button>
+                          <button type="button" onClick={() => { seekOffset(10); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            <RotateCw size={14} /> +10 s
+                          </button>
+                          {props.onNextEpisode && (
+                            <button type="button" onClick={() => { setActiveMenu('none'); props.onNextEpisode?.(); }} className="mobile-player-more-action">
+                              <SkipForward size={14} /> Siguiente
+                            </button>
+                          )}
+                          <button type="button" onClick={() => { toggleMute(); setActiveMenu('none'); }} className="mobile-player-more-action">
+                            {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} {isMuted ? 'Activar audio' : 'Silenciar'}
+                          </button>
+                          <button
+                            type="button"
+                            className="mobile-player-more-action"
+                            onClick={() => {
+                              const title = props.title || media?.title || 'MeriStream';
+                              setActiveMenu('none');
+                              void nativeShare({
+                                title,
+                                text: `Estoy viendo ${title} en MeriStream`,
+                                url: publicAppUrl(),
+                                dialogTitle: 'Compartir desde MeriStream',
+                              });
+                            }}
+                          >
+                            <Share2 size={14} /> Compartir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isCasting) endCastSession();
+                              else requestCastSession();
+                              setActiveMenu('none');
+                            }}
+                            className="mobile-player-more-action"
+                          >
+                            <Cast size={14} /> {isCasting ? 'Desconectar TV' : 'Transmitir'}
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); handleLockScreen(); }} className="mobile-player-more-action">
+                            <Lock size={14} /> Bloquear
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); void toggleFullscreen(); }} className="mobile-player-more-action">
+                            {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />} Pantalla
+                          </button>
+                          <button type="button" onClick={() => { setActiveMenu('none'); void togglePictureInPicture(); }} className="mobile-player-more-action">
+                            <PictureInPicture size={14} /> PiP
+                          </button>
+                        </div>
+                        <div className="mt-2 border-t border-zinc-800 pt-2">
+                          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Velocidad</span>
+                          <div className="grid grid-cols-6 gap-1">
+                            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                              <button
+                                key={rate}
+                                type="button"
+                                onClick={() => { handleSpeedChange(rate); setActiveMenu('none'); }}
+                                className={`rounded-md px-1 py-1.5 text-[10px] font-mono ${playbackRate === rate ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-800 text-zinc-300'}`}
+                              >
+                                {rate}x
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {servers.length > 1 && (
+                          <div className="mt-2 border-t border-zinc-800 pt-2">
+                            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Servidores</span>
+                            <div className="max-h-40 space-y-1 overflow-y-auto overscroll-contain">
+                              {servers.map((server, index) => {
+                                const status = serverHealthMap[server.id] || 'unverified';
+                                return (
+                                  <button
+                                    key={server.id}
+                                    type="button"
+                                    onClick={() => {
+                                      handleServerChange(index);
+                                      setActiveMenu('none');
+                                    }}
+                                    className={`flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
+                                      activeServerIndex === index ? 'bg-emerald-500/12 text-emerald-300' : 'bg-zinc-800/70 text-zinc-200'
+                                    }`}
+                                  >
+                                    <span className={`h-2 w-2 shrink-0 rounded-full ${
+                                      status === 'online' ? 'bg-emerald-400' : status === 'failed' ? 'bg-rose-400' : status === 'checking' ? 'bg-amber-400' : 'bg-zinc-500'
+                                    }`} />
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {server.sourceSite ? String(server.sourceSite).toUpperCase() : server.provider || server.label}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500">{index + 1}/{servers.length}</span>
+                                    {activeServerIndex === index && <Check size={13} />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        </div>
+                      </>
+                    ), nativeShell ? document.body : overflowMenuRef.current)}
+                  </div>
                 </div>
               </div>
             </>

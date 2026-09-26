@@ -1,7 +1,7 @@
 // src/components/MediaDetailsModal.tsx
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw, ChevronDown, Film, Heart, Clock, ListPlus, Edit3, SkipForward } from 'lucide-react';
+import { X, Play, Loader2, AlertCircle, Search, Calendar, Star, Check, RotateCcw, ChevronDown, Film, Heart, Clock, ListPlus, Edit3, SkipForward, MoreHorizontal, Share2 } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
 import { extractDominantColor, rgbToRgbaString } from '../utils/colorExtractor';
 import { heroBackdropSrcSet, heroBackdropUrl } from '../utils/imageSizes';
@@ -17,7 +17,9 @@ import { getAppPreferences } from '../utils/appPreferences';
 import { useUserLists } from '../hooks/useUserLists';
 import { useAuth } from '../contexts/AuthContext';
 import { AddToListModal } from './AddToListModal';
-import ReportControl from './ReportControl';
+import { isNativeLowCostPresentation, isNativeShell, nativeHaptic, nativeShare, publicAppUrl } from '../utils/runtime';
+
+const LazyReportControl = React.lazy(() => import('./ReportControl'));
 
 function parsePublicCatalogId(value: string): { kind: 'movie' | 'series' | 'anime'; tmdbId: number } | null {
   const match = /^tmdb-(movie|series|anime)-(\d+)$/.exec(value.trim());
@@ -94,6 +96,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [accentRgb, setAccentRgb] = useState<[number, number, number]>([245, 158, 11]);
   const { isFavorite, isWatchlist, toggleFavorite, toggleWatchlist } = useUserLists();
   const [addToListModalOpen, setAddToListModalOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const nativeShell = isNativeShell();
   const isFav = show ? isFavorite(show) : false;
   const isWatch = show ? isWatchlist(show) : false;
 
@@ -107,6 +111,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setSelectedSeason(1);
     setVisibleEpisodeCount(12);
     setIsSeasonMenuOpen(false);
+    setMobileActionsOpen(false);
     setRelatedShows([]);
     setIsLoadingRelated(false);
 
@@ -159,8 +164,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       .then((data: ShowDetail) => {
         setShow(data);
         const img = data.backdrop_url || data.poster_url;
-        if (img) {
+        if (img && !isNativeLowCostPresentation()) {
           extractDominantColor(img, data.title).then(setAccentRgb);
+        } else {
+          setAccentRgb([245, 158, 11]);
         }
       })
       .catch((err) => setError(err.message))
@@ -183,28 +190,36 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const personalKey = preferences.tmdbApiKeyEnabled ? preferences.tmdbApiKey.trim() : '';
     setIsLoadingRelated(true);
 
-    fetch(`/api/v1/catalog/public/${kind}/${tmdbId}/related`, {
-      signal: controller.signal,
-      ...(personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : {}),
-    })
-      .then(async (response) => {
-        if (!response.ok) return [];
-        const payload = await response.json();
-        const items = Array.isArray(payload) ? payload : payload?.shows;
-        return Array.isArray(items) ? items as Show[] : [];
+    const loadRelated = () => {
+      fetch(`/api/v1/catalog/public/${kind}/${tmdbId}/related`, {
+        signal: controller.signal,
+        ...(personalKey ? { headers: { 'X-TMDB-Personal-Key': personalKey } } : {}),
       })
-      .then((items) => {
-        if (!controller.signal.aborted) setRelatedShows(items.filter((item) => item?.id && item.id !== show.id));
-      })
-      .catch((reason) => {
-        if (reason?.name !== 'AbortError') setRelatedShows([]);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoadingRelated(false);
-      });
+        .then(async (response) => {
+          if (!response.ok) return [];
+          const payload = await response.json();
+          const items = Array.isArray(payload) ? payload : payload?.shows;
+          return Array.isArray(items) ? items as Show[] : [];
+        })
+        .then((items) => {
+          if (!controller.signal.aborted) setRelatedShows(items.filter((item) => item?.id && item.id !== show.id));
+        })
+        .catch((reason) => {
+          if (reason?.name !== 'AbortError') setRelatedShows([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsLoadingRelated(false);
+        });
+    };
 
-    return () => controller.abort();
-  }, [isOpen, show, userId]);
+    const deferredId = nativeShell ? window.setTimeout(loadRelated, 700) : null;
+    if (!nativeShell) loadRelated();
+
+    return () => {
+      if (deferredId !== null) window.clearTimeout(deferredId);
+      controller.abort();
+    };
+  }, [isOpen, show, userId, nativeShell]);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -439,10 +454,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           <motion.div
             ref={dialogRef}
             tabIndex={-1}
-            initial={{ x: '100%' }}
+            initial={nativeShell ? false : { x: '100%' }}
             animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+            exit={nativeShell ? { opacity: 0 } : { x: '100%' }}
+            transition={nativeShell ? { duration: 0.12 } : { type: 'spring', damping: 28, stiffness: 260 }}
             onClick={(e) => e.stopPropagation()}
             className="details-panel relative flex w-full flex-col bg-zinc-950/95 border-l border-zinc-800/90 shadow-2xl overflow-hidden select-none"
           >
@@ -482,7 +497,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       sizes="100vw"
                       alt=""
                       aria-hidden="true"
-                      className="absolute inset-0 h-full w-full object-cover scale-110 blur-2xl brightness-[0.35]"
+                      className="details-portrait-blur absolute inset-0 h-full w-full object-cover scale-110 blur-2xl brightness-[0.35]"
                     />
                   )}
                   {headerImage && (
@@ -597,6 +612,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         <button
                           type="button"
                           onClick={() => onSelectEpisode(nextPlaybackEpisode, cleanDisplayTitle(show.title))}
+                          data-details-secondary-action
                           className="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 backdrop-blur-md transition shadow-md shadow-amber-500/10 hover:scale-[1.02] active:scale-[0.98]"
                           title={`Reproducir siguiente episodio: ${displayEpisodeTitle(nextPlaybackEpisode.title, nextPlaybackEpisode.episode_number)}`}
                           aria-label={`Reproducir siguiente episodio (${nextPlaybackEpisode.episode_number})`}
@@ -610,6 +626,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => toggleFavorite(show)}
+                        data-details-secondary-action
                         className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold backdrop-blur-md transition border ${
                           isFav
                             ? 'bg-rose-500/25 border-rose-500/60 text-rose-300 shadow-md shadow-rose-500/10'
@@ -625,6 +642,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => toggleWatchlist(show)}
+                        data-details-secondary-action
                         className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold backdrop-blur-md transition border ${
                           isWatch
                             ? 'bg-amber-500/25 border-amber-500/60 text-amber-300 shadow-md shadow-amber-500/10'
@@ -640,6 +658,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setAddToListModalOpen(true)}
+                        data-details-secondary-action
                         className="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-black/50 hover:bg-black/70 text-zinc-300 hover:text-white border border-white/10 backdrop-blur-md transition"
                         title="Guardar en una lista personalizada"
                       >
@@ -651,6 +670,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       {user?.is_admin && (
                         <button
                           type="button"
+                          data-details-secondary-action
                           onClick={() => {
                             window.location.assign(`/admin?show_id=${encodeURIComponent(String(show.id || ''))}&tmdb_id=${encodeURIComponent(String(show.tmdb_id || ''))}&kind=${encodeURIComponent(String(show.kind || show.category || ''))}&title=${encodeURIComponent(String(show.title || ''))}`);
                           }}
@@ -662,13 +682,107 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         </button>
                       )}
 
-                      <ReportControl
-                        title={cleanDisplayTitle(show.title)}
-                        showId={show.id}
-                        tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
-                        kind={show.kind || show.category}
-                        className="bg-black/50"
-                      />
+                      {!nativeShell && (
+                        <div data-details-secondary-action>
+                          <React.Suspense fallback={null}>
+                            <LazyReportControl
+                              title={cleanDisplayTitle(show.title)}
+                              showId={show.id}
+                              tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                              kind={show.kind || show.category}
+                              className="bg-black/50"
+                            />
+                          </React.Suspense>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        className="native-details-more-trigger hidden"
+                        onClick={() => {
+                          nativeHaptic();
+                          setMobileActionsOpen(true);
+                        }}
+                        aria-label="Más acciones"
+                      >
+                        <MoreHorizontal size={18} />
+                        <span>Más</span>
+                      </button>
+
+                      {mobileActionsOpen && (
+                        <>
+                          <button
+                            type="button"
+                            className="native-details-actions-backdrop hidden"
+                            aria-label="Cerrar acciones"
+                            onClick={() => setMobileActionsOpen(false)}
+                          />
+                          <div className="native-details-actions-sheet hidden" role="dialog" aria-label="Acciones de la obra">
+                            <div className="native-details-actions-handle" />
+                            {!isMovie && !hasNoSources && nextPlaybackEpisode && (
+                              <button
+                                type="button"
+                                className="native-details-action"
+                                onClick={() => {
+                                  setMobileActionsOpen(false);
+                                  onSelectEpisode(nextPlaybackEpisode, cleanDisplayTitle(show.title));
+                                }}
+                              >
+                                <SkipForward size={17} />
+                                <span>Siguiente episodio</span>
+                              </button>
+                            )}
+                            <button type="button" className="native-details-action" onClick={() => { nativeHaptic(); toggleFavorite(show); }}>
+                              <Heart size={17} className={isFav ? 'fill-current text-rose-400' : ''} />
+                              <span>{isFav ? 'Quitar de favoritos' : 'Añadir a favoritos'}</span>
+                            </button>
+                            <button type="button" className="native-details-action" onClick={() => { nativeHaptic(); toggleWatchlist(show); }}>
+                              <Clock size={17} />
+                              <span>{isWatch ? 'Quitar de ver más tarde' : 'Ver más tarde'}</span>
+                            </button>
+                            <button type="button" className="native-details-action" onClick={() => { setMobileActionsOpen(false); setAddToListModalOpen(true); }}>
+                              <ListPlus size={17} />
+                              <span>Guardar en una lista</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="native-details-action"
+                              onClick={() => {
+                                const title = cleanDisplayTitle(show.title);
+                                setMobileActionsOpen(false);
+                                void nativeShare({
+                                  title,
+                                  text: `Mira ${title} en MeriStream`,
+                                  url: publicAppUrl(),
+                                  dialogTitle: 'Compartir desde MeriStream',
+                                });
+                              }}
+                            >
+                              <Share2 size={17} />
+                              <span>Compartir</span>
+                            </button>
+                            {user?.is_admin && (
+                              <button
+                                type="button"
+                                className="native-details-action"
+                                onClick={() => window.location.assign(`/admin?show_id=${encodeURIComponent(String(show.id || ''))}&tmdb_id=${encodeURIComponent(String(show.tmdb_id || ''))}&kind=${encodeURIComponent(String(show.kind || show.category || ''))}&title=${encodeURIComponent(String(show.title || ''))}`)}
+                              >
+                                <Edit3 size={17} />
+                                <span>Editar obra</span>
+                              </button>
+                            )}
+                            <React.Suspense fallback={<div className="native-details-action opacity-60">Cargando reporte…</div>}>
+                              <LazyReportControl
+                                title={cleanDisplayTitle(show.title)}
+                                showId={show.id}
+                                tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                                kind={show.kind || show.category}
+                                className="native-details-action"
+                              />
+                            </React.Suspense>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -713,15 +827,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
                   {/* Reportar también queda disponible cuando una ficha aún no
                       tiene fuentes, justo el caso donde más útil resulta. */}
-                  {(!isMovie || hasNoSources) && (
+                  {!nativeShell && (!isMovie || hasNoSources) && (
                     <div className="flex justify-end">
-                      <ReportControl
-                        title={cleanDisplayTitle(show.title)}
-                        showId={show.id}
-                        tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
-                        kind={show.kind || show.category}
-                        className="bg-black/50"
-                      />
+                      <React.Suspense fallback={null}>
+                        <LazyReportControl
+                          title={cleanDisplayTitle(show.title)}
+                          showId={show.id}
+                          tmdbId={Number(show.tmdb_id) > 0 ? Number(show.tmdb_id) : null}
+                          kind={show.kind || show.category}
+                          className="bg-black/50"
+                        />
+                      </React.Suspense>
                     </div>
                   )}
 

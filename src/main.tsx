@@ -1,11 +1,11 @@
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import { MotionConfig } from 'motion/react';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { InterfaceStyleBridge } from './components/InterfaceStyleBridge';
 import { AuthProvider } from './contexts/AuthContext';
 import { HiddenGenresProvider } from './hooks/useHiddenGenres';
+import { initializeNativePresentation, installNativeBackBridge, installNativeFetchBridge } from './utils/runtime';
 import './index.css';
 import './styles/streaming-2026.css';
 import './styles/overlays-2026.css';
@@ -13,6 +13,11 @@ import './styles/immersive-stremio.css';
 import './styles/polish-round.css';
 import './styles/player-2026.css';
 import './styles/interface-presets.css';
+import './styles/android-mobile.css';
+
+initializeNativePresentation();
+installNativeFetchBridge();
+installNativeBackBridge();
 
 // El panel de administración vive EXCLUSIVAMENTE en /admin y se carga bajo
 // demanda; la entrada pública conserva el bundle de providers y reproducción.
@@ -24,7 +29,7 @@ const isAdminRoute = window.location.pathname.startsWith('/admin');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MotionConfig reducedMotion="user"><ErrorBoundary>
+    <ErrorBoundary>
       <AuthProvider>
         <InterfaceStyleBridge />
         <HiddenGenresProvider>
@@ -37,6 +42,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           )}
         </HiddenGenresProvider>
       </AuthProvider>
-    </ErrorBoundary></MotionConfig>
+    </ErrorBoundary>
   </React.StrictMode>
 );

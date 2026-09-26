@@ -1,0 +1,169 @@
+name: Android APK
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.json"
+      - "tools/patch-capacitor-android.mjs"
+      - "tools/generate-native-plugin-bindings.mjs"
+      - "tools/android-webview-smoke.mjs"
+      - "tools/android-emulator-smoke.sh"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_ORIGIN: https://stream.merith.me
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Probe production backend from CI
+        run: |
+          URL='https://stream.merith.me/api/v1/catalog/public?kind=all&mode=trending&limit=1&page=1'
+          echo '=== Default curl ==='
+          curl -sS -o /tmp/backend-default.body -D /tmp/backend-default.headers -w 'HTTP %{http_code}\n' "$URL" || true
+          head -n 30 /tmp/backend-default.headers || true
+          head -c 500 /tmp/backend-default.body || true
+          echo
+          echo '=== Browser-like headers ==='
+          curl -sS -o /tmp/backend-browser.body -D /tmp/backend-browser.headers -w 'HTTP %{http_code}\n' \
+            -H 'User-Agent: Mozilla/5.0 (Linux; Android 15; Pixel 6) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' \
+            -H 'Accept: application/json,text/plain,*/*' \
+            "$URL" || true
+          head -n 30 /tmp/backend-browser.headers || true
+          head -c 500 /tmp/backend-browser.body || true
+          echo
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install web dependencies
+        run: npm ci
+      - name: Install Capacitor toolchain without changing lockfile
+        run: npm run android:deps
+      - name: Validate Android smoke harness syntax
+        run: node --check tools/android-webview-smoke.mjs
+      - name: Build Android frontend
+        run: npm run android:build
+      - name: Create Android project and apply native window polish
+        run: npm run android:add
+      - name: Sync frontend into Android
+        run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch APK in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash tools/android-emulator-smoke.sh full android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-emulator-evidence
+          path: |
+            meristream-startup.png
+            meristream-emulator.png
+            meristream-catalog-seeded.png
+            meristream-menu.png
+            meristream-preferences.png
+            meristream-watch-party.png
+            meristream-auth.png
+            meristream-explore-filters.png
+            meristream-lists.png
+            meristream-list-create.png
+            meristream-player.png
+            meristream-player-more.png
+            meristream-window.xml
+            meristream-start.txt
+            meristream-meminfo.txt
+            meristream-logcat.txt
+            meristream-performance.txt
+          if-no-files-found: warn
+
+
+  low-end-android-smoke:
+    name: Android 10 / 2 GB smoke
+    needs: build-android
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download already-built APK
+        uses: actions/download-artifact@v4
+        with:
+          name: meristream-android-debug
+          path: low-end-apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Exercise APK on constrained Android 10 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis_playstore
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb shell dumpsys webviewupdate > meristream-low-end-webview.txt
+            bash tools/android-emulator-smoke.sh low-end low-end-apk/app-debug.apk
+
+      - name: Upload low-end evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-android-low-end-evidence
+          path: |
+            meristream-low-end-start.txt
+            meristream-low-end-startup.png
+            meristream-low-end-catalog-seeded.png
+            meristream-low-end-player.png
+            meristream-low-end-player-more.png
+            meristream-low-end-meminfo.txt
+            meristream-low-end-logcat.txt
+            meristream-low-end-webview.txt
+            meristream-low-end-performance.txt
+          if-no-files-found: warn

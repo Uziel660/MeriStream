@@ -6,8 +6,16 @@ const deferredOverlays = fileURLToPath(
   new URL("./src/components/lazy/DeferredOverlays.tsx", import.meta.url),
 );
 
+const isAndroidBundle = process.env.MERISTREAM_ANDROID === "1";
+
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Keep the normal website on Vite's modern default. Only the APK bundle is
+    // transpiled further so Android 10 devices with an old System WebView can
+    // parse the same React application.
+    target: isAndroidBundle ? ['chrome64', 'es2018'] : 'modules',
+  },
   resolve: {
     alias: [
       { find: /^\.\/components\/HLSPlayerModal$/, replacement: deferredOverlays },

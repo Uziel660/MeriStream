@@ -1,28 +1,33 @@
 // src/App.tsx
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
-import { CatalogFilters, type SortMode } from './components/CatalogFilters';
+import type { SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
-import { WatchPartyJoinModal } from './components/WatchPartyJoinModal';
 import type { WatchProgress } from './components/ContinueWatching';
-import { BentoCollection } from './components/BentoCollection';
-import { ExploreCatalogView } from './components/ExploreCatalogView';
-import { MyListsView } from './components/MyListsView';
 import { useAuth } from './contexts/AuthContext';
 import { useHiddenGenres } from './hooks/useHiddenGenres';
 import { thumbBackdropUrl } from './utils/imageSizes';
-import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
 import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
-import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
+import { isNativeShell } from './utils/runtime';
+
+const LazyCatalogFilters = lazy(() => import('./components/CatalogFilters').then((module) => ({ default: module.CatalogFilters })));
+const LazyBentoCollection = lazy(() => import('./components/BentoCollection').then((module) => ({ default: module.BentoCollection })));
+const LazyExploreCatalogView = lazy(() => import('./components/ExploreCatalogView').then((module) => ({ default: module.ExploreCatalogView })));
+const LazyMyListsView = lazy(() => import('./components/MyListsView').then((module) => ({ default: module.MyListsView })));
+const LazyWatchPartyJoinModal = lazy(() => import('./components/WatchPartyJoinModal').then((module) => ({ default: module.WatchPartyJoinModal })));
+
+const deferredSurfaceFallback = (
+  <div className="py-14 text-center text-xs text-zinc-500" role="status" aria-live="polite">Cargando…</div>
+);
 
 const getContinueWatchingStorageKey = (userId?: string | null): string =>
   userId ? `meristream_continue_watching_${userId}` : 'meristream_guest_continue_watching_v1';
@@ -636,16 +641,19 @@ export function mergeSearchCatalogRows(localRows: Show[], publicRows: Show[]): S
 export function App() {
   const { user, isAuthenticated, openAuthModal } = useAuth();
   const { isGenreHidden, isShowHidden } = useHiddenGenres();
+  const nativeShell = isNativeShell();
+  const browseGridBatchSize = nativeShell ? 36 : 100;
+  const homeGridBatchSize = nativeShell ? 24 : HOME_GRID_INITIAL_SIZE;
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => readAppUrlState().searchQuery);
   const [serverSearchResults, setServerSearchResults] = useState<Show[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>(() => readAppUrlState().filter);
-  const [gridPageSize, setGridPageSize] = useState(100);
+  const [gridPageSize, setGridPageSize] = useState(() => browseGridBatchSize);
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
-  const [catalogPageSize, setCatalogPageSize] = useState(HOME_GRID_INITIAL_SIZE);
+  const [catalogPageSize, setCatalogPageSize] = useState(() => homeGridBatchSize);
   const [publicCatalogPage, setPublicCatalogPage] = useState(1);
   const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
   const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
@@ -963,33 +971,61 @@ export function App() {
     }
 
     if (isAuthenticated && user?.id) {
-      api.getProgress().then((res) => {
-        if (Array.isArray(res?.items) && res.items.length > 0) {
-          const serverItems = res.items as WatchProgress[];
-          const mergedMap = new Map<string, WatchProgress>();
-          for (const item of serverItems) mergedMap.set(item.episodeId, item);
-          for (const item of local) {
-            const existing = mergedMap.get(item.episodeId);
-            if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
-              mergedMap.set(item.episodeId, item);
+      let cancelled = false;
+      const syncRemoteProgress = () => {
+        if (cancelled) return;
+        api.getProgress().then((res) => {
+          if (cancelled) return;
+          if (Array.isArray(res?.items) && res.items.length > 0) {
+            const serverItems = res.items as WatchProgress[];
+            const mergedMap = new Map<string, WatchProgress>();
+            for (const item of serverItems) mergedMap.set(item.episodeId, item);
+            for (const item of local) {
+              const existing = mergedMap.get(item.episodeId);
+              if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
+                mergedMap.set(item.episodeId, item);
+              }
             }
+            const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
+            setContinueWatchingItems(mergedList);
+            try {
+              localStorage.setItem(key, JSON.stringify(mergedList));
+            } catch {}
+          } else if (local.length > 0) {
+            local.forEach((item) => {
+              api.saveProgress(item).catch(() => {});
+            });
           }
-          const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
-          setContinueWatchingItems(mergedList);
-          try {
-            localStorage.setItem(key, JSON.stringify(mergedList));
-          } catch {}
-        } else if (local.length > 0) {
-          // Si el servidor está vacío pero tenemos progreso local, sincronizar al servidor
-          local.forEach((item) => {
-            api.saveProgress(item).catch(() => {});
-          });
-        }
-      }).catch((e) => {
-        console.warn('Error sincronizando progreso con servidor:', e);
-      });
+        }).catch((e) => {
+          if (!cancelled) console.warn('Error sincronizando progreso con servidor:', e);
+        });
+      };
+
+      if (!nativeShell) {
+        syncRemoteProgress();
+        return () => { cancelled = true; };
+      }
+
+      // The local list is already rendered. Let the first Android frame and
+      // catalog image work settle before competing for bridge/network time.
+      const win = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      let timeoutId: number | null = null;
+      let idleId: number | null = null;
+      if (typeof win.requestIdleCallback === 'function') {
+        idleId = win.requestIdleCallback(syncRemoteProgress, { timeout: 1600 });
+      } else {
+        timeoutId = window.setTimeout(syncRemoteProgress, 650);
+      }
+      return () => {
+        cancelled = true;
+        if (idleId !== null) win.cancelIdleCallback?.(idleId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+      };
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, nativeShell]);
 
   // Cargar rieles de recomendación personalizadas del algoritmo y el Hero Pick
   const fetchRecommendations = useCallback(async (forceRefresh = false) => {
@@ -1030,8 +1066,35 @@ export function App() {
   }, [isShowHidden, user?.id]);
 
   useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations, user]);
+    const recommendationKey = user?.id ? String(user.id) : 'anonymous';
+    const cached = readRecommendationCache(recommendationKey);
+
+    // Cached recommendations are cheap and useful immediately. A cold network
+    // recommendation request is non-critical on Android, so schedule it after
+    // first interaction/paint rather than racing the catalog and images.
+    if (cached || !nativeShell || activeFilter === 'recommendations') {
+      void fetchRecommendations();
+      return;
+    }
+
+    const win = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const run = () => { void fetchRecommendations(); };
+    if (typeof win.requestIdleCallback === 'function') {
+      idleId = win.requestIdleCallback(run, { timeout: 1800 });
+    } else {
+      timeoutId = window.setTimeout(run, 800);
+    }
+
+    return () => {
+      if (idleId !== null) win.cancelIdleCallback?.(idleId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [fetchRecommendations, user?.id, nativeShell, activeFilter]);
 
   // Eliminar un item de "Seguir Viendo" del estado, storage y servidor
   const removeContinueWatchingItem = useCallback((episodeIdOrShowId: string, showId?: string) => {
@@ -1278,7 +1341,7 @@ export function App() {
       false,
       1,
       false,
-      HOME_CATALOG_FIRST_BATCH_SIZE,
+      nativeShell ? PUBLIC_CATALOG_BATCH_SIZE : HOME_CATALOG_FIRST_BATCH_SIZE,
     );
     if (!firstBatch?.usedPublicCatalog || !firstBatch.hasMore) return;
 
@@ -1296,7 +1359,7 @@ export function App() {
       // `kind=all&limit=60` consumes three TMDB pages per request. The state
       // stores the last page already consumed, so continue at the next one.
       await fetchFreshCatalog(true, publicCatalogPage + 1, true);
-      setCatalogPageSize((previous) => previous + PUBLIC_CATALOG_BATCH_SIZE);
+      setCatalogPageSize((previous) => previous + (nativeShell ? homeGridBatchSize : PUBLIC_CATALOG_BATCH_SIZE));
     } finally {
       setIsLoadingMoreCatalog(false);
     }
@@ -1384,8 +1447,8 @@ export function App() {
 
   const handleSelectCategory = (filter: string) => {
     setActiveFilter(filter);
-    setGridPageSize(100);
-    if (filter === 'all') setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setGridPageSize(browseGridBatchSize);
+    if (filter === 'all') setCatalogPageSize(homeGridBatchSize);
 
     navigateAppRoute(
       '/',
@@ -1409,7 +1472,7 @@ export function App() {
 
   const handleExploreGenreFilter = (genre: string | null) => {
     setExploreGenreFilter(genre);
-    setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize(homeGridBatchSize);
     navigateAppRoute('/', { filter: 'explore', genre: genre || null }, 'replace', 'catalog');
     if (!genre) return;
     const genreKey = publicGenreKey(genre);
@@ -1612,6 +1675,7 @@ export function App() {
         kind: gatewayKind,
       };
       const preferences = getAppPreferences(user?.id);
+      const { createPlaybackRequests } = await import('./utils/playbackBootstrap');
       const playbackRequests = createPlaybackRequests({
         show: playbackShow,
         episode,
@@ -2143,7 +2207,7 @@ export function App() {
     ? isLoadingMorePublicGenre[exploreGenreKey]
     : isLoadingMoreCatalog);
   const loadMoreExploreCatalog = (hasHiddenItems = false) => {
-    setCatalogPageSize((previous) => previous + HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize((previous) => previous + homeGridBatchSize);
     if (hasHiddenItems) return Promise.resolve();
     return exploreGenreId
       ? loadMorePublicGenre(exploreGenreKey)
@@ -2242,7 +2306,7 @@ export function App() {
       // No hacemos una petición si todavía hay obras ya descargadas que el
       // usuario aún no ha recorrido: basta con ampliar la ventana renderizada.
       const request = activeCategoryHasHiddenLocal
-        ? Promise.resolve(setGridPageSize((previous) => previous + 100))
+        ? Promise.resolve(setGridPageSize((previous) => previous + browseGridBatchSize))
         : activeFilter === 'all'
           ? loadMorePublicCatalog()
           : activeFilter === 'explore'
@@ -2324,14 +2388,14 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     className="search-filter-bar"
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
-                  />
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
+                  /></Suspense>
 
                   {filteredShows.length === 0 ? (
                     <div className="search-empty-state">
@@ -2344,7 +2408,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="search-empty-reset"
                       >
@@ -2359,7 +2423,7 @@ export function App() {
                             key={item.id}
                             media={item}
                             onSelectMedia={handleOpenDetails}
-                            imageLoading={index < 12 ? 'eager' : 'lazy'}
+                            imageLoading={index < (nativeShell ? 4 : 12) ? 'eager' : 'lazy'}
                           />
                         ))}
                       </div>
@@ -2367,7 +2431,7 @@ export function App() {
                         <div className="flex justify-center pt-6">
                           <button
                             type="button"
-                            onClick={() => setGridPageSize(prev => prev + 100)}
+                            onClick={() => setGridPageSize(prev => prev + browseGridBatchSize)}
                             className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
                           >
                             Cargar más ({filteredShows.length - gridPageSize} restantes)
@@ -2378,13 +2442,15 @@ export function App() {
                   )}
                 </section>
               ) : activeFilter === 'my-lists' ? (
-                <MyListsView
-                  onSelectMedia={handleOpenDetails}
-                  onExploreCatalog={() => {
-                    handleSelectCategory('explore');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                />
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyMyListsView
+                    onSelectMedia={handleOpenDetails}
+                    onExploreCatalog={() => {
+                      handleSelectCategory('explore');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                </Suspense>
               ) : activeFilter === 'recommendations' ? (
                 <section className="space-y-10">
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
@@ -2432,23 +2498,25 @@ export function App() {
                 </section>
               ) : activeFilter === 'explore' ? (
                 /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
-                <ExploreCatalogView
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyExploreCatalogView
                   shows={shows}
                   allGenresList={allGenresList}
                   showsCountByGenre={showsCountByGenre}
                   genreFilter={exploreGenreFilter}
                   onGenreFilter={handleExploreGenreFilter}
                   yearFilter={yearFilter}
-                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(browseGridBatchSize); }}
                   sortBy={sortBy}
-                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
+                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(browseGridBatchSize); }}
                   catalogPageSize={catalogPageSize}
                   onLoadMore={loadMoreExploreCatalog}
                   hasMore={exploreHasMore}
                   isLoadingMore={exploreIsLoadingMore}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
-                />
+                  />
+                </Suspense>
               ) : activeFilter !== 'all' ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
@@ -2460,13 +2528,13 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
-                  />
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
+                  /></Suspense>
 
                   {filteredShows.length === 0 && activeRemoteLoading ? (
                     <div className="py-20 text-center space-y-3" role="status" aria-live="polite">
@@ -2485,7 +2553,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="text-xs text-amber-400 hover:underline font-semibold"
                       >
@@ -2561,11 +2629,13 @@ export function App() {
 
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
                   {homeSections.topRatedShows.length >= 3 && (
-                    <BentoCollection
-                      title="Destacados por la crítica"
-                      items={homeSections.topRatedShows}
-                      onSelectMedia={handleOpenDetails}
-                    />
+                    <Suspense fallback={null}>
+                      <LazyBentoCollection
+                        title="Destacados por la crítica"
+                        items={homeSections.topRatedShows}
+                        onSelectMedia={handleOpenDetails}
+                      />
+                    </Suspense>
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN RESTANTES (ej. Descubrimientos o Género Favorito) */}
@@ -2608,10 +2678,16 @@ export function App() {
                 <AlertCircle size={36} className="stroke-[1.6]" />
               </div>
               <div className="space-y-2">
-                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">No se pudo cargar el catálogo</h2>
-                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">{catalogError}</p>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {nativeShell ? 'No pudimos conectar con MeriStream' : 'No se pudo cargar el catálogo'}
+                </h2>
+                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">
+                  {nativeShell
+                    ? 'Comprueba tu conexión e inténtalo otra vez. Tu biblioteca y tus preferencias siguen guardadas.'
+                    : catalogError}
+                </p>
               </div>
-              <button type="button" onClick={loadCatalog} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-amber-300 transition-colors">
+              <button type="button" onClick={loadCatalog} className="mx-auto flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300">
                 <RefreshCw size={15} /> Reintentar
               </button>
             </div>
@@ -2703,13 +2779,15 @@ export function App() {
       />
 
       {/* MODAL GLOBAL DE WATCH PARTY (ACCESIBLE DIRECTAMENTE DESDE EL HEADER) */}
-      <WatchPartyJoinModal
+      <Suspense fallback={null}>
+        <LazyWatchPartyJoinModal
         isOpen={isGlobalWatchPartyOpen}
         onClose={() => setIsGlobalWatchPartyOpen(false)}
         isAuthenticated={isAuthenticated}
         onRequireAuth={openAuthModal}
         onJoin={handleJoinWatchPartyFromHeader}
       />
+      </Suspense>
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}
       {playingStreamData && (
@@ -2855,7 +2933,8 @@ export function App() {
           setIsAdminOpen(false);
           loadCatalog();
         }}
-        onPlayDirect={(streamResult: any) => {
+        onPlayDirect={async (streamResult: any) => {
+          const { isEmbedUrl } = await import('./utils/streamOptimizer');
           const candidates: string[] = (
             streamResult.all_streams ||
             streamResult.all_available_streams ||

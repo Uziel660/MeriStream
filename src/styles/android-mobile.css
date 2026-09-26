@@ -1,0 +1,1603 @@
+/* MeriStream Android native presentation layer
+ * Loaded last and activated only when runtime.ts detects Capacitor.
+ * The React feature tree stays shared with the web app; this file changes
+ * presentation cost and mobile information density only.
+ */
+
+html[data-native-shell='android'] {
+  background: #050608;
+  color-scheme: dark;
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeSpeed;
+}
+
+html[data-native-shell='android'],
+html[data-native-shell='android'] body,
+html[data-native-shell='android'] #root {
+  min-height: 100%;
+  min-height: 100dvh;
+  background: #050608;
+}
+
+html[data-native-shell='android'] body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* One compact app bar. The desktop/tablet two-row navigation remains intact. */
+html[data-native-shell='android'] .site-header {
+  position: sticky !important;
+  top: 0;
+  z-index: 90;
+  border-bottom: 1px solid rgba(255,255,255,.07) !important;
+  background: rgba(5,6,8,.96) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: transform 150ms ease, background-color 150ms ease !important;
+  contain: layout paint;
+}
+
+html[data-native-shell='android'] .site-header.is-chrome-hidden:not(.has-search-open):not(.has-mobile-nav-open) {
+  transform: translate3d(0,-110%,0);
+}
+
+html[data-native-shell='android'] .site-header.has-mobile-nav-open {
+  contain: none;
+}
+
+html[data-native-shell='android'] .header-inner {
+  max-width: none !important;
+  width: 100%;
+  padding-inline: max(.6rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) max(.6rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) !important;
+}
+
+html[data-native-shell='android'] .header-top {
+  min-height: calc(3.45rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  height: calc(3.45rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) 0 0 !important;
+  gap: .35rem !important;
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+}
+
+html[data-native-shell='android'] .brand {
+  min-width: 0;
+  font-size: 1.2rem !important;
+  letter-spacing: -.04em;
+}
+
+html[data-native-shell='android'] .brand-symbol {
+  width: 1.8rem !important;
+  height: 1.8rem !important;
+  border-radius: .55rem !important;
+}
+
+html[data-native-shell='android'] .header-bottom {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .mobile-nav-trigger {
+  display: inline-flex !important;
+}
+
+html[data-native-shell='android'] .header-watchparty-trigger,
+html[data-native-shell='android'] .preferences-trigger {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .ui-icon-button,
+html[data-native-shell='android'] .account-trigger,
+html[data-native-shell='android'] .account-login {
+  min-width: 2.5rem !important;
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  border-radius: .8rem !important;
+}
+
+html[data-native-shell='android'] .account-name,
+html[data-native-shell='android'] .account-trigger > svg {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .header-search {
+  position: fixed !important;
+  z-index: 120 !important;
+  top: max(.45rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  left: max(.55rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+  right: max(.55rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) !important;
+  width: auto !important;
+  height: 2.85rem !important;
+  margin: 0 !important;
+  border-radius: .85rem !important;
+  background: #111318 !important;
+  box-shadow: 0 10px 32px rgba(0,0,0,.36) !important;
+  transform: translateY(-130%) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+html[data-native-shell='android'] .header-search.is-mobile-open {
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+html[data-native-shell='android'] .mobile-nav-backdrop {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: rgba(0,0,0,.52);
+  animation: ms-native-fade-in 140ms ease-out both;
+}
+
+html[data-native-shell='android'] .mobile-nav-sheet {
+  position: fixed;
+  z-index: 115;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(72dvh, 34rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 1.15rem max(.75rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.8rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.75rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  border: 1px solid rgba(255,255,255,.09);
+  border-bottom: 0;
+  border-radius: 1.35rem 1.35rem 0 0;
+  background: #111318;
+  box-shadow: 0 -16px 48px rgba(0,0,0,.5);
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .mobile-nav-sheet::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: .25rem;
+  margin: -.55rem auto .65rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+@keyframes ms-native-sheet-in {
+  from { transform: translate3d(0, 24px, 0); opacity: .72; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+@keyframes ms-native-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+html[data-native-shell='android'] .mobile-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: .4rem;
+}
+
+html[data-native-shell='android'] .mobile-nav-item,
+html[data-native-shell='android'] .mobile-nav-action {
+  min-height: 2.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .45rem .55rem;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: .75rem;
+  background: #181b21;
+  color: #d8dbe1;
+  font-size: .74rem;
+  font-weight: 650;
+}
+
+html[data-native-shell='android'] .mobile-nav-item.is-active {
+  background: rgba(251,191,36,.13);
+  border-color: rgba(251,191,36,.34);
+  color: #fff;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres {
+  display: flex;
+  gap: .4rem;
+  overflow-x: auto;
+  padding: .55rem 0 .15rem;
+  scrollbar-width: none;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-native-shell='android'] .mobile-nav-genres .mobile-nav-item {
+  flex: 0 0 auto;
+  min-height: 2.35rem;
+  padding-inline: .75rem;
+}
+
+html[data-native-shell='android'] .mobile-nav-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: .4rem;
+  padding-top: .55rem;
+  margin-top: .45rem;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+
+html[data-native-shell='android'] .mobile-nav-actions .mobile-nav-action {
+  min-width: 0;
+  min-height: 3.2rem;
+  flex-direction: column;
+  gap: .22rem;
+  padding: .42rem .3rem;
+  text-align: center;
+  font-size: .65rem;
+  line-height: 1.1;
+}
+
+/* Reduce visual work that is disproportionately expensive on low-end WebViews. */
+html[data-native-shell='android'] .media-poster-image,
+html[data-native-shell='android'] .media-card,
+html[data-native-shell='android'] .feature,
+html[data-native-shell='android'] .continue-card {
+  transform: none !important;
+  transition-property: opacity, color, background-color, border-color !important;
+  transition-duration: 110ms !important;
+}
+
+html[data-native-shell='android'] .media-card,
+html[data-native-shell='android'] .continue-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 190px 310px;
+}
+
+html[data-native-shell='android'] .catalog-content section,
+html[data-native-shell='android'] .continue-section,
+html[data-native-shell='android'] .spotlight-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 540px;
+}
+
+html[data-native-shell='android'] .poster-rail,
+html[data-native-shell='android'] .continue-rail,
+html[data-native-shell='android'] .mobile-nav-genres {
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-inline: .6rem;
+}
+
+html[data-native-shell='android'] button,
+html[data-native-shell='android'] a,
+html[data-native-shell='android'] .media-card {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  html[data-native-shell='android'] button:active,
+  html[data-native-shell='android'] a:active,
+  html[data-native-shell='android'] .media-card:active,
+  html[data-native-shell='android'] .continue-card:active {
+    transform: scale(.975) !important;
+    opacity: .86;
+  }
+
+  html[data-native-shell='android'] .poster-rail {
+    scroll-snap-type: x mandatory;
+  }
+
+  html[data-native-shell='android'] .poster-slot {
+    scroll-snap-stop: normal;
+  }
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-sm,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-md,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-lg,
+html[data-native-shell='android'][data-ms-performance='low'] .backdrop-blur-xl,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-sm,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-md,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-lg,
+html[data-native-shell='android'][data-ms-performance='balanced'] .backdrop-blur-xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .animate-pulse,
+html[data-native-shell='android'][data-ms-performance='low'] .animate-spin:not([role='status']) {
+  animation-duration: 1.25s !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-2xl,
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-xl,
+html[data-native-shell='android'][data-ms-performance='low'] .shadow-lg {
+  box-shadow: none !important;
+}
+
+/* Player is a native screen, never a card/modal. */
+html[data-native-shell='android'] [data-player-root] {
+  touch-action: manipulation;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+html[data-native-shell='android'] [data-player-root] video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000;
+}
+
+/* Android remains a phone/tablet app after rotating to landscape. Do not
+ * let width-based desktop breakpoints repopulate the player with controls. */
+html[data-native-shell='android'] [data-player-topbar] [data-player-secondary-action='true'],
+html[data-native-shell='android'] [data-player-controls] [data-mobile-player-secondary],
+html[data-native-shell='android'] [data-player-controls] .quality-server-shortcut {
+  display: none !important;
+}
+
+html[data-native-shell='android'] [data-player-controls] [data-mobile-player-overflow] {
+  display: block !important;
+}
+
+html[data-native-shell='android'] .mobile-player-more-action {
+  min-height: 2.8rem !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .48rem .55rem !important;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: .7rem;
+  background: #181b21;
+  color: #e1e4e8;
+  font-size: .72rem;
+  font-weight: 650;
+}
+
+html[data-native-shell='android'] [data-player-topbar] {
+  padding-inline: max(.45rem, var(--safe-area-inset-left, 0px)) max(.45rem, var(--safe-area-inset-right, 0px)) !important;
+  padding-top: max(.45rem, var(--safe-area-inset-top, 0px)) !important;
+}
+
+html[data-native-shell='android'] [data-player-topbar] > div:first-child {
+  max-width: calc(100% - 7.5rem) !important;
+}
+
+html[data-native-shell='android'] [data-player-controls] {
+  /* Layout containment makes fixed descendants relative to this short bar,
+   * clipping the More sheet below the landscape viewport. */
+  contain: none !important;
+  padding-inline: max(.45rem, var(--safe-area-inset-left, 0px)) max(.45rem, var(--safe-area-inset-right, 0px)) !important;
+  padding-bottom: max(.45rem, var(--safe-area-inset-bottom, 0px)) !important;
+}
+
+html[data-native-shell='android'] [data-player-controls] button {
+  min-width: 2.65rem !important;
+  min-height: 2.65rem !important;
+}
+
+html[data-native-shell='android'] [data-player-scrubber-thumb] {
+  width: 1rem !important;
+  height: 1rem !important;
+  opacity: 1 !important;
+}
+
+html[data-native-shell='android'] [data-player-controls] input[type='range'] {
+  touch-action: none;
+}
+
+html[data-native-shell='android'] .native-player-more-backdrop {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  padding: 0;
+  background: rgba(0,0,0,.52);
+  animation: ms-native-fade-in 120ms ease-out both;
+}
+
+html[data-native-shell='android'] .native-player-more-sheet {
+  position: fixed !important;
+  z-index: 10001;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(72dvh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: .55rem max(.65rem, var(--safe-area-inset-right, 0px)) max(.65rem, var(--safe-area-inset-bottom, 0px)) max(.65rem, var(--safe-area-inset-left, 0px));
+  border: 1px solid rgba(255,255,255,.09);
+  border-bottom: 0;
+  border-radius: 1.1rem 1.1rem 0 0;
+  background: #101217;
+  box-shadow: 0 -16px 46px rgba(0,0,0,.52);
+  animation: ms-native-sheet-in 160ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .native-player-more-handle {
+  width: 2.2rem;
+  height: .22rem;
+  margin: .05rem auto .55rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.24);
+}
+
+@media (orientation: landscape) {
+  html[data-native-shell='android'] .native-player-more-sheet {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(22rem, 48vw);
+    max-height: 100dvh;
+    padding-top: max(.65rem, var(--safe-area-inset-top, 0px));
+    border: 0;
+    border-left: 1px solid rgba(255,255,255,.09);
+    border-radius: 1rem 0 0 1rem;
+    box-shadow: -16px 0 46px rgba(0,0,0,.52);
+    animation: ms-native-player-side-in 150ms cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  html[data-native-shell='android'] .native-player-more-handle {
+    display: none;
+  }
+}
+
+@keyframes ms-native-player-side-in {
+  from { transform: translate3d(28px,0,0); opacity: .72; }
+  to { transform: translate3d(0,0,0); opacity: 1; }
+}
+
+/* Mobile player: keep essentials visible, push secondary actions to menus. */
+@media (max-width: 639px) {
+}
+
+@media (max-width: 380px) {
+  html[data-native-shell='android'] .brand > span:last-child {
+    display: none;
+  }
+
+  html[data-native-shell='android'] .mobile-nav-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-native-shell='android'] .site-header {
+    transition: none !important;
+  }
+
+  html[data-native-shell='android'] .mobile-nav-sheet,
+  html[data-native-shell='android'] .mobile-nav-backdrop {
+    animation: none !important;
+  }
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Mobile content density: keep capabilities, remove duplicate chrome.        */
+/* ------------------------------------------------------------------------- */
+html[data-native-shell='android'] .media-card-open,
+html[data-native-shell='android'] .media-card [data-card-favorite],
+html[data-native-shell='android'] .feature-actions [data-hero-secondary-action] {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .media-kind {
+  opacity: .72;
+  font-size: .58rem !important;
+  padding: .18rem .38rem !important;
+}
+
+html[data-native-shell='android'] .feature-actions {
+  gap: .5rem !important;
+}
+
+html[data-native-shell='android'] .feature-actions .button-primary,
+html[data-native-shell='android'] .feature-actions .button-secondary {
+  min-height: 2.75rem;
+}
+
+/* Details is a real mobile screen. Expensive decorative work is removed while
+ * the primary play action stays immediately reachable. */
+@media (max-width: 639px) {
+  html[data-native-shell='android'] .details-overlay {
+    background: #050608 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .details-panel {
+    background: #050608 !important;
+    box-shadow: none !important;
+  }
+
+  html[data-native-shell='android'] .details-hero {
+    height: 54dvh !important;
+    min-height: 23rem !important;
+    max-height: 31rem !important;
+  }
+
+  html[data-native-shell='android'] .details-hero-info > div {
+    padding-inline: 1rem !important;
+  }
+
+  html[data-native-shell='android'] .details-portrait-blur,
+  html[data-native-shell='android'] .details-glow {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .details-category,
+  html[data-native-shell='android'] .details-hero-info [class*='backdrop-blur'] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .details-hero-actions [data-details-secondary-action] {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .native-details-more-trigger {
+    min-height: 2.75rem !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    padding: .65rem .9rem;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: .8rem;
+    background: rgba(20,23,29,.94);
+    color: #e3e6ea;
+    font-size: .76rem;
+    font-weight: 750;
+  }
+
+  html[data-native-shell='android'] .native-details-actions-backdrop {
+    position: fixed;
+    z-index: 150;
+    inset: 0;
+    display: block !important;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: rgba(0,0,0,.58);
+  }
+
+  html[data-native-shell='android'] .native-details-actions-sheet {
+    position: fixed;
+    z-index: 151;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: .4rem;
+    max-height: min(72dvh, 32rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: .55rem .7rem max(.75rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    border: 1px solid rgba(255,255,255,.1);
+    border-bottom: 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+    background: #111318;
+    box-shadow: 0 -18px 48px rgba(0,0,0,.52);
+    animation: ms-native-sheet-in 170ms cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  html[data-native-shell='android'] .native-details-actions-handle {
+    width: 2.35rem;
+    height: .25rem;
+    margin: .1rem auto .45rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.23);
+  }
+
+  html[data-native-shell='android'] .native-details-action {
+    width: 100% !important;
+    min-height: 3rem !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .7rem !important;
+    padding: .65rem .85rem !important;
+    border: 1px solid rgba(255,255,255,.07) !important;
+    border-radius: .8rem !important;
+    background: #181b21 !important;
+    color: #e4e7eb !important;
+    font-size: .78rem !important;
+    font-weight: 700 !important;
+  }
+
+  html[data-native-shell='android'] .details-body {
+    padding-top: 1.25rem !important;
+  }
+
+  html[data-native-shell='android'] .details-body > div {
+    padding-inline: 1rem !important;
+    gap: 1.35rem !important;
+  }
+
+  html[data-native-shell='android'] .details-facts {
+    gap: .45rem !important;
+  }
+
+  html[data-native-shell='android'] .details-facts > div {
+    min-height: 3.65rem !important;
+    padding: .65rem .75rem !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .episode-grid {
+    gap: .55rem !important;
+  }
+
+  html[data-native-shell='android'] .episode-card {
+    transform: none !important;
+    box-shadow: none !important;
+    contain: layout paint style;
+  }
+}
+
+
+/* Account and preferences use mobile sheets instead of desktop popovers. */
+html[data-native-shell='android'] .site-header.has-account-open {
+  contain: none !important;
+}
+
+html[data-native-shell='android'] .native-account-backdrop {
+  position: fixed;
+  z-index: 108;
+  inset: 0;
+  display: block !important;
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  padding: 0;
+  background: rgba(0,0,0,.54);
+  animation: ms-native-fade-in 140ms ease-out both;
+}
+
+html[data-native-shell='android'] .account-menu {
+  position: fixed !important;
+  z-index: 116 !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(78dvh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 !important;
+  padding: 1.15rem max(.8rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.85rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.8rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.25rem 1.25rem 0 0 !important;
+  background: #111318 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .account-menu::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: .25rem;
+  margin: -.55rem auto .7rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .preferences-overlay {
+  align-items: flex-end !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,.58) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'] .preferences-panel {
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(92dvh, 52rem) !important;
+  overflow-x: hidden !important;
+  margin: 0 !important;
+  padding: 1rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.8rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.3rem 1.3rem 0 0 !important;
+  background: #0c0f14 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.52) !important;
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+/* The web footer uses -mx-5 to reach a 1.25rem panel edge. Android reduces
+ * that padding to 1rem, so the old negative margin creates horizontal scroll. */
+html[data-native-shell='android'] .preferences-panel > .sticky {
+  margin-inline: 0 !important;
+  padding-inline: 0 !important;
+}
+
+@media (max-width: 639px) {
+  html[data-native-shell='android'] .catalog-content {
+    gap: 1.15rem !important;
+  }
+
+  /* The web immersive layout intentionally pulls the home rails upward into
+   * the full-bleed hero. Android uses an in-flow compact hero, so that negative
+   * overlap would place "Recién agregados" on top of the hero actions. Keep a
+   * clean native separation instead. */
+  html[data-native-shell='android'] .catalog-content-home {
+    margin-top: 0 !important;
+    padding-top: 1rem !important;
+    background: #07080d !important;
+  }
+
+  html[data-native-shell='android'] .feature {
+    height: auto !important;
+    min-height: 0 !important;
+    margin-top: .35rem !important;
+    padding-bottom: .75rem !important;
+    border-bottom: 0 !important;
+  }
+
+  html[data-native-shell='android'] .feature-art {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: clamp(10.5rem, 42vw, 13.5rem) !important;
+    border-radius: .7rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-content {
+    width: 100% !important;
+    height: auto !important;
+    padding: .72rem .95rem 0 !important;
+    margin: 0 !important;
+  }
+
+  html[data-native-shell='android'] .feature .eyebrow,
+  html[data-native-shell='android'] .feature-genres {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .feature-meta {
+    margin: 0 0 .42rem !important;
+    gap: .4rem !important;
+  }
+
+  html[data-native-shell='android'] .feature h1,
+  html[data-native-shell='android'] .feature-title {
+    max-width: 11ch !important;
+    margin: 0 !important;
+    font-size: clamp(2rem, 10vw, 3rem) !important;
+    line-height: .9 !important;
+    letter-spacing: -.055em !important;
+  }
+
+  html[data-native-shell='android'] .feature-synopsis {
+    max-width: none !important;
+    margin-top: .55rem !important;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: .82rem !important;
+    line-height: 1.45 !important;
+  }
+
+  html[data-native-shell='android'] .feature-actions {
+    margin-top: .72rem !important;
+    gap: .45rem !important;
+  }
+
+  html[data-native-shell='android'] .feature-actions .button-primary,
+  html[data-native-shell='android'] .feature-actions .button-secondary {
+    min-height: 2.65rem !important;
+    padding: .58rem .8rem !important;
+    font-size: .78rem !important;
+  }
+}
+
+
+/* A native app does not need a website footer. Removing it also prevents the
+ * catalog error/empty states from looking like a web page inside a WebView. */
+html[data-native-shell='android'] .site-footer {
+  display: none !important;
+}
+
+html[data-native-shell='android'] #main-content {
+  padding-bottom: max(1.25rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important;
+}
+
+html[data-native-shell='android'] #main-content > .max-w-2xl.py-20 {
+  min-height: calc(100dvh - 5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 2.5rem !important;
+  padding-bottom: 2.5rem !important;
+}
+
+
+/* Explore keeps one compact filter entry point on phones. */
+html[data-native-shell='android'] .native-explore-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  overflow-x: auto;
+  padding: .15rem 0 .55rem;
+  scrollbar-width: none;
+}
+html[data-native-shell='android'] .native-explore-toolbar::-webkit-scrollbar { display: none; }
+
+html[data-native-shell='android'] .native-explore-filter-trigger,
+html[data-native-shell='android'] .native-filter-chip {
+  flex: 0 0 auto;
+  min-height: 2.45rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 999px;
+  background: #151820;
+  color: #d7dbe0;
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+html[data-native-shell='android'] .native-explore-filter-trigger {
+  padding: .45rem .75rem;
+}
+html[data-native-shell='android'] .native-explore-filter-trigger.is-active {
+  border-color: rgba(245,158,11,.42);
+  background: rgba(245,158,11,.11);
+  color: #fff;
+}
+html[data-native-shell='android'] .native-filter-count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #111;
+  font-size: .64rem;
+  font-weight: 900;
+}
+html[data-native-shell='android'] .native-filter-chip {
+  min-height: 2.2rem;
+  padding: .38rem .65rem;
+  color: #aeb5bd;
+}
+
+html[data-native-shell='android'] .native-explore-filter-backdrop {
+  position: fixed;
+  z-index: 145;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(0,0,0,.58);
+  animation: ms-native-fade-in 140ms ease-out both;
+}
+
+html[data-native-shell='android'] .native-explore-filter-sheet {
+  position: fixed;
+  z-index: 146;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(82dvh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: .6rem max(.9rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.9rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(.9rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  border: 1px solid rgba(255,255,255,.1);
+  border-bottom: 0;
+  border-radius: 1.3rem 1.3rem 0 0;
+  background: #0f1218;
+  box-shadow: 0 -20px 56px rgba(0,0,0,.55);
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .native-sheet-handle {
+  width: 2.4rem;
+  height: .25rem;
+  margin: .05rem auto .6rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .native-filter-sheet-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: .8rem;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+html[data-native-shell='android'] .native-filter-sheet-heading p {
+  color: #f5b13d;
+  font-size: .62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+html[data-native-shell='android'] .native-filter-sheet-heading h3 {
+  margin-top: .12rem;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+html[data-native-shell='android'] .native-filter-sheet-heading button {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: .75rem;
+  background: #1a1e25;
+  color: #d6dae0;
+}
+
+html[data-native-shell='android'] .native-filter-sheet-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .65rem;
+  padding: .85rem 0;
+}
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-menu,
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-trigger {
+  width: 100%;
+}
+html[data-native-shell='android'] .native-filter-sheet-controls .filter-trigger {
+  min-height: 3rem;
+  justify-content: flex-start;
+}
+
+html[data-native-shell='android'] .native-filter-sheet-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: .8fr 1.2fr;
+  gap: .55rem;
+  padding-top: .65rem;
+  background: #0f1218;
+}
+html[data-native-shell='android'] .native-filter-reset,
+html[data-native-shell='android'] .native-filter-apply {
+  min-height: 2.9rem;
+  border-radius: .8rem;
+  font-size: .76rem;
+  font-weight: 800;
+}
+html[data-native-shell='android'] .native-filter-reset {
+  border: 1px solid rgba(255,255,255,.1);
+  background: #181b21;
+  color: #c8cdd3;
+}
+html[data-native-shell='android'] .native-filter-reset:disabled { opacity: .4; }
+html[data-native-shell='android'] .native-filter-apply {
+  border: 0;
+  background: #f4b33f;
+  color: #171006;
+}
+
+
+/* Continue Watching is touch-first: tap the card to resume. */
+@media (pointer: coarse) {
+  html[data-native-shell='android'] .continue-play {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-remove {
+    opacity: .78 !important;
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    background: rgba(5,6,8,.76) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-card img {
+    transform: none !important;
+  }
+
+  html[data-native-shell='android'] .continue-details {
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+
+/* Authentication and list editors behave like Android sheets, not web modals. */
+html[data-native-shell='android'] .auth-overlay,
+html[data-native-shell='android'] .native-list-modal-overlay {
+  align-items: flex-end !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,.6) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'] .auth-panel,
+html[data-native-shell='android'] .native-list-modal-panel {
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(92dvh, 46rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 !important;
+  padding: 1.1rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(.9rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.3rem 1.3rem 0 0 !important;
+  background: #0c0f14 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+  animation: ms-native-sheet-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .auth-panel > .pointer-events-none {
+  display: none !important;
+}
+
+@media (max-width: 639px) {
+  html[data-native-shell='android'] [data-list-remove] {
+    opacity: .78 !important;
+    width: 1.95rem !important;
+    height: 1.95rem !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    background: rgba(7,8,10,.86) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+  }
+
+  html[data-native-shell='android'] [data-list-remove]:active {
+    opacity: 1 !important;
+    background: rgba(225,29,72,.9) !important;
+  }
+
+  html[data-native-shell='android'] .auth-avatar-options {
+    justify-content: space-between;
+  }
+
+  html[data-native-shell='android'] .auth-avatar-options button {
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+  }
+}
+
+
+/* Horizontal rails are swipe-first on Android. Desktop arrow buttons add
+ * visual noise and duplicate a gesture that is more natural on touch. */
+html[data-native-shell='android'] .media-row .row-navigation > .icon-button,
+html[data-native-shell='android'] .media-row .row-count {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .media-row .row-navigation {
+  gap: .4rem !important;
+}
+
+html[data-native-shell='android'] .poster-rail {
+  overscroll-behavior-inline: contain;
+}
+
+/* Android 10's bundled WebView predates CSS clamp(). Keep the compact native
+ * hero, page gutters, and swipe rails sized correctly on that runtime too. */
+@supports not (width: clamp(1px, 2vw, 3px)) {
+  html[data-native-shell='android'] {
+    --page-gutter: 20px;
+  }
+
+  @media (max-width: 639px) {
+    html[data-native-shell='android'] .header-inner {
+      padding-left: .6rem !important;
+      padding-right: .6rem !important;
+    }
+
+    html[data-native-shell='android'] .feature-art {
+      height: 10.5rem !important;
+    }
+
+    html[data-native-shell='android'] .feature h1,
+    html[data-native-shell='android'] .feature-title {
+      font-size: 2.25rem !important;
+    }
+
+    html[data-native-shell='android'] .poster-rail {
+      grid-auto-columns: 39vw !important;
+    }
+  }
+}
+
+
+/* Watch Party and add-to-list use native touch sheets. */
+html[data-native-shell='android'] .watch-party-join-overlay,
+html[data-native-shell='android'] .add-to-list-overlay {
+  align-items: flex-end !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,.58) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel,
+html[data-native-shell='android'] .add-to-list-panel {
+  width: 100% !important;
+  max-width: none !important;
+  max-height: min(92dvh, 46rem) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 !important;
+  padding-bottom: max(.55rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-bottom: 0 !important;
+  border-radius: 1.3rem 1.3rem 0 0 !important;
+  background: #0c0f14 !important;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+  animation: ms-native-sheet-in 170ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel::before,
+html[data-native-shell='android'] .add-to-list-panel::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: .25rem;
+  margin: .55rem auto .05rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.23);
+}
+
+html[data-native-shell='android'] .watch-party-join-panel button,
+html[data-native-shell='android'] .add-to-list-panel button {
+  min-height: 2.75rem;
+}
+
+html[data-native-shell='android'] .watch-party-join-panel input,
+html[data-native-shell='android'] .add-to-list-panel input {
+  min-height: 3rem;
+  font-size: 16px;
+}
+
+html[data-native-shell='android'] .watch-party-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 -16px 44px rgba(0,0,0,.48) !important;
+}
+
+html[data-native-shell='android'][data-ms-performance='low'] .watch-party-panel {
+  transition: none !important;
+}
+
+@media (max-width: 640px) {
+  html[data-native-shell='android'] .watch-party-panel {
+    height: min(72dvh, 34rem) !important;
+    max-height: calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+    padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 1.2rem 1.2rem 0 0 !important;
+  }
+
+  html[data-native-shell='android'] .watch-party-panel [data-testid='emoji-reaction-bar'] button,
+  html[data-native-shell='android'] .watch-party-panel [data-testid='send-message-button'],
+  html[data-native-shell='android'] .watch-party-panel [data-testid='close-panel-button'] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  html[data-native-shell='android'] .watch-party-panel [data-testid='chat-text-input'] {
+    min-height: 2.9rem;
+    font-size: 16px !important;
+  }
+}
+
+
+/* Keep the Android top bar intentionally sparse: search + one menu. Account,
+ * Watch Party and preferences remain fully reachable inside the menu sheet. */
+html[data-native-shell='android'] .header-watchparty-trigger,
+html[data-native-shell='android'] .preferences-trigger,
+html[data-native-shell='android'] .header-account {
+  display: none !important;
+}
+
+html[data-native-shell='android'] .header-top {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+
+html[data-native-shell='android'] .header-top > .flex.items-center.justify-end {
+  gap: .35rem !important;
+}
+
+html[data-native-shell='android'] .mobile-search-trigger,
+html[data-native-shell='android'] .mobile-nav-trigger {
+  width: 2.85rem !important;
+  height: 2.85rem !important;
+  border-radius: .9rem !important;
+}
+
+html[data-native-shell='android'] .native-nav-account .account-avatar {
+  width: 1.65rem !important;
+  height: 1.65rem !important;
+  flex: 0 0 1.65rem;
+  font-size: .72rem !important;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Legacy Android WebView safety layer (Chrome <84 / Android 10-class WebView) */
+/* ------------------------------------------------------------------------- */
+html[data-native-shell='android'][data-native-legacy-webview='true'],
+html[data-native-shell='android'][data-native-legacy-webview='true'] body {
+  text-rendering: auto !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] body,
+html[data-native-shell='android'][data-native-legacy-webview='true'] button,
+html[data-native-shell='android'][data-native-legacy-webview='true'] input,
+html[data-native-shell='android'][data-native-legacy-webview='true'] select,
+html[data-native-shell='android'][data-native-legacy-webview='true'] textarea,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h1,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h2,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h3,
+html[data-native-shell='android'][data-native-legacy-webview='true'] h4,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .font-display,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand {
+  font-family: Arial, Roboto, "Segoe UI", sans-serif !important;
+  font-variation-settings: normal !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-inner {
+  padding-left: .6rem !important;
+  padding-right: .6rem !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand {
+  color: #f4f5f7 !important;
+  font-size: 1.05rem !important;
+  letter-spacing: -.035em !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-light,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-period {
+  color: #f4f5f7 !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-period {
+  color: #f4b33f !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top {
+  display: flex !important;
+  min-height: 4rem !important;
+  height: 4rem !important;
+  padding: .35rem 0 0 !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top > .flex.items-center.justify-end {
+  display: flex !important;
+  margin-left: auto !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .header-top > .flex.items-center.justify-end > * + * {
+  margin-left: .35rem !important;
+}
+
+/* Chrome 74's GPU rasterizer can lose thin SVG/font strokes. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger {
+  position: relative !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger svg,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger svg,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-symbol svg {
+  display: none !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger::before {
+  content: '';
+  width: .8rem;
+  height: .8rem;
+  display: block;
+  border: 2px solid #aab2bf;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-search-trigger::after {
+  content: '';
+  width: .42rem;
+  height: 2px;
+  position: absolute;
+  left: 1.55rem;
+  top: 1.52rem;
+  background: #aab2bf;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-nav-trigger::before {
+  content: '';
+  width: 1.05rem;
+  height: 2px;
+  display: block;
+  background: #aab2bf;
+  box-shadow: 0 -.36rem 0 #aab2bf, 0 .36rem 0 #aab2bf;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand-symbol::after {
+  content: '';
+  width: 0;
+  height: 0;
+  display: block;
+  margin-left: .12rem;
+  border-top: .32rem solid transparent;
+  border-bottom: .32rem solid transparent;
+  border-left: .5rem solid #f4b33f;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .brand,
+html[data-native-shell='android'][data-native-legacy-webview='true'] .feature h1 {
+  letter-spacing: -.02em !important;
+  font-weight: 700 !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .site-header,
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .mobile-nav-sheet,
+html[data-native-shell='android'][data-native-legacy-webview='true'][data-ms-performance='low'] .native-player-more-sheet {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Older WebViews can miss the generated button reset and paint bare player
+ * controls with the white Android ButtonFace. Keep the small primary row
+ * readable without changing the menus or the video pipeline. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-action-row] > div > button,
+html[data-native-shell='android'][data-native-legacy-webview='true'] [data-player-action-row] > div > div > button {
+  background-color: #15191e !important;
+  color: #e8ebef !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+}
+
+html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
+  max-height: 72vh;
+  padding: .55rem .65rem;
+}
+
+/* Keep the overflow sheet on Android's static system face/weights. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet button {
+  font-family: Roboto, sans-serif !important;
+  font-weight: 500 !important;
+  font-variation-settings: normal !important;
+}
+
+/* Chrome 74 has no flex gap; leave room between each action's icon and label. */
+html[data-native-shell='android'][data-native-legacy-webview='true'] .mobile-player-more-action svg {
+  margin-right: .35rem;
+  flex: none;
+}
+
+@media (orientation: landscape) {
+  html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
+    width: 22rem;
+    max-width: 48vw;
+    height: 100vh;
+    max-height: 100vh;
+    padding: .65rem;
+  }
+}
+
+
+/* Phone-landscape player density. A 2 GB Android 10 emulator exposed that
+ * desktop-ish vertical spacing still wastes too much of a short landscape
+ * viewport even though playback itself is healthy. */
+@media (orientation: landscape) and (max-height: 620px) {
+  html[data-native-shell='android'] [data-player-topbar] {
+    min-height: 0 !important;
+    padding-top: max(.22rem, var(--safe-area-inset-top, 0px)) !important;
+    padding-bottom: .22rem !important;
+    background: linear-gradient(to bottom, rgba(0,0,0,.88), rgba(0,0,0,.32), transparent) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child {
+    max-width: calc(100% - 1rem) !important;
+    min-width: 0 !important;
+    gap: .4rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child > button {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    min-width: 2.25rem !important;
+    min-height: 2.25rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] > div:first-child > div {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] h3 {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-family: Arial, Roboto, "Segoe UI", sans-serif !important;
+    font-size: .78rem !important;
+    line-height: 1.15 !important;
+    letter-spacing: 0 !important;
+  }
+
+  html[data-native-shell='android'] [data-player-topbar] h3 + div {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] {
+    padding-top: .35rem !important;
+    padding-bottom: max(.28rem, var(--safe-area-inset-bottom, 0px)) !important;
+    background: linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.38), transparent) !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] > div:first-of-type {
+    margin-bottom: .25rem !important;
+    font-size: .68rem !important;
+    line-height: 1 !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] > div:first-of-type > span:last-child {
+    display: none !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] button {
+    min-width: 2.25rem !important;
+    min-height: 2.25rem !important;
+    padding: .3rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] [data-player-scrubber-thumb] {
+    width: .78rem !important;
+    height: .78rem !important;
+  }
+
+  html[data-native-shell='android'] [data-player-controls] .group.relative.h-1\.5,
+  html[data-native-shell='android'] [data-player-controls] .group.relative.h-2 {
+    margin-bottom: .35rem !important;
+  }
+
+  html[data-native-shell='android'] .mobile-player-more-action {
+    min-height: 2.35rem !important;
+    padding: .35rem .45rem !important;
+    font-size: .66rem !important;
+  }
+}
+
+
+/* Compact interface-style chooser on phones: same four options, less vertical
+ * travel and no oversized desktop preview cards. */
+@media (max-width: 639px) {
+  html[data-native-shell='android'] .preferences-panel .interface-style-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .55rem !important;
+  }
+
+  html[data-native-shell='android'] .preferences-panel .interface-style-choice {
+    min-height: 0 !important;
+    padding: .55rem !important;
+    gap: .4rem !important;
+    border-radius: .85rem !important;
+  }
+
+  html[data-native-shell='android'] .preferences-panel .interface-style-preview {
+    height: 2.4rem !important;
+    border-radius: .55rem !important;
+  }
+
+  html[data-native-shell='android'] .preferences-panel .interface-style-copy strong {
+    font-size: .72rem !important;
+  }
+
+  html[data-native-shell='android'] .preferences-panel .interface-style-copy small {
+    margin-top: .1rem !important;
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    font-size: .56rem !important;
+    line-height: 1.3 !important;
+  }
+}
+
+
+/* Native lazy-auth transition: keep even the code-split loading frame in the
+ * same bottom-sheet language instead of flashing a centered web-style pill. */
+@media (max-width: 639px) {
+  html[data-native-shell='android'] .deferred-overlay-fallback--sheet {
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: stretch !important;
+    padding: 0 !important;
+    background: rgba(0,0,0,.58) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html[data-native-shell='android'] .deferred-overlay-fallback--sheet .deferred-overlay-fallback-card {
+    width: 100% !important;
+    min-height: 8.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .65rem;
+    margin: 0 !important;
+    padding: 1rem max(1rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(1rem, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) !important;
+    border: 1px solid rgba(255,255,255,.09) !important;
+    border-bottom: 0 !important;
+    border-radius: 1.3rem 1.3rem 0 0 !important;
+    background: #0c0f14 !important;
+    color: #d9dde2 !important;
+    box-shadow: 0 -18px 48px rgba(0,0,0,.5) !important;
+    animation: ms-native-sheet-in 150ms cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  html[data-native-shell='android'] .deferred-overlay-fallback--sheet .deferred-overlay-fallback-handle {
+    position: absolute;
+    top: .55rem;
+    left: 50%;
+    width: 2.4rem;
+    height: .25rem;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: rgba(255,255,255,.23);
+  }
+
+  html[data-native-shell='android'] .deferred-overlay-fallback-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,.18);
+    border-top-color: #f4b33f;
+    border-radius: 50%;
+    animation: spin .75s linear infinite;
+  }
+}

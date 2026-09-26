@@ -1,0 +1,62 @@
+name: Provider Live Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tools/probe-active-providers-live.ts"
+      - "tools/probe-provider-resolvers.ts"
+      - "tools/probe-vidsrc-live-isolated.ts"
+      - "tests/real_works_stream_playback.test.ts"
+      - "server/resolvers/**"
+      - "server/providers/**"
+      - "server/scrapers/**"
+      - ".github/workflows/provider-live-smoke.yml"
+
+jobs:
+  live-providers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prepare reports
+        run: mkdir -p provider-live-results
+
+      - name: Probe Cinecalidad, Gnula, LatAnime and ZokoAnime
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx tsx tools/probe-provider-resolvers.ts --write 2>&1 | tee provider-live-results/provider-resolvers.log
+          cp docs/reports/provider-resolver-probe-2026-09-07.json provider-live-results/provider-resolvers.json 2>/dev/null || true
+
+      - name: Probe VidSrc with two real TMDB works
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx tsx tools/probe-vidsrc-live-isolated.ts 2>&1 | tee provider-live-results/vidsrc.log
+          cp docs/reports/vidsrc-live-isolated-20260907.json provider-live-results/vidsrc.json 2>/dev/null || true
+
+      - name: Probe Doramasflix, Archive.org and TioAnime
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx tsx tools/probe-active-providers-live.ts 2>&1 | tee provider-live-results/extra-active.log
+
+      - name: Exercise 15 real playback/resolution cases
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx vitest run tests/real_works_stream_playback.test.ts --reporter=verbose 2>&1 | tee provider-live-results/real-works.log
+
+      - name: Upload live provider evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meristream-provider-live-evidence
+          path: provider-live-results

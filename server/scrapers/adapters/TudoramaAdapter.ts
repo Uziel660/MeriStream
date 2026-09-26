@@ -130,15 +130,18 @@ export class TudoramaAdapter extends BaseScraperAdapter {
       const results = Math.max(1, Number(el.attr("data-results") || PAGE_SIZE));
       if (!tmdbId || !nonce) continue;
       let offset = 0;
-      for (let page = 0; page < 80; page += 1) {
+      for (let page = 0; page < 40; page += 1) {
         const payload = await this.fetchEpisodes(tmdbId, season, nonce, results, offset, detailUrl);
         const list = Array.isArray(payload?.data?.results) ? payload.data.results : [];
+        let added = 0;
         for (const row of list) {
           const number = Number(row.episode_number);
           if (!Number.isFinite(number)) continue;
+          const before = rows.size;
           add(String(row.permalink || ""), number, Number(row.season_number || season), String(row.name || row.title || `Episodio ${number}`));
+          if (rows.size > before) added += 1;
         }
-        if (!payload?.data?.hasMore || list.length === 0) break;
+        if (!payload?.data?.hasMore || list.length === 0 || added === 0) break;
         offset += results;
       }
     }

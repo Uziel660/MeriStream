@@ -103,13 +103,13 @@ export function PreferencesPanel({ userId, canViewIdentityDetails = false, onClo
 
   return createPortal((
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
+      className="preferences-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-title"
       onMouseDown={(event) => { if (event.target === event.currentTarget) closeWithoutSaving(); }}
     >
-      <section className="my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
+      <section className="preferences-panel my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">MeriStream</p>

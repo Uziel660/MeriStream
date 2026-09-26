@@ -61,6 +61,31 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const clearNativeOverlayMarker = (overlay?: string) => {
+    if (!isNativeShell()) return;
+    const state = window.history.state || {};
+    if (!state.meristream_native_overlay) return;
+    if (overlay && state.meristream_native_overlay !== overlay) return;
+    const next = { ...state };
+    delete next.meristream_native_overlay;
+    window.history.replaceState(next, '');
+  };
+
+  const pushNativeOverlayMarker = (overlay: 'search' | 'nav' | 'account' | 'preferences') => {
+    if (!isNativeShell()) return;
+    clearNativeOverlayMarker();
+    window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: overlay }, '');
+  };
+
+  const closeNativeOverlayWithBack = (overlay: string, close: () => void) => {
+    if (isNativeShell() && window.history.state?.meristream_native_overlay === overlay && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    clearNativeOverlayMarker(overlay);
+    close();
+  };
+
   useEffect(() => { if (searchQuery !== undefined) setQuery(searchQuery); }, [searchQuery]);
   useEffect(() => { const timer = setTimeout(() => onSearchChange(query), 200); return () => clearTimeout(timer); }, [query, onSearchChange]);
   useEffect(() => {
@@ -121,26 +146,28 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
       if (e.key !== 'Escape') return;
       if (preferencesOpen) {
         e.preventDefault();
-        setPreferencesOpen(false);
-        requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
+        closePreferences();
         return;
       }
       if (mobileSearchOpen) {
         e.preventDefault();
-        setMobileSearchOpen(false);
-        requestAnimationFrame(() => mobileSearchTriggerRef.current?.focus());
+        closeMobileSearch();
         return;
       }
       if (mobileNavOpen) {
         e.preventDefault();
-        setMobileNavOpen(false);
-        requestAnimationFrame(() => mobileNavTriggerRef.current?.focus());
+        closeNativeOverlayWithBack('nav', () => {
+          setMobileNavOpen(false);
+          requestAnimationFrame(() => mobileNavTriggerRef.current?.focus());
+        });
         return;
       }
       if (isUserMenuOpen) {
         e.preventDefault();
-        setIsUserMenuOpen(false);
-        requestAnimationFrame(() => accountTriggerRef.current?.focus());
+        closeNativeOverlayWithBack('account', () => {
+          setIsUserMenuOpen(false);
+          requestAnimationFrame(() => accountTriggerRef.current?.focus());
+        });
       }
     };
     document.addEventListener('keydown', escape);
@@ -150,29 +177,51 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
     if (mobileSearchOpen) requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [mobileSearchOpen]);
 
+  useEffect(() => {
+    if (!isNativeShell()) return;
+    const onNativeHistoryPop = () => {
+      setMobileSearchOpen(false);
+      setMobileNavOpen(false);
+      setIsUserMenuOpen(false);
+      setPreferencesOpen(false);
+    };
+    window.addEventListener('popstate', onNativeHistoryPop);
+    return () => window.removeEventListener('popstate', onNativeHistoryPop);
+  }, []);
+
   const closeMobileSearch = (restoreFocus = true) => {
-    setMobileSearchOpen(false);
-    if (restoreFocus) requestAnimationFrame(() => mobileSearchTriggerRef.current?.focus());
+    const close = () => {
+      setMobileSearchOpen(false);
+      if (restoreFocus) requestAnimationFrame(() => mobileSearchTriggerRef.current?.focus());
+    };
+    closeNativeOverlayWithBack('search', close);
   };
   const openMobileSearch = () => {
     nativeHaptic();
+    clearNativeOverlayMarker();
     setIsUserMenuOpen(false);
     setMobileNavOpen(false);
     setPreferencesOpen(false);
     setMobileSearchOpen(true);
+    pushNativeOverlayMarker('search');
   };
   const openPreferences = () => {
+    clearNativeOverlayMarker();
     setMobileSearchOpen(false);
     setMobileNavOpen(false);
     setIsUserMenuOpen(false);
     setPreferencesOpen(true);
+    pushNativeOverlayMarker('preferences');
   };
   const closePreferences = () => {
-    setPreferencesOpen(false);
-    requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
+    closeNativeOverlayWithBack('preferences', () => {
+      setPreferencesOpen(false);
+      requestAnimationFrame(() => preferencesTriggerRef.current?.focus());
+    });
   };
   const handleSelectTab = (id: string) => {
     nativeHaptic();
+    clearNativeOverlayMarker();
     setQuery('');
     setMobileSearchOpen(false);
     setMobileNavOpen(false);
@@ -220,10 +269,17 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
               className="mobile-nav-trigger ui-icon-button hidden"
               onClick={() => {
                 nativeHaptic();
-                setMobileSearchOpen(false);
-                setIsUserMenuOpen(false);
-                setPreferencesOpen(false);
-                setMobileNavOpen((open) => !open);
+                const willOpen = !mobileNavOpen;
+                if (willOpen) {
+                  clearNativeOverlayMarker();
+                  setMobileSearchOpen(false);
+                  setIsUserMenuOpen(false);
+                  setPreferencesOpen(false);
+                  setMobileNavOpen(true);
+                  pushNativeOverlayMarker('nav');
+                } else {
+                  closeNativeOverlayWithBack('nav', () => setMobileNavOpen(false));
+                }
               }}
               aria-label={mobileNavOpen ? 'Cerrar navegación' : 'Abrir navegación'}
               aria-expanded={mobileNavOpen}
@@ -263,12 +319,18 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                     type="button"
                     className="account-trigger"
                     onClick={() => {
+                      nativeHaptic(4);
                       const willOpen = !isUserMenuOpen;
                       if (willOpen) {
+                        clearNativeOverlayMarker();
                         setMobileSearchOpen(false);
+                        setMobileNavOpen(false);
                         setPreferencesOpen(false);
+                        setIsUserMenuOpen(true);
+                        pushNativeOverlayMarker('account');
+                      } else {
+                        closeNativeOverlayWithBack('account', () => setIsUserMenuOpen(false));
                       }
-                      setIsUserMenuOpen(willOpen);
                     }}
                     aria-label={isUserMenuOpen ? 'Cerrar mi cuenta' : 'Abrir mi cuenta'}
                     aria-expanded={isUserMenuOpen}
@@ -278,6 +340,13 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                     <span className="account-name">{user.username}</span><ChevronDown size={15} />
                   </button>
                   {isUserMenuOpen && (
+                    <>
+                    <button
+                      type="button"
+                      className="native-account-backdrop hidden"
+                      aria-label="Cerrar cuenta"
+                      onClick={() => closeNativeOverlayWithBack('account', () => setIsUserMenuOpen(false))}
+                    />
                     <div id="account-menu" className="account-menu">
                       <strong>{user.username}</strong><p>Tu cuenta MeriStream</p>
                       <button
@@ -295,8 +364,9 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
                       <div className="account-colors">{Object.keys(AVATAR_BG_MAP).map(colorKey => (
                         <button key={colorKey} type="button" onClick={() => updateAvatar(colorKey)} aria-label={`Color de perfil: ${colorKey}`} aria-pressed={user.avatar === colorKey} className="avatar-choice"><span className={AVATAR_BG_MAP[colorKey].split(' ')[0]} /></button>
                       ))}</div>
-                      <button type="button" className="logout-button" onClick={() => { logout(); setIsUserMenuOpen(false); }}><LogOut size={16} />Cerrar sesión</button>
+                      <button type="button" className="logout-button" onClick={() => { clearNativeOverlayMarker('account'); logout(); setIsUserMenuOpen(false); }}><LogOut size={16} />Cerrar sesión</button>
                     </div>
+                    </>
                   )}
                 </>
               ) : (
@@ -312,7 +382,10 @@ export const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ onSearchChange, ac
               type="button"
               className="mobile-nav-backdrop"
               aria-label="Cerrar navegación"
-              onClick={() => { nativeHaptic(4); setMobileNavOpen(false); }}
+              onClick={() => {
+                nativeHaptic(4);
+                closeNativeOverlayWithBack('nav', () => setMobileNavOpen(false));
+              }}
             />
             <div ref={mobileNavSheetRef} id="mobile-nav-sheet" className="mobile-nav-sheet" role="dialog" aria-label="Navegación de MeriStream">
             <div className="mobile-nav-grid">

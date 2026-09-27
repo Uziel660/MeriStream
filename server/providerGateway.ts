@@ -7,6 +7,7 @@ import {
   renditionPreferenceScore,
 } from "./providers/providerPolicy";
 import { getHostHealth, isHostBlacklisted } from "./scrapers/hostHealth";
+import { getDoramasflixHealth } from "./scrapers/adapters/DoramasflixAdapter";
 import { isBlacklistedHost } from "./utils/streamSorter";
 import { getDirectStreamProviders } from "./providers/api";
 import type {
@@ -52,7 +53,7 @@ export interface GatewayFallbackCandidate {
 }
 
 const SPANISH_LOCAL = new Set([
-  "cinecalidad", "gnula", "latanime", "tioanime", "doramasflix",
+  "cinecalidad", "gnula", "latanime", "tioanime", "doramasflix", "doramasia",
 ]);
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
 // Cuando ya existe una fuente local recuperable, un API externo lento no debe
@@ -268,7 +269,11 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
     const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
-    const audioLanguage = normalizeLanguageTag(link.audio_language || link.language) || (SPANISH_LOCAL.has(provider) ? "es" : null);
+    // `language=sub|dub` is a rendition marker, not an audio language. Older
+    // rows may only have that marker; never expose the literal marker as an
+    // audio track in the player metadata.
+    const renditionMarker = /^(?:sub|dub)$/i.test(String(link.language || "")) ? null : link.language;
+    const audioLanguage = normalizeLanguageTag(link.audio_language || renditionMarker) || (SPANISH_LOCAL.has(provider) ? "es" : null);
     const subtitleLanguage = normalizeLanguageTag(link.subtitle_language);
     const subtitles = normalizeSubtitleTracks(link.subtitles);
     const score = renditionPreferenceScore({
@@ -551,14 +556,24 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
 }> {
   const started = Date.now();
   const key = `${req.kind}:${req.tmdbId}:${req.season || 1}:${req.episode || 1}:${normalizeLanguageTag(req.originalLanguage)}:${(req.preferredAudio || []).join(",")}:${(req.preferredSubtitles || []).join(",")}`;
+  const doramasHealth = getDoramasflixHealth();
+  const doramasRecentlyDegraded = doramasHealth.state === "degraded"
+    && typeof doramasHealth.lastCheckedAt === "number"
+    && Date.now() - doramasHealth.lastCheckedAt < 90_000;
+  const isDoramasSource = (source: { provider?: string | null; source_site?: string | null }) =>
+    normalizeProviderId(source.provider || source.source_site || "") === "doramasflix";
+  const filterDegradedDoramas = <T extends { provider?: string | null; source_site?: string | null }>(items: T[]): T[] =>
+    doramasRecentlyDegraded ? items.filter((source) => !isDoramasSource(source)) : items;
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
+    const cachedSources = filterDegradedDoramas(cached.sources);
+    const cachedFallbacks = filterDegradedDoramas(cached.fallbackCandidates);
     const persisted = req.persist
-      ? await persistApiSources(req, cached.sources, cached.fallbackCandidates).catch(() => 0)
+      ? await persistApiSources(req, cachedSources, cachedFallbacks).catch(() => 0)
       : 0;
     return {
-      sources: cached.sources,
-      fallbackCandidates: cached.fallbackCandidates,
+      sources: cachedSources,
+      fallbackCandidates: cachedFallbacks,
       persisted,
       elapsedMs: Date.now() - started,
     };
@@ -594,7 +609,16 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
     const ranked = dedupeAndRank([...sources, ...database.direct], req);
     const hasZokoCandidate = [...ranked, ...database.fallbackCandidates]
       .some((source) => normalizeProviderId(source.provider) === "zokoanime");
-    const databaseFallbacks = [...database.fallbackCandidates];
+    // Doramasflix publishes a canonical page even when its own link service is
+    // down. Keeping that page as the first candidate makes the player wait on a
+    // locator that cannot resolve and looks like an infinite loading spinner.
+    // Once the adapter has observed an upstream failure, temporarily suppress
+    // only that provider and let the next fallback (normally VidSrc) start.
+    // The short TTL keeps recovery automatic when Doramasflix comes back.
+    const databaseFallbacks = database.fallbackCandidates.filter((source) => {
+      if (!doramasRecentlyDegraded) return true;
+      return normalizeProviderId(source.provider) !== "doramasflix";
+    });
     // Expose VidSrc's deterministic locator whenever the direct probe did not
     // produce a playable source. A mirror may take several seconds to answer
     // (or be rejected by the server-side health probe) even though the same

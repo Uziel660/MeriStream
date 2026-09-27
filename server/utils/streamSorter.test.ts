@@ -39,6 +39,7 @@ describe("getStreamTier", () => {
     expect(getStreamTier("https://mega.nz/file/AbC#KEY")).toBe(4);
     expect(getStreamTier("https://mega.nz/embed/AbC")).toBe(4);
     expect(getStreamTier("https://mega.io/file/XyZ#K")).toBe(4);
+    expect(getStreamTier("/api/v1/stream/mega?url=https%3A%2F%2Fmega.nz%2Ffile%2FAbC%23KEY")).toBe(4);
     expect(getStreamTier("https://www.mp4upload.com/embed-abc.html")).toBe(4);
   });
 

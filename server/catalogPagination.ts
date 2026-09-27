@@ -78,6 +78,9 @@ export function buildCatalogPageUrl(baseUrl: string, pageNumber: number): string
     if (/(^|\.)cinecalidad\.[a-z.]+$/.test(host)) {
       return `${origin}${catalogPath}/page/${pageNumber}/`;
     }
+    if (/(^|\.)tudorama\.com$/.test(host)) {
+      return `${origin}${catalogPath}/page/${pageNumber}/`;
+    }
     if (/(^|\.)animeflv\.net$/.test(host)) {
       return `${origin}${catalogPath || "/browse"}?page=${pageNumber}`;
     }

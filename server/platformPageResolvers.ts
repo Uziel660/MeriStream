@@ -195,6 +195,27 @@ export function isDoramasflixPageUrl(rawUrl: string | URL): boolean {
   }
 }
 
+/** Detecta páginas canónicas de Doramasia (catálogo GraphQL Doramasgo). */
+export function isDoramasiaPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    const host = url.hostname.toLowerCase();
+    return /(?:^|\.)doramasia\.com$/i.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/** Detecta páginas canónicas de Tudorama (fichas WStream y películas). */
+export function isTudoramaPageUrl(rawUrl: string | URL): boolean {
+  try {
+    const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
+    return /(?:^|\.)tudorama\.com$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Detecta si la URL corresponde a una página canónica de TubePelis (tubepelis.com).
  */
@@ -226,6 +247,8 @@ export function isPlatformPageUrl(rawUrl: string | URL): boolean {
     isAnimeAv1PageUrl(rawUrl) ||
     isVerAnimesPageUrl(rawUrl) ||
     isDoramasflixPageUrl(rawUrl) ||
+    isDoramasiaPageUrl(rawUrl) ||
+    isTudoramaPageUrl(rawUrl) ||
     isTubePelisPageUrl(rawUrl)
   );
 }
@@ -245,6 +268,8 @@ export function getPlatformProviderName(rawUrl: string | URL): string {
   if (isAnimeAv1PageUrl(rawUrl)) return "AnimeAV1";
   if (isVerAnimesPageUrl(rawUrl)) return "VerAnimes";
   if (isDoramasflixPageUrl(rawUrl)) return "Doramasflix";
+  if (isDoramasiaPageUrl(rawUrl)) return "Doramasia";
+  if (isTudoramaPageUrl(rawUrl)) return "Tudorama";
   if (isTubePelisPageUrl(rawUrl)) return "TubePelis";
   return "Desconocido";
 }
@@ -384,6 +409,24 @@ export async function resolvePlatformPage(
       if (isDoramasflixPageUrl(cleanUrl)) {
         const { DoramasflixAdapter } = await import("./scrapers/adapters/DoramasflixAdapter");
         const adapter = new DoramasflixAdapter();
+        const extracted = await Promise.race([
+          adapter.extractStream(cleanUrl),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
+        ]);
+        streamUrl = extracted.stream_url || "";
+        availableStreams = extracted.all_available_streams || [];
+      } else if (isDoramasiaPageUrl(cleanUrl)) {
+        const { DoramasiaAdapter } = await import("./scrapers/adapters/DoramasiaAdapter");
+        const adapter = new DoramasiaAdapter();
+        const extracted = await Promise.race([
+          adapter.extractStream(cleanUrl),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
+        ]);
+        streamUrl = extracted.stream_url || "";
+        availableStreams = extracted.all_available_streams || [];
+      } else if (isTudoramaPageUrl(cleanUrl)) {
+        const { TudoramaAdapter } = await import("./scrapers/adapters/TudoramaAdapter");
+        const adapter = new TudoramaAdapter();
         const extracted = await Promise.race([
           adapter.extractStream(cleanUrl),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
@@ -575,7 +618,11 @@ export async function resolveTioPlusPage(
   locator: string,
   options?: PlatformPageResolveOptions
 ): Promise<PlatformPlaybackResolution> {
-  return resolvePlatformPage(locator, options);
+  const streamExtractor = options?.streamExtractor ?? (async (url: string) => {
+    const { TioPlusAdapter } = await import("./scrapers/adapters/TioPlusAdapter");
+    return new TioPlusAdapter().extractStream(url);
+  });
+  return resolvePlatformPage(locator, { ...options, streamExtractor });
 }
 
 /** Resolutor específico para animeflv */
@@ -654,6 +701,30 @@ export async function resolveDoramasflixPage(
   const streamExtractor = options?.streamExtractor ?? (async (url: string) => {
     const { DoramasflixAdapter } = await import("./scrapers/adapters/DoramasflixAdapter");
     return new DoramasflixAdapter().extractStream(url);
+  });
+  return resolvePlatformPage(locator, { ...options, streamExtractor });
+}
+
+/** Resolutor específico para páginas de Doramasia. */
+export async function resolveDoramasiaPage(
+  locator: string,
+  options: PlatformPageResolveOptions = {},
+): Promise<PlatformPlaybackResolution> {
+  const streamExtractor = options.streamExtractor ?? (async (url: string) => {
+    const { DoramasiaAdapter } = await import("./scrapers/adapters/DoramasiaAdapter");
+    return new DoramasiaAdapter().extractStream(url);
+  });
+  return resolvePlatformPage(locator, { ...options, streamExtractor });
+}
+
+/** Resolutor específico para páginas de Tudorama. */
+export async function resolveTudoramaPage(
+  locator: string,
+  options: PlatformPageResolveOptions = {},
+): Promise<PlatformPlaybackResolution> {
+  const streamExtractor = options.streamExtractor ?? (async (url: string) => {
+    const { TudoramaAdapter } = await import("./scrapers/adapters/TudoramaAdapter");
+    return new TudoramaAdapter().extractStream(url);
   });
   return resolvePlatformPage(locator, { ...options, streamExtractor });
 }

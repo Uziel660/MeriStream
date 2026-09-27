@@ -81,6 +81,8 @@ const SEARCH_ADAPTERS: Record<string, string> = {
   "cinecalidad.im": "cinecalidad",
   tubepelis: "tubepelis",
   "tubepelis.com": "tubepelis",
+  tudorama: "tudorama",
+  "tudorama.com": "tudorama",
 };
 const DEFAULT_DELAY_MS = 800;
 const MIN_DELAY_MS = 300;
@@ -145,7 +147,7 @@ export function isCatalogNavigationUrl(rawUrl: string): boolean {
       const value = url.searchParams.get(key);
       if (value && /^\d+$/.test(value)) return true;
     }
-    if (["/", "/peliculas", "/series", "/animes", "/browse", "/directorio", "/genero", "/year"].includes(path)) return true;
+    if (["/", "/peliculas", "/series", "/animes", "/browse", "/directorio", "/genero", "/year"].includes(path) || path.startsWith("/genero/")) return true;
     return false;
   } catch {
     return true;

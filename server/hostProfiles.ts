@@ -165,6 +165,23 @@ export const HOST_PROFILES: HostProfile[] = [
     client: "undici",
   },
   {
+    // Doramasflix frequently rotates through Streamtape/Streamwish CDN hosts.
+    // Relay these HLS manifests and segments through MeriStream so iOS/Claro
+    // does not need direct access to an unstable or filtered upstream domain.
+    match: ["streamtape.com", "tapecontent.net", "premilkyway.com"],
+    refererMode: "passthrough",
+    userAgent: CHROME_124_UA,
+    client: "undici",
+  },
+  {
+    // Vidsrc rotates CDN hostnames. These hosts are reliable enough to probe
+    // server-side but should still be relayed for mobile playback consistency.
+    match: ["antediluvianalgorithm.website", "xenialxenogenesis.website"],
+    refererMode: "passthrough",
+    userAgent: CHROME_124_UA,
+    client: "undici",
+  },
+  {
     // DoodStream (2026-08-23, resolver pass_md5.sh): el CDN de entrega exige el
     // Referer del propio embed (hotlink-protection estándar del ecosistema dood:
     // dood.watch/dsvplay.com/d000d.com/dood.la). Sin verificación curl en vivo;

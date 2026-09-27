@@ -59,7 +59,7 @@ import {
   DeliveryPlanner,
   ResolutionCoordinator,
 } from "./server/deliveryPlanner";
-import { classifySourceKind, parseStreamExpiry } from "./server/resolutionMetadata";
+import { classifySourceKind, isDirectMedia as isDirectMediaUrl, parseStreamExpiry } from "./server/resolutionMetadata";
 import { isInvalidCatalogSource, sanitizeCatalogLandingPages } from "./server/catalogIntegrity";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -107,6 +107,7 @@ import {
 } from "./server/rateLimiter";
 import { providerGatewayRouter } from "./server/providerGatewayRouter";
 import { resolveByTmdb } from "./server/providerGateway";
+import { getDoramasflixHealth } from "./server/scrapers/adapters/DoramasflixAdapter";
 import { subtitleGateway, subtitleRouter } from "./server/subtitles";
 import { openSubtitlesRouter } from "./server/openSubtitlesRouter";
 import { subtitleTextToWebVtt } from "./server/subtitleFormat";
@@ -157,6 +158,8 @@ import {
   listCatalogReports,
   updateCatalogReport,
 } from "./server/catalogReports";
+
+const isDirectMedia = (url: string): boolean => EmbedResolvers.isDirectMediaUrl(url) || isDirectMediaUrl(url);
 
 const deliveryPlanner = new DeliveryPlanner();
 
@@ -430,7 +433,7 @@ function rankStreams(streams: string[], hostPriority?: Record<string, number>): 
   return sortStreamsByPriority(
     entries.map((url) => ({
       url,
-      type: (/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(url) ? "direct" : "embed") as "direct" | "embed",
+      type: EmbedResolvers.isDirectMediaUrl(url) ? "direct" as const : "embed" as const,
       tier: getStreamTier(url),
       host: (() => {
         try {
@@ -1794,6 +1797,17 @@ async function startServer() {
       const status = /obligatorio|no válido/i.test(message) ? 400 : 500;
       res.status(status).json({ error: message });
     }
+  });
+
+  // Estado mínimo público de proveedores upstream. No expone credenciales ni
+  // URLs firmadas; permite que el reproductor y soporte distingan una caída
+  // del proveedor de un fallo local de MeriStream.
+  app.get("/api/v1/providers/health", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      generated_at: new Date().toISOString(),
+      providers: { doramasflix: getDoramasflixHealth() },
+    });
   });
 
   // Protege el plano de control sin interceptar reproducción, catálogo público
@@ -3215,6 +3229,7 @@ async function startServer() {
           /\.(?:m3u8|mpd|mp4|webm|mkv)(?:[?#]|$)/i.test(value) ||
           /\/get_video(?:\?|$)/i.test(value) ||
           /tapecontent\.net/i.test(value) ||
+          /pixeldrain\.com\/api\/file\//i.test(value) ||
           /\/m3u8\//i.test(value) ||
           /hls-vod/i.test(value)
         );
@@ -3245,6 +3260,24 @@ async function startServer() {
         ));
         return true;
       };
+
+      // URLs that already point to a native media resource must never enter the
+      // generic resolver. Some CDNs (notably Pixeldrain) expose an API path
+      // without a .mp4 suffix; fetching that endpoint as HTML can buffer the
+      // entire file and exhaust the Node heap.
+      if (isNativeExternalUrl(rawUrl)) {
+        const directMeta: ResolvedStreamMeta = {
+          url: rawUrl,
+          original_url: rawUrl,
+          resolved: true,
+          type: "direct",
+          provider: /pixeldrain\.com/i.test(rawUrl) ? "Pixeldrain" : "DirectMedia",
+          is_proxyable: true,
+          is_refreshable: false,
+          canonical_locator: rawUrl,
+        };
+        if (await respondWithValidated(directMeta, "direct_external")) return;
+      }
 
       // Zoko's stable locator carries the subtitle list in the player payload.
       // Resolve that locator itself before the generic page extractor turns it
@@ -3589,12 +3622,21 @@ async function startServer() {
           method: 'GET' | 'HEAD',
           extraHeaders?: Record<string, string>
         ) => {
+          // The browser's Range header describes the media chunk it wants,
+          // not the metadata probe.  Sending it on HEAD makes providers such
+          // as Pixeldrain report Content-Length: 2 for `bytes=0-1`, which
+          // poisons the proxy's total-size calculation and breaks playback.
+          const metadataHeaders = method === 'HEAD'
+            ? Object.fromEntries(
+                Object.entries(reqHeaders).filter(([name]) => name.toLowerCase() !== 'range'),
+              )
+            : reqHeaders;
           let currentUrl = targetUrl;
           for (let hop = 0; hop <= MAX_PROXY_REDIRECTS; hop++) {
             const response = await request(currentUrl, {
               method,
               redirect: 'manual',
-              headers: hop === 0 && extraHeaders ? { ...reqHeaders, ...extraHeaders } : reqHeaders,
+              headers: hop === 0 && extraHeaders ? { ...metadataHeaders, ...extraHeaders } : metadataHeaders,
               ...profileConnectOpts,
             });
             const status = response.statusCode;
@@ -3621,6 +3663,14 @@ async function startServer() {
         // host contra el que luego sirven los chunks por rango.
         const { response: metadataResponse, finalUrl } = await followWithRedirects('HEAD');
         const contentLengthHeader = metadataResponse.headers['content-length'];
+        const metadataContentRange = metadataResponse.headers['content-range'];
+        const metadataRangeText = Array.isArray(metadataContentRange)
+          ? metadataContentRange[0]
+          : String(metadataContentRange || '');
+        // Some CDNs answer HEAD as if it were the client's ranged request.
+        // Prefer the total from Content-Range (`bytes 0-1/TOTAL`) whenever it
+        // is present instead of treating the requested chunk as the whole file.
+        const rangedTotal = /\/([0-9]+)\s*$/i.exec(metadataRangeText)?.[1];
 
         if (!contentLengthHeader) {
           // Sin Content-Length no hay base para calcular rangos: passthrough puro.
@@ -3640,7 +3690,7 @@ async function startServer() {
           return;
         }
 
-        const totalFileSize = Number(contentLengthHeader);
+        const totalFileSize = Number(rangedTotal || contentLengthHeader);
         if (!Number.isSafeInteger(totalFileSize) || totalFileSize <= 0) {
           logProxyRequest({
             targetUrl,
@@ -3902,7 +3952,7 @@ async function startServer() {
         try {
           const pathname = new URL(u).pathname.toLowerCase();
           return (
-            /\/(ver|watch|episode|ep|capitulo)\//.test(pathname) &&
+            /\/(ver|watch|episode|ep|capitulo|capitulos|pelicula|peliculas)\//.test(pathname) &&
             !/\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u)
           );
         } catch {
@@ -3912,7 +3962,6 @@ async function startServer() {
 
       // Una fuente directa con extensiÃ³n de media es resoluble aunque coincida con la URL
       // pedida (caso archive.org/details â†’ .mp4 directo): el player nativo sÃ­ la reproduce.
-      const isDirectMedia = (u: string) => /\.(m3u8|mpd|mp4|webm|mkv)(\?|#|$)/i.test(u) || u.includes(".m3u8") || u.includes("/m3u8/");
 
       const realStreams = all.filter((u) => (u !== url || isDirectMedia(u)) && !isSourcePage(u));
 
@@ -3942,6 +3991,16 @@ async function startServer() {
       }
 
       const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
+      const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
+      // Pixeldrain's API file response is a valid MP4 for server-side range
+      // checks but is blocked by Chromium's ORB when the player requests it
+      // cross-origin. Keep its stable locator and relay the bytes through our
+      // CORS proxy so the browser receives the same media without a provider
+      // redirect or an expiring signed URL.
+      const browserSafeDirectUrl = (value: string): string => {
+        if (!/^https?:\/\/(?:www\.)?pixeldrain\.com\/api\/file\//i.test(value)) return value;
+        return `/api/v1/proxy/stream?referer=${encodeURIComponent(url)}&url=${encodeURIComponent(value)}${sourceSite ? `&provider=${encodeURIComponent(sourceSite)}` : ''}`;
+      };
 
       // LatAnime's adapter already validates direct HLS candidates against the
       // manifest and first segment. Do not spend another 3s per fallback embed
@@ -3955,10 +4014,10 @@ async function startServer() {
         ? extracted.stream_url
         : "";
       if (fastDirect) {
-        const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
         const fastRankedStreams = rankedBase
           .map((stream) => ({
             ...stream,
+            url: stream.type === "direct" ? browserSafeDirectUrl(stream.url) : stream.url,
             provider: sourceSite,
             source_site: sourceSite,
             original_url: url,
@@ -3992,8 +4051,8 @@ async function startServer() {
         });
         return res.json({
           url,
-          stream_url: fastDirect,
-          all_available_streams: all,
+          stream_url: browserSafeDirectUrl(fastDirect),
+          all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
           title: extracted.title,
           resolved: true,
           ranked_streams: safeFastRanked,
@@ -4119,9 +4178,11 @@ async function startServer() {
 
       const safeRankedStreams = rankedStreams.map((stream) => {
         const provider = stream.source_site || siteFromDomain(hostOfStreamUrl(url)) || stream.provider;
-        if (!Array.isArray(stream.subtitles)) return stream;
+        const safeUrl = stream.type === "direct" ? browserSafeDirectUrl(stream.url) : stream.url;
+        if (!Array.isArray(stream.subtitles) && safeUrl === stream.url) return stream;
         return {
           ...stream,
+          url: safeUrl,
           subtitles: proxyResolvedSubtitles({ subtitles: stream.subtitles }, provider).subtitles || [],
         };
       });
@@ -4138,8 +4199,8 @@ async function startServer() {
 
       res.json({
         url,
-        stream_url: finalStreamUrl,
-        all_available_streams: all,
+        stream_url: browserSafeDirectUrl(finalStreamUrl),
+        all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
         title: extracted.title,
         resolved: isResolved,
         requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,
@@ -4852,6 +4913,9 @@ async function startServer() {
       hosts: getHostStats(),
       hostHealth: listHostHealth(),
       playerHealth: getProviderHealthStats(),
+      upstreamProviders: {
+        doramasflix: getDoramasflixHealth(),
+      },
     });
   });
 
@@ -5900,3 +5964,4 @@ async function startServer() {
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   startServer();
 }
+

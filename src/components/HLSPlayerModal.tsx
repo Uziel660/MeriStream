@@ -1162,6 +1162,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // caliente vía episode-servers/resolve-embed. Se intenta UNA vez por servidor.
   const jitInFlightRef = useRef<Set<string>>(new Set());
   const jitCompletedRef = useRef<Set<string>>(new Set());
+  // El primer reintento JIT debe volver a ejecutar este efecto. Antes solo se
+  // limpiaban los sets de control, pero ninguna dependencia cambiaba y una
+  // fuente embed sin enlaces quedaba mostrando "Resolviendo..." para siempre.
+  const [jitRetryVersion, setJitRetryVersion] = useState(0);
 
   // Resolver únicamente el servidor activo. Esto evita que una fuente vencida
   // del índice 0 sobrescriba o dispare failover sobre otro candidato que el
@@ -1211,14 +1215,23 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           const streamUrl = typeof episodeResult.stream_url === 'string' ? episodeResult.stream_url : '';
           const resolvedUrl = first?.url || (isMediaUrl(streamUrl) ? streamUrl : '');
           const resolved = Boolean(episodeResult.resolved && resolvedUrl && resolvedUrl !== locator && isMediaUrl(resolvedUrl));
+          // Tudorama's HLS manifests are signed against the resolver's origin
+          // and can return a misleading 404 when the browser fetches them
+          // directly. Keep the canonical page as the renewable locator and
+          // enter the MeriStream proxy session before attaching HLS.js.
+          const tudoramaSource = /(?:^|\/\/)(?:www\.)?tudorama\.com\//i.test(locator)
+            || /tudorama/i.test(`${first?.provider || ''} ${first?.source_site || ''}`);
+          const deliveryMode = first?.delivery_mode === 'proxy_required' || tudoramaSource
+            ? 'proxy_required' as const
+            : (resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const);
           const pageResolution = {
             url: resolved ? resolvedUrl : locator,
             original_url: locator,
             canonical_locator: locator,
             resolved,
             type: resolved && first?.type !== 'embed' ? 'direct' as const : 'embed' as const,
-            delivery_mode: resolved && first?.type !== 'embed' ? 'direct_trial' as const : 'embed' as const,
-            is_proxyable: resolved,
+            delivery_mode: deliveryMode,
+            is_proxyable: resolved || tudoramaSource,
             is_refreshable: true,
             resolution_id: first?.resolution_id,
             generation: first?.generation,
@@ -1255,6 +1268,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       jitRetryCountsRef.current.set(jitKey, previous + 1);
       jitInFlightRef.current.delete(jitKey);
       jitCompletedRef.current.delete(jitKey);
+      setJitRetryVersion((version) => version + 1);
       setServers((prev) => prev.map((candidate) =>
         candidate.id === targetId
           ? { ...candidate, notPlayable: false, failure_reason: undefined }
@@ -1264,6 +1278,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       setDeliveryState('resolving');
       return true;
     };
+
+    const providerIsKnownDegraded = /doramasflix/i.test(
+      `${server.sourceSite || ''} ${server.provider || ''} ${server.url || ''}`,
+    );
 
     resolutionPromise
       .then((res: any) => {
@@ -1288,7 +1306,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           // reintento: reintentar una vez la misma fuente antes de pasar al
           // siguiente proveedor evita el patrón "primer servidor falla,
           // segundo también, primer servidor sí funciona al volver a pulsar".
-          if (retryJitOnceBeforeFailover()) return;
+          if (!providerIsKnownDegraded && retryJitOnceBeforeFailover()) return;
           jitCompletedRef.current.delete(jitKey);
           setCanonicalResolveError('No se pudo extraer un stream reproducible de esta fuente.');
           setDeliveryState('error');
@@ -1373,7 +1391,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         if (cancelled || attemptId !== attemptIdRef.current) return;
         // La fuente puede recuperarse cuando el proveedor vuelve a responder.
         // No memorizamos este fallo como una resolución permanente.
-        if (retryJitOnceBeforeFailover()) return;
+        if (!providerIsKnownDegraded && retryJitOnceBeforeFailover()) return;
         jitCompletedRef.current.delete(jitKey);
         setCanonicalResolveError(
           isUnresolvedCanonical(server.url)
@@ -1390,7 +1408,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError]);
+  }, [activeServer?.id, activeServer?.url, activeServer?.isEmbed, activeServer?.notPlayable, activeServer?.canonical_locator, activeServerIndex, servers.length, canonicalResolveError, jitRetryVersion]);
 
   // 2. CAMBIO DE SERVIDOR MANUAL O POR FAILOVER AUTOMÁTICO
   const handleServerChange = (index: number, isAutoFailover = false, isPartySync = false) => {

@@ -7,7 +7,7 @@
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { detectLanguageHints, normalizeLanguageCode } from "../server/utils/languageDetector";
+import { detectDoramasytLanguageHints, detectLanguageHints, normalizeLanguageCode } from "../server/utils/languageDetector";
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -93,15 +93,18 @@ async function main(): Promise<void> {
       const normalizedAudio = normalizeLanguageCode(link.audio_language) || explicitLanguageAsAudio;
       const normalizedSubtitle = normalizeLanguageCode(link.subtitle_language);
       const tracks = normalizeSubtitleTracks(link.subtitles);
-      const hints = detectLanguageHints({
-        title: `${link.source_site} ${link.url}`,
-        url: link.url,
-        link_type: link.link_type,
-        language: /^(?:sub|dub)$/i.test(currentRendition || "") ? currentRendition : undefined,
-        audio_language: normalizedAudio,
-        subtitle_language: normalizedSubtitle,
-        subtitles: tracks.value,
-      });
+      const doramasytHints = link.source_site.toLowerCase() === "doramasyt"
+        ? detectDoramasytLanguageHints(link.url)
+        : undefined;
+      const hints = doramasytHints || detectLanguageHints({
+          title: `${link.source_site} ${link.url}`,
+          url: link.url,
+          link_type: link.link_type,
+          language: /^(?:sub|dub)$/i.test(currentRendition || "") ? currentRendition : undefined,
+          audio_language: normalizedAudio,
+          subtitle_language: normalizedSubtitle,
+          subtitles: tracks.value,
+        });
 
       const nextLanguage = hints.language || (/^(?:sub|dub)$/i.test(currentRendition || "") ? currentRendition!.toLowerCase() : null);
       const nextAudio = hints.audio_language || normalizedAudio || null;

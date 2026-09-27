@@ -350,6 +350,9 @@ export async function normalizeProviderLanguages(): Promise<{
   latanime_castellano: number;
   latanime_catalan: number;
   latanime_sub: number;
+  doramasyt_latino: number;
+  doramasyt_castellano: number;
+  doramasyt_sub: number;
 }> {
   const { prisma } = await import("./db");
 
@@ -397,11 +400,50 @@ export async function normalizeProviderLanguages(): Promise<{
       AND (audio_language IS DISTINCT FROM 'ja' OR subtitle_language IS DISTINCT FROM 'es' OR language IS DISTINCT FROM 'sub');
   `);
 
+  // DoramasYT suffixes every fiche with `sub-espanol`, including dubbed
+  // versions. The episode slug is the authoritative signal: Latino and
+  // Castellano are Spanish audio, while the ordinary slug is original audio
+  // with Spanish subtitles.
+  const doramasytLatino = await prisma.$executeRawUnsafe(`
+    UPDATE "SourceLink"
+    SET language = 'dub',
+        audio_language = 'es-419',
+        subtitle_language = NULL
+    WHERE source_site = 'doramasyt'
+      AND url ILIKE '%-latino-episodio-%'
+      AND (language IS DISTINCT FROM 'dub' OR audio_language IS DISTINCT FROM 'es-419' OR subtitle_language IS NOT NULL);
+  `);
+
+  const doramasytCastellano = await prisma.$executeRawUnsafe(`
+    UPDATE "SourceLink"
+    SET language = 'dub',
+        audio_language = 'es-ES',
+        subtitle_language = NULL
+    WHERE source_site = 'doramasyt'
+      AND url ILIKE '%-castellano-episodio-%'
+      AND (language IS DISTINCT FROM 'dub' OR audio_language IS DISTINCT FROM 'es-ES' OR subtitle_language IS NOT NULL);
+  `);
+
+  const doramasytSub = await prisma.$executeRawUnsafe(`
+    UPDATE "SourceLink"
+    SET language = 'sub',
+        audio_language = NULL,
+        subtitle_language = 'es'
+    WHERE source_site = 'doramasyt'
+      AND url NOT ILIKE '%-latino-episodio-%'
+      AND url NOT ILIKE '%-castellano-episodio-%'
+      AND url ILIKE '%-episodio-%'
+      AND (language IS DISTINCT FROM 'sub' OR audio_language IS NOT NULL OR subtitle_language IS DISTINCT FROM 'es');
+  `);
+
   return {
     latanime_latino: Number(lat || 0),
     latanime_castellano: Number(cas || 0),
     latanime_catalan: Number(cat || 0),
     latanime_sub: Number(sub || 0),
+    doramasyt_latino: Number(doramasytLatino || 0),
+    doramasyt_castellano: Number(doramasytCastellano || 0),
+    doramasyt_sub: Number(doramasytSub || 0),
   };
 }
 

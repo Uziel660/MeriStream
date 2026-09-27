@@ -46,5 +46,6 @@ describe("buildCatalogPageUrl", () => {
 
   it("reconoce el espejo animeflv.or.am", () => {
     expect(buildCatalogPageUrl("https://animeflv.or.am/anime", 3)).toBe("https://animeflv.or.am/anime/page/3/");
+    expect(buildCatalogPageUrl("https://tudorama.com/genero/series/", 2)).toBe("https://tudorama.com/genero/series/page/2/");
   });
 });

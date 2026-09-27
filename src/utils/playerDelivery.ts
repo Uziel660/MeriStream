@@ -45,6 +45,7 @@ export function isNativeMediaUrl(url: string | null | undefined): boolean {
     value.includes('/get_video') ||
     value.includes('tapecontent.net') ||
     value.includes('/api/v1/stream/mega') ||
+    value.includes('pixeldrain.com/api/file/') ||
     value.includes('/api/v1/playback/') ||
     value.includes('/api/v1/proxy/stream')
   );
@@ -93,6 +94,7 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('/series/') ||
     lower.includes('/serie/') ||
     lower.includes('/pelicula/') ||
+    lower.includes('/peliculas/') ||
     lower.includes('/ver-pelicula/') ||
     lower.includes('/ver-serie/') ||
     lower.includes('/ver-anime/') ||
@@ -117,6 +119,8 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('gnula.se') ||
     lower.includes('gnula.cc') ||
     lower.includes('doramasflix.') ||
+    lower.includes('doramasia.') ||
+    lower.includes('tudorama.') ||
     lower.includes('the.tube') ||
     lower.includes('they.tube') ||
     lower.includes('animeav1.com/media/')
@@ -419,3 +423,4 @@ export function recordAttemptedMode(
 export function handleEmbedTimeout(_currentState: DeliveryState): DeliveryState {
   return 'error';
 }
+

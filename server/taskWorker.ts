@@ -1243,7 +1243,7 @@ class BackgroundCrawlerWorker {
           // tarjeta y convertía un rastreo de catálogo en una cola de horas.
           const lightweightPrimaryCatalogImport =
             job.scope === "full_catalog" &&
-            /cinecalidad|gnulahd|latanime|tioanime/i.test(job.target_url);
+            /cinecalidad|gnulahd|latanime|tioanime|tioplus/i.test(job.target_url);
           const sourceSite = siteOf(item.url || job.target_url);
           const catalogKindHint = item.kind || normalizeContentKind(job.content_kind) || kindHintFromCatalogUrl(job.target_url);
           const skipMovieDetail = lightweightPrimaryCatalogImport && catalogKindHint === "movie";

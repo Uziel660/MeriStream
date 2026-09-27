@@ -66,6 +66,11 @@ export class TioPlusAdapter extends BaseScraperAdapter {
     /vidcache\.net/i,
     /my\.mail\.ru/i,
     /v\.tioanime\.com/i,
+    // TurboViPlay/TurboSPlayer currently exposes image playlists (the first
+    // child segment is image/png), not playable video. Keep the stable page
+    // locator for re-resolution but never advertise this direct candidate.
+    /turboviplay\.com/i,
+    /turbosplayer\.com/i,
   ];
 
   canHandle(url: string): boolean {

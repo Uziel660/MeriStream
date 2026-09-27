@@ -1,7 +1,7 @@
 import { ExtractedEpisode, SourceLinkInput } from "./types";
 import { classifySourceKind } from "./resolutionMetadata";
 import { canonicalCatalogUrl } from "./catalogIntegrity";
-import { detectLanguageHints } from "./utils/languageDetector";
+import { detectDoramasytLanguageHints, detectLanguageHints } from "./utils/languageDetector";
 
 /**
  * Normaliza el resultado de detalle de un adaptador sin perder sus fuentes
@@ -49,7 +49,11 @@ export function normalizeExtractedEpisode(raw: RawCatalogEpisode, fallbackSite: 
     const key = sourceKey(url);
     if (seen.has(key)) continue;
     seen.add(key);
-    const languageHints = detectLanguageHints({
+    const sourceSite = cleanUrl(source.source_site) || fallbackSite;
+    const providerHints = sourceSite.toLowerCase() === "doramasyt"
+      ? detectDoramasytLanguageHints(url)
+      : undefined;
+    const languageHints = providerHints || detectLanguageHints({
       title: raw.title,
       url,
       link_type: source.link_type,
@@ -60,7 +64,7 @@ export function normalizeExtractedEpisode(raw: RawCatalogEpisode, fallbackSite: 
     });
     normalizedSources.push({
       url,
-      source_site: cleanUrl(source.source_site) || fallbackSite,
+      source_site: sourceSite,
       link_type: cleanUrl(source.link_type) || undefined,
       host: cleanUrl(source.host) || undefined,
       is_verified: source.is_verified === true,

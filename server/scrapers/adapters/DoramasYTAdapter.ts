@@ -592,7 +592,7 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     }
   }
 
-  private resolveRelativeUrl(value: string, base: string): string {
+  protected override resolveRelativeUrl(value: string, base: string): string {
     try { return new URL(value, base).toString(); } catch { return value; }
   }
 

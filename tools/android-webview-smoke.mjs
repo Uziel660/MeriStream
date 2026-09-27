@@ -75,7 +75,10 @@ async function evaluate(call, expression, userGesture = false, awaitPromise = tr
     userGesture,
   });
   if (result?.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
+    const detail = result.exceptionDetails.exception?.description
+      || result.exceptionDetails.text
+      || 'Runtime.evaluate failed';
+    throw new Error(detail);
   }
   return result?.result?.value;
 }
@@ -345,7 +348,7 @@ try {
       return true;
     })()`);
     if (!opened) throw new Error('Explore genre filter trigger was not found');
-    await delay(250);
+    await delay(700);
     const state = await evaluate(call, `(() => {
       const menu = document.querySelector('.filter-menu--portal[aria-label="Filtrar por género"]');
       if (!menu) return null;

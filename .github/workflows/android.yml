@@ -100,6 +100,7 @@ jobs:
             meristream-watch-party.png
             meristream-auth.png
             meristream-explore-filters.png
+            meristream-explore-genre-dropdown.png
             meristream-lists.png
             meristream-list-create.png
             meristream-player.png
@@ -161,6 +162,8 @@ jobs:
             meristream-low-end-start.txt
             meristream-low-end-startup.png
             meristream-low-end-catalog-seeded.png
+            meristream-low-end-explore-filters.png
+            meristream-low-end-explore-genre-dropdown.png
             meristream-low-end-player.png
             meristream-low-end-player-more.png
             meristream-low-end-player-report.png

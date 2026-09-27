@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   isPlatformPageUrl,
   isLaMoviePageUrl,
@@ -13,6 +13,9 @@ import {
   isAnimeAv1PageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
+import { ScraperManager } from "./scrapers/ScraperManager";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
   describe("URL Pattern Matching & Registry Dispatch", () => {
@@ -385,5 +388,25 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(res.original_url).toBe(canonicalUrl);
       expect(res.is_refreshable).toBe(true);
     });
+  });
+
+  it("uses the registered fallback scraper for an otherwise unclassified page", async () => {
+    const pageUrl = "https://unknown.example/watch/movie";
+    const streamUrl = "https://cdn.example/movie/master.m3u8";
+    const extractStream = vi.fn().mockResolvedValue({
+      stream_url: streamUrl,
+      all_available_streams: [streamUrl],
+      title: "Movie",
+    });
+    const getAdapter = vi.spyOn(ScraperManager.getInstance(), "getAdapter").mockReturnValue({
+      extractStream,
+    } as never);
+
+    const resolution = await resolvePlatformPage(pageUrl);
+
+    expect(getAdapter).toHaveBeenCalledWith(pageUrl);
+    expect(extractStream).toHaveBeenCalledWith(pageUrl);
+    expect(resolution.resolved).toBe(true);
+    expect(resolution.url).toBe(streamUrl);
   });
 });

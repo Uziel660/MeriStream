@@ -646,7 +646,10 @@ async function resolveNxshaMultiLang(
             playable: playableUrl(source?.url, source?.type),
             label: String(source?.label || source?.quality || "").trim(),
           }))
-          .filter((candidate: any) => candidate.playable?.streamType === "hls")
+          .filter((candidate): candidate is {
+            playable: { url: string; streamType: "hls" };
+            label: string;
+          } => candidate.playable?.streamType === "hls")
         : [];
       candidates.sort((left: any, right: any) => {
         const leftLang = detectNxshaLanguage(left.label || "");
@@ -682,7 +685,7 @@ async function resolveNxshaMultiLang(
       }
       // An exact match is already the best possible outcome. Stop querying
       // later scrapers, keeping the preference-aware path bounded in latency.
-      if (bestCandidate?.score >= 1000) break;
+      if (bestCandidate && bestCandidate.score >= 1000) break;
     }
 
     if (bestCandidate) {

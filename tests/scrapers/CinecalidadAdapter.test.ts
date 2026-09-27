@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { CinecalidadAdapter } from "../../server/scrapers/adapters/CinecalidadAdapter";
 import type { ExtractedCatalogItem, UniversalAnalysisResult } from "../../server/types";
 
+// Live opt-in: npx cross-env LIVE_SCRAPER_E2E=1 vitest run tests/scrapers/CinecalidadAdapter.test.ts tests/scrapers/LaMovieAdapter.test.ts
 const UA_CHROME =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const SITE_REFERER = "https://www.cinecalidad.am/";
+const describeLive = process.env.LIVE_SCRAPER_E2E === "1" ? describe : describe.skip;
 
 // Espejo de KNOWN_EMBED_HOSTS de server/validator.ts (lectura de evidencia)
 const KNOWN_EMBED_HOSTS = [
@@ -42,7 +44,7 @@ const isKnownEmbed = (url: string) =>
   KNOWN_EMBED_HOSTS.some((h) => url.toLowerCase().includes(h));
 const isDirectMedia = (url: string) => /\.(m3u8|mp4|webm)(\?|$)/i.test(url);
 
-describe("CinecalidadAdapter - integración real contra cinecalidad.am", () => {
+describeLive("CinecalidadAdapter - integración real contra cinecalidad.am", () => {
   const adapter = new CinecalidadAdapter();
   let searchResults: ExtractedCatalogItem[] = [];
   let analysis: UniversalAnalysisResult | null = null;

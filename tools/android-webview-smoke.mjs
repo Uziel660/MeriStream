@@ -68,6 +68,9 @@ async function connect() {
 }
 
 async function evaluate(call, expression, userGesture = false, awaitPromise = true) {
+  if (expression.includes('?.')) {
+    throw new Error('Runtime.evaluate expressions must avoid optional chaining for Android 10 WebView compatibility');
+  }
   const result = await call('Runtime.evaluate', {
     expression,
     awaitPromise,
@@ -249,7 +252,7 @@ try {
     const state = await evaluate(call, `(() => {
       const previews = [...document.querySelectorAll('.interface-style-preview')];
       const first = previews[0];
-      const bounds = first?.getBoundingClientRect();
+      const bounds = first ? first.getBoundingClientRect() : null;
       return {
         visible: Boolean(document.querySelector('.preferences-panel')),
         previewCount: previews.length,
@@ -356,10 +359,11 @@ try {
       const options = [...menu.querySelectorAll('[role="option"]')];
       const inspect = (option) => {
         const bounds = option.getBoundingClientRect();
-        const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)?.closest('[role="option"]');
+        const elementAtCenter = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+        const hit = elementAtCenter ? elementAtCenter.closest('[role="option"]') : null;
         return {
           label: (option.textContent || '').trim(),
-          hit: (hit?.textContent || '').trim(),
+          hit: (hit ? hit.textContent : '').trim(),
           bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
         };
       };
@@ -385,7 +389,7 @@ try {
   } else if (action === 'select-explore-genre-option') {
     const label = await evaluate(call, `(() => {
       const menu = document.querySelector('.filter-menu--portal[aria-label="Filtrar por género"]');
-      const options = [...(menu?.querySelectorAll('[role="option"]') || [])];
+      const options = menu ? Array.prototype.slice.call(menu.querySelectorAll('[role="option"]')) : [];
       const last = options[options.length - 1];
       if (!last) return null;
       const text = (last.textContent || '').trim();

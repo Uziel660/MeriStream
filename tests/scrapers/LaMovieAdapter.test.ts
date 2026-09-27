@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { LaMovieAdapter } from "../../server/scrapers/adapters/LaMovieAdapter";
 import type { ExtractedCatalogItem, UniversalAnalysisResult } from "../../server/types";
 
+// Live opt-in: npx cross-env LIVE_SCRAPER_E2E=1 vitest run tests/scrapers/CinecalidadAdapter.test.ts tests/scrapers/LaMovieAdapter.test.ts
 const UA_CHROME =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const SITE_REFERER = "https://lamovie.org/";
+const describeLive = process.env.LIVE_SCRAPER_E2E === "1" ? describe : describe.skip;
 
 const KNOWN_EMBED_HOSTS = [
   "zilla-networks.com",
@@ -45,7 +47,7 @@ const isDirectMedia = (url: string) => /\.(m3u8|mp4|webm)(\?|$)/i.test(url);
 
 const BOLT_URL = "https://lamovie.org/peliculas/bolt-un-perro-fuera-de-serie-2008/";
 
-describe("LaMovieAdapter - integracion real contra lamovie.org", () => {
+describeLive("LaMovieAdapter - integracion real contra lamovie.org", () => {
   const adapter = new LaMovieAdapter();
   let catalogItems: ExtractedCatalogItem[] = [];
   let analysis: UniversalAnalysisResult | null = null;

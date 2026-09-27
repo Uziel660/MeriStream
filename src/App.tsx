@@ -1,28 +1,33 @@
 // src/App.tsx
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { UnifiedHeader } from './components/UnifiedHeader';
 import { HeroBanner } from './components/HeroBanner';
 import { MediaRow } from './components/MediaRow';
-import { CatalogFilters, type SortMode } from './components/CatalogFilters';
+import type { SortMode } from './components/CatalogFilters';
 import { MediaCard } from './components/MediaCard';
 import { MediaDetailsModal, HLSPlayerModal, AdminPanel, AuthModal, ContinueWatching } from './components/lazy/DeferredOverlays';
-import { WatchPartyJoinModal } from './components/WatchPartyJoinModal';
 import type { WatchProgress } from './components/ContinueWatching';
-import { BentoCollection } from './components/BentoCollection';
-import { ExploreCatalogView } from './components/ExploreCatalogView';
-import { MyListsView } from './components/MyListsView';
 import { useAuth } from './contexts/AuthContext';
 import { useHiddenGenres } from './hooks/useHiddenGenres';
 import { thumbBackdropUrl } from './utils/imageSizes';
-import { isEmbedUrl } from './utils/streamOptimizer';
 import { api } from './api/client';
 import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
-import { createPlaybackRequests } from './utils/playbackBootstrap';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
+import { isNativeShell } from './utils/runtime';
+
+const LazyCatalogFilters = lazy(() => import('./components/CatalogFilters').then((module) => ({ default: module.CatalogFilters })));
+const LazyBentoCollection = lazy(() => import('./components/BentoCollection').then((module) => ({ default: module.BentoCollection })));
+const LazyExploreCatalogView = lazy(() => import('./components/ExploreCatalogView').then((module) => ({ default: module.ExploreCatalogView })));
+const LazyMyListsView = lazy(() => import('./components/MyListsView').then((module) => ({ default: module.MyListsView })));
+const LazyWatchPartyJoinModal = lazy(() => import('./components/WatchPartyJoinModal').then((module) => ({ default: module.WatchPartyJoinModal })));
+
+const deferredSurfaceFallback = (
+  <div className="py-14 text-center text-xs text-zinc-500" role="status" aria-live="polite">Cargando…</div>
+);
 
 const getContinueWatchingStorageKey = (userId?: string | null): string =>
   userId ? `meristream_continue_watching_${userId}` : 'meristream_guest_continue_watching_v1';
@@ -57,6 +62,157 @@ function loadContinueWatchingFromStorage(userId?: string | null): WatchProgress[
     }
   } catch {}
   return [];
+}
+
+function saveContinueWatchingProgress(items: WatchProgress[]): void {
+  for (const item of items) {
+    void api.saveProgress(item).catch(() => {});
+  }
+}
+
+type EpisodePlaybackContext = {
+  showId: string;
+  currentShow?: Show;
+  sourceHint: string;
+  kindForUrl: string;
+  gatewayKind: 'anime' | 'movie' | 'series';
+};
+
+export function getEpisodePlaybackContext(input: {
+  episode: Episode;
+  showTitle: string;
+  showOverride?: Show;
+  selectedShowId?: string | null;
+  shows: Show[];
+  searchResults: Show[];
+  routeKind?: string | null;
+}): EpisodePlaybackContext {
+  const { episode, showTitle, showOverride, selectedShowId, shows, searchResults, routeKind } = input;
+  const showId = episode.show_id || selectedShowId || 'unknown';
+  const publicIdentity = /^tmdb-(movie|series|anime)-(\d+)$/i.exec(showId);
+  const knownShow = showOverride || shows.find((show) => show.id === showId)
+    || searchResults.find((show) => show.id === showId);
+  const publicKind = publicIdentity?.[1].toLowerCase();
+  const currentShow = publicIdentity
+    ? {
+      ...knownShow,
+      id: showId,
+      title: knownShow?.title || showTitle,
+      tmdb_id: knownShow?.tmdb_id ?? Number(publicIdentity[2]),
+      kind: publicKind,
+      category: publicKind,
+    } as Show
+    : knownShow;
+  const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
+  const locatorIdentity = /^tmdb:\/\/(movie|series|anime)\/(\d+)/i.exec(sourceHint);
+  const rawKind = String(
+    publicKind || showOverride?.kind || showOverride?.category || currentShow?.kind || currentShow?.category
+    || locatorIdentity?.[1] || routeKind || '',
+  ).toLowerCase();
+  const kindForUrl = rawKind.includes('anime')
+    ? 'anime'
+    : rawKind.includes('movie') || rawKind.includes('pel') ? 'movie' : 'series';
+  const category = String(currentShow?.kind || currentShow?.category || '').toLowerCase();
+  const isAnime = category.includes('anime') || sourceHint.startsWith('tmdb://anime/');
+  const isMovie = category.includes('movie') || category.includes('pel') || sourceHint.startsWith('tmdb://movie/');
+  const gatewayKind = isAnime ? 'anime' : isMovie ? 'movie' : 'series';
+
+  return { showId, currentShow, sourceHint, kindForUrl, gatewayKind };
+}
+
+export function findEpisodeProgress(items: WatchProgress[], showId: string, episode: Episode, showTitle: string) {
+  const normalizedTitle = showTitle.toLowerCase().trim();
+  return items.find((item) => item.showId === showId && item.episodeId === episode.id)
+    || items.find((item) => item.showId === showId && item.episodeNumber === episode.episode_number)
+    || items.find((item) => Boolean(normalizedTitle && item.showTitle)
+      && item.showTitle?.toLowerCase().trim() === normalizedTitle
+      && (item.episodeId === episode.id || item.episodeNumber === episode.episode_number));
+}
+
+export function limitGatewaySources(sources: any[]): any[] {
+  const countByProvider = new Map<string, number>();
+  return sources.filter((source) => {
+    const provider = String(source?.provider || 'api').toLowerCase();
+    const count = countByProvider.get(provider) || 0;
+    if (count >= 3) return false;
+    countByProvider.set(provider, count + 1);
+    return true;
+  });
+}
+
+export function toGatewayRankedStreams(sources: any[], mapSubtitle: (track: any, id: string) => any): any[] {
+  return sources.map((source, index) => {
+    let host: string | null = null;
+    try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
+    const subtitles = Array.isArray(source.subtitles)
+      ? source.subtitles.map((track: any, trackIndex: number) => mapSubtitle(track, `${source.provider || 'api'}-${trackIndex}`)).filter(Boolean)
+      : [];
+    return {
+      url: source.url,
+      type: 'direct' as const,
+      tier: index,
+      host,
+      provider: source.provider,
+      source_site: source.provider,
+      original_url: source.canonicalLocator || source.url,
+      canonical_locator: source.canonicalLocator || source.url,
+      is_proxyable: true,
+      is_refreshable: Boolean(source.canonicalLocator),
+      delivery_mode: source.requiredHeaders ? 'proxy_required' as const : 'direct_trial' as const,
+      requiredHeaders: source.requiredHeaders,
+      rating: 10,
+      link_type: source.audioLanguage ? 'audio' : undefined,
+      language: source.audioLanguage || undefined,
+      audio_language: source.audioLanguage || undefined,
+      subtitle_language: source.subtitleLanguage || undefined,
+      subtitles,
+    };
+  });
+}
+
+export function toGatewayFallbacks(sources: any[], startTier: number, mapSubtitle: (track: any, id: string) => any): any[] {
+  return sources.map((source, index) => {
+    let host: string | null = null;
+    try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
+    const subtitles = Array.isArray(source.subtitles)
+      ? source.subtitles.map((track: any, trackIndex: number) => mapSubtitle(track, `${source.provider || 'fallback'}-${index}-${trackIndex}`)).filter(Boolean)
+      : [];
+    return {
+      url: source.url,
+      type: 'embed' as const,
+      tier: startTier + index,
+      host,
+      provider: source.provider,
+      source_site: source.provider,
+      canonical_locator: source.canonicalLocator || source.url,
+      original_url: source.url,
+      delivery_mode: 'embed' as const,
+      is_refreshable: true,
+      is_proxyable: false,
+      requiredHeaders: undefined,
+      link_type: source.type,
+      language: source.audioLanguage || undefined,
+      audio_language: source.audioLanguage || undefined,
+      subtitle_language: source.subtitleLanguage || undefined,
+      subtitles,
+    };
+  });
+}
+
+export function mergeRankedStreams(...groups: any[][]): any[] {
+  const merged: any[] = [];
+  const seenUrls = new Set<string>();
+  for (const candidate of groups.flat()) {
+    if (!candidate?.url || seenUrls.has(candidate.url)) continue;
+    seenUrls.add(candidate.url);
+    merged.push(candidate);
+  }
+  return merged;
+}
+
+export function isPublicVirtualEpisode(episodeId: string, showId: string): boolean {
+  return /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(episodeId)
+    || /^tmdb-(?:movie|series|anime)-\d+$/i.test(showId);
 }
 // Bumped after the main-path provider cutover so a browser cannot briefly
 // render cards that are now admin/legacy-only while the fresh request loads.
@@ -636,16 +792,19 @@ export function mergeSearchCatalogRows(localRows: Show[], publicRows: Show[]): S
 export function App() {
   const { user, isAuthenticated, openAuthModal } = useAuth();
   const { isGenreHidden, isShowHidden } = useHiddenGenres();
+  const nativeShell = isNativeShell();
+  const browseGridBatchSize = nativeShell ? 36 : 100;
+  const homeGridBatchSize = nativeShell ? 24 : HOME_GRID_INITIAL_SIZE;
   const [shows, setShows] = useState<Show[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => readAppUrlState().searchQuery);
   const [serverSearchResults, setServerSearchResults] = useState<Show[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>(() => readAppUrlState().filter);
-  const [gridPageSize, setGridPageSize] = useState(100);
+  const [gridPageSize, setGridPageSize] = useState(() => browseGridBatchSize);
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recientes');
-  const [catalogPageSize, setCatalogPageSize] = useState(HOME_GRID_INITIAL_SIZE);
+  const [catalogPageSize, setCatalogPageSize] = useState(() => homeGridBatchSize);
   const [publicCatalogPage, setPublicCatalogPage] = useState(1);
   const [hasMorePublicCatalog, setHasMorePublicCatalog] = useState(true);
   const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
@@ -963,33 +1122,59 @@ export function App() {
     }
 
     if (isAuthenticated && user?.id) {
-      api.getProgress().then((res) => {
-        if (Array.isArray(res?.items) && res.items.length > 0) {
-          const serverItems = res.items as WatchProgress[];
-          const mergedMap = new Map<string, WatchProgress>();
-          for (const item of serverItems) mergedMap.set(item.episodeId, item);
-          for (const item of local) {
-            const existing = mergedMap.get(item.episodeId);
-            if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
-              mergedMap.set(item.episodeId, item);
+      let cancelled = false;
+      const syncRemoteProgress = () => {
+        if (cancelled) return;
+        api.getProgress().then((res) => {
+          if (cancelled) return;
+          if (Array.isArray(res?.items) && res.items.length > 0) {
+            const serverItems = res.items as WatchProgress[];
+            const mergedMap = new Map<string, WatchProgress>();
+            for (const item of serverItems) mergedMap.set(item.episodeId, item);
+            for (const item of local) {
+              const existing = mergedMap.get(item.episodeId);
+              if (!existing || (item.lastWatchedAt || 0) > (existing.lastWatchedAt || 0)) {
+                mergedMap.set(item.episodeId, item);
+              }
             }
+            const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
+            setContinueWatchingItems(mergedList);
+            try {
+              localStorage.setItem(key, JSON.stringify(mergedList));
+            } catch {}
+          } else if (local.length > 0) {
+            saveContinueWatchingProgress(local);
           }
-          const mergedList = Array.from(mergedMap.values()).sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0));
-          setContinueWatchingItems(mergedList);
-          try {
-            localStorage.setItem(key, JSON.stringify(mergedList));
-          } catch {}
-        } else if (local.length > 0) {
-          // Si el servidor está vacío pero tenemos progreso local, sincronizar al servidor
-          local.forEach((item) => {
-            api.saveProgress(item).catch(() => {});
-          });
-        }
-      }).catch((e) => {
-        console.warn('Error sincronizando progreso con servidor:', e);
-      });
+        }).catch((e) => {
+          if (!cancelled) console.warn('Error sincronizando progreso con servidor:', e);
+        });
+      };
+
+      if (!nativeShell) {
+        syncRemoteProgress();
+        return () => { cancelled = true; };
+      }
+
+      // The local list is already rendered. Let the first Android frame and
+      // catalog image work settle before competing for bridge/network time.
+      const win = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      let timeoutId: number | null = null;
+      let idleId: number | null = null;
+      if (typeof win.requestIdleCallback === 'function') {
+        idleId = win.requestIdleCallback(syncRemoteProgress, { timeout: 1600 });
+      } else {
+        timeoutId = window.setTimeout(syncRemoteProgress, 650);
+      }
+      return () => {
+        cancelled = true;
+        if (idleId !== null) win.cancelIdleCallback?.(idleId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+      };
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, nativeShell]);
 
   // Cargar rieles de recomendación personalizadas del algoritmo y el Hero Pick
   const fetchRecommendations = useCallback(async (forceRefresh = false) => {
@@ -1030,8 +1215,35 @@ export function App() {
   }, [isShowHidden, user?.id]);
 
   useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations, user]);
+    const recommendationKey = user?.id ? String(user.id) : 'anonymous';
+    const cached = readRecommendationCache(recommendationKey);
+
+    // Cached recommendations are cheap and useful immediately. A cold network
+    // recommendation request is non-critical on Android, so schedule it after
+    // first interaction/paint rather than racing the catalog and images.
+    if (cached || !nativeShell || activeFilter === 'recommendations') {
+      void fetchRecommendations();
+      return;
+    }
+
+    const win = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const run = () => { void fetchRecommendations(); };
+    if (typeof win.requestIdleCallback === 'function') {
+      idleId = win.requestIdleCallback(run, { timeout: 1800 });
+    } else {
+      timeoutId = window.setTimeout(run, 800);
+    }
+
+    return () => {
+      if (idleId !== null) win.cancelIdleCallback?.(idleId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [fetchRecommendations, user?.id, nativeShell, activeFilter]);
 
   // Eliminar un item de "Seguir Viendo" del estado, storage y servidor
   const removeContinueWatchingItem = useCallback((episodeIdOrShowId: string, showId?: string) => {
@@ -1278,7 +1490,7 @@ export function App() {
       false,
       1,
       false,
-      HOME_CATALOG_FIRST_BATCH_SIZE,
+      nativeShell ? PUBLIC_CATALOG_BATCH_SIZE : HOME_CATALOG_FIRST_BATCH_SIZE,
     );
     if (!firstBatch?.usedPublicCatalog || !firstBatch.hasMore) return;
 
@@ -1296,7 +1508,7 @@ export function App() {
       // `kind=all&limit=60` consumes three TMDB pages per request. The state
       // stores the last page already consumed, so continue at the next one.
       await fetchFreshCatalog(true, publicCatalogPage + 1, true);
-      setCatalogPageSize((previous) => previous + PUBLIC_CATALOG_BATCH_SIZE);
+      setCatalogPageSize((previous) => previous + (nativeShell ? homeGridBatchSize : PUBLIC_CATALOG_BATCH_SIZE));
     } finally {
       setIsLoadingMoreCatalog(false);
     }
@@ -1384,8 +1596,8 @@ export function App() {
 
   const handleSelectCategory = (filter: string) => {
     setActiveFilter(filter);
-    setGridPageSize(100);
-    if (filter === 'all') setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setGridPageSize(browseGridBatchSize);
+    if (filter === 'all') setCatalogPageSize(homeGridBatchSize);
 
     navigateAppRoute(
       '/',
@@ -1409,7 +1621,7 @@ export function App() {
 
   const handleExploreGenreFilter = (genre: string | null) => {
     setExploreGenreFilter(genre);
-    setCatalogPageSize(HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize(homeGridBatchSize);
     navigateAppRoute('/', { filter: 'explore', genre: genre || null }, 'replace', 'catalog');
     if (!genre) return;
     const genreKey = publicGenreKey(genre);
@@ -1533,54 +1745,27 @@ export function App() {
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string, showOverride?: Show) => {
-    const showId = episode.show_id || selectedShowId || 'unknown';
     const route = readAppUrlState();
     const wasPlaying = Boolean(playingStreamData);
-    const publicIdentity = /^tmdb-(movie|series|anime)-(\d+)$/i.exec(showId);
-    const knownShow = showOverride || shows.find((s) => s.id === showId)
-      || serverSearchResults.find((s) => s.id === showId);
-    const publicKind = publicIdentity?.[1].toLowerCase();
-    const currentShow = publicIdentity
-      ? {
-        ...knownShow,
-        id: showId,
-        title: knownShow?.title || showTitle,
-        tmdb_id: knownShow?.tmdb_id ?? Number(publicIdentity[2]),
-        kind: publicKind,
-        category: publicKind,
-      } as Show
-      : knownShow;
-    const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
-    const locatorIdentity = /^tmdb:\/\/(movie|series|anime)\/(\d+)/i.exec(sourceHint);
-    const rawKindForUrl = String(
-      publicKind || showOverride?.kind || showOverride?.category || currentShow?.kind || currentShow?.category
-      || locatorIdentity?.[1] || route.kind || '',
-    ).toLowerCase();
-    const kindForUrl = rawKindForUrl.includes('anime') ? 'anime' : rawKindForUrl.includes('movie') || rawKindForUrl.includes('pel') ? 'movie' : 'series';
+    const { showId, currentShow, kindForUrl, gatewayKind } = getEpisodePlaybackContext({
+      episode, showTitle, showOverride, selectedShowId, shows, searchResults: serverSearchResults, routeKind: route.kind,
+    });
     if (!wasPlaying && selectedShowId) playerReturnToDetailsRef.current = selectedShowId;
     else if (!selectedShowId) playerReturnToDetailsRef.current = null;
     setSelectedShowId(null);
     navigateAppRoute(
-      `/ver/${encodeURIComponent(showId)}/${encodeURIComponent(String(episode.id))}`,
-      {
-        episode: episode.episode_number,
-        kind: kindForUrl,
-      },
+      '/ver/' + encodeURIComponent(showId) + '/' + encodeURIComponent(String(episode.id)),
+      { episode: episode.episode_number, kind: kindForUrl },
       route.player || wasPlaying ? 'replace' : 'push',
       'player',
     );
-    // La tarjeta de búsqueda puede proceder del lote server-side y no estar
-    // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
-    // subtítulos igual que una tarjeta del catálogo principal.
-    const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id)
-      || continueWatchingItems.find(p => p.showId === showId && p.episodeNumber === episode.episode_number)
-      || continueWatchingItems.find(p => (showTitle && p.showTitle && p.showTitle.toLowerCase().trim() === showTitle.toLowerCase().trim()) && (p.episodeId === episode.id || p.episodeNumber === episode.episode_number));
-    const initialTime = existingProgress?.currentTime || 0;
 
-    // Abrir el reproductor inmediatamente. El bootstrap de fuentes y la
-    // búsqueda externa de subtítulos continúan en paralelo.
+    // Mantener IDs canónicos aunque el episodio venga de resultados de búsqueda.
+    const existingProgress = findEpisodeProgress(continueWatchingItems, showId, episode, showTitle);
+    const initialTime = existingProgress?.currentTime || 0;
+    const resolvedTitle = safeEpisodeTitle(episode);
     setPlayingStreamData({
-      title: `${showTitle} - ${safeEpisodeTitle(episode)}`,
+      title: showTitle + ' - ' + resolvedTitle,
       streamUrl: '',
       all_streams: [],
       initialTime,
@@ -1589,168 +1774,56 @@ export function App() {
       showPoster: (currentShow && thumbBackdropUrl(currentShow)) || undefined,
       episodeId: episode.id,
       episodeNumber: episode.episode_number,
-      episodeTitle: safeEpisodeTitle(episode),
+      episodeTitle: resolvedTitle,
       tmdbId: currentShow?.tmdb_id ?? null,
       kind: currentShow?.kind || currentShow?.category || null,
       isLoading: true,
     });
 
-    const resolvedTitle = safeEpisodeTitle(episode);
-
     try {
-      const rawCategory = String((currentShow as any)?.kind || currentShow?.category || '').toLowerCase();
-      const gatewayKind = rawCategory.includes('anime') || sourceHint.startsWith('tmdb://anime/')
-        ? 'anime'
-        : (rawCategory.includes('movie') || rawCategory.includes('pel') || sourceHint.startsWith('tmdb://movie/'))
-          ? 'movie'
-          : 'series';
-
-      const playbackShow: Show = currentShow || {
-        id: showId,
-        title: showTitle,
-        category: gatewayKind,
-        kind: gatewayKind,
-      };
+      const playbackShow: Show = currentShow || { id: showId, title: showTitle, category: gatewayKind, kind: gatewayKind };
       const preferences = getAppPreferences(user?.id);
+      const { createPlaybackRequests } = await import('./utils/playbackBootstrap');
       const playbackRequests = createPlaybackRequests({
-        show: playbackShow,
-        episode,
-        kind: gatewayKind,
+        show: playbackShow, episode, kind: gatewayKind,
         preferredAudio: preferences.preferredLanguages,
         preferredSubtitles: preferences.preferredSubtitleLanguages,
       });
 
-      // OpenSubtitles y equivalentes no forman parte de la ruta crítica. Si
-      // llegan después de iniciar el video se anexan al player sin reiniciarlo.
-      void playbackRequests.subtitles
-        .then(({ data: subtitleData }) => {
-          const externalSubtitles = Array.isArray(subtitleData?.tracks)
-            ? subtitleData.tracks
-                .map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || `opensubtitles-${index}`)))
-                .filter(Boolean)
-            : [];
-          if (externalSubtitles.length === 0) return;
-
-          setPlayingStreamData((prev: any) => {
-            if (!prev || prev.episodeId !== episode.id) return prev;
-            const byUrl = new Map<string, any>();
-            for (const track of Array.isArray(prev.subtitleTracks) ? prev.subtitleTracks : []) {
-              if (track?.url) byUrl.set(track.url, track);
-            }
-            for (const track of externalSubtitles) {
-              if (track?.url && !byUrl.has(track.url)) byUrl.set(track.url, track);
-            }
-            return { ...prev, subtitleTracks: [...byUrl.values()] };
-          });
-        })
-        .catch(() => undefined);
+      // Subtítulos externos no bloquean el inicio; se anexan cuando llegan.
+      void playbackRequests.subtitles.then(({ data: subtitleData }) => {
+        const externalSubtitles = Array.isArray(subtitleData?.tracks)
+          ? subtitleData.tracks.map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || 'opensubtitles-' + index))).filter(Boolean)
+          : [];
+        if (externalSubtitles.length === 0) return;
+        setPlayingStreamData((prev: any) => {
+          if (!prev || prev.episodeId !== episode.id) return prev;
+          const byUrl = new Map<string, any>();
+          for (const track of Array.isArray(prev.subtitleTracks) ? prev.subtitleTracks : []) {
+            if (track?.url) byUrl.set(track.url, track);
+          }
+          for (const track of externalSubtitles) {
+            if (track?.url && !byUrl.has(track.url)) byUrl.set(track.url, track);
+          }
+          return { ...prev, subtitleTracks: [...byUrl.values()] };
+        });
+      }).catch(() => undefined);
 
       const { gatewayData, legacyData, legacyStatus } = await playbackRequests.core;
-
-      // Un gateway puede devolver muchos mirrors del mismo proveedor. Limitar
-      // a tres mantiene failover real sin convertir un host caído en tormenta.
-      const gatewaySourceCount = new Map<string, number>();
-      const gatewaySources = Array.isArray(gatewayData?.sources)
-        ? gatewayData.sources.filter((source: any) => {
-            const provider = String(source?.provider || 'api').toLowerCase();
-            const count = gatewaySourceCount.get(provider) || 0;
-            if (count >= 3) return false;
-            gatewaySourceCount.set(provider, count + 1);
-            return true;
-          })
-        : [];
-      const gatewayRanked = gatewaySources.length > 0
-        ? gatewaySources.map((source: any, index: number) => {
-            let host: string | null = null;
-            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
-            return {
-              url: source.url,
-              type: 'direct' as const,
-              tier: index,
-              host,
-              provider: source.provider,
-              source_site: source.provider,
-              original_url: source.canonicalLocator || source.url,
-              canonical_locator: source.canonicalLocator || source.url,
-              is_proxyable: true,
-              is_refreshable: Boolean(source.canonicalLocator),
-              delivery_mode: source.requiredHeaders ? 'proxy_required' as const : 'direct_trial' as const,
-              requiredHeaders: source.requiredHeaders,
-              rating: 10,
-              link_type: source.audioLanguage ? 'audio' : undefined,
-              language: source.audioLanguage || undefined,
-              audio_language: source.audioLanguage || undefined,
-              subtitle_language: source.subtitleLanguage || undefined,
-              subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles
-                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'api'}-${trackIndex}`))
-                    .filter(Boolean)
-                : [],
-            };
-          })
-        : [];
-
-      // Los locators canónicos siguen disponibles como fallback porque el
-      // HLSPlayerModal los resuelve JIT mediante el adaptador especializado.
-      const gatewayFallbacks = Array.isArray(gatewayData?.fallbackCandidates)
-        ? gatewayData.fallbackCandidates.map((source: any, index: number) => {
-            let host: string | null = null;
-            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
-            return {
-              url: source.url,
-              type: 'embed' as const,
-              tier: gatewayRanked.length + index,
-              host,
-              provider: source.provider,
-              source_site: source.provider,
-              canonical_locator: source.canonicalLocator || source.url,
-              original_url: source.url,
-              delivery_mode: 'embed' as const,
-              is_refreshable: true,
-              is_proxyable: false,
-              requiredHeaders: undefined,
-              link_type: source.type,
-              language: source.audioLanguage || undefined,
-              audio_language: source.audioLanguage || undefined,
-              subtitle_language: source.subtitleLanguage || undefined,
-              subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles
-                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'fallback'}-${index}-${trackIndex}`))
-                    .filter(Boolean)
-                : [],
-            };
-          })
-        : [];
-
-      const mergedRanked: any[] = [];
-      const seenUrls = new Set<string>();
-      for (const candidate of [
-        ...gatewayRanked,
-        ...gatewayFallbacks,
-        ...(Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : []),
-      ]) {
-        if (!candidate?.url || seenUrls.has(candidate.url)) continue;
-        seenUrls.add(candidate.url);
-        mergedRanked.push(candidate);
-      }
-
+      const gatewaySources = limitGatewaySources(Array.isArray(gatewayData?.sources) ? gatewayData.sources : []);
+      const gatewayRanked = toGatewayRankedStreams(gatewaySources, mapInternalSubtitleTrack);
+      const fallbackSources = Array.isArray(gatewayData?.fallbackCandidates) ? gatewayData.fallbackCandidates : [];
+      const gatewayFallbacks = toGatewayFallbacks(fallbackSources, gatewayRanked.length, mapInternalSubtitleTrack);
+      const legacyRanked = Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : [];
+      const mergedRanked = mergeRankedStreams(gatewayRanked, gatewayFallbacks, legacyRanked);
       const mergedStreams = mergedRanked.map((candidate) => candidate.url);
       const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
 
       if (!primaryStream) {
-        // Las fichas públicas TMDB usan episodios virtuales y no deben borrarse
-        // por un 404 de la tabla legacy. Las filas locales sí conservan la
-        // limpieza de huérfanos histórica.
-        const isPublicVirtualEpisode = /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(String(episode.id || ''))
-          || /^tmdb-(?:movie|series|anime)-\d+$/i.test(String(currentShow?.id || ''));
-        if (legacyStatus === 404 && !isPublicVirtualEpisode) {
+        if (legacyStatus === 404 && !isPublicVirtualEpisode(String(episode.id || ''), String(currentShow?.id || ''))) {
           removeContinueWatchingItem(episode.id);
-          setPlayingStreamData((prev: any) =>
-            prev?.episodeId === episode.id ? null : prev
-          );
-          setOrphanNotice(
-            `"${showTitle} — ${resolvedTitle}" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.`
-          );
+          setPlayingStreamData((prev: any) => prev?.episodeId === episode.id ? null : prev);
+          setOrphanNotice('"' + showTitle + ' — ' + resolvedTitle + '" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.');
           return;
         }
         throw new Error('No se encontró un stream directo ni un fallback reproducible');
@@ -1760,21 +1833,17 @@ export function App() {
         if (!prev || prev.episodeId !== episode.id) return prev;
         return {
           ...prev,
-          title: `${showTitle} - ${resolvedTitle}`,
+          title: showTitle + ' - ' + resolvedTitle,
           streamUrl: primaryStream,
           all_streams: mergedStreams.length > 0 ? mergedStreams : [primaryStream],
           ranked_streams: mergedRanked,
           isLoading: false,
         };
       });
-    } catch (e: any) {
+    } catch (error: any) {
       setPlayingStreamData((prev: any) => {
         if (!prev || prev.episodeId !== episode.id) return prev;
-        return {
-          ...prev,
-          loadError: e.message || 'Error al iniciar la reproducción',
-          isLoading: false,
-        };
+        return { ...prev, loadError: error.message || 'Error al iniciar la reproducción', isLoading: false };
       });
     }
   };
@@ -2143,7 +2212,7 @@ export function App() {
     ? isLoadingMorePublicGenre[exploreGenreKey]
     : isLoadingMoreCatalog);
   const loadMoreExploreCatalog = (hasHiddenItems = false) => {
-    setCatalogPageSize((previous) => previous + HOME_GRID_INITIAL_SIZE);
+    setCatalogPageSize((previous) => previous + homeGridBatchSize);
     if (hasHiddenItems) return Promise.resolve();
     return exploreGenreId
       ? loadMorePublicGenre(exploreGenreKey)
@@ -2242,7 +2311,7 @@ export function App() {
       // No hacemos una petición si todavía hay obras ya descargadas que el
       // usuario aún no ha recorrido: basta con ampliar la ventana renderizada.
       const request = activeCategoryHasHiddenLocal
-        ? Promise.resolve(setGridPageSize((previous) => previous + 100))
+        ? Promise.resolve(setGridPageSize((previous) => previous + browseGridBatchSize))
         : activeFilter === 'all'
           ? loadMorePublicCatalog()
           : activeFilter === 'explore'
@@ -2324,14 +2393,14 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     className="search-filter-bar"
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
-                  />
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
+                  /></Suspense>
 
                   {filteredShows.length === 0 ? (
                     <div className="search-empty-state">
@@ -2344,7 +2413,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="search-empty-reset"
                       >
@@ -2359,7 +2428,7 @@ export function App() {
                             key={item.id}
                             media={item}
                             onSelectMedia={handleOpenDetails}
-                            imageLoading={index < 12 ? 'eager' : 'lazy'}
+                            imageLoading={index < (nativeShell ? 4 : 12) ? 'eager' : 'lazy'}
                           />
                         ))}
                       </div>
@@ -2367,7 +2436,7 @@ export function App() {
                         <div className="flex justify-center pt-6">
                           <button
                             type="button"
-                            onClick={() => setGridPageSize(prev => prev + 100)}
+                            onClick={() => setGridPageSize(prev => prev + browseGridBatchSize)}
                             className="px-6 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-200 border border-zinc-700 transition-colors"
                           >
                             Cargar más ({filteredShows.length - gridPageSize} restantes)
@@ -2378,13 +2447,15 @@ export function App() {
                   )}
                 </section>
               ) : activeFilter === 'my-lists' ? (
-                <MyListsView
-                  onSelectMedia={handleOpenDetails}
-                  onExploreCatalog={() => {
-                    handleSelectCategory('explore');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                />
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyMyListsView
+                    onSelectMedia={handleOpenDetails}
+                    onExploreCatalog={() => {
+                      handleSelectCategory('explore');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                </Suspense>
               ) : activeFilter === 'recommendations' ? (
                 <section className="space-y-10">
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
@@ -2432,23 +2503,25 @@ export function App() {
                 </section>
               ) : activeFilter === 'explore' ? (
                 /* CASO B2: VISTA EXPLORAR CATÁLOGO COMPLETO — FILTROS DE GÉNERO + AÑO */
-                <ExploreCatalogView
+                <Suspense fallback={deferredSurfaceFallback}>
+                  <LazyExploreCatalogView
                   shows={shows}
                   allGenresList={allGenresList}
                   showsCountByGenre={showsCountByGenre}
                   genreFilter={exploreGenreFilter}
                   onGenreFilter={handleExploreGenreFilter}
                   yearFilter={yearFilter}
-                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(100); }}
+                  onYearFilter={(y) => { setYearFilter(y); setCatalogPageSize(browseGridBatchSize); }}
                   sortBy={sortBy}
-                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(100); }}
+                  onSortBy={(s) => { setSortBy(s); setCatalogPageSize(browseGridBatchSize); }}
                   catalogPageSize={catalogPageSize}
                   onLoadMore={loadMoreExploreCatalog}
                   hasMore={exploreHasMore}
                   isLoadingMore={exploreIsLoadingMore}
                   availableYears={availableYears}
                   onSelectMedia={handleOpenDetails}
-                />
+                  />
+                </Suspense>
               ) : activeFilter !== 'all' ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
@@ -2460,13 +2533,13 @@ export function App() {
                     </span>
                   </div>
 
-                  <CatalogFilters
+                  <Suspense fallback={null}><LazyCatalogFilters
                     years={availableYears}
                     year={yearFilter}
-                    onYear={(y) => { setYearFilter(y); setGridPageSize(100); }}
+                    onYear={(y) => { setYearFilter(y); setGridPageSize(browseGridBatchSize); }}
                     sort={sortBy}
-                    onSort={(s) => { setSortBy(s); setGridPageSize(100); }}
-                  />
+                    onSort={(s) => { setSortBy(s); setGridPageSize(browseGridBatchSize); }}
+                  /></Suspense>
 
                   {filteredShows.length === 0 && activeRemoteLoading ? (
                     <div className="py-20 text-center space-y-3" role="status" aria-live="polite">
@@ -2485,7 +2558,7 @@ export function App() {
                         onClick={() => {
                           handleSearchChange('');
                           handleSelectCategory('all');
-                          setGridPageSize(100);
+                          setGridPageSize(browseGridBatchSize);
                         }}
                         className="text-xs text-amber-400 hover:underline font-semibold"
                       >
@@ -2561,11 +2634,13 @@ export function App() {
 
                   {/* CUADRÍCULA ASIMÉTRICA BENTO BOX */}
                   {homeSections.topRatedShows.length >= 3 && (
-                    <BentoCollection
-                      title="Destacados por la crítica"
-                      items={homeSections.topRatedShows}
-                      onSelectMedia={handleOpenDetails}
-                    />
+                    <Suspense fallback={null}>
+                      <LazyBentoCollection
+                        title="Destacados por la crítica"
+                        items={homeSections.topRatedShows}
+                        onSelectMedia={handleOpenDetails}
+                      />
+                    </Suspense>
                   )}
 
                   {/* RIELES DE RECOMENDACIÓN RESTANTES (ej. Descubrimientos o Género Favorito) */}
@@ -2608,10 +2683,16 @@ export function App() {
                 <AlertCircle size={36} className="stroke-[1.6]" />
               </div>
               <div className="space-y-2">
-                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">No se pudo cargar el catálogo</h2>
-                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">{catalogError}</p>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {nativeShell ? 'No pudimos conectar con MeriStream' : 'No se pudo cargar el catálogo'}
+                </h2>
+                <p className="text-sm text-zinc-400 max-w-lg mx-auto leading-relaxed">
+                  {nativeShell
+                    ? 'Comprueba tu conexión e inténtalo otra vez. Tu biblioteca y tus preferencias siguen guardadas.'
+                    : catalogError}
+                </p>
               </div>
-              <button type="button" onClick={loadCatalog} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-amber-300 transition-colors">
+              <button type="button" onClick={loadCatalog} className="mx-auto flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300">
                 <RefreshCw size={15} /> Reintentar
               </button>
             </div>
@@ -2703,13 +2784,15 @@ export function App() {
       />
 
       {/* MODAL GLOBAL DE WATCH PARTY (ACCESIBLE DIRECTAMENTE DESDE EL HEADER) */}
-      <WatchPartyJoinModal
+      <Suspense fallback={null}>
+        <LazyWatchPartyJoinModal
         isOpen={isGlobalWatchPartyOpen}
         onClose={() => setIsGlobalWatchPartyOpen(false)}
         isAuthenticated={isAuthenticated}
         onRequireAuth={openAuthModal}
         onJoin={handleJoinWatchPartyFromHeader}
       />
+      </Suspense>
 
       {/* REPRODUCTOR HLS Y PROXY DE VIDEO JUST-IN-TIME */}
       {playingStreamData && (
@@ -2855,7 +2938,8 @@ export function App() {
           setIsAdminOpen(false);
           loadCatalog();
         }}
-        onPlayDirect={(streamResult: any) => {
+        onPlayDirect={async (streamResult: any) => {
+          const { isEmbedUrl } = await import('./utils/streamOptimizer');
           const candidates: string[] = (
             streamResult.all_streams ||
             streamResult.all_available_streams ||

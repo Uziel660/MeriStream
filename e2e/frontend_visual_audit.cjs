@@ -163,6 +163,91 @@ async function captureViewport(browser, name, viewport) {
   await context.close();
 }
 
+async function auditNativeExploreGenreDropdown(browser) {
+  const context = await browser.newContext({
+    // Match the compact portrait viewport used by the Android 10 / 2 GB run.
+    viewport: { width: 412, height: 660 },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: 'reduce',
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.Capacitor = { isNativePlatform: () => true };
+  });
+  await installMocks(page);
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.locator('.feature').waitFor({ state: 'visible', timeout: 15000 });
+
+  await page.getByRole('button', { name: 'Abrir navegación' }).click();
+  await page.locator('.mobile-nav-sheet').getByRole('button', { name: 'Explorar', exact: true }).click();
+  await page.locator('.native-explore-filter-trigger').click();
+  const sheet = page.locator('.native-explore-filter-sheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.getByRole('button', { name: 'Filtrar por género' }).click();
+
+  const menu = page.getByRole('listbox', { name: 'Filtrar por género' });
+  await menu.waitFor({ state: 'visible' });
+  const menuStyle = await menu.evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    zIndex: Number(getComputedStyle(element).zIndex),
+  }));
+  if (menuStyle.position !== 'fixed' || menuStyle.zIndex <= 10001) {
+    throw new Error(`The genre menu must float above every Android sheet: ${JSON.stringify(menuStyle)}`);
+  }
+
+  const firstOption = menu.getByRole('option').nth(1);
+  const firstBounds = await firstOption.boundingBox();
+  if (!firstBounds) throw new Error('The first selectable genre has no visible layout bounds.');
+  const firstHit = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y)?.closest('[role="option"]');
+    return target?.textContent?.trim() || null;
+  }, { x: firstBounds.x + firstBounds.width / 2, y: firstBounds.y + firstBounds.height / 2 });
+  if (!firstHit || !firstHit.includes((await firstOption.textContent()).trim())) {
+    throw new Error(`The first genre option is covered: ${JSON.stringify({ firstHit, firstBounds })}`);
+  }
+
+  const lastOption = menu.getByRole('option').last();
+  const optionBounds = await lastOption.boundingBox();
+  if (!optionBounds) throw new Error('The last genre option has no visible layout bounds.');
+  const menuBounds = await menu.boundingBox();
+
+  const hitTest = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y)?.closest('[role="option"]');
+    return target?.textContent?.trim() || null;
+  }, { x: optionBounds.x + optionBounds.width / 2, y: optionBounds.y + optionBounds.height / 2 });
+  const viewport = page.viewportSize();
+  const geometry = {
+    option: await lastOption.textContent(),
+    optionBounds,
+    viewport,
+    menuStyle,
+    firstHit,
+    firstBounds,
+    hitTest,
+    menuBounds,
+    sheetBounds: await sheet.boundingBox(),
+  };
+  await page.screenshot({ path: path.join(OUT_DIR, 'native-explore-genre-dropdown.png'), fullPage: false });
+  fs.writeFileSync(path.join(OUT_DIR, 'native-explore-genre-dropdown.json'), JSON.stringify(geometry, null, 2));
+
+  const clippedByViewport = optionBounds.x < 0 || optionBounds.y < 0
+    || optionBounds.x + optionBounds.width > viewport.width
+    || optionBounds.y + optionBounds.height > viewport.height;
+  const optionLabel = String(geometry.option || '').trim();
+  const menuClipped = !menuBounds || menuBounds.x < 0 || menuBounds.y < 0
+    || menuBounds.x + menuBounds.width > viewport.width
+    || menuBounds.y + menuBounds.height > viewport.height;
+  if (clippedByViewport || menuClipped || !hitTest || !hitTest.includes(optionLabel)) {
+    throw new Error(`The last genre option is clipped or covered: ${JSON.stringify(geometry)}`);
+  }
+
+  await lastOption.click();
+  await page.locator('.native-filter-chip').getByText(optionLabel, { exact: true }).waitFor({ state: 'visible' });
+  await context.close();
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   const viewports = [
@@ -174,9 +259,12 @@ async function captureViewport(browser, name, viewport) {
     ['wide-1920x1080', { width: 1920, height: 1080 }],
   ];
   try {
-    for (const [name, viewport] of viewports) {
-      await captureViewport(browser, name, viewport);
+    if (process.env.FRONTEND_VISUAL_AUDIT_FILTER_ONLY !== '1') {
+      for (const [name, viewport] of viewports) {
+        await captureViewport(browser, name, viewport);
+      }
     }
+    await auditNativeExploreGenreDropdown(browser);
   } finally {
     await browser.close();
   }

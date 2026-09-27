@@ -149,13 +149,17 @@ async function capturePreferences(browser, name, viewport) {
 }
 
 async function openPlayerThroughCatalog(page) {
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  const card = page.locator('.media-card').first();
-  await card.waitFor({ state: 'visible', timeout: 15_000 });
-  await card.click();
+  // The catalog now defers below-fold rails for mobile/performance reasons.
+  // Enter through the public detail deep link so this visual audit validates
+  // the stable user flow (detail -> play -> player) without depending on when
+  // a lazy rail happens to intersect the viewport.
+  await page.goto(`${BASE_URL}/obra/tmdb-movie-550?kind=movie`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30_000,
+  });
 
   const details = page.getByRole('dialog').last();
-  await details.waitFor({ state: 'visible', timeout: 10_000 });
+  await details.waitFor({ state: 'visible', timeout: 15_000 });
   const playButton = details.getByRole('button', { name: /Reproducir película|Continuar película|Reproducir/i }).first();
   await playButton.waitFor({ state: 'visible', timeout: 10_000 });
   await playButton.click();

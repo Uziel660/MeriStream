@@ -1,6 +1,7 @@
 // src/hooks/useTeleparty.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAuthToken } from "../api/client";
+import { backendWsUrl } from "../utils/runtime";
 
 export interface WatchPartyMedia {
   showId?: string | null;
@@ -380,9 +381,7 @@ export function useTeleparty(options: UseTelepartyOptions): UseTelepartyReturn {
     // Construct WebSocket URL
     let url = optionsRef.current.wsUrl;
     if (!url) {
-      const isSecure = typeof window !== "undefined" && window.location.protocol === "https:";
-      const host = typeof window !== "undefined" ? window.location.host : "localhost:3000";
-      url = `${isSecure ? "wss:" : "ws:"}//${host}/ws/watch-party`;
+      url = backendWsUrl("/ws/watch-party");
     }
     const fullUrl = `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}&room=${encodeURIComponent(cleanCode)}`;
 

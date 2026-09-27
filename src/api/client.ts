@@ -1,6 +1,8 @@
 // src/api/client.ts
 // Cliente fetch centralizado hacia el backend FastAPI (/api/v1), compatibilizado con la arquitectura Just-In-Time.
 
+import { backendUrl } from "../utils/runtime";
+
 import type {
   MediaListResponse,
   MediaSearchParams,
@@ -216,8 +218,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(url, {
-      credentials: init?.credentials ?? "same-origin",
+    res = await fetch(backendUrl(url), {
+      credentials: init?.credentials ?? (backendUrl(url) === url ? "same-origin" : "omit"),
       ...init,
       headers,
     });

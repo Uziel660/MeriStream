@@ -1,9 +1,10 @@
 import React from 'react';
 import { ArrowUpRight, Star } from 'lucide-react';
 import { contentLabel } from '../utils/labels';
-import { bentoBackdropSrcSet, bentoBackdropUrl, cardPosterCandidates, cardPosterSrcSet, cardPosterUrl } from '../utils/imageSizes';
+import { bentoBackdropSrcSet, bentoBackdropUrl, cardPosterCandidates, cardPosterSrcSet, cardPosterUrl, sizedImageUrl } from '../utils/imageSizes';
 import { SmartImage } from './SmartImage';
 import type { Show } from '../types';
+import { isNativeLowCostPresentation } from '../utils/runtime';
 
 interface BentoCollectionProps {
   title: string;
@@ -16,14 +17,15 @@ interface BentoCollectionProps {
 export const BentoCollection: React.FC<BentoCollectionProps> = ({ title, items, onSelectMedia, onHover }) => {
   if (!items?.length) return null;
   const main = items[0];
+  const lowCostPresentation = isNativeLowCostPresentation();
   return (
     <section className="spotlight-section" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 460px' }}>
       <div className="section-heading"><div><p className="eyebrow">Vale la pena descubrir</p><h3>{title}</h3></div></div>
       <div className="spotlight-layout">
         <button type="button" className="spotlight-main" onClick={() => onSelectMedia(main)} onMouseEnter={() => onHover?.(main)}>
           <SmartImage
-            src={bentoBackdropUrl(main)}
-            srcSet={bentoBackdropSrcSet(main)}
+            src={lowCostPresentation ? sizedImageUrl(bentoBackdropUrl(main), 'w780') : bentoBackdropUrl(main)}
+            srcSet={lowCostPresentation ? undefined : bentoBackdropSrcSet(main)}
             sizes="(max-width: 760px) 100vw, 66vw"
             alt=""
             className="spotlight-image"

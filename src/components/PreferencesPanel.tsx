@@ -103,13 +103,13 @@ export function PreferencesPanel({ userId, canViewIdentityDetails = false, onClo
 
   return createPortal((
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
+      className="preferences-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-title"
       onMouseDown={(event) => { if (event.target === event.currentTarget) closeWithoutSaving(); }}
     >
-      <section className="my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
+      <section className="preferences-panel my-auto w-full max-w-xl max-h-[min(94dvh,46rem)] min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-700/80 bg-zinc-950 p-5 text-zinc-100 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">MeriStream</p>
@@ -119,7 +119,7 @@ export function PreferencesPanel({ userId, canViewIdentityDetails = false, onClo
           <button type="button" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" onClick={closeWithoutSaving} aria-label="Cerrar preferencias"><X size={18} /></button>
         </div>
 
-        <div className="mt-6 space-y-7">
+        <div className="preferences-content mt-6 space-y-7">
           <fieldset>
             <legend className="flex items-center gap-2 text-sm font-semibold"><Palette size={16} className="text-amber-400" />Estilo de interfaz</legend>
             <p className="mt-1 text-xs text-zinc-500">Cambia la apariencia completa de MeriStream al instante. Se guarda solo al pulsar “Guardar preferencias”.</p>

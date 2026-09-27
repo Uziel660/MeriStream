@@ -63,6 +63,13 @@ jobs:
           src/utils/textCleaner.test.ts
           src/utils/colorExtractor.test.ts
           tests/continueWatchingAndDetails.test.ts
+          src/components/ReportControl.test.tsx
+          src/components/HLSPlayerModal.renewal.test.ts
+          src/hooks/useChromecast.test.tsx
+          src/utils/nativePlayerPresentation.test.ts
+          src/utils/nativePlayerBackTarget.test.ts
+          src/utils/pictureInPicture.test.ts
+          src/utils/castRequestNotice.test.ts
 
       - name: Production build
         run: npm run build

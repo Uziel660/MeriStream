@@ -24,6 +24,8 @@ export interface ReportControlProps {
   sourceUrl?: string | null;
   compact?: boolean;
   className?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ReportControl({
@@ -37,8 +39,15 @@ export function ReportControl({
   sourceUrl,
   compact = false,
   className = "",
+  open: controlledOpen,
+  onOpenChange,
 }: ReportControlProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
   const [reportType, setReportType] = useState<string>(REPORT_OPTIONS[0].value);
   const [details, setDetails] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");

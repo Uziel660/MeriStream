@@ -432,6 +432,8 @@ try {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
         videoPlayback: video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null,
+        pictureInPictureSupported: Boolean(document.pictureInPictureEnabled && typeof video?.requestPictureInPicture === 'function'),
+        pictureInPictureActionVisible: actions.some((node) => /\bPiP\b/i.test(node.textContent || '')),
         sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
         viewport: { width: innerWidth, height: innerHeight },
         lastReachable,
@@ -454,6 +456,9 @@ try {
     if (!state.labels.some((label) => /compartir/i.test(label))) {
       throw new Error(`Player More lost native share action: ${JSON.stringify(state.labels)}`);
     }
+    if (state.pictureInPictureSupported !== state.pictureInPictureActionVisible) {
+      throw new Error(`Player More exposed PiP without device support or hid a supported PiP action: ${JSON.stringify(state)}`);
+    }
     await delay(700);
     const playbackAfterOpen = await evaluate(call, `(() => {
       const video = document.querySelector('[data-player-root] video');
@@ -473,6 +478,46 @@ try {
     console.log(JSON.stringify({ action, visible, player }));
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'open-player-report') {
+    await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
+    await delay(200);
+    let clicked = false;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      clicked = await evaluate(call, `(() => {
+        const button = document.querySelector('button[aria-label^="Reportar un problema con"]');
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`);
+      if (clicked) break;
+      await delay(150);
+    }
+    if (!clicked) throw new Error('Player More Report action did not finish loading');
+    let state = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      state = await evaluate(call, `({
+        reportOpen: Boolean(document.querySelector('[role="dialog"]')),
+        moreOpen: Boolean(document.querySelector('.native-player-more-sheet')),
+        player: Boolean(document.querySelector('[data-player-root]')),
+      })`);
+      if (state?.reportOpen) break;
+      await delay(150);
+    }
+    console.log(JSON.stringify({ action, state }));
+    if (!state?.reportOpen || state.moreOpen || !state.player) {
+      throw new Error(`Player Report did not become the only open overlay: ${JSON.stringify(state)}`);
+    }
+  } else if (action === 'assert-player-report-closed') {
+    await delay(250);
+    const state = await evaluate(call, `({
+      reportOpen: Boolean(document.querySelector('[role="dialog"]')),
+      moreOpen: Boolean(document.querySelector('.native-player-more-sheet')),
+      player: Boolean(document.querySelector('[data-player-root]')),
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (state.reportOpen || state.moreOpen || !state.player) {
+      throw new Error(`Android Back did not close only the player Report dialog: ${JSON.stringify(state)}`);
+    }
   } else if (action === 'open-player-party') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

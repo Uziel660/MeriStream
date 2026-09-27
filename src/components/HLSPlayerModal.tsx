@@ -57,6 +57,10 @@ import {
 } from '../utils/streamOptimizer';
 import { getDeliveryCapability, setDeliveryCapability } from '../utils/deliveryCapabilities';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
+import { getNativePlayerBackTarget } from '../utils/nativePlayerBackTarget';
+import { createNativePlayerPresentationController } from '../utils/nativePlayerPresentation';
+import { isPictureInPictureSupported } from '../utils/pictureInPicture';
+import { getCastActionNotice } from '../utils/castRequestNotice';
 import {
   backendUrl,
   publicAppUrl,
@@ -229,6 +233,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [videoNode, setVideoNode] = useState<HTMLVideoElement | null>(null);
+  const supportsPictureInPicture = isPictureInPictureSupported(
+    videoNode,
+    typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled),
+  );
   const videoCallbackRef = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
     setVideoNode(node);
@@ -288,6 +296,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const nativePresentationRef = useRef<ReturnType<typeof createNativePlayerPresentationController> | null>(null);
+  if (nativePresentationRef.current === null) {
+    nativePresentationRef.current = createNativePlayerPresentationController({
+      setSystemBarsHidden: nativeSetImmersive,
+      lockLandscape: nativeLockLandscape,
+      unlockOrientation: nativeUnlockOrientation,
+      onFullscreenChange: setIsFullscreen,
+    });
+  }
+  const nativePlayerOverlayRef = useRef(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [isPipActive, setIsPipActive] = useState(false);
   const [hasEnded, setHasEnded] = useState(false);
@@ -720,6 +738,27 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setDeliveryState('error');
   }, [isCasting, castLoadState, castLoadError]);
 
+  const castActionNotice = getCastActionNotice(isCasting, castLoadState, castLoadError);
+  const castActionNoticeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previousNotice = castActionNoticeRef.current;
+    if (!castActionNotice) {
+      castActionNoticeRef.current = null;
+      if (previousNotice) {
+        setFailoverNotice((current) => current === previousNotice ? null : current);
+      }
+      return;
+    }
+
+    castActionNoticeRef.current = castActionNotice;
+    setFailoverNotice(castActionNotice);
+    const timer = window.setTimeout(() => {
+      setFailoverNotice((current) => current === castActionNotice ? null : current);
+      if (castActionNoticeRef.current === castActionNotice) castActionNoticeRef.current = null;
+    }, 3500);
+    return () => window.clearTimeout(timer);
+  }, [castActionNotice]);
+
   const qualityPreferenceKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (qualityLevels.length === 0) return;
@@ -784,6 +823,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   });
   const [isWatchPartyPanelOpen, setIsWatchPartyPanelOpen] = useState(Boolean(props.initialPartyRoomCode || props.partyRoomCode));
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [isPlayerReportOpen, setIsPlayerReportOpen] = useState(false);
   const [viewerLockToast, setViewerLockToast] = useState<string | null>(null);
   const viewerLockToastTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingPartyMediaRef = useRef<WatchPartyMedia | null>(null);
@@ -802,44 +842,38 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         nativeEvent.preventDefault();
         nativeEvent.stopImmediatePropagation();
       };
+      const target = getNativePlayerBackTarget({
+        reportOpen: isPlayerReportOpen,
+        activeMenu,
+        subtitleSettingsOpen,
+        joinModalOpen: isJoinModalOpen,
+        watchPartyPanelOpen: isWatchPartyPanelOpen,
+        screenLocked: isScreenLocked,
+      });
+      if (target === 'none') return;
 
-      // Mobile overflow is rendered inside the controls tree. Consume Android
-      // Back here before any player/history navigation can run.
-      if (activeMenu === 'more') {
-        consumePlayerLayer();
+      consumePlayerLayer();
+      if (target === 'report') {
+        setIsPlayerReportOpen(false);
+      } else if (target === 'more') {
         setActiveMenu('none');
         setControlsVisible(true);
-        return;
-      }
-      if (subtitleSettingsOpen) {
-        consumePlayerLayer();
+      } else if (target === 'subtitle-settings') {
         setSubtitleSettingsOpen(false);
-        return;
-      }
-      if (isJoinModalOpen) {
-        consumePlayerLayer();
+      } else if (target === 'join-party') {
         setIsJoinModalOpen(false);
-        return;
-      }
-      if (isWatchPartyPanelOpen) {
-        consumePlayerLayer();
+      } else if (target === 'watch-party') {
         setIsWatchPartyPanelOpen(false);
-        return;
-      }
-      if (activeMenu !== 'none') {
-        consumePlayerLayer();
+      } else if (target === 'menu') {
         setActiveMenu('none');
-        return;
-      }
-      if (isScreenLocked) {
-        consumePlayerLayer();
+      } else if (target === 'screen-lock') {
         setIsScreenLocked(false);
         setShowLockWidget(false);
       }
     };
     window.addEventListener('meristream:native-back', onNativeBack);
     return () => window.removeEventListener('meristream:native-back', onNativeBack);
-  }, [nativeShell, subtitleSettingsOpen, activeMenu, isJoinModalOpen, isWatchPartyPanelOpen, isScreenLocked]);
+  }, [nativeShell, isPlayerReportOpen, subtitleSettingsOpen, activeMenu, isJoinModalOpen, isWatchPartyPanelOpen, isScreenLocked]);
 
   useEffect(() => {
     const propCode = props.initialPartyRoomCode || props.partyRoomCode;
@@ -2560,13 +2594,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   useEffect(() => {
     if (!props.isOpen || !nativeShell) return;
-    setIsFullscreen(true);
-    void nativeSetImmersive(true);
-    void nativeLockLandscape();
+    void nativePresentationRef.current?.open(nativePlayerOverlayRef.current);
     return () => {
-      setIsFullscreen(false);
-      void nativeSetImmersive(false);
-      void nativeUnlockOrientation();
+      void nativePresentationRef.current?.close();
     };
   }, [props.isOpen, nativeShell]);
 
@@ -2574,29 +2604,27 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   // are hidden. When a player-owned overlay is visible, temporarily expose the
   // system bars so hardware Back reaches MeriStream and closes the top-most
   // layer. As soon as the overlay is gone the video returns to immersive mode.
-  const hasNativePlayerOverlay = subtitleSettingsOpen
+  const hasNativePlayerOverlay = isPlayerReportOpen
+    || subtitleSettingsOpen
     || activeMenu !== 'none'
     || isWatchPartyPanelOpen
     || isJoinModalOpen;
+  nativePlayerOverlayRef.current = hasNativePlayerOverlay;
 
   useEffect(() => {
     if (!props.isOpen || !nativeShell) return;
-    void nativeSetImmersive(!hasNativePlayerOverlay);
+    void nativePresentationRef.current?.setOverlayVisible(hasNativePlayerOverlay);
   }, [props.isOpen, nativeShell, hasNativePlayerOverlay]);
 
   // Controles de Acción de Reproducción
   const enterNativeImmersive = async () => {
     if (!isNativeShell()) return;
-    setIsFullscreen(true);
-    await nativeSetImmersive(true);
-    await nativeLockLandscape();
+    await nativePresentationRef.current?.enterFullscreen();
   };
 
   const leaveNativeImmersive = () => {
     if (!isNativeShell()) return;
-    setIsFullscreen(false);
-    void nativeSetImmersive(false);
-    void nativeUnlockOrientation();
+    void nativePresentationRef.current?.leaveFullscreen();
   };
 
   const togglePlay = () => {
@@ -2764,7 +2792,10 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
   const togglePictureInPicture = async () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !isPictureInPictureSupported(
+      video,
+      typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled),
+    )) return;
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
@@ -2775,6 +2806,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
     } catch (e) {
       console.warn('PiP error:', e);
+      setFailoverNotice('No se pudo abrir la ventana PiP en este dispositivo.');
     }
   };
 
@@ -4178,17 +4210,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                   </button>
 
                   {/* PICTURE IN PICTURE */}
-                  <button
-                    type="button"
-                    data-mobile-player-secondary
-                    onClick={togglePictureInPicture}
-                    className={`p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition hidden sm:inline-flex ${
-                      isPipActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-300 hover:text-white'
-                    }`}
-                    title="Ventana flotante (PiP)"
-                  >
-                    <PictureInPicture size={14} className="sm:w-[17px] sm:h-[17px]" />
-                  </button>
+                  {supportsPictureInPicture && (
+                    <button
+                      type="button"
+                      data-mobile-player-secondary
+                      onClick={togglePictureInPicture}
+                      className={`p-0.5 sm:p-1.5 rounded-md sm:rounded-lg transition hidden sm:inline-flex ${
+                        isPipActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-300 hover:text-white'
+                      }`}
+                      title="Ventana flotante (PiP)"
+                    >
+                      <PictureInPicture size={14} className="sm:w-[17px] sm:h-[17px]" />
+                    </button>
+                  )}
 
                   {/* PANTALLA COMPLETA */}
                   <button
@@ -4237,6 +4271,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           </button>
                           <Suspense fallback={<div className="mobile-player-more-action opacity-60">Cargando reporte…</div>}>
                             <LazyReportControl
+                              open={isPlayerReportOpen}
+                              onOpenChange={(open) => {
+                                setIsPlayerReportOpen(open);
+                                if (open) setActiveMenu('none');
+                              }}
                               title={props.title || media?.title || 'esta obra'}
                               showId={props.showId || null}
                               tmdbId={props.tmdbId || null}
@@ -4295,9 +4334,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                           <button type="button" onClick={() => { setActiveMenu('none'); void toggleFullscreen(); }} className="mobile-player-more-action">
                             {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />} Pantalla
                           </button>
-                          <button type="button" onClick={() => { setActiveMenu('none'); void togglePictureInPicture(); }} className="mobile-player-more-action">
-                            <PictureInPicture size={14} /> PiP
-                          </button>
+                          {supportsPictureInPicture && (
+                            <button type="button" onClick={() => { setActiveMenu('none'); void togglePictureInPicture(); }} className="mobile-player-more-action">
+                              <PictureInPicture size={14} /> PiP
+                            </button>
+                          )}
                         </div>
                         <div className="mt-2 border-t border-zinc-800 pt-2">
                           <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Velocidad</span>

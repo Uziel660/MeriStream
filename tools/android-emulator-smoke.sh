@@ -197,6 +197,16 @@ adb exec-out screencap -p > "${PREFIX}-player-more.png" || true
 adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
 
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-report
+if [[ "$MODE" == "low-end" ]]; then
+  sleep 2
+else
+  sleep 1
+fi
+adb exec-out screencap -p > "${PREFIX}-player-report.png" || true
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-report-closed
+
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-party
 adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-party-closed

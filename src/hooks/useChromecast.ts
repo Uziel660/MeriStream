@@ -235,6 +235,8 @@ export function useChromecast(
 
   // 2. Solicitar conexión directa a dispositivo
   const requestCastSession = useCallback(async () => {
+    setRemoteLoadState('loading');
+    setRemoteLoadError(null);
     try {
       if (!window.cast?.framework || !window.chrome?.cast) {
         const ready = await ensureGoogleCastSdk();
@@ -258,10 +260,16 @@ export function useChromecast(
           (window as any).__gcast_initialized = true;
         }
         await context.requestSession().catch((err: any) => {
-          if (err !== "cancel") {
-            console.warn("[Chromecast] Error en requestSession:", err);
+          if (err === 'cancel') {
+            setRemoteLoadState('idle');
+            setRemoteLoadError(null);
+            return;
           }
+          console.warn("[Chromecast] Error en requestSession:", err);
+          setRemoteLoadState('error');
+          setRemoteLoadError('No se pudo abrir el selector de dispositivos.');
         });
+        if (context.getCurrentSession()) setRemoteLoadState('idle');
         return;
       }
 
@@ -270,14 +278,30 @@ export function useChromecast(
           (session: any) => {
             setIsCasting(true);
             setDeviceName(session?.receiver?.friendlyName || "TV");
+            setRemoteLoadState('idle');
+            setRemoteLoadError(null);
           },
           (err: any) => {
-            if (err?.code !== "cancel") console.warn("[Chromecast] Request error:", err);
+            if (err?.code === 'cancel') {
+              setRemoteLoadState('idle');
+              setRemoteLoadError(null);
+              return;
+            }
+            console.warn("[Chromecast] Request error:", err);
+            setRemoteLoadState('error');
+            setRemoteLoadError('No se pudo abrir el selector de dispositivos.');
           }
         );
+        return;
       }
+
+      setRemoteLoadState('error');
+      setRemoteLoadError('Google Cast no está disponible en este dispositivo.');
     } catch (err: any) {
-      if (err !== 'cancel') {
+      if (err === 'cancel') {
+        setRemoteLoadState('idle');
+        setRemoteLoadError(null);
+      } else {
         console.warn("[Chromecast] Error invocando selector nativo:", err);
         setRemoteLoadState('error');
         setRemoteLoadError('No se pudo abrir el selector de dispositivos.');

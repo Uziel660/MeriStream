@@ -432,7 +432,7 @@ try {
         visible: actions.length > 0,
         labels: actions.map((node) => (node.textContent || '').trim()).filter(Boolean),
         videoPlayback: video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null,
-        pictureInPictureSupported: Boolean(document.pictureInPictureEnabled && typeof video?.requestPictureInPicture === 'function'),
+        pictureInPictureSupported: Boolean(document.pictureInPictureEnabled && video && typeof video.requestPictureInPicture === 'function'),
         pictureInPictureActionVisible: actions.some((node) => /\bPiP\b/i.test(node.textContent || '')),
         sheetBounds: bounds ? { top: bounds.top, right: bounds.right, bottom: bounds.bottom } : null,
         viewport: { width: innerWidth, height: innerHeight },
@@ -504,8 +504,8 @@ try {
       await delay(150);
     }
     console.log(JSON.stringify({ action, state }));
-    if (!state?.reportOpen || state.moreOpen || !state.player) {
-      throw new Error(`Player Report did not become the only open overlay: ${JSON.stringify(state)}`);
+    if (!state?.reportOpen || !state.moreOpen || !state.player) {
+      throw new Error(`Player Report did not open above the still-mounted More sheet: ${JSON.stringify(state)}`);
     }
   } else if (action === 'assert-player-report-closed') {
     await delay(250);
@@ -515,8 +515,8 @@ try {
       player: Boolean(document.querySelector('[data-player-root]')),
     })`);
     console.log(JSON.stringify({ action, state }));
-    if (state.reportOpen || state.moreOpen || !state.player) {
-      throw new Error(`Android Back did not close only the player Report dialog: ${JSON.stringify(state)}`);
+    if (state.reportOpen || !state.moreOpen || !state.player) {
+      throw new Error(`Android Back did not close only the report while preserving the More sheet: ${JSON.stringify(state)}`);
     }
   } else if (action === 'open-player-party') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);

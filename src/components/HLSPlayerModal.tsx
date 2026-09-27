@@ -4274,7 +4274,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                               open={isPlayerReportOpen}
                               onOpenChange={(open) => {
                                 setIsPlayerReportOpen(open);
-                                if (open) setActiveMenu('none');
                               }}
                               title={props.title || media?.title || 'esta obra'}
                               showId={props.showId || null}

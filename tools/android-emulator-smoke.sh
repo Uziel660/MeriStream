@@ -206,6 +206,8 @@ fi
 adb exec-out screencap -p > "${PREFIX}-player-report.png" || true
 adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-report-closed
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
 
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-party
 adb shell input keyevent 4

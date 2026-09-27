@@ -157,7 +157,7 @@ function renditionDisplayName(key: string, items: Array<{ server: ScoredServer; 
   return languageDisplayName(key);
 }
 
-async function renewPlayerServer(input: {
+export async function renewPlayerServer(input: {
   server: ScoredServer;
   serverIndex: number;
   attemptId: number;

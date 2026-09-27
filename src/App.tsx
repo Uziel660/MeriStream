@@ -78,7 +78,7 @@ type EpisodePlaybackContext = {
   gatewayKind: 'anime' | 'movie' | 'series';
 };
 
-function getEpisodePlaybackContext(input: {
+export function getEpisodePlaybackContext(input: {
   episode: Episode;
   showTitle: string;
   showOverride?: Show;
@@ -120,7 +120,7 @@ function getEpisodePlaybackContext(input: {
   return { showId, currentShow, sourceHint, kindForUrl, gatewayKind };
 }
 
-function findEpisodeProgress(items: WatchProgress[], showId: string, episode: Episode, showTitle: string) {
+export function findEpisodeProgress(items: WatchProgress[], showId: string, episode: Episode, showTitle: string) {
   const normalizedTitle = showTitle.toLowerCase().trim();
   return items.find((item) => item.showId === showId && item.episodeId === episode.id)
     || items.find((item) => item.showId === showId && item.episodeNumber === episode.episode_number)
@@ -129,7 +129,7 @@ function findEpisodeProgress(items: WatchProgress[], showId: string, episode: Ep
       && (item.episodeId === episode.id || item.episodeNumber === episode.episode_number));
 }
 
-function limitGatewaySources(sources: any[]): any[] {
+export function limitGatewaySources(sources: any[]): any[] {
   const countByProvider = new Map<string, number>();
   return sources.filter((source) => {
     const provider = String(source?.provider || 'api').toLowerCase();
@@ -140,7 +140,7 @@ function limitGatewaySources(sources: any[]): any[] {
   });
 }
 
-function toGatewayRankedStreams(sources: any[], mapSubtitle: (track: any, id: string) => any): any[] {
+export function toGatewayRankedStreams(sources: any[], mapSubtitle: (track: any, id: string) => any): any[] {
   return sources.map((source, index) => {
     let host: string | null = null;
     try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
@@ -170,7 +170,7 @@ function toGatewayRankedStreams(sources: any[], mapSubtitle: (track: any, id: st
   });
 }
 
-function toGatewayFallbacks(sources: any[], startTier: number, mapSubtitle: (track: any, id: string) => any): any[] {
+export function toGatewayFallbacks(sources: any[], startTier: number, mapSubtitle: (track: any, id: string) => any): any[] {
   return sources.map((source, index) => {
     let host: string | null = null;
     try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
@@ -199,7 +199,7 @@ function toGatewayFallbacks(sources: any[], startTier: number, mapSubtitle: (tra
   });
 }
 
-function mergeRankedStreams(...groups: any[][]): any[] {
+export function mergeRankedStreams(...groups: any[][]): any[] {
   const merged: any[] = [];
   const seenUrls = new Set<string>();
   for (const candidate of groups.flat()) {
@@ -210,7 +210,7 @@ function mergeRankedStreams(...groups: any[][]): any[] {
   return merged;
 }
 
-function isPublicVirtualEpisode(episodeId: string, showId: string): boolean {
+export function isPublicVirtualEpisode(episodeId: string, showId: string): boolean {
   return /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(episodeId)
     || /^tmdb-(?:movie|series|anime)-\d+$/i.test(showId);
 }

@@ -99,7 +99,7 @@ function findLastCompletedEpisodeIndex(
   return lastCompletedIndex;
 }
 
-function selectPlaybackEpisodes(
+export function selectPlaybackEpisodes(
   episodes: Episode[],
   progressByEpisode: Map<string, EpisodeProgressSnapshot>,
 ): { currentPlaybackEpisode: Episode | null; nextPlaybackEpisode: Episode | null; isResumingCurrent: boolean } {

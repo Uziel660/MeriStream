@@ -379,6 +379,22 @@ try {
     if (!state || state.position !== 'fixed' || state.zIndex <= 10001 || !visibleHit(state.first) || !visibleHit(state.last)) {
       throw new Error(`Explore genre list is clipped or underneath another screen: ${JSON.stringify(state)}`);
     }
+  } else if (action === 'select-explore-genre-option') {
+    const label = await evaluate(call, `(() => {
+      const menu = document.querySelector('.filter-menu--portal[aria-label="Filtrar por género"]');
+      const options = [...(menu?.querySelectorAll('[role="option"]') || [])];
+      const last = options[options.length - 1];
+      if (!last) return null;
+      const text = (last.textContent || '').trim();
+      last.click();
+      return text;
+    })()`);
+    if (!label) throw new Error('The final Explore genre option could not be selected');
+    await delay(250);
+    const selected = await evaluate(call, `([...document.querySelectorAll('.native-filter-chip')]
+      .some((chip) => (chip.textContent || '').trim() === ${JSON.stringify(label)}))`);
+    console.log(JSON.stringify({ action, label, selected }));
+    if (!selected) throw new Error(`Selecting ${label} did not apply the Explore genre filter`);
   } else if (action === 'open-watch-party') {
     const menuReady = await ensureMobileMenuOpen();
     if (!menuReady) throw new Error('Could not open mobile navigation before Watch Party');

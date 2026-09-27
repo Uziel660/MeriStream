@@ -161,14 +161,6 @@ if [[ "$MODE" == "full" ]]; then
   adb shell input keyevent 4
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-auth-closed
 
-  # Explore filters are condensed into a touch-first sheet.
-  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-filters
-  adb exec-out screencap -p > meristream-explore-filters.png || true
-  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-genre-filter
-  adb exec-out screencap -p > "${PREFIX}-explore-genre-dropdown.png" || true
-  adb shell input keyevent 4
-  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-explore-filters-closed
-
   # Guest lists must remain reachable and list creation should feel native.
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-lists
   adb exec-out screencap -p > meristream-lists.png || true
@@ -177,6 +169,17 @@ if [[ "$MODE" == "full" ]]; then
   adb shell input keyevent 4
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-list-modal-closed
 fi
+
+# Check the genre popover on both current and low-memory Android WebViews.
+# The API 29 run uses its own compact UI path, so keep this outside the full
+# navigation sweep and verify that an option still applies after hit-testing.
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-filters
+adb exec-out screencap -p > "${PREFIX}-explore-filters.png" || true
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-genre-filter
+adb exec-out screencap -p > "${PREFIX}-explore-genre-dropdown.png" || true
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs select-explore-genre-option
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-explore-filters-closed
 
 # Public HLS playback smoke, independent from the production Cloudflare gate.
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player

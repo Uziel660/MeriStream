@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { AnimeFlvAdapter } from "../../server/scrapers/adapters/AnimeFlvAdapter";
 import type { UniversalAnalysisResult } from "../../server/types";
 
+// Live opt-in: npx cross-env LIVE_SCRAPER_E2E=1 vitest run tests/scrapers/AnimeFlvAdapter.test.ts
+const describeLive = process.env.LIVE_SCRAPER_E2E === "1" ? describe : describe.skip;
+
 const UA_CHROME =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -28,7 +31,7 @@ const isDirectMedia = (url: string) => /\.(m3u8|mp4|webm|mkv)(\?|#|$)/i.test(url
  * No se acepta page URL, placeholder ni mero embed como éxito cuando existe directo reproducible.
  * No se hardcodean tokens HLS expirables: solo se valida patrón directo.
  */
-describe("AnimeFlvAdapter - integración live JKAnime (animeflv.net obsoleto)", () => {
+describeLive("AnimeFlvAdapter - integración live JKAnime (animeflv.net obsoleto)", () => {
   const adapter = new AnimeFlvAdapter();
 
   // cache del flujo principal para encadenar pero cada test es re-ejecutable

@@ -157,6 +157,62 @@ function renditionDisplayName(key: string, items: Array<{ server: ScoredServer; 
   return languageDisplayName(key);
 }
 
+async function renewPlayerServer(input: {
+  server: ScoredServer;
+  serverIndex: number;
+  attemptId: number;
+  isCurrentAttempt: (attemptId: number) => boolean;
+  setServers: (updater: (previous: ScoredServer[]) => ScoredServer[]) => void;
+  videoRef: { current: HTMLVideoElement | null };
+  hlsRef: { current: any };
+  dashRef: { current: any };
+  attachSource: (url: string) => void;
+}): Promise<void> {
+  const { server, serverIndex, attemptId, isCurrentAttempt, setServers, videoRef, hlsRef, dashRef, attachSource } = input;
+  if (!isCurrentAttempt(attemptId)) return;
+  const originalUrl = canonicalUrlOf(server) || server.url;
+  const resolution = await api.resolveEmbed(originalUrl);
+  if (!isCurrentAttempt(attemptId) || !resolution.resolved || !resolution.url) return;
+
+  setServers((previous) => {
+    const copy = [...previous];
+    if (copy[serverIndex]) {
+      copy[serverIndex] = updateRenewedServer(copy[serverIndex], {
+        url: resolution.url,
+        original_url: resolution.original_url,
+        canonical_locator: resolution.canonical_locator,
+        resolution_id: resolution.resolution_id,
+        generation: resolution.generation,
+        delivery_mode: resolution.delivery_mode,
+        is_proxyable: resolution.is_proxyable,
+        is_refreshable: resolution.is_refreshable,
+        refresh_after: resolution.refresh_after,
+        expires_at: resolution.expires_at,
+        resolved_at: resolution.resolved_at,
+        failure_reason: resolution.failure_reason,
+        requiredHeaders: resolution.requiredHeaders,
+      });
+    }
+    return copy;
+  });
+
+  const video = videoRef.current;
+  const currentPosition = video?.currentTime || 0;
+  const wasPlaying = !video?.paused;
+  if (hlsRef.current && resolution.url !== server.url) {
+    hlsRef.current.loadSource(resolution.url);
+    if (currentPosition > 0 && video) video.currentTime = currentPosition;
+    if (wasPlaying && video) video.play().catch(() => {});
+    return;
+  }
+  if (!dashRef.current || resolution.url === server.url) return;
+
+  // Reiniciar dash.js reconstruye el manifiesto renovado desde el mismo punto.
+  dashRef.current.reset?.();
+  dashRef.current = null;
+  attachSource(resolution.url);
+}
+
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const h = Math.floor(seconds / 3600);
@@ -380,10 +436,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         is_default: Boolean(raw?.is_default || raw?.default),
       });
     };
-    (props.subtitleTracks || []).forEach(add);
-    resolvedSubtitleTracks.forEach(add);
-    (streamInfo?.subtitles || []).forEach(add);
-    servers.flatMap((server) => server.subtitles || []).forEach(add);
+    for (const [index, track] of (props.subtitleTracks || []).entries()) add(track, index);
+    for (const [index, track] of resolvedSubtitleTracks.entries()) add(track, index);
+    for (const [index, track] of (streamInfo?.subtitles || []).entries()) add(track, index);
+    const serverSubtitles = servers.flatMap((server) => server.subtitles || []);
+    for (const [index, track] of serverSubtitles.entries()) add(track, index);
     return [...byUrl.values()];
   })();
   const subtitleSignature = subtitleTracks.map((track) => `${track.id}:${track.url}`).join('|');
@@ -901,62 +958,24 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     if (renewalTimerRef.current) clearTimeout(renewalTimerRef.current);
     const activeServer = servers[activeServerIndex];
     if (!activeServer || !isPlaying) return;
+    if (!shouldScheduleRenewal(activeServer, deliveryState)) return;
 
-    if (shouldScheduleRenewal(activeServer, deliveryState)) {
-      const deadline = activeServer.refresh_after!;
-      const timeToRefresh = Math.max(5000, deadline - Date.now() - 30000); // 30s before deadline
-      const attemptId = attemptIdRef.current;
-      renewalTimerRef.current = setTimeout(async () => {
-        if (attemptId !== attemptIdRef.current) return;
-        console.log("[Player] Renovación preventiva directa...");
-        try {
-          const originalUrl = canonicalUrlOf(activeServer) || activeServer.url;
-          const res = await api.resolveEmbed(originalUrl);
-          if (attemptId !== attemptIdRef.current) return;
-          if (res.resolved && res.url) {
-            setServers((prev) => {
-              const copy = [...prev];
-              if (copy[activeServerIndex]) {
-                copy[activeServerIndex] = updateRenewedServer(copy[activeServerIndex], {
-                  url: res.url,
-                  original_url: res.original_url,
-                  canonical_locator: res.canonical_locator,
-                  resolution_id: res.resolution_id,
-                  generation: res.generation,
-                  delivery_mode: res.delivery_mode,
-                  is_proxyable: res.is_proxyable,
-                  is_refreshable: res.is_refreshable,
-                  refresh_after: res.refresh_after,
-                  expires_at: res.expires_at,
-                  resolved_at: res.resolved_at,
-                  failure_reason: res.failure_reason,
-                  requiredHeaders: res.requiredHeaders,
-                });
-              }
-              return copy;
-            });
-
-            // Conservar la posición y recargar la fuente una sola vez.
-            const currentPos = videoRef.current?.currentTime || 0;
-            const wasPlaying = !videoRef.current?.paused;
-            if (hlsRef.current && res.url !== activeServer.url) {
-              hlsRef.current.loadSource(res.url);
-              if (currentPos > 0) videoRef.current!.currentTime = currentPos;
-              if (wasPlaying) videoRef.current!.play().catch(() => {});
-            } else if (dashRef.current && res.url !== activeServer.url) {
-              // dash.js no expone un `loadSource` estable entre versiones;
-              // reiniciar la instancia conserva el mismo punto de reanudación
-              // y vuelve a construir el grafo con el manifiesto renovado.
-              dashRef.current.reset?.();
-              dashRef.current = null;
-              attachSource(res.url);
-            }
-          }
-        } catch (_err) {
-          console.error("Fallo al renovar JIT", _err);
-        }
-      }, timeToRefresh);
-    }
+    const timeToRefresh = Math.max(5000, activeServer.refresh_after! - Date.now() - 30000);
+    const attemptId = attemptIdRef.current;
+    renewalTimerRef.current = setTimeout(() => {
+      console.log("[Player] Renovación preventiva directa...");
+      void renewPlayerServer({
+        server: activeServer,
+        serverIndex: activeServerIndex,
+        attemptId,
+        isCurrentAttempt: (expectedId) => expectedId === attemptIdRef.current,
+        setServers,
+        videoRef,
+        hlsRef,
+        dashRef,
+        attachSource,
+      }).catch((error) => console.error("Fallo al renovar JIT", error));
+    }, timeToRefresh);
   }, [servers, activeServerIndex, deliveryState, isPlaying]);
 
   // 1. RECOPILACIÓN, CALIFICACIÓN Y AUTO-SELECCIÓN DEL MEJOR SERVIDOR
@@ -2172,6 +2191,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     bufferCountRef.current = 0;
     bufferingStartMsRef.current = null;
 
+    const maybeTriggerEpisodeEnd = () => {
+      if (!(video.duration > 20 && video.currentTime > 0 && !hasEnded && props.onNextEpisode)) return;
+      const remaining = video.duration - video.currentTime;
+      if (remaining <= 1.5 || video.currentTime / video.duration >= 0.992) {
+        triggerEpisodeEnded();
+      }
+    };
+
     const onTimeUpdate = () => {
       if (listenerAttemptId !== attemptIdRef.current) return;
       setCurrentTime(video.currentTime);
@@ -2208,12 +2235,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
 
       // Detección proactiva de final de episodio cuando el stream llega al final (evita congelamiento HLS sin 'ended')
-      if (video.duration > 20 && video.currentTime > 0 && !hasEnded && props.onNextEpisode) {
-        const remaining = video.duration - video.currentTime;
-        if (remaining <= 1.5 || video.currentTime / video.duration >= 0.992) {
-          triggerEpisodeEnded();
-        }
-      }
+      maybeTriggerEpisodeEnd();
 
       // Throttle progress updates to parent every 5 seconds
       const now = Date.now();

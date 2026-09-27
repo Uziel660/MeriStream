@@ -63,6 +63,157 @@ function loadContinueWatchingFromStorage(userId?: string | null): WatchProgress[
   } catch {}
   return [];
 }
+
+function saveContinueWatchingProgress(items: WatchProgress[]): void {
+  for (const item of items) {
+    void api.saveProgress(item).catch(() => {});
+  }
+}
+
+type EpisodePlaybackContext = {
+  showId: string;
+  currentShow?: Show;
+  sourceHint: string;
+  kindForUrl: string;
+  gatewayKind: 'anime' | 'movie' | 'series';
+};
+
+function getEpisodePlaybackContext(input: {
+  episode: Episode;
+  showTitle: string;
+  showOverride?: Show;
+  selectedShowId?: string | null;
+  shows: Show[];
+  searchResults: Show[];
+  routeKind?: string | null;
+}): EpisodePlaybackContext {
+  const { episode, showTitle, showOverride, selectedShowId, shows, searchResults, routeKind } = input;
+  const showId = episode.show_id || selectedShowId || 'unknown';
+  const publicIdentity = /^tmdb-(movie|series|anime)-(\d+)$/i.exec(showId);
+  const knownShow = showOverride || shows.find((show) => show.id === showId)
+    || searchResults.find((show) => show.id === showId);
+  const publicKind = publicIdentity?.[1].toLowerCase();
+  const currentShow = publicIdentity
+    ? {
+      ...knownShow,
+      id: showId,
+      title: knownShow?.title || showTitle,
+      tmdb_id: knownShow?.tmdb_id ?? Number(publicIdentity[2]),
+      kind: publicKind,
+      category: publicKind,
+    } as Show
+    : knownShow;
+  const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
+  const locatorIdentity = /^tmdb:\/\/(movie|series|anime)\/(\d+)/i.exec(sourceHint);
+  const rawKind = String(
+    publicKind || showOverride?.kind || showOverride?.category || currentShow?.kind || currentShow?.category
+    || locatorIdentity?.[1] || routeKind || '',
+  ).toLowerCase();
+  const kindForUrl = rawKind.includes('anime')
+    ? 'anime'
+    : rawKind.includes('movie') || rawKind.includes('pel') ? 'movie' : 'series';
+  const category = String(currentShow?.kind || currentShow?.category || '').toLowerCase();
+  const isAnime = category.includes('anime') || sourceHint.startsWith('tmdb://anime/');
+  const isMovie = category.includes('movie') || category.includes('pel') || sourceHint.startsWith('tmdb://movie/');
+  const gatewayKind = isAnime ? 'anime' : isMovie ? 'movie' : 'series';
+
+  return { showId, currentShow, sourceHint, kindForUrl, gatewayKind };
+}
+
+function findEpisodeProgress(items: WatchProgress[], showId: string, episode: Episode, showTitle: string) {
+  const normalizedTitle = showTitle.toLowerCase().trim();
+  return items.find((item) => item.showId === showId && item.episodeId === episode.id)
+    || items.find((item) => item.showId === showId && item.episodeNumber === episode.episode_number)
+    || items.find((item) => Boolean(normalizedTitle && item.showTitle)
+      && item.showTitle?.toLowerCase().trim() === normalizedTitle
+      && (item.episodeId === episode.id || item.episodeNumber === episode.episode_number));
+}
+
+function limitGatewaySources(sources: any[]): any[] {
+  const countByProvider = new Map<string, number>();
+  return sources.filter((source) => {
+    const provider = String(source?.provider || 'api').toLowerCase();
+    const count = countByProvider.get(provider) || 0;
+    if (count >= 3) return false;
+    countByProvider.set(provider, count + 1);
+    return true;
+  });
+}
+
+function toGatewayRankedStreams(sources: any[], mapSubtitle: (track: any, id: string) => any): any[] {
+  return sources.map((source, index) => {
+    let host: string | null = null;
+    try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
+    const subtitles = Array.isArray(source.subtitles)
+      ? source.subtitles.map((track: any, trackIndex: number) => mapSubtitle(track, `${source.provider || 'api'}-${trackIndex}`)).filter(Boolean)
+      : [];
+    return {
+      url: source.url,
+      type: 'direct' as const,
+      tier: index,
+      host,
+      provider: source.provider,
+      source_site: source.provider,
+      original_url: source.canonicalLocator || source.url,
+      canonical_locator: source.canonicalLocator || source.url,
+      is_proxyable: true,
+      is_refreshable: Boolean(source.canonicalLocator),
+      delivery_mode: source.requiredHeaders ? 'proxy_required' as const : 'direct_trial' as const,
+      requiredHeaders: source.requiredHeaders,
+      rating: 10,
+      link_type: source.audioLanguage ? 'audio' : undefined,
+      language: source.audioLanguage || undefined,
+      audio_language: source.audioLanguage || undefined,
+      subtitle_language: source.subtitleLanguage || undefined,
+      subtitles,
+    };
+  });
+}
+
+function toGatewayFallbacks(sources: any[], startTier: number, mapSubtitle: (track: any, id: string) => any): any[] {
+  return sources.map((source, index) => {
+    let host: string | null = null;
+    try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
+    const subtitles = Array.isArray(source.subtitles)
+      ? source.subtitles.map((track: any, trackIndex: number) => mapSubtitle(track, `${source.provider || 'fallback'}-${index}-${trackIndex}`)).filter(Boolean)
+      : [];
+    return {
+      url: source.url,
+      type: 'embed' as const,
+      tier: startTier + index,
+      host,
+      provider: source.provider,
+      source_site: source.provider,
+      canonical_locator: source.canonicalLocator || source.url,
+      original_url: source.url,
+      delivery_mode: 'embed' as const,
+      is_refreshable: true,
+      is_proxyable: false,
+      requiredHeaders: undefined,
+      link_type: source.type,
+      language: source.audioLanguage || undefined,
+      audio_language: source.audioLanguage || undefined,
+      subtitle_language: source.subtitleLanguage || undefined,
+      subtitles,
+    };
+  });
+}
+
+function mergeRankedStreams(...groups: any[][]): any[] {
+  const merged: any[] = [];
+  const seenUrls = new Set<string>();
+  for (const candidate of groups.flat()) {
+    if (!candidate?.url || seenUrls.has(candidate.url)) continue;
+    seenUrls.add(candidate.url);
+    merged.push(candidate);
+  }
+  return merged;
+}
+
+function isPublicVirtualEpisode(episodeId: string, showId: string): boolean {
+  return /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(episodeId)
+    || /^tmdb-(?:movie|series|anime)-\d+$/i.test(showId);
+}
 // Bumped after the main-path provider cutover so a browser cannot briefly
 // render cards that are now admin/legacy-only while the fresh request loads.
 // Bumped after the unified TMDB rail started interleaving movie/series/anime;
@@ -992,9 +1143,7 @@ export function App() {
               localStorage.setItem(key, JSON.stringify(mergedList));
             } catch {}
           } else if (local.length > 0) {
-            local.forEach((item) => {
-              api.saveProgress(item).catch(() => {});
-            });
+            saveContinueWatchingProgress(local);
           }
         }).catch((e) => {
           if (!cancelled) console.warn('Error sincronizando progreso con servidor:', e);
@@ -1596,54 +1745,27 @@ export function App() {
   };
 
   const handleSelectEpisode = async (episode: Episode, showTitle: string, showOverride?: Show) => {
-    const showId = episode.show_id || selectedShowId || 'unknown';
     const route = readAppUrlState();
     const wasPlaying = Boolean(playingStreamData);
-    const publicIdentity = /^tmdb-(movie|series|anime)-(\d+)$/i.exec(showId);
-    const knownShow = showOverride || shows.find((s) => s.id === showId)
-      || serverSearchResults.find((s) => s.id === showId);
-    const publicKind = publicIdentity?.[1].toLowerCase();
-    const currentShow = publicIdentity
-      ? {
-        ...knownShow,
-        id: showId,
-        title: knownShow?.title || showTitle,
-        tmdb_id: knownShow?.tmdb_id ?? Number(publicIdentity[2]),
-        kind: publicKind,
-        category: publicKind,
-      } as Show
-      : knownShow;
-    const sourceHint = String((episode as any)?.source_url || '').toLowerCase();
-    const locatorIdentity = /^tmdb:\/\/(movie|series|anime)\/(\d+)/i.exec(sourceHint);
-    const rawKindForUrl = String(
-      publicKind || showOverride?.kind || showOverride?.category || currentShow?.kind || currentShow?.category
-      || locatorIdentity?.[1] || route.kind || '',
-    ).toLowerCase();
-    const kindForUrl = rawKindForUrl.includes('anime') ? 'anime' : rawKindForUrl.includes('movie') || rawKindForUrl.includes('pel') ? 'movie' : 'series';
+    const { showId, currentShow, kindForUrl, gatewayKind } = getEpisodePlaybackContext({
+      episode, showTitle, showOverride, selectedShowId, shows, searchResults: serverSearchResults, routeKind: route.kind,
+    });
     if (!wasPlaying && selectedShowId) playerReturnToDetailsRef.current = selectedShowId;
     else if (!selectedShowId) playerReturnToDetailsRef.current = null;
     setSelectedShowId(null);
     navigateAppRoute(
-      `/ver/${encodeURIComponent(showId)}/${encodeURIComponent(String(episode.id))}`,
-      {
-        episode: episode.episode_number,
-        kind: kindForUrl,
-      },
+      '/ver/' + encodeURIComponent(showId) + '/' + encodeURIComponent(String(episode.id)),
+      { episode: episode.episode_number, kind: kindForUrl },
       route.player || wasPlaying ? 'replace' : 'push',
       'player',
     );
-    // La tarjeta de búsqueda puede proceder del lote server-side y no estar
-    // todavía en `shows`; conserva sus IDs canónicos para activar gateway y
-    // subtítulos igual que una tarjeta del catálogo principal.
-    const existingProgress = continueWatchingItems.find(p => p.showId === showId && p.episodeId === episode.id)
-      || continueWatchingItems.find(p => p.showId === showId && p.episodeNumber === episode.episode_number)
-      || continueWatchingItems.find(p => (showTitle && p.showTitle && p.showTitle.toLowerCase().trim() === showTitle.toLowerCase().trim()) && (p.episodeId === episode.id || p.episodeNumber === episode.episode_number));
-    const initialTime = existingProgress?.currentTime || 0;
 
-    // Abrir el reproductor inmediatamente. El bootstrap de fuentes y la
-    // búsqueda externa de subtítulos continúan en paralelo.
+    // Mantener IDs canónicos aunque el episodio venga de resultados de búsqueda.
+    const existingProgress = findEpisodeProgress(continueWatchingItems, showId, episode, showTitle);
+    const initialTime = existingProgress?.currentTime || 0;
+    const resolvedTitle = safeEpisodeTitle(episode);
     setPlayingStreamData({
-      title: `${showTitle} - ${safeEpisodeTitle(episode)}`,
+      title: showTitle + ' - ' + resolvedTitle,
       streamUrl: '',
       all_streams: [],
       initialTime,
@@ -1652,169 +1774,56 @@ export function App() {
       showPoster: (currentShow && thumbBackdropUrl(currentShow)) || undefined,
       episodeId: episode.id,
       episodeNumber: episode.episode_number,
-      episodeTitle: safeEpisodeTitle(episode),
+      episodeTitle: resolvedTitle,
       tmdbId: currentShow?.tmdb_id ?? null,
       kind: currentShow?.kind || currentShow?.category || null,
       isLoading: true,
     });
 
-    const resolvedTitle = safeEpisodeTitle(episode);
-
     try {
-      const rawCategory = String((currentShow as any)?.kind || currentShow?.category || '').toLowerCase();
-      const gatewayKind = rawCategory.includes('anime') || sourceHint.startsWith('tmdb://anime/')
-        ? 'anime'
-        : (rawCategory.includes('movie') || rawCategory.includes('pel') || sourceHint.startsWith('tmdb://movie/'))
-          ? 'movie'
-          : 'series';
-
-      const playbackShow: Show = currentShow || {
-        id: showId,
-        title: showTitle,
-        category: gatewayKind,
-        kind: gatewayKind,
-      };
+      const playbackShow: Show = currentShow || { id: showId, title: showTitle, category: gatewayKind, kind: gatewayKind };
       const preferences = getAppPreferences(user?.id);
       const { createPlaybackRequests } = await import('./utils/playbackBootstrap');
       const playbackRequests = createPlaybackRequests({
-        show: playbackShow,
-        episode,
-        kind: gatewayKind,
+        show: playbackShow, episode, kind: gatewayKind,
         preferredAudio: preferences.preferredLanguages,
         preferredSubtitles: preferences.preferredSubtitleLanguages,
       });
 
-      // OpenSubtitles y equivalentes no forman parte de la ruta crítica. Si
-      // llegan después de iniciar el video se anexan al player sin reiniciarlo.
-      void playbackRequests.subtitles
-        .then(({ data: subtitleData }) => {
-          const externalSubtitles = Array.isArray(subtitleData?.tracks)
-            ? subtitleData.tracks
-                .map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || `opensubtitles-${index}`)))
-                .filter(Boolean)
-            : [];
-          if (externalSubtitles.length === 0) return;
-
-          setPlayingStreamData((prev: any) => {
-            if (!prev || prev.episodeId !== episode.id) return prev;
-            const byUrl = new Map<string, any>();
-            for (const track of Array.isArray(prev.subtitleTracks) ? prev.subtitleTracks : []) {
-              if (track?.url) byUrl.set(track.url, track);
-            }
-            for (const track of externalSubtitles) {
-              if (track?.url && !byUrl.has(track.url)) byUrl.set(track.url, track);
-            }
-            return { ...prev, subtitleTracks: [...byUrl.values()] };
-          });
-        })
-        .catch(() => undefined);
+      // Subtítulos externos no bloquean el inicio; se anexan cuando llegan.
+      void playbackRequests.subtitles.then(({ data: subtitleData }) => {
+        const externalSubtitles = Array.isArray(subtitleData?.tracks)
+          ? subtitleData.tracks.map((track: any, index: number) => mapInternalSubtitleTrack(track, String(track.id || 'opensubtitles-' + index))).filter(Boolean)
+          : [];
+        if (externalSubtitles.length === 0) return;
+        setPlayingStreamData((prev: any) => {
+          if (!prev || prev.episodeId !== episode.id) return prev;
+          const byUrl = new Map<string, any>();
+          for (const track of Array.isArray(prev.subtitleTracks) ? prev.subtitleTracks : []) {
+            if (track?.url) byUrl.set(track.url, track);
+          }
+          for (const track of externalSubtitles) {
+            if (track?.url && !byUrl.has(track.url)) byUrl.set(track.url, track);
+          }
+          return { ...prev, subtitleTracks: [...byUrl.values()] };
+        });
+      }).catch(() => undefined);
 
       const { gatewayData, legacyData, legacyStatus } = await playbackRequests.core;
-
-      // Un gateway puede devolver muchos mirrors del mismo proveedor. Limitar
-      // a tres mantiene failover real sin convertir un host caído en tormenta.
-      const gatewaySourceCount = new Map<string, number>();
-      const gatewaySources = Array.isArray(gatewayData?.sources)
-        ? gatewayData.sources.filter((source: any) => {
-            const provider = String(source?.provider || 'api').toLowerCase();
-            const count = gatewaySourceCount.get(provider) || 0;
-            if (count >= 3) return false;
-            gatewaySourceCount.set(provider, count + 1);
-            return true;
-          })
-        : [];
-      const gatewayRanked = gatewaySources.length > 0
-        ? gatewaySources.map((source: any, index: number) => {
-            let host: string | null = null;
-            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
-            return {
-              url: source.url,
-              type: 'direct' as const,
-              tier: index,
-              host,
-              provider: source.provider,
-              source_site: source.provider,
-              original_url: source.canonicalLocator || source.url,
-              canonical_locator: source.canonicalLocator || source.url,
-              is_proxyable: true,
-              is_refreshable: Boolean(source.canonicalLocator),
-              delivery_mode: source.requiredHeaders ? 'proxy_required' as const : 'direct_trial' as const,
-              requiredHeaders: source.requiredHeaders,
-              rating: 10,
-              link_type: source.audioLanguage ? 'audio' : undefined,
-              language: source.audioLanguage || undefined,
-              audio_language: source.audioLanguage || undefined,
-              subtitle_language: source.subtitleLanguage || undefined,
-              subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles
-                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'api'}-${trackIndex}`))
-                    .filter(Boolean)
-                : [],
-            };
-          })
-        : [];
-
-      // Los locators canónicos siguen disponibles como fallback porque el
-      // HLSPlayerModal los resuelve JIT mediante el adaptador especializado.
-      const gatewayFallbacks = Array.isArray(gatewayData?.fallbackCandidates)
-        ? gatewayData.fallbackCandidates.map((source: any, index: number) => {
-            let host: string | null = null;
-            try { host = new URL(source.url).hostname.replace(/^www\./, ''); } catch {}
-            return {
-              url: source.url,
-              type: 'embed' as const,
-              tier: gatewayRanked.length + index,
-              host,
-              provider: source.provider,
-              source_site: source.provider,
-              canonical_locator: source.canonicalLocator || source.url,
-              original_url: source.url,
-              delivery_mode: 'embed' as const,
-              is_refreshable: true,
-              is_proxyable: false,
-              requiredHeaders: undefined,
-              link_type: source.type,
-              language: source.audioLanguage || undefined,
-              audio_language: source.audioLanguage || undefined,
-              subtitle_language: source.subtitleLanguage || undefined,
-              subtitles: Array.isArray(source.subtitles)
-                ? source.subtitles
-                    .map((track: any, trackIndex: number) => mapInternalSubtitleTrack(track, `${source.provider || 'fallback'}-${index}-${trackIndex}`))
-                    .filter(Boolean)
-                : [],
-            };
-          })
-        : [];
-
-      const mergedRanked: any[] = [];
-      const seenUrls = new Set<string>();
-      for (const candidate of [
-        ...gatewayRanked,
-        ...gatewayFallbacks,
-        ...(Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : []),
-      ]) {
-        if (!candidate?.url || seenUrls.has(candidate.url)) continue;
-        seenUrls.add(candidate.url);
-        mergedRanked.push(candidate);
-      }
-
+      const gatewaySources = limitGatewaySources(Array.isArray(gatewayData?.sources) ? gatewayData.sources : []);
+      const gatewayRanked = toGatewayRankedStreams(gatewaySources, mapInternalSubtitleTrack);
+      const fallbackSources = Array.isArray(gatewayData?.fallbackCandidates) ? gatewayData.fallbackCandidates : [];
+      const gatewayFallbacks = toGatewayFallbacks(fallbackSources, gatewayRanked.length, mapInternalSubtitleTrack);
+      const legacyRanked = Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : [];
+      const mergedRanked = mergeRankedStreams(gatewayRanked, gatewayFallbacks, legacyRanked);
       const mergedStreams = mergedRanked.map((candidate) => candidate.url);
       const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
 
       if (!primaryStream) {
-        // Las fichas públicas TMDB usan episodios virtuales y no deben borrarse
-        // por un 404 de la tabla legacy. Las filas locales sí conservan la
-        // limpieza de huérfanos histórica.
-        const isPublicVirtualEpisode = /^tmdb-(?:movie|series|anime)-\d+(?:-s\d+-e\d+)?$/i.test(String(episode.id || ''))
-          || /^tmdb-(?:movie|series|anime)-\d+$/i.test(String(currentShow?.id || ''));
-        if (legacyStatus === 404 && !isPublicVirtualEpisode) {
+        if (legacyStatus === 404 && !isPublicVirtualEpisode(String(episode.id || ''), String(currentShow?.id || ''))) {
           removeContinueWatchingItem(episode.id);
-          setPlayingStreamData((prev: any) =>
-            prev?.episodeId === episode.id ? null : prev
-          );
-          setOrphanNotice(
-            `"${showTitle} — ${resolvedTitle}" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.`
-          );
+          setPlayingStreamData((prev: any) => prev?.episodeId === episode.id ? null : prev);
+          setOrphanNotice('"' + showTitle + ' — ' + resolvedTitle + '" ya no está disponible en el catálogo y fue eliminado de Seguir Viendo.');
           return;
         }
         throw new Error('No se encontró un stream directo ni un fallback reproducible');
@@ -1824,21 +1833,17 @@ export function App() {
         if (!prev || prev.episodeId !== episode.id) return prev;
         return {
           ...prev,
-          title: `${showTitle} - ${resolvedTitle}`,
+          title: showTitle + ' - ' + resolvedTitle,
           streamUrl: primaryStream,
           all_streams: mergedStreams.length > 0 ? mergedStreams : [primaryStream],
           ranked_streams: mergedRanked,
           isLoading: false,
         };
       });
-    } catch (e: any) {
+    } catch (error: any) {
       setPlayingStreamData((prev: any) => {
         if (!prev || prev.episodeId !== episode.id) return prev;
-        return {
-          ...prev,
-          loadError: e.message || 'Error al iniciar la reproducción',
-          isLoading: false,
-        };
+        return { ...prev, loadError: error.message || 'Error al iniciar la reproducción', isLoading: false };
       });
     }
   };

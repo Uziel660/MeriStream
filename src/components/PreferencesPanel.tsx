@@ -119,7 +119,7 @@ export function PreferencesPanel({ userId, canViewIdentityDetails = false, onClo
           <button type="button" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" onClick={closeWithoutSaving} aria-label="Cerrar preferencias"><X size={18} /></button>
         </div>
 
-        <div className="mt-6 space-y-7">
+        <div className="preferences-content mt-6 space-y-7">
           <fieldset>
             <legend className="flex items-center gap-2 text-sm font-semibold"><Palette size={16} className="text-amber-400" />Estilo de interfaz</legend>
             <p className="mt-1 text-xs text-zinc-500">Cambia la apariencia completa de MeriStream al instante. Se guarda solo al pulsar “Guardar preferencias”.</p>

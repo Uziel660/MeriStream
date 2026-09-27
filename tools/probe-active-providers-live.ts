@@ -77,64 +77,74 @@ async function fetchWithTimeout(url: string, headers: Record<string, string> = {
   }
 }
 
+async function probeDirectMedia(url: string, headers: Record<string, string>): Promise<MediaProbe> {
+  const response = await fetchWithTimeout(url, { ...headers, Range: "bytes=0-8191" });
+  const bytes = await readPrefix(response, 8192);
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    host: hostOf(response.url || url),
+    bytesRead: bytes.byteLength,
+    ...(looksLikeMedia(response.headers.get("content-type"), bytes) ? {} : { error: "response_not_media" }),
+  };
+}
+
+async function inspectHlsPlaylist(
+  initialText: string,
+  initialUrl: string,
+  headers: Record<string, string>,
+  manifest: MediaProbe,
+): Promise<MediaProbe> {
+  let playlistText = initialText;
+  let playlistUrl = initialUrl;
+  for (let depth = 0; depth < 2; depth += 1) {
+    const firstResource = playlistText.split(/\r?\n/).map((line) => line.trim())
+      .find((line) => line && !line.startsWith("#"));
+    if (!firstResource) break;
+    const childUrl = new URL(firstResource, playlistUrl).href;
+    if (/\.m3u8(?:[?#]|$)/i.test(childUrl)) {
+      const child = await fetchWithTimeout(childUrl, headers);
+      const childBytes = await readPrefix(child);
+      const childText = new TextDecoder().decode(childBytes);
+      if (child.status !== 200 || !childText.includes("#EXTM3U")) break;
+      playlistText = childText;
+      playlistUrl = child.url || childUrl;
+      continue;
+    }
+    const segment = await fetchWithTimeout(childUrl, { ...headers, Range: "bytes=0-4095" });
+    const segmentBytes = await readPrefix(segment, 8192);
+    return {
+      ...manifest,
+      hls: true,
+      segmentStatus: segment.status,
+      bytesRead: segmentBytes.byteLength,
+      ...(looksLikeMedia(segment.headers.get("content-type"), segmentBytes) ? {} : { error: "first_resource_not_media" }),
+    };
+  }
+  return { ...manifest, hls: true };
+}
+
+async function probeHlsMedia(url: string, headers: Record<string, string>): Promise<MediaProbe> {
+  const response = await fetchWithTimeout(url, headers);
+  const bytes = await readPrefix(response);
+  const text = new TextDecoder().decode(bytes);
+  const baseUrl = response.url || url;
+  const manifest = {
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    host: hostOf(baseUrl),
+    bytesRead: bytes.byteLength,
+  };
+  if (response.status !== 200 || !text.includes("#EXTM3U")) return { ...manifest, hls: false };
+  return inspectHlsPlaylist(text, baseUrl, headers, manifest);
+}
+
 async function probeMedia(url: string, headers: Record<string, string> = {}): Promise<MediaProbe> {
   try {
-    // Mega and some protected hosts intentionally resolve to MeriStream's
-    // server-side relay. This live probe runs without the Express server, so a
-    // relative /api route is a valid "requires backend proxy" outcome, not a
-    // malformed third-party stream.
-    if (url.startsWith('/api/')) {
-      return { host: 'meristream-backend', requiresBackendProxy: true };
-    }
-    if (/\.m3u8(?:[?#]|$)/i.test(url) || url.includes("/m3u8/")) {
-      const manifest = await fetchWithTimeout(url, headers);
-      const bytes = await readPrefix(manifest);
-      const text = new TextDecoder().decode(bytes);
-      const base = manifest.url || url;
-      if (manifest.status !== 200 || !text.includes("#EXTM3U")) {
-        return { status: manifest.status, contentType: manifest.headers.get("content-type"), host: hostOf(base), hls: false, bytesRead: bytes.byteLength };
-      }
-
-      let playlistText = text;
-      let playlistUrl = base;
-      for (let depth = 0; depth < 2; depth += 1) {
-        const firstResource = playlistText.split(/\r?\n/).map((line) => line.trim()).find((line) => line && !line.startsWith("#"));
-        if (!firstResource) break;
-        const childUrl = new URL(firstResource, playlistUrl).href;
-        if (/\.m3u8(?:[?#]|$)/i.test(childUrl)) {
-          const child = await fetchWithTimeout(childUrl, headers);
-          const childBytes = await readPrefix(child);
-          const childText = new TextDecoder().decode(childBytes);
-          if (child.status !== 200 || !childText.includes("#EXTM3U")) break;
-          playlistText = childText;
-          playlistUrl = child.url || childUrl;
-          continue;
-        }
-        const segment = await fetchWithTimeout(childUrl, { ...headers, Range: "bytes=0-4095" });
-        const segmentBytes = await readPrefix(segment, 8192);
-        return {
-          status: manifest.status,
-          contentType: manifest.headers.get("content-type"),
-          host: hostOf(base),
-          hls: true,
-          segmentStatus: segment.status,
-          bytesRead: segmentBytes.byteLength,
-          ...(looksLikeMedia(segment.headers.get("content-type"), segmentBytes) ? {} : { error: "first_resource_not_media" }),
-        };
-      }
-
-      return { status: manifest.status, contentType: manifest.headers.get("content-type"), host: hostOf(base), hls: true, bytesRead: bytes.byteLength };
-    }
-
-    const response = await fetchWithTimeout(url, { ...headers, Range: "bytes=0-8191" });
-    const bytes = await readPrefix(response, 8192);
-    return {
-      status: response.status,
-      contentType: response.headers.get("content-type"),
-      host: hostOf(response.url || url),
-      bytesRead: bytes.byteLength,
-      ...(looksLikeMedia(response.headers.get("content-type"), bytes) ? {} : { error: "response_not_media" }),
-    };
+    // The live probe has no Express server; a relative relay URL is a valid backend-only result.
+    if (url.startsWith('/api/')) return { host: 'meristream-backend', requiresBackendProxy: true };
+    const isHls = /\.m3u8(?:[?#]|$)/i.test(url) || url.includes("/m3u8/");
+    return isHls ? await probeHlsMedia(url, headers) : await probeDirectMedia(url, headers);
   } catch (error) {
     return { host: hostOf(url), error: String((error as Error)?.message || error) };
   }

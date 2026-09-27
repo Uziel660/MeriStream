@@ -62,6 +62,74 @@ async function fetchDetailJson(url: string, init?: RequestInit): Promise<ShowDet
   throw lastError instanceof Error ? lastError : new Error('No se pudo cargar la información del título.');
 }
 
+function episodeProgressFor(
+  episode: Episode,
+  progressByEpisode: Map<string, EpisodeProgressSnapshot>,
+): EpisodeProgressSnapshot | undefined {
+  return progressByEpisode.get(episode.id) || progressByEpisode.get(`num_${episode.episode_number}`);
+}
+
+interface EpisodeProgressSnapshot {
+  percent: number;
+  currentTime: number;
+  duration: number;
+}
+
+function findInProgressEpisode(
+  episodes: Episode[],
+  progressByEpisode: Map<string, EpisodeProgressSnapshot>,
+): Episode | null {
+  let inProgressEpisode: Episode | null = null;
+  for (const episode of episodes) {
+    const progress = episodeProgressFor(episode, progressByEpisode);
+    if (progress && progress.percent > 0 && progress.percent < 85) inProgressEpisode = episode;
+  }
+  return inProgressEpisode;
+}
+
+function findLastCompletedEpisodeIndex(
+  episodes: Episode[],
+  progressByEpisode: Map<string, EpisodeProgressSnapshot>,
+): number {
+  let lastCompletedIndex = -1;
+  for (let index = 0; index < episodes.length; index += 1) {
+    const progress = episodeProgressFor(episodes[index], progressByEpisode);
+    if (progress && progress.percent >= 85) lastCompletedIndex = index;
+  }
+  return lastCompletedIndex;
+}
+
+function selectPlaybackEpisodes(
+  episodes: Episode[],
+  progressByEpisode: Map<string, EpisodeProgressSnapshot>,
+): { currentPlaybackEpisode: Episode | null; nextPlaybackEpisode: Episode | null; isResumingCurrent: boolean } {
+  if (episodes.length === 0) {
+    return { currentPlaybackEpisode: null, nextPlaybackEpisode: null, isResumingCurrent: false };
+  }
+
+  const inProgressEpisode = findInProgressEpisode(episodes, progressByEpisode);
+  const lastCompletedIndex = findLastCompletedEpisodeIndex(episodes, progressByEpisode);
+  let currentIndex = 0;
+  if (inProgressEpisode) {
+    currentIndex = episodes.findIndex((episode) => episode.id === inProgressEpisode.id);
+  } else if (lastCompletedIndex >= 0) {
+    currentIndex = Math.min(lastCompletedIndex + 1, episodes.length - 1);
+  }
+  const currentPlaybackEpisode = episodes[currentIndex] || episodes[0];
+  let nextPlaybackEpisode: Episode | null = null;
+  if (currentIndex + 1 < episodes.length) {
+    nextPlaybackEpisode = episodes[currentIndex + 1];
+  } else if (episodes.length > 1) {
+    nextPlaybackEpisode = episodes[1];
+  }
+
+  return {
+    currentPlaybackEpisode,
+    nextPlaybackEpisode,
+    isResumingCurrent: Boolean(inProgressEpisode),
+  };
+}
+
 interface MediaDetailsModalProps {
   showId: string | null;
   isOpen?: boolean;
@@ -282,50 +350,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
   const episodes = show?.episodes ? [...show.episodes].sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0)) : [];
 
-  const { currentPlaybackEpisode, nextPlaybackEpisode, isResumingCurrent } = useMemo(() => {
-    if (!episodes || episodes.length === 0) {
-      return { currentPlaybackEpisode: null, nextPlaybackEpisode: null, isResumingCurrent: false };
-    }
-
-    let inProgressEp: Episode | null = null;
-    let lastCompletedIndex = -1;
-
-    for (let i = 0; i < episodes.length; i++) {
-      const ep = episodes[i];
-      const prog = episodeProgressMap.get(ep.id) || episodeProgressMap.get(`num_${ep.episode_number}`);
-      if (prog && prog.percent > 0) {
-        if (prog.percent < 85) {
-          inProgressEp = ep;
-        } else {
-          lastCompletedIndex = Math.max(lastCompletedIndex, i);
-        }
-      }
-    }
-
-    let currentEp: Episode = episodes[0];
-    let isResume = false;
-
-    if (inProgressEp) {
-      currentEp = inProgressEp;
-      isResume = true;
-    } else if (lastCompletedIndex >= 0) {
-      if (lastCompletedIndex + 1 < episodes.length) {
-        currentEp = episodes[lastCompletedIndex + 1];
-      } else {
-        currentEp = episodes[lastCompletedIndex];
-      }
-    }
-
-    const currentIdx = episodes.findIndex((e) => e.id === currentEp.id);
-    let nextEp: Episode | null = null;
-    if (currentIdx >= 0 && currentIdx + 1 < episodes.length) {
-      nextEp = episodes[currentIdx + 1];
-    } else if (episodes.length > 1) {
-      nextEp = episodes[1];
-    }
-
-    return { currentPlaybackEpisode: currentEp, nextPlaybackEpisode: nextEp, isResumingCurrent: isResume };
-  }, [episodes, episodeProgressMap]);
+  const { currentPlaybackEpisode, nextPlaybackEpisode, isResumingCurrent } = useMemo(
+    () => selectPlaybackEpisodes(episodes, episodeProgressMap),
+    [episodes, episodeProgressMap],
+  );
 
   const seasonData = useMemo(() => {
     const seasonsMap = new Map<number, Episode[]>();

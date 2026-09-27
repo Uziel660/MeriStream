@@ -337,6 +337,48 @@ try {
     const visible = await evaluate(call, `Boolean(document.querySelector('.native-explore-filter-sheet'))`);
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Explore filters');
+  } else if (action === 'open-explore-genre-filter') {
+    const opened = await evaluate(call, `(() => {
+      const trigger = document.querySelector('.native-filter-sheet-controls button[aria-label="Filtrar por género"]');
+      if (!trigger) return false;
+      trigger.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error('Explore genre filter trigger was not found');
+    await delay(250);
+    const state = await evaluate(call, `(() => {
+      const menu = document.querySelector('.filter-menu--portal[aria-label="Filtrar por género"]');
+      if (!menu) return null;
+      const style = getComputedStyle(menu);
+      const options = [...menu.querySelectorAll('[role="option"]')];
+      const inspect = (option) => {
+        const bounds = option.getBoundingClientRect();
+        const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)?.closest('[role="option"]');
+        return {
+          label: (option.textContent || '').trim(),
+          hit: (hit?.textContent || '').trim(),
+          bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
+        };
+      };
+      menu.scrollTop = 0;
+      const first = options[1] ? inspect(options[1]) : null;
+      menu.scrollTop = menu.scrollHeight;
+      const last = options.length ? inspect(options[options.length - 1]) : null;
+      return {
+        position: style.position,
+        zIndex: Number(style.zIndex),
+        viewport: { width: innerWidth, height: innerHeight },
+        first,
+        last,
+      };
+    })()`);
+    console.log(JSON.stringify({ action, state }, null, 2));
+    const visibleHit = (option) => option && option.label && option.hit === option.label
+      && option.bounds.left >= 0 && option.bounds.top >= 0
+      && option.bounds.right <= state.viewport.width && option.bounds.bottom <= state.viewport.height;
+    if (!state || state.position !== 'fixed' || state.zIndex <= 10001 || !visibleHit(state.first) || !visibleHit(state.last)) {
+      throw new Error(`Explore genre list is clipped or underneath another screen: ${JSON.stringify(state)}`);
+    }
   } else if (action === 'open-watch-party') {
     const menuReady = await ensureMobileMenuOpen();
     if (!menuReady) throw new Error('Could not open mobile navigation before Watch Party');

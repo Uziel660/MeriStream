@@ -1416,6 +1416,14 @@ html[data-native-shell='android'][data-native-legacy-webview='true'] [data-playe
   border: 1px solid rgba(255,255,255,.12) !important;
 }
 
+html[data-native-shell='android'][data-native-legacy-webview='true'] [role='dialog'] button[aria-label='Cerrar reporte'] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background-color: #15191e !important;
+  color: #a1a1aa !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+}
+
 html[data-native-shell='android'][data-native-legacy-webview='true'] .native-player-more-sheet {
   max-height: 72vh;
   padding: .55rem .65rem;

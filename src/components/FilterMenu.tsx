@@ -63,7 +63,7 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
     const estimatedHeight = Math.min(maxDesiredHeight, Math.max(44, options.length * 36 + 12));
     const spaceBelow = viewportHeight - bounds.bottom - gap - gutter;
     const spaceAbove = bounds.top - gap - gutter;
-    const opensAbove = spaceBelow < Math.min(estimatedHeight, 144) && spaceAbove > spaceBelow;
+    const opensAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
     if (spaceBelow < 96 && spaceAbove < 96) {
       setMenuPosition({ top: gutter, left, width, maxHeight: Math.max(96, viewportHeight - gutter * 2) });
@@ -118,7 +118,9 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
         aria-label={ariaLabel}
         style={{
           position: 'fixed',
-          zIndex: 320,
+          // Menus are portaled out of sheets and dialogs, so keep them above
+          // every app overlay even on older Android WebViews.
+          zIndex: 2147483647,
           top: menuPosition.top,
           left: menuPosition.left,
           width: menuPosition.width,

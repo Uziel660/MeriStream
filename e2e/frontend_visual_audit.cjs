@@ -165,7 +165,8 @@ async function captureViewport(browser, name, viewport) {
 
 async function auditNativeExploreGenreDropdown(browser) {
   const context = await browser.newContext({
-    viewport: { width: 732, height: 412 },
+    // Match the compact portrait viewport used by the Android 10 / 2 GB run.
+    viewport: { width: 412, height: 660 },
     deviceScaleFactor: 1,
     isMobile: true,
     hasTouch: true,
@@ -188,9 +189,29 @@ async function auditNativeExploreGenreDropdown(browser) {
 
   const menu = page.getByRole('listbox', { name: 'Filtrar por género' });
   await menu.waitFor({ state: 'visible' });
+  const menuStyle = await menu.evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    zIndex: Number(getComputedStyle(element).zIndex),
+  }));
+  if (menuStyle.position !== 'fixed' || menuStyle.zIndex <= 10001) {
+    throw new Error(`The genre menu must float above every Android sheet: ${JSON.stringify(menuStyle)}`);
+  }
+
+  const firstOption = menu.getByRole('option').nth(1);
+  const firstBounds = await firstOption.boundingBox();
+  if (!firstBounds) throw new Error('The first selectable genre has no visible layout bounds.');
+  const firstHit = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y)?.closest('[role="option"]');
+    return target?.textContent?.trim() || null;
+  }, { x: firstBounds.x + firstBounds.width / 2, y: firstBounds.y + firstBounds.height / 2 });
+  if (!firstHit || !firstHit.includes((await firstOption.textContent()).trim())) {
+    throw new Error(`The first genre option is covered: ${JSON.stringify({ firstHit, firstBounds })}`);
+  }
+
   const lastOption = menu.getByRole('option').last();
   const optionBounds = await lastOption.boundingBox();
   if (!optionBounds) throw new Error('The last genre option has no visible layout bounds.');
+  const menuBounds = await menu.boundingBox();
 
   const hitTest = await page.evaluate(({ x, y }) => {
     const target = document.elementFromPoint(x, y)?.closest('[role="option"]');
@@ -201,7 +222,11 @@ async function auditNativeExploreGenreDropdown(browser) {
     option: await lastOption.textContent(),
     optionBounds,
     viewport,
+    menuStyle,
+    firstHit,
+    firstBounds,
     hitTest,
+    menuBounds,
     sheetBounds: await sheet.boundingBox(),
   };
   await page.screenshot({ path: path.join(OUT_DIR, 'native-explore-genre-dropdown.png'), fullPage: false });
@@ -211,7 +236,10 @@ async function auditNativeExploreGenreDropdown(browser) {
     || optionBounds.x + optionBounds.width > viewport.width
     || optionBounds.y + optionBounds.height > viewport.height;
   const optionLabel = String(geometry.option || '').trim();
-  if (clippedByViewport || !hitTest || !hitTest.includes(optionLabel)) {
+  const menuClipped = !menuBounds || menuBounds.x < 0 || menuBounds.y < 0
+    || menuBounds.x + menuBounds.width > viewport.width
+    || menuBounds.y + menuBounds.height > viewport.height;
+  if (clippedByViewport || menuClipped || !hitTest || !hitTest.includes(optionLabel)) {
     throw new Error(`The last genre option is clipped or covered: ${JSON.stringify(geometry)}`);
   }
 

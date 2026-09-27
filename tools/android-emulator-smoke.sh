@@ -164,6 +164,8 @@ if [[ "$MODE" == "full" ]]; then
   # Explore filters are condensed into a touch-first sheet.
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-filters
   adb exec-out screencap -p > meristream-explore-filters.png || true
+  DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-explore-genre-filter
+  adb exec-out screencap -p > "${PREFIX}-explore-genre-dropdown.png" || true
   adb shell input keyevent 4
   DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-explore-filters-closed
 

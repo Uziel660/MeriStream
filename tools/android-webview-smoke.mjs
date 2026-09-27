@@ -515,6 +515,11 @@ try {
         reportOpen: Boolean(document.querySelector('[role="dialog"]')),
         moreOpen: Boolean(document.querySelector('.native-player-more-sheet')),
         player: Boolean(document.querySelector('[data-player-root]')),
+        legacyWebview: document.documentElement.dataset.nativeLegacyWebview || null,
+        closeButtonBackground: (() => {
+          const button = document.querySelector('[role="dialog"] button[aria-label="Cerrar reporte"]');
+          return button ? getComputedStyle(button).backgroundColor : null;
+        })(),
       })`);
       if (state?.reportOpen) break;
       await delay(150);
@@ -522,6 +527,10 @@ try {
     console.log(JSON.stringify({ action, state }));
     if (!state?.reportOpen || !state.moreOpen || !state.player) {
       throw new Error(`Player Report did not open above the still-mounted More sheet: ${JSON.stringify(state)}`);
+    }
+    const closeBackground = state.closeButtonBackground?.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+    if (state.legacyWebview === 'true' && (!closeBackground || closeBackground.some((channel) => channel > 110))) {
+      throw new Error(`Legacy WebView painted the Report close button with a light/default surface: ${JSON.stringify(state)}`);
     }
   } else if (action === 'assert-player-report-closed') {
     await delay(250);

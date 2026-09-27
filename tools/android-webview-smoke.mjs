@@ -367,13 +367,21 @@ try {
     })()`, true, true);
     console.log(JSON.stringify({ action, ...result }));
   } else if (action === 'open-player-more') {
-    const opened = await evaluate(call, `(() => {
+    const openResult = await evaluate(call, `(() => {
       const button = document.querySelector('button[aria-label="Más controles"]');
-      if (!button) return false;
+      if (!button) return { opened: false, videoPlayback: null };
+      const video = document.querySelector('[data-player-root] video');
+      const videoPlayback = video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null;
+      const pauseProbe = { observed: false, listener: null };
+      if (video) {
+        pauseProbe.listener = () => { pauseProbe.observed = true; };
+        video.addEventListener('pause', pauseProbe.listener, { once: true });
+      }
+      window.__meristreamMorePauseProbe = pauseProbe;
       button.click();
-      return true;
+      return { opened: true, videoPlayback };
     })()`);
-    if (!opened) throw new Error('Player More button was not found');
+    if (!openResult?.opened) throw new Error('Player More button was not found');
     await delay(250);
     const state = await evaluate(call, `(() => {
       const actions = [...document.querySelectorAll('.mobile-player-more-action')];
@@ -449,6 +457,7 @@ try {
         },
       };
     })()`);
+    state.videoPlaybackAtOpen = openResult.videoPlayback;
     if (!state?.visible) throw new Error('Player More sheet did not open');
     if (!state.sheetBounds || state.sheetBounds.top < -1 || state.sheetBounds.right > state.viewport.width + 1 || state.sheetBounds.bottom > state.viewport.height + 1 || !state.lastReachable) {
       throw new Error(`Player More actions are clipped or unreachable: ${JSON.stringify(state)}`);
@@ -462,13 +471,20 @@ try {
     await delay(700);
     const playbackAfterOpen = await evaluate(call, `(() => {
       const video = document.querySelector('[data-player-root] video');
-      return video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null;
+      const pauseProbe = window.__meristreamMorePauseProbe;
+      if (video && pauseProbe && pauseProbe.listener) video.removeEventListener('pause', pauseProbe.listener);
+      if (window.__meristreamMorePauseProbe) delete window.__meristreamMorePauseProbe;
+      return {
+        playback: video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null,
+        pauseObserved: Boolean(pauseProbe && pauseProbe.observed),
+      };
     })()`);
-    state.videoProgressWhileOpen = playbackAfterOpen && state.videoPlayback
-      ? playbackAfterOpen.currentTime - state.videoPlayback.currentTime
+    state.videoProgressWhileOpen = playbackAfterOpen?.playback && state.videoPlaybackAtOpen
+      ? playbackAfterOpen.playback.currentTime - state.videoPlaybackAtOpen.currentTime
       : null;
-    if (!playbackAfterOpen || playbackAfterOpen.paused || playbackAfterOpen.readyState < 2 || state.videoProgressWhileOpen < 0.15) {
-      throw new Error(`Playback stopped while player More controls were open: ${JSON.stringify({ before: state.videoPlayback, after: playbackAfterOpen, delta: state.videoProgressWhileOpen })}`);
+    state.videoPauseObservedWhileOpen = playbackAfterOpen?.pauseObserved || false;
+    if (!playbackAfterOpen?.playback || playbackAfterOpen.playback.paused || playbackAfterOpen.playback.readyState < 2 || state.videoPauseObservedWhileOpen || state.videoProgressWhileOpen < 0.15) {
+      throw new Error(`Playback stopped while player More controls were open: ${JSON.stringify({ before: state.videoPlaybackAtOpen, after: playbackAfterOpen, delta: state.videoProgressWhileOpen })}`);
     }
     console.log(JSON.stringify({ action, ...state }));
   } else if (action === 'assert-player-more-closed') {

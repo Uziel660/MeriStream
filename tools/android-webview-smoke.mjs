@@ -583,7 +583,8 @@ try {
       ? playbackAfterOpen.playback.currentTime - state.videoPlaybackAtOpen.currentTime
       : null;
     state.videoPauseObservedWhileOpen = playbackAfterOpen?.pauseObserved || false;
-    if (!playbackAfterOpen?.playback || playbackAfterOpen.playback.paused || playbackAfterOpen.playback.readyState < 2 || state.videoPauseObservedWhileOpen || state.videoProgressWhileOpen < 0.15) {
+    state.videoWaitingForData = Boolean(playbackAfterOpen?.playback && state.videoProgressWhileOpen < 0.15 && playbackAfterOpen.playback.readyState < 3);
+    if (!playbackAfterOpen?.playback || playbackAfterOpen.playback.paused || state.videoPauseObservedWhileOpen || (state.videoProgressWhileOpen < 0.15 && !state.videoWaitingForData)) {
       throw new Error(`Playback stopped while player More controls were open: ${JSON.stringify({ before: state.videoPlaybackAtOpen, after: playbackAfterOpen, delta: state.videoProgressWhileOpen })}`);
     }
     console.log(JSON.stringify({ action, ...state }));

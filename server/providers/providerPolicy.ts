@@ -93,6 +93,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     subtitleLanguages: ["es", "en"],
     discovery: "direct_api",
     resolver: "anime-sdk",
+    notes: "Fallback integrado en el proceso mediante anime-sdk; ANIME_SDK_URL permite sustituirlo por una instancia HTTP propia.",
   },
   streamprovider: {
     id: "streamprovider",

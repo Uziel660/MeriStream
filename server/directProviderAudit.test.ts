@@ -24,13 +24,13 @@ describe("direct provider audit", () => {
   it("keeps unconfigured clients visible to the administrator", async () => {
     const summary = await auditDirectProviders({
       providers: [{
-        id: "anime-sdk",
-        kinds: ["anime"],
+        id: "streamprovider",
+        kinds: ["movie"],
         resolve: async () => [],
       }],
     });
 
-    const entry = summary.entries.find((candidate) => candidate.provider === "anime-sdk");
+    const entry = summary.entries.find((candidate) => candidate.provider === "streamprovider");
     expect(entry).toMatchObject({ configured: false, ok: false });
     expect(entry?.anomalies).toContain("not_configured");
   });

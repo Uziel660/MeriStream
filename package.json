@@ -47,6 +47,7 @@
     "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^5.22.0",
     "ai": "^7.0.93",
+    "anime-sdk": "^1.1.0",
     "ass-compiler": "^0.1.16",
     "bcryptjs": "^3.0.3",
     "chardet": "^2.2.0",

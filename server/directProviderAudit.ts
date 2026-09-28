@@ -89,7 +89,9 @@ function configuredFor(provider: DirectStreamProvider): boolean {
       return Boolean(String(process.env.FLIXQUEST_API_URLS || process.env.FLIXQUEST_API_URL || "").trim());
     case "nuvio":
       return Boolean(String(process.env.NUVIO_STREAMS_URLS || process.env.NUVIO_STREAMS_URL || "").trim());
-    case "anime-sdk": return Boolean(String(process.env.ANIME_SDK_URL || "").trim());
+    // The anime-sdk client has a self-hosted in-process fallback; ANIME_SDK_URL
+    // remains an optional override for operators that run its HTTP service.
+    case "anime-sdk": return String(process.env.MERISTREAM_DISABLE_BUILTIN_ANIME_SDK || "").trim().toLowerCase() !== "true";
     case "streamprovider": return Boolean(String(process.env.STREAM_PROVIDER_URL || "").trim());
     case "stremio-direct": return Boolean(String(process.env.STREMIO_DIRECT_ADDONS || "").trim());
     default: return true;

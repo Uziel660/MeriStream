@@ -3983,6 +3983,60 @@ async function startServer() {
       };
       const candidatesToRank = realStreams.filter((u) => !isDeadHost(u));
 
+      // No confiar en una ruta que solo parece media. Los relays internos
+      // (Mega/Pixeldrain) pueden devolver 5xx aunque el extractor haya
+      // encontrado el enlace, y los CDNs externos pueden responder 200 con un
+      // manifiesto vencido. Sondear únicamente los directos, en paralelo y con
+      // memoización por solicitud, deja las páginas canónicas disponibles para
+      // JIT sin presentar un servidor muerto como reproducible.
+      const directProbeMemo = new Map<string, Promise<boolean>>();
+      const probeEpisodeCandidate = (candidate: string): Promise<boolean> => {
+        if (!isDirectMedia(candidate)) return Promise.resolve(true);
+        const remembered = directProbeMemo.get(candidate);
+        if (remembered) return remembered;
+
+        const pending = (async () => {
+          try {
+            if (/^\/api\/v1\/playback\//i.test(candidate)) return true;
+            if (/^\/api\/v1\//i.test(candidate)) {
+              const port = Number(process.env.PORT || 3010) || 3010;
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 5_000);
+              try {
+                const response = await fetch(`http://127.0.0.1:${port}${candidate}`, {
+                  method: "GET",
+                  headers: { Range: "bytes=0-1023" },
+                  signal: controller.signal,
+                });
+                if (!response.ok) return false;
+                const bytes = new Uint8Array(await response.arrayBuffer());
+                if (bytes.length === 0) return false;
+                const prefix = new TextDecoder().decode(bytes.slice(0, 256)).trimStart();
+                const isManifest = /(?:url|target)=/i.test(candidate) && /(?:\.m3u8|\.mpd|\/m3u8\/)/i.test(candidate);
+                return !isManifest || prefix.includes("#EXTM3U") || /<MPD\b/i.test(prefix);
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+
+            const health = await probeStream(candidate, {
+              timeoutMs: 4_000,
+              playerReferer: url,
+            });
+            return health.ok;
+          } catch {
+            return false;
+          }
+        })();
+        directProbeMemo.set(candidate, pending);
+        return pending;
+      };
+
+      const candidateHealth = await Promise.all(
+        candidatesToRank.map((candidate) => probeEpisodeCandidate(candidate)),
+      );
+      const validatedCandidatesToRank = candidatesToRank.filter((_candidate, index) => candidateHealth[index]);
+
       // HiAnimes/Zoko/Megaplay entrega un manifiesto temporal que exige el Referer del
       // CDN. Recuperar su metadata aquí evita que el JIT lo adjunte sin
       // cabeceras y termine en un 403 aunque la URL sea correcta.
@@ -4030,7 +4084,7 @@ async function startServer() {
       // resolve those locators JIT if the first direct stream later fails.
       // Hosts whose direct URL needs extra metadata (Vimeos/Zoko headers) stay
       // on the full path below so their delivery contract is preserved.
-      const fastDirect = extracted.stream_url && isDirectMedia(extracted.stream_url)
+      const fastDirect = extracted.stream_url && validatedCandidatesToRank.includes(extracted.stream_url) && isDirectMedia(extracted.stream_url)
         && !isSourcePage(extracted.stream_url)
         && !isDeadHost(extracted.stream_url)
         && !/vimeos\.[a-z]+|p\d+\.vimeos\.zip|zokoanime\.video\/stream\//i.test(extracted.stream_url)
@@ -4084,7 +4138,7 @@ async function startServer() {
         return res.json({
           url,
           stream_url: browserSafeDirectUrl(fastDirect),
-          all_available_streams: candidatesToRank.map((value) => browserSafeDirectUrl(value)),
+          all_available_streams: validatedCandidatesToRank.map((value) => browserSafeDirectUrl(value)),
           title: extracted.title,
           resolved: true,
           ranked_streams: safeFastRanked,
@@ -4226,7 +4280,7 @@ async function startServer() {
       });
 
       const primaryCandidate = rankedStreams.find((r) => r.type === "direct" || isDirectMedia(r.url)) || rankedStreams[0];
-      const finalStreamUrl = primaryCandidate?.url || extracted.stream_url;
+      const finalStreamUrl = primaryCandidate?.url || "";
       // A list of unresolved embeds is still useful as diagnostics/failover
       // candidates, but it is not a playable resolution. Reporting it as
       // resolved made the player enter a false-success state and retry the
@@ -4238,7 +4292,7 @@ async function startServer() {
       res.json({
         url,
         stream_url: browserSafeDirectUrl(finalStreamUrl),
-        all_available_streams: candidatesToRank.map((value) => browserSafeDirectUrl(value)),
+        all_available_streams: validatedCandidatesToRank.map((value) => browserSafeDirectUrl(value)),
         title: extracted.title,
         resolved: isResolved,
         requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,

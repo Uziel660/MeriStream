@@ -1,9 +1,10 @@
 import * as cheerio from "cheerio";
 import { COMMON_HEADERS } from "../BaseAdapter";
 import { GenericAdapter } from "./GenericAdapter";
-import { ContentKind, ExtractedCatalogItem, UniversalAnalysisResult } from "../../types";
+import { ContentKind, ExtractedCatalogItem, SourceLinkInput, UniversalAnalysisResult } from "../../types";
 import { cleanQueryTitle, enrichUniversalMetadata } from "../../metadataEngine";
 import { normalizeTitleKey } from "../../utils/titleNormalizer";
+import { isGnulaCanonicalPageHost, isGnulaLifeHost } from "../../gnulaIdentity";
 
 type GnulaPlayerPayload = {
   title?: string;
@@ -84,14 +85,281 @@ function isGnulaPlaceholderStream(value: string | undefined | null): boolean {
   return Boolean(value && /\/wp-content\/uploads\/epix\/aviso\.mp4(?:\?|#|$)/i.test(value));
 }
 
+function isGnulaLifeCatalogRoute(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return isGnulaLifeHost(url.hostname) && (
+      url.pathname === "/" ||
+      /^\/archives\/(?:movies|series)(?:\/|$)/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isGnulaLifeMovieRoute(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return isGnulaLifeHost(url.hostname) && /^\/movies\/[^/]+\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isGnulaLifeSeriesRoute(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return isGnulaLifeHost(url.hostname) && /^\/series\/[^/]+\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isGnulaLifeEpisodeRoute(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return isGnulaLifeHost(url.hostname)
+      && /^\/series\/[^/]+\/seasons\/\d+\/episodes\/\d+\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function lifeYear(value: unknown): number {
+  const year = new Date(String(value || "")).getUTCFullYear();
+  return year >= 1900 && year <= 2100 ? year : 0;
+}
+
+function lifePoster(post: any): string | null {
+  return typeof post?.images?.poster === "string"
+    ? post.images.poster
+    : typeof post?.images?.backdrop === "string"
+      ? post.images.backdrop
+      : null;
+}
+
+function lifeGenres(post: any): string[] {
+  return Array.isArray(post?.genres)
+    ? post.genres.map((genre: any) => typeof genre === "string" ? genre : genre?.name).filter(Boolean)
+    : [];
+}
+
+function lifeSourceRendition(language: string): Pick<SourceLinkInput, "language" | "audio_language" | "subtitle_language" | "link_type"> {
+  const normalized = language.toLowerCase();
+  if (normalized === "latino") return { language: "dub", audio_language: "es-419", link_type: "dub" };
+  if (normalized === "spanish") return { language: "dub", audio_language: "es-ES", link_type: "dub" };
+  if (normalized === "english") return { language: "sub", audio_language: "en", subtitle_language: "es", link_type: "sub" };
+  return { language: "sub", subtitle_language: "es", link_type: "sub" };
+}
+
 /** Catálogo GNULA: sus fichas viven exclusivamente en enlaces `.gnrd-card`. */
 export class GnulaAdapter extends GenericAdapter {
   readonly id = "gnula";
   readonly name = "GNULA (Películas, Series y Anime)";
-  readonly supportedDomains = ["gnulahd.nu", "ww3.gnulahd.nu"];
+  readonly supportedDomains = ["gnulahd.nu", "gnula.life"];
 
   canHandle(url: string): boolean {
-    return /(^|\.)gnulahd\.nu/i.test(new URL(url).hostname);
+    try {
+      return isGnulaCanonicalPageHost(new URL(url).hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  private parseLifeNextData(html: string): any | null {
+    const match = html.match(/<script\s+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (!match?.[1]) return null;
+    try { return JSON.parse(match[1]); } catch { return null; }
+  }
+
+  private lifeSourceEntries(data: any): SourceLinkInput[] {
+    const pageProps = data?.props?.pageProps || {};
+    const playerGroups = pageProps.episode?.players || pageProps.post?.players || {};
+    const sources: SourceLinkInput[] = [];
+    const seen = new Set<string>();
+    for (const [language, entries] of Object.entries(playerGroups)) {
+      if (!Array.isArray(entries)) continue;
+      const rendition = lifeSourceRendition(language);
+      for (const entry of entries as any[]) {
+        const rawUrl = typeof entry?.result === "string" ? entry.result.trim() : "";
+        // GNULA's download locators are not stable playback pages. Keep only
+        // the player locators that our embed resolver can process JIT.
+        if (!/^https?:\/\/player\.gnula\.life\/player\.php\?/i.test(rawUrl) || seen.has(rawUrl)) continue;
+        seen.add(rawUrl);
+        let host = "player.gnula.life";
+        try { host = new URL(rawUrl).hostname; } catch {}
+        sources.push({
+          url: rawUrl,
+          source_site: "gnula",
+          host,
+          is_verified: false,
+          ...rendition,
+        });
+      }
+    }
+    return sources;
+  }
+
+  private async unwrapLifePlayer(playerUrl: string): Promise<string> {
+    const html = await this.fetchHtml(playerUrl, 12000);
+    if (!html) return "";
+    const target = html.match(/\b(?:var\s+)?url\s*=\s*['"]([^'"]+)['"]/i)?.[1]
+      ?.replace(/\\\//g, "/")
+      .trim() || "";
+    return /^https?:\/\//i.test(target) && target !== playerUrl ? target : "";
+  }
+
+  private async lifePlaybackUrls(data: any): Promise<string[]> {
+    const entries = this.lifeSourceEntries(data);
+    const resolved = await Promise.all(entries.map(async (entry) => {
+      try { return await this.unwrapLifePlayer(entry.url); } catch { return ""; }
+    }));
+    const playable = Array.from(new Set(resolved.filter(Boolean)));
+    // Preserve a GNULA player locator as a last-resort fallback when its
+    // wrapper is temporarily unavailable; it remains a canonical page and is
+    // never persisted as a signed media URL.
+    return playable.length > 0 ? playable : entries.map((entry) => entry.url);
+  }
+
+  private lifeEpisodeUrl(base: URL, slug: string, season: number, episode: number): string {
+    return new URL(`/series/${encodeURIComponent(slug)}/seasons/${season}/episodes/${episode}`, base.origin).toString();
+  }
+
+  private async analyzeGnulaLife(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
+    const url = new URL(input);
+    const html = await this.fetchHtml(input, 15000);
+    if (!html) {
+      if (explicitType === "catalog") throw new Error(`FETCH_FAILED: ${input}`);
+      return super.analyze(input, explicitType);
+    }
+    const data = this.parseLifeNextData(html);
+    const pageProps = data?.props?.pageProps || {};
+    const post = pageProps.post;
+
+    if (isGnulaLifeCatalogRoute(input) && !isGnulaLifeMovieRoute(input) && !isGnulaLifeSeriesRoute(input)) {
+      const path = url.pathname.toLowerCase();
+      const kind: ContentKind = path.includes("/series") ? "series" : "movie";
+      const rows = Array.isArray(pageProps.results?.data) ? pageProps.results.data : [];
+      const items: ExtractedCatalogItem[] = rows
+        .map((row: any) => {
+          const slug = typeof row?.slug?.name === "string" ? row.slug.name : "";
+          const title = typeof row?.titles?.name === "string" ? row.titles.name.trim() : "";
+          if (!slug || !title) return null;
+          const rowKind = kind;
+          const itemPath = rowKind === "series" ? `/series/${slug}` : `/movies/${slug}`;
+          return {
+            title: cleanQueryTitle(title),
+            url: new URL(itemPath, url.origin).toString(),
+            image_url: typeof row?.images?.poster === "string" ? row.images.poster : null,
+            kind: rowKind,
+            year: lifeYear(row?.releaseDate) || null,
+          };
+        })
+        .filter((item: ExtractedCatalogItem | null): item is ExtractedCatalogItem => Boolean(item));
+      // The home page has no paginated results object; use its canonical cards
+      // as a small discovery catalog while full imports start at /archives/.
+      if (items.length === 0 && url.pathname === "/") {
+        const seen = new Set<string>();
+        cheerio.load(html)("a[href^='/movies/'], a[href^='/series/']").each((_, element) => {
+          const href = cheerio.load(html)(element).attr("href") || "";
+          const title = cheerio.load(html)(element).find("h2").first().text().trim()
+            || cheerio.load(html)(element).find("img").first().attr("alt") || "";
+          if (!href || !title) return;
+          const itemUrl = new URL(href, url.origin).toString();
+          if (seen.has(itemUrl)) return;
+          seen.add(itemUrl);
+          items.push({ title: cleanQueryTitle(title), url: itemUrl, kind: href.startsWith("/series/") ? "series" : "movie" });
+        });
+      }
+      const current = Number(pageProps.currentPage) || 1;
+      const totalPages = Number(pageProps.results?.pages) || 0;
+      const nextPageUrl = totalPages > current
+        ? new URL(`${url.pathname.replace(/\/$/, "")}/page/${current + 1}`, url.origin).toString()
+        : null;
+      return {
+        page_type: "catalog",
+        content_type: kind,
+        title: kind === "series" ? "Series GNULA" : "Películas GNULA",
+        description: `Catálogo GNULA: ${items.length} fichas en la página ${current}.`,
+        poster_url: items[0]?.image_url || null,
+        banner_url: null,
+        rating: 0,
+        year: 0,
+        status: "Catálogo",
+        genres: [kind === "series" ? "Series" : "Películas"],
+        source_domain: url.hostname,
+        episodes: [],
+        catalog_items: items,
+        next_page_url: nextPageUrl,
+      };
+    }
+
+    if (!data || !post && !pageProps.serie && !pageProps.episode) return super.analyze(input, explicitType);
+
+    const isEpisode = isGnulaLifeEpisodeRoute(input);
+    const seriesPost = post || pageProps.serie || {};
+    const episode = pageProps.episode;
+    const sourceEntries = this.lifeSourceEntries(data);
+    const title = String(episode?.title || post?.titles?.name || seriesPost?.titles?.name || "Contenido GNULA").trim();
+    const kind: ContentKind = isEpisode || isGnulaLifeSeriesRoute(input) ? "series" : "movie";
+    const tmdbIdRaw = episode?.TMDbId || post?.TMDbId || seriesPost?.TMDbId;
+    const tmdbId = Number(tmdbIdRaw);
+    const poster = lifePoster(post || seriesPost);
+    const genres = lifeGenres(post || seriesPost);
+    const base = {
+      page_type: "detail" as const,
+      content_type: kind,
+      title,
+      ...(Number.isFinite(tmdbId) && tmdbId > 0 ? { tmdb_id: tmdbId } : {}),
+      original_title: title,
+      description: String(post?.overview || seriesPost?.overview || "Contenido indexado en GNULA."),
+      poster_url: poster,
+      banner_url: typeof (post || seriesPost)?.images?.backdrop === "string" ? (post || seriesPost).images.backdrop : poster,
+      rating: Number((post || seriesPost)?.rate?.average || 0) || 0,
+      year: lifeYear((post || seriesPost)?.releaseDate),
+      status: "Publicado",
+      genres,
+      source_domain: url.hostname,
+      detected_streams: sourceEntries.map((source) => source.url),
+      catalog_items: [],
+      raw_metadata: { embeds: sourceEntries.map((source) => source.url) },
+    };
+
+    if (isEpisode) {
+      const match = url.pathname.match(/\/seasons\/(\d+)\/episodes\/(\d+)/i);
+      const season = Number(match?.[1]) || 1;
+      const number = Number(match?.[2]) || 1;
+      return {
+        ...base,
+        episodes: [{ number, season, title, url: input, ...(sourceEntries.length > 0 ? { sources: sourceEntries } : {}) }],
+      };
+    }
+
+    if (isGnulaLifeSeriesRoute(input)) {
+      const episodes = (Array.isArray(post?.seasons) ? post.seasons : [])
+        .flatMap((seasonData: any) => {
+          const season = Number(seasonData?.number);
+          if (!Number.isFinite(season) || season <= 0 || !Array.isArray(seasonData?.episodes)) return [];
+          return seasonData.episodes.map((item: any) => {
+            const number = Number(item?.number);
+            const slug = String(item?.slug?.name || post?.slug?.name || "").trim();
+            if (!slug || !Number.isFinite(number) || number <= 0) return null;
+            return {
+              number,
+              season,
+              title: String(item?.title || `${title} ${season}x${number}`),
+              url: this.lifeEpisodeUrl(url, slug, season, number),
+            };
+          }).filter(Boolean);
+        })
+        .sort((a: any, b: any) => a.season - b.season || a.number - b.number);
+      return { ...base, episodes };
+    }
+
+    return {
+      ...base,
+      episodes: [{ number: 1, title: "Película Completa", url: input, ...(sourceEntries.length > 0 ? { sources: sourceEntries } : {}) }],
+    };
   }
 
   /**
@@ -239,6 +507,9 @@ export class GnulaAdapter extends GenericAdapter {
 
   async analyze(input: string, explicitType?: "auto" | "catalog" | "detail" | "stream"): Promise<UniversalAnalysisResult> {
     const url = new URL(input);
+    if (isGnulaLifeHost(url.hostname)) {
+      return this.analyzeGnulaLife(input, explicitType);
+    }
     if (explicitType !== "detail" && explicitType !== "stream") {
       const html = await this.fetchHtml(input, 12000);
       if (!html) {
@@ -406,6 +677,20 @@ export class GnulaAdapter extends GenericAdapter {
   }
 
   async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
+    try {
+      if (isGnulaLifeHost(new URL(targetUrl).hostname)) {
+        const html = await this.fetchHtml(targetUrl, 15000);
+        const data = html ? this.parseLifeNextData(html) : null;
+        const playbackUrls = data ? await this.lifePlaybackUrls(data) : [];
+        const pageProps = data?.props?.pageProps || {};
+        const title = pageProps.episode?.title || pageProps.post?.titles?.name || pageProps.serie?.titles?.name;
+        return {
+          stream_url: playbackUrls[0] || "",
+          all_available_streams: playbackUrls,
+          ...(typeof title === "string" && title.trim() ? { title: title.trim() } : {}),
+        };
+      }
+    } catch {}
     const payload = await this.playerPayload(targetUrl);
     if (payload.streams.length === 0) {
       return { stream_url: "", all_available_streams: [], ...(payload.title ? { title: payload.title } : {}) };

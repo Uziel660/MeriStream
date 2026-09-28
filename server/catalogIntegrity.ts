@@ -208,7 +208,14 @@ export async function sanitizeCatalogLandingPages(): Promise<{ totalCleaned: num
       JOIN "MediaEpisode" me ON me.id = sl.media_episode_id
       JOIN "MediaItem" mi ON mi.id = me.media_item_id
       WHERE mi.kind IN ('series', 'anime')
-        AND sl.url LIKE '%gnulahd.nu/ver/%'
+        AND (
+          sl.url LIKE '%gnulahd.nu/ver/%'
+          OR (
+            sl.source_site = 'gnula'
+            AND sl.url LIKE '%gnula.life/series/%'
+            AND sl.url NOT LIKE '%/seasons/%/episodes/%'
+          )
+        )
         AND sl.url NOT LIKE '%-1x%'
         AND sl.url NOT LIKE '%-2x%'
         AND sl.url NOT LIKE '%-3x%'

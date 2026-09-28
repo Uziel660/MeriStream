@@ -138,6 +138,7 @@ export function isRawWebpageUrl(url: string | null | undefined): boolean {
       lower.includes('gnula.nu/') ||
       lower.includes('gnula.se/') ||
       lower.includes('gnula.cc/') ||
+      lower.includes('gnula.life/') ||
       // GNULA puede entregar el reproductor terminal en estos espejos.
       // Son locators HTML y siempre deben resolverse en el servidor.
       lower.includes('the.tube/') ||

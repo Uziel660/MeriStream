@@ -9,6 +9,7 @@ import {
   isSupportedServer,
 } from "./resolvers";
 import { parseMegaUrl } from "./resolvers/megaResolver";
+import { isGnulaCanonicalPageHost } from "./gnulaIdentity";
 
 export type PlatformPlaybackResolution = PlaybackResolution & {
   provider: string;
@@ -132,8 +133,7 @@ export function isLatAnimePageUrl(rawUrl: string | URL): boolean {
 export function isGnulaPageUrl(rawUrl: string | URL): boolean {
   try {
     const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
-    const host = url.hostname.toLowerCase();
-    return /(?:^|\.)gnulahd\.nu$/i.test(host) || /(?:^|\.)gnula\.(?:nu|se|cc)$/i.test(host);
+    return isGnulaCanonicalPageHost(url.hostname);
   } catch {
     return false;
   }
@@ -340,7 +340,7 @@ interface ScoredCandidate {
  *   4. Embed genérico reproducible (score 20)
  * Excluye: URLs expiradas, placeholders, dead providers y la página HTML canónica original.
  */
-function scoreCandidate(candidateUrl: string, cleanUrl: string, now: number): ScoredCandidate | null {
+function scoreCandidate(candidateUrl: string, cleanUrl: string, now: number, allowGnulaVoe = false): ScoredCandidate | null {
   const c = (candidateUrl || "").trim();
   if (!c) return null;
 
@@ -352,7 +352,7 @@ function scoreCandidate(candidateUrl: string, cleanUrl: string, now: number): Sc
 
   // Descartar placeholders y dominios de proveedores muertos
   if (EmbedResolvers.isPlaceholderUrl(c)) return null;
-  if (!isValidProvider(c)) return null;
+  if (!isValidProvider(c) && !(allowGnulaVoe && /voe\.sx\//i.test(c))) return null;
 
   const isDirect = EmbedResolvers.isDirectMediaUrl(c);
   if (isDirect) {
@@ -485,7 +485,7 @@ export async function resolvePlatformPage(
 
   const allCandidates = [streamUrl, ...availableStreams].filter(Boolean);
   const scoredList = allCandidates
-    .map((cand) => scoreCandidate(cand, cleanUrl, now))
+    .map((cand) => scoreCandidate(cand, cleanUrl, now, isGnulaPageUrl(cleanUrl)))
     .filter((cand): cand is ScoredCandidate => cand !== null)
     .sort((a, b) => b.score - a.score);
 

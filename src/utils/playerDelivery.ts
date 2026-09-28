@@ -144,6 +144,7 @@ export function isUnresolvedCanonical(url: string | null | undefined): boolean {
     lower.includes('gnula.nu') ||
     lower.includes('gnula.se') ||
     lower.includes('gnula.cc') ||
+    lower.includes('gnula.life') ||
     lower.includes('doramasflix.') ||
     lower.includes('doramasia.') ||
     lower.includes('tudorama.') ||

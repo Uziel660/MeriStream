@@ -187,8 +187,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     subtitleLanguages: ["es", "en"],
     discovery: "page",
     resolver: "gnula",
-    hosts: ["gnulahd.nu"],
-    notes: "Proveedor prioritario del catálogo; la ficha entrega Byse/otros locators y Byse resolvió a HLS SprintCDN en la auditoría pública.",
+    hosts: ["gnulahd.nu", "gnula.life"],
+    notes: "Proveedor prioritario del catálogo. Se aceptan solo gnulahd.nu y gnula.life tras validar catálogo, ficha, TMDB, idiomas y locators JIT; otros clones quedan fuera hasta pasar la misma batería.",
   },
   "archive-org": {
     id: "archive-org",
@@ -374,6 +374,7 @@ const SITE_ALIASES: Record<string, string> = {
   "cinecalidad.am": "cinecalidad",
   "lamovie.org": "lamovie",
   "gnulahd.nu": "gnula",
+  "gnula.life": "gnula",
   "hianimes.se": "hianimes",
   "latanime.org": "latanime",
   "tioanime.com": "tioanime",

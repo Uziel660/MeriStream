@@ -13,6 +13,7 @@ import {
   isDoramasiaPageUrl,
   isTudoramaPageUrl,
   isAnimeAv1PageUrl,
+  isGnulaPageUrl,
 } from "./platformPageResolvers";
 import { EmbedResolvers, providerResolverRegistry } from "./resolvers";
 
@@ -42,6 +43,13 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
       expect(isPlatformPageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen/1")).toBe(true);
       expect(isAnimeAv1PageUrl("https://animeav1.com/media/bleach-sennen-kessen-hen")).toBe(false);
+    });
+
+    it("identifies only verified GNULA page mirrors", () => {
+      expect(isGnulaPageUrl("https://ww3.gnulahd.nu/ver/demo/")).toBe(true);
+      expect(isGnulaPageUrl("https://gnula.life/movies/unabomber")).toBe(true);
+      expect(isGnulaPageUrl("https://gnula.la/movies/unabomber")).toBe(false);
+      expect(isGnulaPageUrl("https://player.gnula.life/player.php?h=abc")).toBe(false);
     });
 
     it("identifies Doramasia canonical pages without matching lookalike hosts", () => {

@@ -82,4 +82,77 @@ describe("GnulaAdapter player endpoint", () => {
       "https://voe.sx/e/sub",
     ]);
   });
+
+  it("integra gnula.life como espejo verificado y conserva una identidad gnula", async () => {
+    const adapter = new GnulaAdapter();
+    expect(adapter.canHandle("https://gnula.life/movies/unabomber")).toBe(true);
+    expect(adapter.canHandle("https://gnula.la/movies/unabomber")).toBe(false);
+
+    const catalogData = {
+      props: { pageProps: {
+        currentPage: 2,
+        results: { pages: 2, data: [{ titles: { name: "UNABOMBER" }, TMDbId: "1492640", releaseDate: "2026-09-25T00:00:00.000Z", images: { poster: "https://image.tmdb.org/t/p/original/poster.jpg" }, slug: { name: "unabomber" } }] },
+      } },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/archives/movies/page/2")) {
+        return new Response(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(catalogData)}</script>`, { status: 200 });
+      }
+      return new Response(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+        props: { pageProps: {
+          post: {
+            TMDbId: "1492640",
+            titles: { name: "UNABOMBER" },
+            overview: "A verified GNULA movie.",
+            images: { poster: "https://image.tmdb.org/t/p/original/poster.jpg" },
+            genres: [{ name: "Crimen" }],
+            releaseDate: "2026-09-25T00:00:00.000Z",
+            rate: { average: 7.08 },
+            players: {
+              latino: [{ cyberlocker: "streamwish", result: "https://player.gnula.life/player.php?h=latino" }],
+              english: [{ cyberlocker: "doodstream", result: "https://player.gnula.life/player.php?h=english" }],
+            },
+          },
+        } },
+      })}</script>`, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const catalog = await adapter.analyze("https://gnula.life/archives/movies/page/2", "catalog");
+    expect(catalog.page_type).toBe("catalog");
+    expect(catalog.catalog_items[0]).toMatchObject({ title: "UNABOMBER", kind: "movie", year: 2026 });
+    expect(catalog.next_page_url).toBeNull();
+
+    const detail = await adapter.analyze("https://gnula.life/movies/unabomber", "auto");
+    expect(detail.tmdb_id).toBe(1492640);
+    expect(detail.episodes[0].url).toBe("https://gnula.life/movies/unabomber");
+    expect(detail.episodes[0].sources).toHaveLength(2);
+    expect(detail.episodes[0].sources?.[0]).toMatchObject({ source_site: "gnula", audio_language: "es-419", link_type: "dub" });
+
+    const streams = await adapter.extractStream("https://gnula.life/movies/unabomber");
+    expect(streams.all_available_streams).toEqual([
+      "https://player.gnula.life/player.php?h=latino",
+      "https://player.gnula.life/player.php?h=english",
+    ]);
+  });
+
+  it("convierte temporadas de gnula.life en localizadores de episodio estables", async () => {
+    const fixture = {
+      props: { pageProps: { post: {
+        TMDbId: "1399",
+        titles: { name: "One Piece" },
+        overview: "Serie verificada.",
+        images: { poster: "https://image.tmdb.org/t/p/original/one-piece.jpg" },
+        releaseDate: "1999-10-20T00:00:00.000Z",
+        rate: { average: 8.8 },
+        seasons: [{ number: 1, episodes: [{ title: "One Piece 1x1", number: 1, slug: { name: "one-piece" } }] }],
+      } } },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(fixture)}</script>`, { status: 200 })));
+
+    const result = await new GnulaAdapter().analyze("https://gnula.life/series/one-piece", "detail");
+    expect(result.content_type).toBe("series");
+    expect(result.episodes).toEqual([{ number: 1, season: 1, title: "One Piece 1x1", url: "https://gnula.life/series/one-piece/seasons/1/episodes/1" }]);
+  });
 });

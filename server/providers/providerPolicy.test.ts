@@ -20,6 +20,8 @@ describe("provider policy v2", () => {
   it("normalizes rotating subdomains to stable provider ids", () => {
     expect(normalizeProviderId("https://cdn.animeav1.com/covers/1.jpg")).toBe("animeav1");
     expect(normalizeProviderId("https://ww3.gnulahd.nu/ver/peliculas/")).toBe("gnula");
+    expect(normalizeProviderId("https://gnula.life/movies/unabomber")).toBe("gnula");
+    expect(normalizeProviderId("https://player.gnula.life/player.php?h=abc")).toBe("gnula");
     expect(normalizeProviderId("https://video.example.com/watch/123?token=abc")).toBe("video.example.com");
   });
 

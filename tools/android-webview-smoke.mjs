@@ -460,10 +460,17 @@ try {
       throw new Error(`Play did not remain immersive without system bar toggles: ${JSON.stringify(result)}`);
     }
   } else if (action === 'open-player-more') {
-    const openResult = await evaluate(call, `(() => {
+    const openResult = await evaluate(call, `(async () => {
       const button = document.querySelector('button[aria-label="Más controles"]');
       if (!button) return { opened: false, videoPlayback: null };
       const video = document.querySelector('[data-player-root] video');
+      if (video && Number.isFinite(video.duration) && video.duration > 2 && video.duration - video.currentTime < 2) {
+        video.currentTime = Math.min(1, video.duration / 4);
+        if (video.paused) {
+          try { await video.play(); } catch (error) {}
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
       const videoPlayback = video ? { paused: video.paused, currentTime: video.currentTime, readyState: video.readyState } : null;
       const pauseProbe = { observed: false, listener: null };
       if (video) {
@@ -473,7 +480,7 @@ try {
       window.__meristreamMorePauseProbe = pauseProbe;
       button.click();
       return { opened: true, videoPlayback };
-    })()`);
+    })()`, true, true);
     if (!openResult?.opened) throw new Error('Player More button was not found');
     await delay(250);
     const state = await evaluate(call, `(() => {
@@ -615,10 +622,17 @@ try {
       })()`);
     };
 
-    const initial = await evaluate(call, `(() => {
+    const initial = await evaluate(call, `(async () => {
       const video = document.querySelector('[data-player-root] video');
+      if (video && Number.isFinite(video.duration) && video.duration > 2) {
+        video.currentTime = Math.min(0.5, video.duration / 4);
+        if (video.paused) {
+          try { await video.play(); } catch (error) {}
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       return video ? { currentTime: video.currentTime, duration: video.duration, muted: video.muted } : null;
-    })()`);
+    })()`, true, true);
     if (!initial || !Number.isFinite(initial.duration) || initial.duration <= 0) {
       throw new Error(`Player duration was not ready for More action checks: ${JSON.stringify(initial)}`);
     }

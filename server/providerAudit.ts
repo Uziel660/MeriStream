@@ -73,6 +73,10 @@ const CORE_TARGETS: ProviderAuditTarget[] = [
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const DEFAULT_CONCURRENCY = 3;
+// A provider catalog can put premieres without uploaded episodes first. Keep
+// the conformance check bounded, but sample enough cards to find a genuinely
+// playable contract before reporting the provider as unavailable.
+const MAX_CATALOG_CONTRACT_CANDIDATES = 24;
 
 function withTimeout<T>(promise: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -140,7 +144,7 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
     // provider has not uploaded the first server. Probe a bounded sample and
     // select the first genuinely playable contract instead of declaring the
     // entire provider dead from one unlucky card.
-    const candidates = requestedMode === "detail" ? [items[0]] : items.slice(0, 6);
+    const candidates = requestedMode === "detail" ? [items[0]] : items.slice(0, MAX_CATALOG_CONTRACT_CANDIDATES);
     let checkedCandidates = 0;
     let best: { item: ExtractedCatalogItem; detail: UniversalAnalysisResult; streamResult: { stream_url?: string; all_available_streams?: string[] } | null; anomalies: string[]; streams: string[]; score: number } | null = null;
     for (const candidate of candidates) {

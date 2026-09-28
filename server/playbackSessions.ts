@@ -6,6 +6,8 @@ import { EmbedResolvers, type ResolvedStreamMeta } from "./resolvers";
 import { buildPlaybackHeaders } from "./hostProfiles";
 import { createResolutionTiming } from "./resolutionMetadata";
 
+const REFRESHABLE_UPSTREAM_STATUSES = new Set([401, 403, 404, 410, 429, 500, 502, 503, 504]);
+
 export type PlaybackResolver = (originalUrl: string) => Promise<ResolvedStreamMeta>;
 
 interface PlaybackResource {
@@ -187,7 +189,7 @@ export class PlaybackSessionStore {
    * error during rotation.
    */
   async refreshForUpstreamStatus(id: string, status: number): Promise<ResolvedStreamMeta | undefined> {
-    if (![401, 403, 404, 410, 429, 500, 502, 503, 504].includes(status)) return undefined;
+    if (!REFRESHABLE_UPSTREAM_STATUSES.has(status)) return undefined;
     const session = this.require(id);
     if (!session.current.is_refreshable || !session.current.canonical_locator) return undefined;
     return this.refresh(id, true);
@@ -552,7 +554,7 @@ export function createPlaybackSessionHandlers(
         return fetch(target, { headers: new Headers(merged.headers), signal: controller.signal });
       };
       let upstream = await fetchUpstream(url);
-      if (upstream.status === 401 || upstream.status === 403) {
+      if (REFRESHABLE_UPSTREAM_STATUSES.has(upstream.status)) {
         const refreshed = await store.refreshForUpstreamStatus(sessionId, upstream.status);
         // resourceUrl replays its relative locator against the new root, avoiding a
         // retry of the exact signed absolute URL that just returned 401/403.

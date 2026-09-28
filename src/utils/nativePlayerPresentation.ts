@@ -80,6 +80,14 @@ export function createNativePlayerPresentationController(
             const version = desiredVersion;
             const nextOrientationLocked = isOpen && isFullscreen;
             if (orientationLocked !== nextOrientationLocked) {
+              if (nextOrientationLocked) {
+                // Change the system bars before rotating the Android window.
+                // Starting both native plugins at once can crash older WebView
+                // builds while their surface is being recreated.
+                await barsTransitions;
+                if (version !== desiredVersion) continue;
+              }
+
               orientationLocked = nextOrientationLocked;
               try {
                 if (nextOrientationLocked) await port.lockLandscape();

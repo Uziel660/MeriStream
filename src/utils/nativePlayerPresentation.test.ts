@@ -132,6 +132,42 @@ describe('native player presentation lifecycle', () => {
     ]);
   });
 
+  it('finishes the initial immersive bar change before rotating the Android window', async () => {
+    const calls: string[] = [];
+    let releaseBars: (() => void) | undefined;
+    let notifyBarsStarted: (() => void) | undefined;
+    const barsStarted = new Promise<void>((resolve) => {
+      notifyBarsStarted = resolve;
+    });
+    const barsPending = new Promise<void>((resolve) => {
+      releaseBars = resolve;
+    });
+    const player = createNativePlayerPresentationController({
+      setSystemBarsHidden: vi.fn(async (hidden: boolean) => {
+        calls.push(`bars:${hidden}`);
+        notifyBarsStarted?.();
+        await barsPending;
+      }),
+      lockLandscape: vi.fn(async () => {
+        calls.push('orientation:lock');
+      }),
+      unlockOrientation: vi.fn(async () => {
+        calls.push('orientation:unlock');
+      }),
+    });
+
+    const opening = player.open();
+    await barsStarted;
+    await Promise.resolve();
+
+    expect(calls).toEqual(['bars:true']);
+
+    releaseBars?.();
+    await opening;
+
+    expect(calls).toEqual(['bars:true', 'orientation:lock']);
+  });
+
   it('drops stale native presentation transitions while a slow plugin call is pending', async () => {
     const systemBarTransitions: boolean[] = [];
     let releaseFirstTransition: (() => void) | undefined;

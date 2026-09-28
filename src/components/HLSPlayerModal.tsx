@@ -42,7 +42,7 @@ import {
   subtitleTimelineTime,
   type SubtitleTimingSettings,
 } from '../utils/subtitleTiming';
-// proxiedStreamUrl removed
+import { proxiedStreamUrl } from '../utils/proxiedUrl';
 import {
   rankAndSortServers,
   quickProbeServerHealth,
@@ -548,6 +548,19 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
       }
 
+      // El receptor de Chromecast no comparte el origen del navegador. Las
+      // fuentes externas deben viajar por el relay público de MeriStream y las
+      // rutas internas deben convertirse en absolutas para que el receptor
+      // pueda resolverlas desde Internet.
+      castUrl = proxiedStreamUrl(
+        castUrl,
+        props.title || media?.title || '',
+        activeServer.provider || 'Servidor',
+      );
+      if (castUrl.startsWith('/') && typeof window !== 'undefined') {
+        castUrl = new URL(castUrl, window.location.origin).toString();
+      }
+
       const success = await loadMediaOnCast({
         url: castUrl,
         title: props.title || media?.title || 'MeriStream',
@@ -878,7 +891,11 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
             const currentPos = videoRef.current?.currentTime || 0;
             const wasPlaying = !videoRef.current?.paused;
             if (hlsRef.current && res.url !== activeServer.url) {
-              hlsRef.current.loadSource(res.url);
+              hlsRef.current.loadSource(proxiedStreamUrl(
+                res.url,
+                props.title || media?.title || '',
+                activeServer.provider || 'Servidor',
+              ));
               if (currentPos > 0) videoRef.current!.currentTime = currentPos;
               if (wasPlaying) videoRef.current!.play().catch(() => {});
             } else if (dashRef.current && res.url !== activeServer.url) {
@@ -895,7 +912,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
       }, timeToRefresh);
     }
-  }, [servers, activeServerIndex, deliveryState, isPlaying]);
+  }, [servers, activeServerIndex, deliveryState, isPlaying, props.title, media?.title]);
 
   // 1. RECOPILACIÓN, CALIFICACIÓN Y AUTO-SELECCIÓN DEL MEJOR SERVIDOR
   // INICIALIZACIÓN ESTABLE (defecto #11): no se reconstruye la lista ni se vuelve
@@ -1515,12 +1532,14 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const currentTitle = props.title || media?.title || '';
     const currentProv = activeServer?.provider || 'Servidor';
+    const browserUrl = proxiedStreamUrl(url, currentTitle, currentProv);
+    const usingBrowserProxy = browserUrl !== url;
 
     const markNativePlaybackStarted = () => {
       if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
       playbackConfirmedRef.current = true;
       setPlaybackError(null);
-      setDeliveryState('playing_direct');
+      setDeliveryState(usingBrowserProxy ? 'playing_proxy' : 'playing_direct');
     };
 
     const setupDash = async (playUrl: string) => {
@@ -1621,7 +1640,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
           if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
           playbackConfirmedRef.current = true;
           setPlaybackError(null);
-          setDeliveryState(prev => prev === 'trying_direct' ? 'playing_direct' : prev);
+          setDeliveryState(prev => prev === 'trying_direct'
+            ? (usingBrowserProxy ? 'playing_proxy' : 'playing_direct')
+            : prev);
 
           const levels: { index: number; label: string; height?: number }[] = data.levels.map((lvl: Level, idx: number) => ({
             index: idx,
@@ -1835,7 +1856,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return;
     }
     const capability = getDeliveryCapability(url, activeServer?.provider);
-    let finalUrl = url;
+    // Todo stream externo usa el proxy anti-CORS; las rutas internas de
+    // MeriStream se conservan para no crear una segunda sesión de resolución.
+    let finalUrl = browserUrl;
 
     // Hacia el proxy SOLO si una marca previa o la resolución lo exige
     const intent = nextDeliveryIntent(activeServer, capability);
@@ -1998,7 +2021,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         }
         video.play().catch(() => {});
         playbackConfirmedRef.current = true;
-        setDeliveryState('playing_direct');
+        setDeliveryState(usingBrowserProxy ? 'playing_proxy' : 'playing_direct');
         setDeliveryCapability(url, 'direct_ok', activeServer?.provider);
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
       };

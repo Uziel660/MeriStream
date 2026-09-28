@@ -415,7 +415,7 @@ function isDashManifest(response: Response, url: string): boolean {
  * well-known media suffixes; genuine HTML error pages remain untouched and
  * still fail normally at the player.
  */
-export function relayContentType(response: Response, url: string): string | null {
+export function relayContentType(response: Response, url: string, prefix?: Uint8Array): string | null {
   const original = response.headers.get("content-type");
   if (!original || !/text\/html/i.test(original)) return original;
   let pathname = "";
@@ -424,7 +424,43 @@ export function relayContentType(response: Response, url: string): string | null
   if (/\.m4s$/.test(pathname)) return "video/iso.segment";
   if (/\.(?:aac|m4a)$/.test(pathname)) return "audio/aac";
   if (/\.(?:mp4|webm)$/.test(pathname)) return pathname.endsWith(".webm") ? "video/webm" : "video/mp4";
+  // Some HLS CDNs mislabel opaque segment URLs as HTML while returning valid
+  // media bytes. Only correct the MIME when a strong container signature is
+  // present; real HTML error pages remain untouched.
+  if (prefix && prefix.byteLength >= 4) {
+    const isTs = prefix[0] === 0x47 && (prefix.byteLength < 189 || prefix[188] === 0x47);
+    if (isTs) return "video/mp2t";
+    const ascii = new TextDecoder().decode(prefix.slice(0, Math.min(prefix.byteLength, 16)));
+    if (ascii.includes("ftyp") || ascii.includes("moof")) return "video/iso.segment";
+    if (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0) return "audio/aac";
+  }
   return original;
+}
+
+function streamWithPrefix(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  first: ReadableStreamReadResult<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        if (!first.done && first.value?.byteLength) controller.enqueue(first.value);
+        while (true) {
+          const next = await reader.read();
+          if (next.done) break;
+          if (next.value?.byteLength) controller.enqueue(next.value);
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    cancel(reason) {
+      void reader.cancel(reason).catch(() => undefined);
+    },
+  });
 }
 
 async function readManifestLimited(response: Response, maxBytes = 2 * 1024 * 1024): Promise<string> {
@@ -527,13 +563,25 @@ export function createPlaybackSessionHandlers(
         }
       }
       status = upstream.status;
+      const manifestResponse = isManifest(upstream, upstream.url || url);
+      let bodyForRelay = upstream.body;
+      let prefix: Uint8Array | undefined;
+      let prefixReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      if (!manifestResponse && bodyForRelay && /text\/html/i.test(upstream.headers.get("content-type") || "")) {
+        // Read only the first chunk to recognize mislabeled media without
+        // buffering the segment or delaying the rest of the response.
+        prefixReader = bodyForRelay.getReader();
+        const first = await prefixReader.read();
+        prefix = first.value;
+        bodyForRelay = streamWithPrefix(prefixReader, first);
+      }
       for (const header of ["content-type", "content-length", "content-range", "accept-ranges"]) {
         const value = header === "content-type"
-          ? relayContentType(upstream, upstream.url || url)
+          ? relayContentType(upstream, upstream.url || url, prefix)
           : upstream.headers.get(header);
         if (value) res.setHeader(header, value);
       }
-      if (isManifest(upstream, upstream.url || url)) {
+      if (manifestResponse) {
         const body = await readManifestLimited(upstream);
         // The manifest body is rewritten, therefore an upstream byte length/range
         // would be incorrect even though those headers are preserved for media.
@@ -546,9 +594,9 @@ export function createPlaybackSessionHandlers(
         res.status(upstream.status).type(dash ? "application/dash+xml" : "application/vnd.apple.mpegurl").send(rewritten);
         return;
       }
-      if (!upstream.body) { res.status(upstream.status).end(); return; }
+      if (!bodyForRelay) { res.status(upstream.status).end(); return; }
       res.status(upstream.status);
-      await pipeline(Readable.fromWeb(upstream.body as never), res);
+      await pipeline(Readable.fromWeb(bodyForRelay as never), res);
     } catch (error) {
       relayError = error;
       if (!controller.signal.aborted && !res.headersSent) next(error);

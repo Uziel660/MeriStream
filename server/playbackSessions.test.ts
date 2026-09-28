@@ -19,6 +19,8 @@ describe("PlaybackSessionStore", () => {
     const response = new Response("binary", { headers: { "content-type": "text/html; charset=UTF-8" } });
     expect(relayContentType(response, "https://cdn.example/hls/seg-1.ts")).toBe("video/mp2t");
     expect(relayContentType(response, "https://cdn.example/error/page")).toMatch(/text\/html/i);
+    expect(relayContentType(response, "https://cdn.example/resource/opaque", Uint8Array.from([0x47, 0, 0, 0]))).toBe("video/mp2t");
+    expect(relayContentType(response, "https://cdn.example/resource/opaque", Uint8Array.from([60, 33, 68, 79]))).toMatch(/text\/html/i);
   });
 
   it("creates a session from existing resolution metadata without resolving twice", async () => {

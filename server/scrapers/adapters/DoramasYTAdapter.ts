@@ -251,41 +251,10 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
       // capítulo directo sigue funcionando y no se inventan episodios cuando
       // el índice no responde.
       const ajaxEpisodes = await this.extractAjaxEpisodes(url, html);
-      if (ajaxEpisodes.length > 0) {
-        // The AJAX index is authoritative. Some fichas expose alternate
-        // language slugs for the same episode number and an SSR teaser that
-        // points to episode 0; collapse those variants by number and keep the
-        // URL whose slug best matches the detail page.
-        const merged = new Map<number, ExtractedEpisode>();
-        const ajaxUrls = new Set(ajaxEpisodes.map((episode) => episode.url));
-        for (const episode of ajaxEpisodes) {
-          const current = merged.get(episode.number);
-          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
-            merged.set(episode.number, episode);
-          }
-        }
-        for (const episode of episodes) {
-          if (ajaxUrls.has(episode.url)) continue;
-          const current = merged.get(episode.number);
-          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
-            merged.set(episode.number, episode);
-          }
-        }
-        episodes = Array.from(merged.values()).sort((a, b) => a.number - b.number);
-      }
-      if (episodes.length > 1) {
-        const uniqueNumbers = new Map<number, ExtractedEpisode>();
-        for (const episode of episodes) {
-          const current = uniqueNumbers.get(episode.number);
-          if (!current || this.episodeMatchScore(episode.url, url) > this.episodeMatchScore(current.url, url)) {
-            uniqueNumbers.set(episode.number, episode);
-          }
-        }
-        episodes = Array.from(uniqueNumbers.values()).sort((a, b) => a.number - b.number);
-      }
+      episodes = this.mergeDetailEpisodes(url, episodes, ajaxEpisodes);
     }
 
-    const isMovie = /\/pel[ií]cula/i.test(url) || /\bpel[ií]cula\b/i.test(title) || episodes.length === 0 && /pel[ií]cula/i.test(description);
+    const isMovie = this.isMovieDetail(url, title, description, episodes.length);
     return {
       page_type: "detail",
       content_type: isMovie ? "movie" : "series",
@@ -301,6 +270,40 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
       episodes,
       catalog_items: [],
     };
+  }
+
+  private mergeDetailEpisodes(
+    detailUrl: string,
+    serverEpisodes: ExtractedEpisode[],
+    ajaxEpisodes: ExtractedEpisode[],
+  ): ExtractedEpisode[] {
+    const preferredByNumber = new Map<number, ExtractedEpisode>();
+    const ajaxUrls = new Set(ajaxEpisodes.map((episode) => episode.url));
+
+    for (const episode of ajaxEpisodes) {
+      this.keepBestEpisode(preferredByNumber, episode, detailUrl);
+    }
+    for (const episode of serverEpisodes) {
+      if (!ajaxUrls.has(episode.url)) this.keepBestEpisode(preferredByNumber, episode, detailUrl);
+    }
+
+    return Array.from(preferredByNumber.values()).sort((left, right) => left.number - right.number);
+  }
+
+  private keepBestEpisode(
+    episodes: Map<number, ExtractedEpisode>,
+    candidate: ExtractedEpisode,
+    detailUrl: string,
+  ): void {
+    const current = episodes.get(candidate.number);
+    if (!current || this.episodeMatchScore(candidate.url, detailUrl) > this.episodeMatchScore(current.url, detailUrl)) {
+      episodes.set(candidate.number, candidate);
+    }
+  }
+
+  private isMovieDetail(url: string, title: string, description: string, episodeCount: number): boolean {
+    if (/\/pel[ií]cula/i.test(url) || /\bpel[ií]cula\b/i.test(title)) return true;
+    return episodeCount === 0 && /pel[ií]cula/i.test(description);
   }
 
   private extractEpisodes(html: string, baseUrl: string): ExtractedEpisode[] {
@@ -453,36 +456,47 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
   private extractSourceUrls(html: string, baseUrl: string): string[] {
     const $ = cheerio.load(html);
     const output: string[] = [];
-    const add = (raw: string | undefined) => {
-      if (!raw) return;
-      let value = raw.replace(/\\\\\//g, "/").replace(/&amp;/gi, "&").trim();
-      if (!value || value.startsWith("data:") || value.startsWith("javascript:")) return;
-      if (!/^https?:\/\//i.test(value) && value.startsWith("//")) value = `https:${value}`;
-      if (!/^https?:\/\//i.test(value)) {
-        // data-player values are often encrypted Laravel tokens. Only accept a
-        // plain/base64 value when it really decodes to a URL.
-        if (/^[A-Za-z0-9+/=_-]{16,}$/.test(value)) {
-          try {
-            const decoded = Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8").trim();
-            if (/^https?:\/\//i.test(decoded)) value = decoded;
-            else return;
-          } catch { return; }
-        } else return;
-      }
-      const full = this.resolveRelativeUrl(value, baseUrl);
-      if (full && this.isCandidateUrl(full) && !output.includes(full)) output.push(full);
-    };
 
     $("a[href], iframe[src], video[src], video source[src], [data-video], [data-url], [data-src], [data-embed], [data-code], [data-player]").each((_, el) => {
-      add($(el).attr("href"));
-      add($(el).attr("src"));
-      for (const attr of ["data-video", "data-url", "data-src", "data-embed", "data-code", "data-player"]) add($(el).attr(attr));
+      this.addSourceUrl(output, $(el).attr("href"), baseUrl);
+      this.addSourceUrl(output, $(el).attr("src"), baseUrl);
+      for (const attr of ["data-video", "data-url", "data-src", "data-embed", "data-code", "data-player"]) {
+        this.addSourceUrl(output, $(el).attr(attr), baseUrl);
+      }
     });
 
     // Some server links are embedded in inline JSON/scripts rather than hrefs.
     const urlRegex = /https?:\/\/[^\s"'<>\\]+/gi;
-    for (const match of html.match(urlRegex) || []) add(match.replace(/\\u0026/g, "&"));
+    for (const match of html.match(urlRegex) || []) {
+      this.addSourceUrl(output, match.replace(/\\u0026/g, "&"), baseUrl);
+    }
     return output;
+  }
+
+  private addSourceUrl(output: string[], raw: string | undefined, baseUrl: string): void {
+    if (!raw) return;
+    const cleaned = raw.replace(/\\\\\//g, "/").replace(/&amp;/gi, "&").trim();
+    if (!cleaned || cleaned.startsWith("data:") || cleaned.startsWith("javascript:")) return;
+
+    const candidate = this.decodeSourceUrl(cleaned);
+    if (!candidate) return;
+    const full = this.resolveRelativeUrl(candidate, baseUrl);
+    if (full && this.isCandidateUrl(full) && !output.includes(full)) output.push(full);
+  }
+
+  private decodeSourceUrl(value: string): string | null {
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith("//")) return `https:${value}`;
+    // data-player values are often encrypted Laravel tokens. Only accept a
+    // plain/base64 value when it really decodes to a URL.
+    if (!/^[A-Za-z0-9+/=_-]{16,}$/.test(value)) return null;
+
+    try {
+      const decoded = Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8").trim();
+      return /^https?:\/\//i.test(decoded) ? decoded : null;
+    } catch {
+      return null;
+    }
   }
 
   private isCandidateUrl(rawUrl: string): boolean {
@@ -514,7 +528,7 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
       const url = new URL(rawUrl);
       const host = url.hostname.toLowerCase().replace(/^www\./, "");
       if (host !== "pixeldrain.com") return null;
-      const match = url.pathname.match(/^\/(?:u|file)\/([A-Za-z0-9_-]+)/i);
+      const match = url.pathname.match(/^\/(?:u|file)\/([a-z0-9_-]+)/i);
       return match ? `https://pixeldrain.com/api/file/${match[1]}` : null;
     } catch {
       return null;
@@ -527,7 +541,14 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
   }
 
   private cleanTitle(value: string): string {
-    return value.replace(/\s+/g, " ").replace(/\s*\|\s*DoramasYT\s*$/i, "").replace(/\s*[-–—]\s*DoramasYT\s*$/i, "").trim();
+    const normalized = value.replace(/\s+/g, " ").trim();
+    const providerSuffix = "DoramasYT";
+    if (!normalized.toLowerCase().endsWith(providerSuffix.toLowerCase())) return normalized;
+
+    const beforeSuffix = normalized.slice(0, -providerSuffix.length).trimEnd();
+    const separator = beforeSuffix[beforeSuffix.length - 1];
+    if (separator !== "|" && separator !== "-" && separator !== "–" && separator !== "—") return normalized;
+    return beforeSuffix.slice(0, -1).trimEnd();
   }
 
   private isNavigationTitle(value: string): boolean {
@@ -592,7 +613,7 @@ export class DoramasYTAdapter extends BaseScraperAdapter {
     }
   }
 
-  private resolveRelativeUrl(value: string, base: string): string {
+  protected override resolveRelativeUrl(value: string, base: string): string {
     try { return new URL(value, base).toString(); } catch { return value; }
   }
 

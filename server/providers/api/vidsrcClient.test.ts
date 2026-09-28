@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { createDecipheriv, createHash } from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeVidSrcTrackPayload, detectNxshaLanguage, detectNxshaLanguages, isVidSrcLanguageCompatible, parseVidSrcHlsAudioTracks, resolveVidSrcEmbed, VidSrcClient } from "./vidsrcClient";
 
 function mockResponse(body: string, status = 200, contentType = "text/html") {
@@ -8,11 +9,43 @@ function mockResponse(body: string, status = 200, contentType = "text/html") {
   });
 }
 
+function decodeNxshaRequest(url: string): Record<string, unknown> {
+  const encoded = new URL(url).searchParams.get("q");
+  if (!encoded) throw new Error("NXSHA query is missing");
+  const packet = Buffer.from(encoded, "base64url");
+  if (packet.subarray(0, 8).toString("ascii") !== "Salted__") {
+    throw new Error("NXSHA query does not use the OpenSSL Salted__ envelope");
+  }
+
+  const salt = packet.subarray(8, 16);
+  const chunks: Buffer[] = [];
+  let previous = Buffer.alloc(0);
+  while (Buffer.concat(chunks).length < 48) {
+    previous = createHash("md5")
+      .update(Buffer.concat([previous, Buffer.from("S8x!Jk4ZP1uG8$my", "utf8"), salt]))
+      .digest();
+    chunks.push(previous);
+  }
+  const material = Buffer.concat(chunks);
+  const decipher = createDecipheriv("aes-256-cbc", material.subarray(0, 32), material.subarray(32, 48));
+  const plaintext = Buffer.concat([
+    decipher.update(packet.subarray(16)),
+    decipher.final(),
+  ]).toString("utf8");
+  return JSON.parse(plaintext) as Record<string, unknown>;
+}
+
 describe("VidSrc native resolver", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("detects concrete languages from NXSHA labels without treating quality as a language", () => {
     expect(detectNxshaLanguage("[Korean] - 720P")).toBe("ko");
     expect(detectNxshaLanguages("English | Korean | BluRay | x264")).toEqual(["en", "ko"]);
     expect(detectNxshaLanguage("AwsPly-[Multi-Lang] - 1080P")).toBe("multi");
+  });
+
+  it("reads language tags from both bracket styles and ignores empty or unfinished tags", () => {
+    expect(detectNxshaLanguages("[English] (Japanese) [] ( ) [Korean")).toEqual(["en", "ja", "ko"]);
   });
 
   it("rejects a labelled source from a different work language unless the manifest has an expected dub", () => {
@@ -37,16 +70,20 @@ video/720p.m3u8`, "https://cdn.example/master.m3u8");
     ]);
   });
 
-  it("decodes the encrypted subtitle catalog used by the multilang player", () => {
+  it("keeps decoding VidSrc's legacy OpenSSL Salted__ subtitle catalog", () => {
     const payload = decodeVidSrcTrackPayload("U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk");
 
+    expect(payload).not.toBeNull();
     expect(payload?.subtitles).toEqual([
       expect.objectContaining({ title: "Español", language: "es", uri: "https://subs.example/fight.srt" }),
     ]);
     expect(payload?._req_ts).toBeUndefined();
+    expect(payload?._req_salt).toBeUndefined();
   });
 
   it("attaches audio and subtitle tracks to a direct VidSrc result", async () => {
+    const subtitleQueries: string[] = [];
+    const weakRandomSpy = vi.spyOn(Math, "random");
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/embed/movie/550")) {
@@ -71,6 +108,7 @@ segment.ts`, 200, "application/vnd.apple.mpegurl");
         return new Response(new Uint8Array([0x47, 0x40, 0x00, 0x10]), { status: 200, headers: { "Content-Type": "video/mp2t" } });
       }
       if (url.startsWith("https://web.nxsha.app/api/subtitles?q=")) {
+        subtitleQueries.push(url);
         return mockResponse(JSON.stringify({ _hash: "U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk" }), 200, "application/json");
       }
       return mockResponse("not found", 404);
@@ -86,6 +124,14 @@ segment.ts`, 200, "application/vnd.apple.mpegurl");
     expect(result.subtitles).toEqual([
       { label: "Español", language: "es", url: "https://subs.example/fight.srt" },
     ]);
+    expect(subtitleQueries).toHaveLength(1);
+    expect(decodeNxshaRequest(subtitleQueries[0])).toMatchObject({
+      tmdbId: 550,
+      type: "movie",
+      _req_ts: expect.any(Number),
+      _req_salt: expect.stringMatching(/^[a-z0-9]{10}$/i),
+    });
+    expect(weakRandomSpy).not.toHaveBeenCalled();
   });
 
   it("resolves embed -> player -> rcp -> prorcp -> HLS", async () => {

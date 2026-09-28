@@ -3,6 +3,7 @@ import { Play, ChevronLeft, ChevronRight, X, Sparkles, Film } from 'lucide-react
 import { rgbToRgbaString } from '../utils/colorExtractor';
 import { SmartImage } from './SmartImage';
 import { sizedImageUrl } from '../utils/imageSizes';
+import { isNativeLowCostPresentation } from '../utils/runtime';
 import type { Episode, Show } from '../types';
 
 export interface WatchProgress {
@@ -59,6 +60,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
   onRemoveItem,
 }) => {
   const rowRef = useRef<HTMLDivElement>(null);
+  const lowCostPresentation = isNativeLowCostPresentation();
 
   const handleScroll = (direction: 'left' | 'right') => {
     if (rowRef.current) {
@@ -239,6 +241,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
             <div key={`${item.showId}-${item.episodeId}`} className="w-64 sm:w-72 shrink-0">
               <ContinueWatchingCard
                 item={item}
+                lowCostPresentation={lowCostPresentation}
                 onPlay={() => {
                   const ep: Episode = {
                     id: item.episodeId,
@@ -283,6 +286,7 @@ interface ContinueWatchingCardProps {
   onPlay: () => void;
   onOpenDetails: () => void;
   onRemove?: () => void;
+  lowCostPresentation?: boolean;
 }
 
 const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
@@ -290,6 +294,7 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   onPlay,
   onOpenDetails,
   onRemove,
+  lowCostPresentation = false,
 }) => {
   const accentRgb: [number, number, number] = [245, 158, 11];
   const accentColor = rgbToRgbaString(accentRgb, 1);
@@ -297,12 +302,16 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   return (
     <div
       className="continue-card group/cw relative flex flex-col overflow-hidden rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 cursor-pointer select-none"
+      onClick={(event) => {
+        if ((event.target as HTMLElement | null)?.closest('button')) return;
+        onPlay();
+      }}
     >
       {/* 16:9 HORIZONTAL THUMBNAIL */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-950">
         {item.showPoster ? (
           <SmartImage
-            src={sizedImageUrl(item.showPoster, 'w780') || item.showPoster}
+            src={sizedImageUrl(item.showPoster, lowCostPresentation ? 'w500' : 'w780') || item.showPoster}
             alt={item.showTitle || 'Vista previa'}
             className="h-full w-full object-cover object-center transition-transform duration-300 ease-out group-hover/cw:scale-105"
             fallback={

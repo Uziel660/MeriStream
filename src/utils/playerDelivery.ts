@@ -358,6 +358,14 @@ export function nextDeliveryIntent(
   return 'direct';
 }
 
+export function selectInitialPlaybackUrl(
+  intent: 'direct' | 'proxy',
+  directUrl: string,
+  proxyUrl: string,
+): string {
+  return intent === 'proxy' ? proxyUrl : directUrl;
+}
+
 /**
  * Confirma si un estado de entrega es "reproducción establecida" (cancelaría el
  * watchdog directo).

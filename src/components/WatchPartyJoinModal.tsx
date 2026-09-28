@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Users, PlusCircle, LogIn, Film, AlertCircle, Loader2 } from 'lucide-react';
 import { getAuthToken } from '../api/client';
+import { isNativeShell, nativeHaptic } from '../utils/runtime';
 
 export interface WatchPartyJoinModalProps {
   isOpen: boolean;
@@ -42,6 +43,16 @@ export function WatchPartyJoinModal({
   const [joinCode, setJoinCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const nativeShell = isNativeShell();
+  const isInsidePlayer = () => typeof document !== 'undefined' && Boolean(document.querySelector('[data-player-root]'));
+
+  const closeSheet = useCallback(() => {
+    if (nativeShell && !isInsidePlayer() && window.history.state?.meristream_native_overlay === 'watch-party-join' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    onClose();
+  }, [nativeShell, onClose]);
 
   // Reset state when opening
   useEffect(() => {
@@ -52,17 +63,30 @@ export function WatchPartyJoinModal({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !nativeShell) return;
+    // The player owns Android Back for its child overlays. A second history
+    // entry here would make the next Back pop a duplicate player route.
+    if (isInsidePlayer()) return;
+    if (window.history.state?.meristream_native_overlay !== 'watch-party-join') {
+      window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: 'watch-party-join' }, '');
+    }
+    const onPopState = () => onClose();
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isOpen, nativeShell, onClose]);
+
   // Keyboard escape handler
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        closeSheet();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, closeSheet]);
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
@@ -71,6 +95,7 @@ export function WatchPartyJoinModal({
   };
 
   const handleCreateRoom = useCallback(async () => {
+    nativeHaptic();
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -80,7 +105,7 @@ export function WatchPartyJoinModal({
         if (code) {
           if (onJoinRoom) await onJoinRoom(code);
           if (onJoin) onJoin(code);
-          onClose();
+          closeSheet();
         }
       } catch (err: any) {
         setErrorMessage(err?.message || 'Error al crear la sala.');
@@ -146,13 +171,13 @@ export function WatchPartyJoinModal({
 
       if (onJoinRoom) await onJoinRoom(code);
       if (onJoin) onJoin(code);
-      onClose();
+      closeSheet();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Error al crear la sala. Inténtalo de nuevo.');
     } finally {
       setIsSubmitting(false);
     }
-  }, [media, onCreateRoom, onJoin, onJoinRoom, onClose, isAuthenticated, onRequireAuth]);
+  }, [media, onCreateRoom, onJoin, onJoinRoom, closeSheet, isAuthenticated, onRequireAuth]);
 
   const handleJoinRoom = useCallback(
     async (e?: React.FormEvent) => {
@@ -167,7 +192,7 @@ export function WatchPartyJoinModal({
         try {
           await onJoinRoom(code);
           if (onJoin) onJoin(code);
-          onClose();
+          closeSheet();
         } catch (err: any) {
           setErrorMessage(err?.message || 'Error al unirse a la sala.');
         } finally {
@@ -210,20 +235,20 @@ export function WatchPartyJoinModal({
         }
 
         if (onJoin) onJoin(code);
-        onClose();
+        closeSheet();
       } catch (err: any) {
         if (err?.message?.includes('no existe') || err?.message?.includes('llena') || err?.message?.includes('expirado')) {
           setErrorMessage(err.message);
         } else {
           // If network or fallback, allow joining via onJoin
           if (onJoin) onJoin(code);
-          onClose();
+          closeSheet();
         }
       } finally {
         setIsSubmitting(false);
       }
     },
-    [joinCode, onJoinRoom, onJoin, onClose, isAuthenticated, onRequireAuth]
+    [joinCode, onJoinRoom, onJoin, closeSheet, isAuthenticated, onRequireAuth]
   );
 
   if (!isOpen) return null;
@@ -234,13 +259,13 @@ export function WatchPartyJoinModal({
   return (
     <div
       data-testid="watch-party-join-modal"
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="watch-party-join-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) closeSheet();
       }}
     >
       <div
-        className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 overflow-hidden"
+        className="watch-party-join-panel relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Title and Close Button */}
@@ -257,7 +282,7 @@ export function WatchPartyJoinModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={closeSheet}
             data-testid="close-modal-button"
             aria-label="Cerrar modal"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
@@ -272,6 +297,7 @@ export function WatchPartyJoinModal({
             <button
               type="button"
               onClick={() => {
+                nativeHaptic(4);
                 setActiveTab('create');
                 setErrorMessage(null);
               }}
@@ -288,6 +314,7 @@ export function WatchPartyJoinModal({
             <button
               type="button"
               onClick={() => {
+                nativeHaptic(4);
                 setActiveTab('join');
                 setErrorMessage(null);
               }}
@@ -396,6 +423,10 @@ export function WatchPartyJoinModal({
                   placeholder="EJEMPLO"
                   maxLength={6}
                   autoFocus
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="go"
                   className="w-full text-center font-mono text-xl sm:text-2xl tracking-[0.3em] uppercase py-3 px-4 bg-zinc-900 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 focus:outline-none focus:border-amber-400 transition"
                 />
                 <p className="text-[11px] text-zinc-500 mt-1.5 text-center">

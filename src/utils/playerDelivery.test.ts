@@ -7,6 +7,7 @@ import {
   serversStableSignature,
   updateRenewedServer,
   nextDeliveryIntent,
+  selectInitialPlaybackUrl,
   isPlaybackEstablished,
   shouldScheduleRenewal,
   canEscalateToProxy,
@@ -425,5 +426,19 @@ describe('playerDelivery — helpers adicionales y estabilidad', () => {
     expect(resolved.streamType).toBe('embed');
     expect(resolved.delivery_mode).toBe('embed');
     expect(resolved.notPlayable).toBe(true);
+  });
+
+  it('con intención directa conserva la URL HLS original aunque exista una URL de proxy', () => {
+    const directUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+    const proxyUrl = '/api/v1/proxy/stream?url=https%3A%2F%2Ftest-streams.mux.dev';
+
+    expect(selectInitialPlaybackUrl('direct', directUrl, proxyUrl)).toBe(directUrl);
+  });
+
+  it('con intención proxy usa la URL proxy calculada', () => {
+    const directUrl = 'https://cdn.example/master.m3u8?st=abc&e=123';
+    const proxyUrl = '/api/v1/playback/session-1/master.m3u8';
+
+    expect(selectInitialPlaybackUrl('proxy', directUrl, proxyUrl)).toBe(proxyUrl);
   });
 });

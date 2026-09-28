@@ -8,6 +8,7 @@ import { useHiddenGenres } from '../hooks/useHiddenGenres';
 import type { Show } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from '../utils/appPreferences';
+import { isNativeLowCostPresentation, isNativeShell } from '../utils/runtime';
 import { useUserLists } from '../hooks/useUserLists';
 
 interface MediaCardProps {
@@ -35,6 +36,8 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
     return () => window.removeEventListener(APP_PREFERENCES_EVENT, sync);
   }, [user?.id, user?.is_admin]);
   const title = cleanDisplayTitle(media.title);
+  const lowCostPresentation = isNativeLowCostPresentation();
+  const nativeShell = isNativeShell();
   const { isGenreHidden } = useHiddenGenres();
   const genre = cleanDisplayGenres(media.genres).find((item) => !isGenreHidden(item)) || contentLabel(media.category);
   const posterSources = cardPosterCandidates(media);
@@ -43,7 +46,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
       type="button"
       className="media-card group relative"
       onClick={() => onSelectMedia?.(media)}
-      onMouseEnter={() => onHover?.(media)}
+      onMouseEnter={nativeShell ? undefined : () => onHover?.(media)}
       onFocus={() => onHover?.(media)}
       aria-label={`Ver detalles de ${title}`}
     >
@@ -51,7 +54,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
         <SmartImage
           src={cardPosterUrl(media)}
           sources={posterSources}
-          srcSet={cardPosterSrcSet(media)}
+          srcSet={lowCostPresentation ? undefined : cardPosterSrcSet(media)}
           alt=""
           loading={imageLoading}
           sizes="(min-width: 1760px) 190px, (min-width: 1280px) 180px, (min-width: 768px) 22vw, 39vw"
@@ -80,6 +83,7 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({ media, onSelect
               toggleFavorite(media);
             }
           }}
+          data-card-favorite
           className={`absolute top-2 left-2 z-20 p-2 rounded-full transition-all duration-200 backdrop-blur-md shadow-lg cursor-pointer ${
             isFav
               ? 'opacity-100 bg-rose-600 text-white scale-105 shadow-rose-600/30 ring-2 ring-rose-400/50'

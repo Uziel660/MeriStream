@@ -1,5 +1,5 @@
 ﻿// src/components/MyListsView.tsx
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Heart,
   Clock,
@@ -17,6 +17,7 @@ import {
 import { useUserLists, type UserListData } from "../hooks/useUserLists";
 import { MediaCard } from "./MediaCard";
 import type { Show } from "../types";
+import { isNativeShell, nativeHaptic } from "../utils/runtime";
 
 interface MyListsViewProps {
   onSelectMedia: (show: Show) => void;
@@ -32,6 +33,21 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
     updateList,
     deleteList,
   } = useUserLists();
+  const nativeShell = isNativeShell();
+
+  const pushListOverlay = (overlay: 'list-create' | 'list-edit' | 'list-delete') => {
+    if (!nativeShell) return;
+    window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: overlay }, '');
+  };
+
+  const closeListOverlay = (overlay: 'list-create' | 'list-edit' | 'list-delete', close: () => void) => {
+    nativeHaptic(4);
+    if (nativeShell && window.history.state?.meristream_native_overlay === overlay && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    close();
+  };
 
   const [activeListId, setActiveListId] = useState<string>(() => {
     return favorites?.id || "guest-favorites";
@@ -44,6 +60,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editName, setEditName] = useState<string>("");
   const [editDesc, setEditDesc] = useState<string>("");
+  const [deleteListId, setDeleteListId] = useState<string | null>(null);
 
   // Lista activa
   const currentList = useMemo(() => {
@@ -77,34 +94,52 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
     const created = await createList(newListName.trim(), newListDesc.trim());
     if (created) {
       setActiveListId(created.id);
-      setIsCreatingModal(false);
+      closeListOverlay('list-create', () => setIsCreatingModal(false));
       setNewListName("");
       setNewListDesc("");
     }
   };
 
   const handleStartEdit = (list: UserListData) => {
+    nativeHaptic();
     setEditingListId(list.id);
     setEditName(list.name);
     setEditDesc(list.description || "");
+    pushListOverlay('list-edit');
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingListId || !editName.trim()) return;
     await updateList(editingListId, editName.trim(), editDesc.trim());
-    setEditingListId(null);
+    closeListOverlay('list-edit', () => setEditingListId(null));
+  };
+
+  useEffect(() => {
+    if (!nativeShell) return;
+    const onPopState = () => {
+      setIsCreatingModal(false);
+      setEditingListId(null);
+      setDeleteListId(null);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [nativeShell]);
+
+  const requestDeleteList = (listId: string) => {
+    nativeHaptic();
+    setDeleteListId(listId);
+    pushListOverlay('list-delete');
   };
 
   const handleDeleteList = async (listId: string) => {
-    if (window.confirm("¿Seguro que deseas eliminar esta lista personalizada?")) {
-      await deleteList(listId);
-      setActiveListId(favorites?.id || "guest-favorites");
-    }
+    await deleteList(listId);
+    setActiveListId(favorites?.id || "guest-favorites");
+    closeListOverlay('list-delete', () => setDeleteListId(null));
   };
 
   return (
-    <section className="space-y-8 animate-in fade-in duration-300">
+    <section className="my-lists-view space-y-8 animate-in fade-in duration-300">
       {/* CABECERA PRINCIPAL */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
         <div>
@@ -122,7 +157,11 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
 
         <button
           type="button"
-          onClick={() => setIsCreatingModal(true)}
+          onClick={() => {
+            nativeHaptic();
+            setIsCreatingModal(true);
+            pushListOverlay('list-create');
+          }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition shadow-sm"
         >
           <Plus size={15} />
@@ -202,7 +241,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDeleteList(currentList.id)}
+                  onClick={() => requestDeleteList(currentList.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-medium border border-rose-500/20 transition"
                 >
                   <Trash2 size={13} />
@@ -225,6 +264,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
                       removeShowFromList(currentList.id, show.id);
                     }}
                     title="Quitar de esta lista"
+                    data-list-remove
                     className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full bg-black/80 hover:bg-rose-600 text-zinc-300 hover:text-white backdrop-blur-md shadow-lg"
                   >
                     <X size={14} />
@@ -266,12 +306,12 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-          onClick={() => setIsCreatingModal(false)}
+          className="native-list-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          onClick={() => closeListOverlay('list-create', () => setIsCreatingModal(false))}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5"
+            className="native-list-modal-panel w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5"
           >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div className="flex items-center gap-2.5">
@@ -282,7 +322,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
               </div>
               <button
                 type="button"
-                onClick={() => setIsCreatingModal(false)}
+                onClick={() => closeListOverlay('list-create', () => setIsCreatingModal(false))}
                 className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
               >
                 <X size={18} />
@@ -323,7 +363,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsCreatingModal(false)}
+                  onClick={() => closeListOverlay('list-create', () => setIsCreatingModal(false))}
                   className="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
                 >
                   Cancelar
@@ -347,18 +387,18 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-          onClick={() => setEditingListId(null)}
+          className="native-list-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          onClick={() => closeListOverlay('list-edit', () => setEditingListId(null))}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5"
+            className="native-list-modal-panel w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5"
           >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <h3 className="text-base font-bold text-white">Editar Lista</h3>
               <button
                 type="button"
-                onClick={() => setEditingListId(null)}
+                onClick={() => closeListOverlay('list-edit', () => setEditingListId(null))}
                 className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
               >
                 <X size={18} />
@@ -392,7 +432,7 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingListId(null)}
+                  onClick={() => closeListOverlay('list-edit', () => setEditingListId(null))}
                   className="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
                 >
                   Cancelar
@@ -407,6 +447,44 @@ export const MyListsView: React.FC<MyListsViewProps> = ({ onSelectMedia, onExplo
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteListId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-list-title"
+          className="native-list-modal-overlay fixed inset-0 z-[65] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => closeListOverlay('list-delete', () => setDeleteListId(null))}
+        >
+          <div
+            className="native-list-modal-panel w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h3 id="delete-list-title" className="text-base font-bold text-white">Eliminar lista</h3>
+              <p className="text-xs leading-relaxed text-zinc-400">
+                Se eliminará la lista personalizada. Tus títulos y el progreso de reproducción no se borrarán.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => closeListOverlay('list-delete', () => setDeleteListId(null))}
+                className="min-h-11 px-4 rounded-xl text-xs font-semibold text-zinc-300 bg-zinc-800 border border-zinc-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteList(deleteListId)}
+                className="min-h-11 px-4 rounded-xl text-xs font-bold text-white bg-rose-600"
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}

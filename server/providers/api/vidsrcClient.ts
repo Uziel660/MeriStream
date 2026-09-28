@@ -57,21 +57,26 @@ type VidSrcMediaRef = {
 };
 
 
-function extractNxshaLabelTags(label: string): string[] {
+function extractDelimitedTags(label: string, open: string, close: string): string[] {
   const tags: string[] = [];
-  const bracketMatches = label.match(/\[([^\]]+)\]/g);
-  if (bracketMatches) {
-    for (const match of bracketMatches) {
-      tags.push(match.replace(/^\[/, "").replace(/\]$/, "").trim());
-    }
-  }
-  const parenMatches = label.match(/\(([^)]+)\)/g);
-  if (parenMatches) {
-    for (const match of parenMatches) {
-      tags.push(match.replace(/^\(/, "").replace(/\)$/, "").trim());
-    }
+  let cursor = 0;
+  while (cursor < label.length) {
+    const start = label.indexOf(open, cursor);
+    if (start < 0) break;
+    const end = label.indexOf(close, start + open.length);
+    if (end < 0) break;
+    const value = label.slice(start + open.length, end).trim();
+    if (value) tags.push(value);
+    cursor = end + close.length;
   }
   return tags;
+}
+
+function extractNxshaLabelTags(label: string): string[] {
+  return [
+    ...extractDelimitedTags(label, "[", "]"),
+    ...extractDelimitedTags(label, "(", ")"),
+  ];
 }
 
 const NXSHA_LANGUAGE_PATTERNS: Array<[RegExp, string]> = [
@@ -211,7 +216,9 @@ function deriveOpenSslKey(password: string, salt: Buffer, keyLength: number, ivL
   const chunks: Buffer[] = [];
   let previous = Buffer.alloc(0);
   while (Buffer.concat(chunks).length < keyLength + ivLength) {
-    previous = createHash("md5")
+    // VidSrc's legacy OpenSSL `Salted__` format requires EVP_BytesToKey with MD5.
+    // This is compatibility key derivation for a public provider payload, not password hashing or integrity protection.
+    previous = createHash("md5") // NOSONAR
       .update(Buffer.concat([previous, Buffer.from(password, "utf8"), salt]))
       .digest();
     chunks.push(previous);
@@ -227,7 +234,7 @@ function encodeNxshaData(value: Record<string, unknown>): string {
   const enriched = {
     ...value,
     _req_ts: Date.now(),
-    _req_salt: Math.random().toString(36).substring(2, 12),
+    _req_salt: randomBytes(5).toString("hex"),
   };
   const salt = randomBytes(8);
   const { key, iv } = deriveOpenSslKey(NXSHA_DATA_KEY, salt, 32, 16);
@@ -646,7 +653,10 @@ async function resolveNxshaMultiLang(
             playable: playableUrl(source?.url, source?.type),
             label: String(source?.label || source?.quality || "").trim(),
           }))
-          .filter((candidate: any) => candidate.playable?.streamType === "hls")
+          .filter((candidate): candidate is {
+            playable: { url: string; streamType: "hls" };
+            label: string;
+          } => candidate.playable?.streamType === "hls")
         : [];
       candidates.sort((left: any, right: any) => {
         const leftLang = detectNxshaLanguage(left.label || "");
@@ -682,7 +692,7 @@ async function resolveNxshaMultiLang(
       }
       // An exact match is already the best possible outcome. Stop querying
       // later scrapers, keeping the preference-aware path bounded in latency.
-      if (bestCandidate?.score >= 1000) break;
+      if (bestCandidate && bestCandidate.score >= 1000) break;
     }
 
     if (bestCandidate) {

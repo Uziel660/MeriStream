@@ -48,6 +48,51 @@ describe("DoramasYTAdapter", () => {
     expect(result.episodes.map((episode) => episode.number)).toEqual([1, 2]);
   });
 
+  it("preserves detail metadata while removing the provider suffix and duplicate genres", async () => {
+    const adapter = new DoramasYTAdapter();
+    vi.spyOn(adapter as any, "fetchHtml").mockResolvedValue(`
+      <html><head>
+        <meta property="og:title" content="Beyond Evil — DoramasYT">
+        <meta property="og:description" content="A tense mystery">
+        <meta property="og:image" content="/posters/beyond-evil.jpg">
+      </head><body>
+        <h1>Fallback title</h1>
+        <div class="genres"><a href="/genero/thriller"> Thriller </a><a href="/genero/thriller">Thriller</a><a href="/genero/drama">Drama</a></div>
+        <a href="/ver/beyond-evil-episodio-1">Capítulo 1</a>
+      </body></html>
+    `);
+
+    const result = await adapter.analyze("https://www.doramasyt.com/dorama/beyond-evil", "detail");
+
+    expect(result).toMatchObject({
+      page_type: "detail",
+      content_type: "series",
+      title: "Beyond Evil",
+      description: "A tense mystery",
+      poster_url: "https://www.doramasyt.com/posters/beyond-evil.jpg",
+      genres: ["Thriller", "Drama"],
+    });
+    expect(result.episodes.map((episode) => episode.number)).toEqual([1]);
+  });
+
+  it("keeps playable source URLs and decodes plain base64 URLs while rejecting page and poster URLs", () => {
+    const adapter = new DoramasYTAdapter();
+    const encodedUrl = Buffer.from("https://cdn.example/encoded.m3u8").toString("base64");
+    const html = fixture(`
+      <a href="https://cdn.example/video.m3u8">Video</a>
+      <div data-player="${encodedUrl}"></div>
+      <a href="https://www.doramasyt.com/video.m3u8">Site page</a>
+      <img src="https://cdn.example/posters/cover.jpg">
+    `);
+
+    const urls = (adapter as any).extractSourceUrls(html, "https://www.doramasyt.com/ver/demo-episodio-1");
+
+    expect(urls).toEqual([
+      "https://cdn.example/video.m3u8",
+      "https://cdn.example/encoded.m3u8",
+    ]);
+  });
+
   it("merges the AJAX episode index with the SSR teaser link", async () => {
     const adapter = new DoramasYTAdapter();
     vi.spyOn(adapter as any, "fetchHtml").mockResolvedValue(fixture('<meta property="og:title" content="Our Sticky Love Online en Español - DoramasYT"><h1>Our Sticky Love</h1><section class="caplist" data-ajax="https://www.doramasyt.com/ajax/ajax_pagination/2273"></section><a href="/ver/our-sticky-love-episodio-1">Ver Ahora</a>'));

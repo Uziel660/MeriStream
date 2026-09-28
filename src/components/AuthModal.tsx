@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { X, User, Lock, LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
 import { useAuth } from "../contexts/AuthContext";
+import { isNativeShell, nativeHaptic } from "../utils/runtime";
 
 const AVATAR_OPTIONS = [
   { id: "amber", bg: "bg-[#f59e0b]", label: "Ámbar Dorado", border: "border-amber-400" },
@@ -25,13 +26,33 @@ export const AuthModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const dialogRef = useDialogFocus(isAuthModalOpen);
+  const nativeShell = isNativeShell();
+
+  const closeAuthNativeAware = () => {
+    nativeHaptic(4);
+    if (nativeShell && window.history.state?.meristream_native_overlay === 'auth' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    closeAuthModal();
+  };
+
+  useEffect(() => {
+    if (!isAuthModalOpen || !nativeShell) return;
+    if (window.history.state?.meristream_native_overlay !== 'auth') {
+      window.history.pushState({ ...(window.history.state || {}), meristream_native_overlay: 'auth' }, '');
+    }
+    const onPopState = () => closeAuthModal();
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isAuthModalOpen, nativeShell, closeAuthModal]);
 
   useEffect(() => {
     if (!isAuthModalOpen) return;
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeAuthModal(); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeAuthNativeAware(); };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
-  }, [isAuthModalOpen, closeAuthModal]);
+  }, [isAuthModalOpen, closeAuthModal, nativeShell]);
 
   // AuthModal permanece montado aunque esté cerrado. Limpiar los campos evita
   // reabrir el diálogo con una contraseña o un error de una sesión anterior.
@@ -73,8 +94,10 @@ export const AuthModal: React.FC = () => {
     try {
       if (mode === "login") {
         await login(username.trim(), password);
+        if (nativeShell && window.history.state?.meristream_native_overlay === 'auth' && window.history.length > 1) window.history.back();
       } else {
         await register(username.trim(), password, selectedAvatar);
+        if (nativeShell && window.history.state?.meristream_native_overlay === 'auth' && window.history.length > 1) window.history.back();
         setSuccessMsg("¡Cuenta creada exitosamente!");
       }
     } catch (err: any) {
@@ -88,7 +111,7 @@ export const AuthModal: React.FC = () => {
     <div
       className="auth-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
-        if (e.target === e.currentTarget) closeAuthModal();
+        if (e.target === e.currentTarget) closeAuthNativeAware();
       }}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1} className="auth-panel relative w-full max-w-md overflow-hidden rounded-2xl bg-zinc-950/95 border border-zinc-800/80 shadow-2xl shadow-amber-500/10 p-6 sm:p-8">
@@ -97,7 +120,7 @@ export const AuthModal: React.FC = () => {
 
         <button
           type="button"
-          onClick={closeAuthModal}
+          onClick={closeAuthNativeAware}
           className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white rounded-full bg-zinc-900/50 hover:bg-zinc-800 transition-colors"
           aria-label="Cerrar modal"
         >

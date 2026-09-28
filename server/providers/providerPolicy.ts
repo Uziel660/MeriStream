@@ -128,6 +128,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
+    hosts: ["animeav1.com"],
     notes: "Spanish-first anime source; prefer Japanese audio with Spanish subtitles.",
   },
   animeflv: {
@@ -139,6 +140,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
+    hosts: ["animeflv.or.at", "animeflv.net", "animeflv.to"],
   },
   jkanime: {
     id: "jkanime",
@@ -149,6 +151,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
+    hosts: ["jkanime.net"],
     notes: "Handled by AnimeFlvAdapter today, but kept as a distinct health/rating source.",
   },
   cinecalidad: {
@@ -175,6 +178,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["movie", "series", "anime"],
     audioLanguages: ["es", "en", "ja"],
     subtitleLanguages: ["es", "en"],
+    hosts: ["lamovie.org"],
   },
   gnula: {
     id: "gnula",
@@ -209,6 +213,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "en"],
     subtitleLanguages: ["en"],
+    hosts: ["hianimes.se"],
   },
   latanime: {
     id: "latanime",
@@ -246,6 +251,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja"],
     subtitleLanguages: ["es"],
+    hosts: ["veranimes.net", "wwv.veranimes.net"],
   },
   doramasflix: {
     id: "doramasflix",
@@ -334,6 +340,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["movie"],
     audioLanguages: ["es"],
     subtitleLanguages: [],
+    hosts: ["tubepelis.com"],
   },
   tvmaze: {
     id: "tvmaze",

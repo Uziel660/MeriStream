@@ -697,7 +697,10 @@ try {
     await delay(180);
     const afterUnlock = await evaluate(call, `(() => ({
       unlockVisible: Boolean(document.querySelector('button[aria-label="Desbloquear pantalla"]')),
-      paused: document.querySelector('[data-player-root] video')?.paused ?? true,
+      paused: (() => {
+        const video = document.querySelector('[data-player-root] video');
+        return video ? video.paused : true;
+      })(),
     }))()`);
     if (afterUnlock.unlockVisible || afterUnlock.paused) {
       throw new Error(`Unlocking did not restore controls while playback continued: ${JSON.stringify(afterUnlock)}`);
@@ -720,7 +723,10 @@ try {
     if (!reenterButton) throw new Error('The player fullscreen control was not available after leaving immersive mode');
     await delay(350);
     const afterFullscreenRestore = await evaluate(call, `(() => ({
-      paused: document.querySelector('[data-player-root] video')?.paused ?? true,
+      paused: (() => {
+        const video = document.querySelector('[data-player-root] video');
+        return video ? video.paused : true;
+      })(),
       systemBarTransitions: Array.isArray(window.__meristreamNativeSystemBarTransitions)
         ? window.__meristreamNativeSystemBarTransitions.slice()
         : null,
@@ -729,7 +735,10 @@ try {
       throw new Error(`The player did not restore immersive fullscreen during playback: ${JSON.stringify(afterFullscreenRestore)}`);
     }
     await delay(650);
-    const stableFullscreenTransitions = await evaluate(call, `window.__meristreamNativeSystemBarTransitions?.slice() || null`);
+    const stableFullscreenTransitions = await evaluate(call, `(() => {
+      const trace = window.__meristreamNativeSystemBarTransitions;
+      return Array.isArray(trace) ? trace.slice() : null;
+    })()`);
     if (JSON.stringify(stableFullscreenTransitions) !== JSON.stringify(afterFullscreenRestore.systemBarTransitions)) {
       throw new Error(`System bars changed again after fullscreen was restored: ${JSON.stringify({ afterFullscreenRestore, stableFullscreenTransitions })}`);
     }

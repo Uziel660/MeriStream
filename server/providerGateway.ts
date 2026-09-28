@@ -22,6 +22,7 @@ import { getPublicCatalogDetail } from "./publicCatalog";
 import { subtitleGateway } from "./subtitles";
 import type { SubtitleCandidate } from "./subtitles/types";
 import { canonicalCinecalidadEpisodeUrl, canonicalCinecalidadUrl, lookupCinecalidadItem } from "./scrapers/cinecalidadApi";
+import { tioPlusEpisodeLocatorMatches } from "./providers/tioPlusLocator";
 
 export type GatewayKind = DirectMediaKind;
 
@@ -328,6 +329,7 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     // but they must not leak into the normal gateway response. TioAnime is the
     // only legacy exception and is handled below as ZokoAnime fallback.
     if (!isProviderAllowedInMainPath(provider, req.kind)) continue;
+    if (provider === "tioplus" && !tioPlusEpisodeLocatorMatches(link.url, req)) continue;
     // Un 404 confirmado en la API actual significa que el antiguo registro ya
     // no corresponde a una ficha real. Ocultarlo evita presentar una SPA 200
     // como si fuera una película reproducible.

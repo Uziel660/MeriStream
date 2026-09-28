@@ -630,12 +630,21 @@ export async function resolveByTmdb(req: GatewayRequest): Promise<{
   let apiSources: GatewaySource[] = [];
   let apiTimedOut = false;
   if (hasLocalRecovery && !req.persist) {
+    // Si la base solo contiene páginas canónicas, cortar a 1.2 s suele
+    // devolver un selector sin ningún HLS aunque VidSrc/otro API ya esté a
+    // punto de entregar uno. Esperar un poco más en ese caso evita que la
+    // primera reproducción dependa de una segunda visita que encuentre la
+    // respuesta tardía en caché. Cuando ya existe un directo local sano se
+    // conserva el presupuesto corto y el failover local sigue siendo rápido.
+    const apiBudgetMs = database.direct.length > 0
+      ? PRIMARY_API_BUDGET_MS
+      : Math.max(PRIMARY_API_BUDGET_MS, Number(process.env.PROVIDER_GATEWAY_EMPTY_LOCAL_BUDGET_MS || 5_000));
     const result = await Promise.race([
       apiPromise
         .then((sources) => ({ sources, timedOut: false as const }))
         .catch(() => ({ sources: [] as GatewaySource[], timedOut: false as const })),
       new Promise<{ sources: GatewaySource[]; timedOut: true }>((resolve) => {
-        setTimeout(() => resolve({ sources: [], timedOut: true }), PRIMARY_API_BUDGET_MS);
+        setTimeout(() => resolve({ sources: [], timedOut: true }), apiBudgetMs);
       }),
     ]);
     apiSources = result.sources;

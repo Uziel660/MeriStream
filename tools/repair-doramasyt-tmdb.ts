@@ -108,6 +108,12 @@ function sourceAliases(row: Row): string[] {
 
   add(row.title);
   add(row.title.replace(/\b(?:latino|castellano|sub[-_ ]?espanol|subtitulado)\b/gi, " "));
+  // DoramasYT publishes each season as a separate fiche ("The Penthouse 2",
+  // "Alchemy of Souls 1", "XO, Kitty S3"). TMDB keeps those seasons under
+  // the parent TV identity, so query the parent title too.
+  add(row.title
+    .replace(/\b(?:latino|castellano|sub[-_ ]?espanol|subtitulado)\b/gi, " ")
+    .replace(/\s+(?:s\.?\s*\d+|season\s*\d+|temporada\s*\d+|[12])\s*$/i, " "));
   add(row.original_title);
   for (const episode of row.episodes || []) {
     for (const link of episode.links || []) {
@@ -120,6 +126,10 @@ function sourceAliases(row: Row): string[] {
     }
   }
   return values.slice(0, 6);
+}
+
+function hasSeasonMarker(row: Row): boolean {
+  return /(?:\bS\.?\s*\d+\b|\bseason\s*\d+\b|\btemporada\s*\d+\b|\s[12]\s*$)/i.test(row.title);
 }
 
 function safeResolution(resolution: TmdbIdentityResolution | null): boolean {
@@ -253,7 +263,9 @@ async function main(): Promise<void> {
           const resolution = await resolveTmdbIdentityCandidate({
             title: row.title,
             aliases: sourceAliases(row),
-            year: validYear(row.year),
+            // A season fiche can have its own premiere year. Resolve the parent
+            // TV identity without forcing that season year to match TMDB.
+            year: hasSeasonMarker(row) ? null : validYear(row.year),
             kind: kindForTmdb(row.kind),
           });
           const safe = safeResolution(resolution);

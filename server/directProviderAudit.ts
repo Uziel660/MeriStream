@@ -81,6 +81,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function configuredFor(provider: DirectStreamProvider): boolean {
   switch (provider.id) {
+    // These public endpoints are retired/unreliable. Keep the clients
+    // available for an explicitly configured self-host or mirror, but do not
+    // call the dead defaults on every verification pass and report them as
+    // healthy merely because a URL exists in the constructor fallback.
+    case "flixquest":
+      return Boolean(String(process.env.FLIXQUEST_API_URLS || process.env.FLIXQUEST_API_URL || "").trim());
+    case "nuvio":
+      return Boolean(String(process.env.NUVIO_STREAMS_URLS || process.env.NUVIO_STREAMS_URL || "").trim());
     case "anime-sdk": return Boolean(String(process.env.ANIME_SDK_URL || "").trim());
     case "streamprovider": return Boolean(String(process.env.STREAM_PROVIDER_URL || "").trim());
     case "stremio-direct": return Boolean(String(process.env.STREMIO_DIRECT_ADDONS || "").trim());

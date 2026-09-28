@@ -34,5 +34,19 @@ describe("direct provider audit", () => {
     expect(entry).toMatchObject({ configured: false, ok: false });
     expect(entry?.anomalies).toContain("not_configured");
   });
+
+  it.each(["flixquest", "nuvio"])("does not treat retired public %s defaults as configured", async (id) => {
+    const summary = await auditDirectProviders({
+      providers: [{
+        id,
+        kinds: ["movie"],
+        resolve: async () => [],
+      }],
+    });
+
+    const entry = summary.entries.find((candidate) => candidate.provider === id);
+    expect(entry).toMatchObject({ configured: false, ok: false, failed_kinds: ["movie"] });
+    expect(entry?.anomalies).toContain("not_configured");
+  });
 });
 

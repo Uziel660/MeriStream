@@ -153,6 +153,9 @@ async function capturePreferences(browser, name, viewport) {
 
 async function openPlayerThroughCatalog(page) {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  // Wait for the same catalog hydration marker used by the home-page audit;
+  // DOMContentLoaded fires before the mocked catalog request is rendered.
+  await page.locator('.feature').waitFor({ state: 'visible', timeout: 15_000 });
   const card = page.locator('.media-card').first();
   await card.waitFor({ state: 'visible', timeout: 15_000 });
   await card.click();

@@ -1,6 +1,6 @@
 import { analyzeUniversalUrl, extractStreamFromUrl, PRESET_SOURCES, scraperManager } from "./universalScraper";
 import { upsertAutomatedCatalogReport, resolveAutomatedCatalogReports } from "./catalogReports";
-import { dedupeCatalogItems, isInvalidCatalogSource } from "./catalogIntegrity";
+import { dedupeCatalogItems } from "./catalogIntegrity";
 import { isCatalogNavigationLocator } from "./sourceLinkAudit";
 import { normalizeTitleKey, isPlausibleTitle } from "./utils/titleNormalizer";
 import type { ContentKind, ExtractedCatalogItem, UniversalAnalysisResult } from "./types";
@@ -10,6 +10,7 @@ export interface ProviderAuditTarget {
   provider: string;
   url: string;
   label?: string;
+  mode?: "catalog" | "detail";
 }
 
 export interface ProviderAuditEntry {
@@ -64,9 +65,9 @@ const CORE_TARGETS: ProviderAuditTarget[] = [
   ["hianimes", "https://hianimes.se/filter?type=All&page=1"],
   ["veranimes", "https://wwv.veranimes.net/animes"],
   ["tubepelis", "https://tubepelis.com/"],
-  ["archive-org", "https://archive.org/details/movies"],
-  ["tvmaze", "https://www.tvmaze.com/shows"],
-].map(([provider, url]) => ({ provider, url }));
+  ["archive-org", "https://archive.org/details/his_girl_friday", "detail"],
+  ["tvmaze", "https://www.tvmaze.com/shows/169/breaking-bad", "detail"],
+].map(([provider, url, mode]) => ({ provider, url, mode: mode as "catalog" | "detail" | undefined }));
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const DEFAULT_CONCURRENCY = 3;
@@ -128,17 +129,23 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
   let streamResult: { stream_url?: string; all_available_streams?: string[] } | null = null;
   try {
     adapterId = scraperManager.getAdapter(target.url).id;
-    const catalog = await withTimeout(analyzeUniversalUrl(target.url, "catalog", adapterId));
-    const items = dedupeCatalogItems(catalog.catalog_items || []).filter((candidate) => isPlausibleTitle(candidate.title));
-    if (items.length === 0) {
-      throw new Error("catalog_empty_or_unreadable");
-    }
+    const requestedMode = target.mode || "catalog";
+    const catalog = await withTimeout(analyzeUniversalUrl(target.url, requestedMode, adapterId));
+    const items = requestedMode === "detail"
+      ? [{ title: catalog.title, url: target.url, kind: catalog.content_type } as ExtractedCatalogItem]
+      : dedupeCatalogItems(catalog.catalog_items || []).filter((candidate) => isPlausibleTitle(candidate.title));
+    if (items.length === 0) throw new Error("catalog_empty_or_unreadable");
     item = items[0];
-    if (isCatalogNavigationLocator(item.url) || isInvalidCatalogSource(item.url)) anomalies.push("catalog_locator_returned_as_item");
+    // Do not use isInvalidCatalogSource here: it intentionally treats broad
+    // /anime/<slug> and /serie/<slug> paths as landing pages for database
+    // sanitation, while an adapter may validly expose that path as a detail
+    // page. The detail contract below is the authoritative check.
+    if (requestedMode === "catalog" && isCatalogNavigationLocator(item.url)) anomalies.push("catalog_locator_returned_as_item");
+    if (requestedMode === "detail") detail = catalog;
     if (!/^https?:\/\//i.test(item.url)) anomalies.push("catalog_item_invalid_url");
     if (!isPlausibleTitle(item.title)) anomalies.push("catalog_item_invalid_title");
 
-    detail = await withTimeout(analyzeUniversalUrl(item.url, "detail", adapterId));
+    detail ||= await withTimeout(analyzeUniversalUrl(item.url, "detail", adapterId));
     if (!detail.title || !isPlausibleTitle(detail.title)) anomalies.push("detail_missing_title");
     if (detail.page_type === "catalog") anomalies.push("detail_resolved_to_catalog");
     if (normalizeTitleKey(detail.title) && normalizeTitleKey(item.title) &&
@@ -158,7 +165,7 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
     }
     const streams = detailSources(detail, streamResult);
     if (streams.length === 0) anomalies.push("no_playable_source");
-    const manual = anomalies.some((value) => /locator|slug|mismatch|invalid/i.test(value));
+    const manual = anomalies.some((value) => /locator|slug|invalid/i.test(value));
     const hardFailure = anomalies.includes("no_playable_source") || anomalies.includes("detail_without_episodes") || manual;
     return {
       provider: target.provider,
@@ -209,6 +216,13 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
     }),
   };
   if (entry.ok) {
+    if (entry.anomalies.some((value) => /mismatch/i.test(value))) {
+      await upsertAutomatedCatalogReport({
+        ...base,
+        reportType: "provider_metadata_mismatch",
+      });
+      return;
+    }
     await Promise.all([
       resolveAutomatedCatalogReports({ reportType: "provider_catalog_failure", sourceProvider: entry.provider, sourceUrl: entry.url }),
       resolveAutomatedCatalogReports({ reportType: "provider_no_playable_source", sourceProvider: entry.provider, sourceUrl: entry.url }),
@@ -217,7 +231,9 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
     ]);
     return;
   }
-  const reportType = entry.anomalies.some((value) => /locator|slug|mismatch|invalid/i.test(value))
+  const reportType = entry.anomalies.some((value) => /mismatch/i.test(value))
+    ? "provider_metadata_mismatch"
+    : entry.anomalies.some((value) => /locator|slug|invalid/i.test(value))
     ? "provider_slug_changed"
     : entry.anomalies.includes("no_playable_source")
       ? "provider_no_playable_source"

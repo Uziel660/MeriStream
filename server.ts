@@ -3973,11 +3973,15 @@ async function startServer() {
           lower.includes("voe-unblock") ||
           lower.includes("mixdrop.") ||
           lower.includes("mxdrop.") ||
-          lower.includes("filemoon.")
+          lower.includes("filemoon.") ||
+          // Streamtape devuelve 403 desde la instancia Oracle aunque el
+          // extractor consiga un token /get_video. No se debe presentar como
+          // stream reproducible: el reproductor continúa con otra fuente del
+          // mismo episodio (por ejemplo Mega de DoramasYT).
+          lower.includes("streamtape.com")
         );
       };
-      const usableStreams = realStreams.filter((u) => !isDeadHost(u));
-      const candidatesToRank = usableStreams.length > 0 ? usableStreams : realStreams;
+      const candidatesToRank = realStreams.filter((u) => !isDeadHost(u));
 
       // HiAnimes/Zoko/Megaplay entrega un manifiesto temporal que exige el Referer del
       // CDN. Recuperar su metadata aquí evita que el JIT lo adjunte sin
@@ -4052,7 +4056,7 @@ async function startServer() {
         return res.json({
           url,
           stream_url: browserSafeDirectUrl(fastDirect),
-          all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
+          all_available_streams: candidatesToRank.map((value) => browserSafeDirectUrl(value)),
           title: extracted.title,
           resolved: true,
           ranked_streams: safeFastRanked,
@@ -4200,7 +4204,7 @@ async function startServer() {
       res.json({
         url,
         stream_url: browserSafeDirectUrl(finalStreamUrl),
-        all_available_streams: all.map((value) => browserSafeDirectUrl(value)),
+        all_available_streams: candidatesToRank.map((value) => browserSafeDirectUrl(value)),
         title: extracted.title,
         resolved: isResolved,
         requiredHeaders: primaryCandidate?.requiredHeaders || hianimesMeta?.requiredHeaders,

@@ -56,8 +56,10 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       ENFORCE_HTTPS: ${ENFORCE_HTTPS:-false}
       FLIXQUEST_API_URL: ${FLIXQUEST_API_URL:-https://flixquest-api.vercel.app}
+      FLIXQUEST_API_URLS: ${FLIXQUEST_API_URLS:-}
       FLIXQUEST_PROVIDER_IDS: ${FLIXQUEST_PROVIDER_IDS:-showbox,vidsrc,vidsrcto}
       NUVIO_STREAMS_URL: ${NUVIO_STREAMS_URL:-https://nuviostreams.hayd.uk}
+      NUVIO_STREAMS_URLS: ${NUVIO_STREAMS_URLS:-}
       ANIME_SDK_URL: ${ANIME_SDK_URL:-}
       ANIME_SDK_CONTENT_PROVIDERS: ${ANIME_SDK_CONTENT_PROVIDERS:-megaplay,animeparadise,allmanga,gogoanime}
       OPENSUBTITLES_V3_ENDPOINTS: ${OPENSUBTITLES_V3_ENDPOINTS:-https://opensubtitles-v3.strem.io,https://opensubtitles.strem.io}

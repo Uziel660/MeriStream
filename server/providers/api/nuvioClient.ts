@@ -5,10 +5,13 @@ export class NuvioClient implements DirectStreamProvider {
   readonly id = "nuvio";
   readonly kinds = ["movie", "series"] as const;
 
-  private readonly baseUrl: string;
+  private readonly baseUrls: string[];
 
-  constructor(baseUrl = process.env.NUVIO_STREAMS_URL || "https://nuviostreams.hayd.uk") {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+  constructor(baseUrl = process.env.NUVIO_STREAMS_URLS || process.env.NUVIO_STREAMS_URL || "https://nuviostreams.hayd.uk") {
+    this.baseUrls = baseUrl
+      .split(/[;,]/)
+      .map((value) => value.trim().replace(/\/$/, ""))
+      .filter((value, index, values) => /^https?:\/\//i.test(value) && values.indexOf(value) === index);
   }
 
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
@@ -21,15 +24,17 @@ export class NuvioClient implements DirectStreamProvider {
           `${req.tmdbId}:${req.season || 1}:${req.episode || 1}`,
         ];
 
-    for (const id of ids) {
-      const body = await fetchJson(`${this.baseUrl}/stream/${type}/${encodeURIComponent(id)}.json`);
-      const streams: unknown[] = Array.isArray(body?.streams) ? body.streams as unknown[] : [];
-      const direct = streams
-        .map((raw: any) => directFromUnknown(raw, `nuvio:${raw?.name || raw?.title || "stream"}`, {
-          canonicalLocator: `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`,
-        }))
-        .filter((source: PlayableSource | null): source is PlayableSource => Boolean(source));
-      if (direct.length > 0) return direct;
+    for (const baseUrl of this.baseUrls) {
+      for (const id of ids) {
+        const body = await fetchJson(`${baseUrl}/stream/${type}/${encodeURIComponent(id)}.json`);
+        const streams: unknown[] = Array.isArray(body?.streams) ? body.streams as unknown[] : [];
+        const direct = streams
+          .map((raw: any) => directFromUnknown(raw, `nuvio:${raw?.name || raw?.title || "stream"}`, {
+            canonicalLocator: `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`,
+          }))
+          .filter((source: PlayableSource | null): source is PlayableSource => Boolean(source));
+        if (direct.length > 0) return direct;
+      }
     }
     return [];
   }

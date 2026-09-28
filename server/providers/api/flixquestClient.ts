@@ -20,41 +20,43 @@ export class FlixQuestClient implements DirectStreamProvider {
   readonly id = "flixquest";
   readonly kinds = ["movie", "series"] as const;
 
-  private readonly baseUrl: string;
+  private readonly baseUrls: string[];
   private readonly providerIds: string[];
 
   constructor(
-    baseUrl = process.env.FLIXQUEST_API_URL || "https://flixquest-api.vercel.app",
+    baseUrl = process.env.FLIXQUEST_API_URLS || process.env.FLIXQUEST_API_URL || "https://flixquest-api.vercel.app",
     providerIds = (process.env.FLIXQUEST_PROVIDER_IDS || "showbox")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
   ) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.baseUrls = baseUrl
+      .split(/[;,]/)
+      .map((value) => value.trim().replace(/\/$/, ""))
+      .filter((value, index, values) => /^https?:\/\//i.test(value) && values.indexOf(value) === index);
     this.providerIds = providerIds;
   }
 
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
     if (!this.kinds.includes(req.kind as any)) return [];
 
-    const path = req.kind === "movie"
-      ? `watch-movie?tmdbId=${req.tmdbId}&proxied=false`
-      : `watch-tv?tmdbId=${req.tmdbId}&season=${req.season || 1}&episode=${req.episode || 1}&proxied=false`;
-
     const v2Path = req.kind === "movie" ? "stream-movie" : "stream-tv";
-    const v2Query = new URLSearchParams({
-      tmdbId: String(req.tmdbId),
-      full: "true",
-      noProxy: "true",
-    });
-    if (req.kind !== "movie") {
-      v2Query.set("season", String(req.season || 1));
-      v2Query.set("episode", String(req.episode || 1));
-    }
-
     const results = await Promise.allSettled(
-      this.providerIds.map(async (providerId) => {
+      this.baseUrls.flatMap((baseUrl) => this.providerIds.map(async (providerId) => {
+        const path = req.kind === "movie"
+          ? `watch-movie?tmdbId=${req.tmdbId}&proxied=false`
+          : `watch-tv?tmdbId=${req.tmdbId}&season=${req.season || 1}&episode=${req.episode || 1}&proxied=false`;
         const stableLocator = `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`;
+        const v2Query = new URLSearchParams({
+          tmdbId: String(req.tmdbId),
+          full: "true",
+          noProxy: "true",
+          provider: providerId,
+        });
+        if (req.kind !== "movie") {
+          v2Query.set("season", String(req.season || 1));
+          v2Query.set("episode", String(req.episode || 1));
+        }
         const parse = (body: any): PlayableSource[] => {
           if (!body) return [];
           const inheritedSubs = normalizeSubtitles(body?.subtitles || body?.tracks);
@@ -69,7 +71,7 @@ export class FlixQuestClient implements DirectStreamProvider {
             .filter((source): source is PlayableSource => Boolean(source));
         };
 
-        const legacy = parse(await fetchJson(`${this.baseUrl}/${encodeURIComponent(providerId)}/${path}`));
+        const legacy = parse(await fetchJson(`${baseUrl}/${encodeURIComponent(providerId)}/${path}`));
         if (legacy.length > 0) return legacy;
 
         // FlixQuest's current public contract moved under /api/v2 and returns
@@ -77,11 +79,18 @@ export class FlixQuestClient implements DirectStreamProvider {
         // expose v1, then fall back to the documented v2 route without
         // making callers change their provider configuration.
         v2Query.set("provider", providerId);
-        const v2Base = this.baseUrl.endsWith("/api/v2") ? this.baseUrl : `${this.baseUrl}/api/v2`;
+        const v2Base = baseUrl.endsWith("/api/v2") ? baseUrl : `${baseUrl}/api/v2`;
         return parse(await fetchJson(`${v2Base}/${v2Path}?${v2Query.toString()}`));
-      }),
+      })),
     );
 
-    return results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const sources = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const seen = new Set<string>();
+    return sources.filter((source) => {
+      const key = `${source.provider}|${source.canonicalLocator || source.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 }

@@ -4012,7 +4012,15 @@ async function startServer() {
       // CORS proxy so the browser receives the same media without a provider
       // redirect or an expiring signed URL.
       const browserSafeDirectUrl = (value: string): string => {
-        if (!/^https?:\/\/(?:www\.)?pixeldrain\.com\/api\/file\//i.test(value)) return value;
+        // DoramasYT is frequently filtered by mobile ISPs (and its CDN links
+        // also trigger browser CORS/ORB). Keep the browser on our own origin
+        // for every native external candidate; Mega's internal relay is
+        // already same-origin and therefore remains untouched.
+        const shouldProxyDoramas = sourceSite === "doramasyt"
+          && /^https?:\/\//i.test(value)
+          && !/^(?:https?:\/\/[^/]+)?\/api\/v1\//i.test(value)
+          && isDirectMedia(value);
+        if (!shouldProxyDoramas && !/^https?:\/\/(?:www\.)?pixeldrain\.com\/api\/file\//i.test(value)) return value;
         return `/api/v1/proxy/stream?referer=${encodeURIComponent(url)}&url=${encodeURIComponent(value)}${sourceSite ? `&provider=${encodeURIComponent(sourceSite)}` : ''}`;
       };
 
@@ -4040,6 +4048,10 @@ async function startServer() {
             ...(stream.type === "direct" || stream.url === fastDirect
               ? {
                   type: "direct" as const,
+                  // browserSafeDirectUrl() already turns external DoramasYT
+                  // media into a same-origin relay URL; keep this as a direct
+                  // trial so the player does not create a second session for
+                  // the canonical page.
                   delivery_mode: "direct_trial" as const,
                   is_proxyable: true,
                   is_refreshable: true,
@@ -4153,9 +4165,10 @@ async function startServer() {
         const upgraded = upgradedMap.get(r.url);
         return {
           ...r,
+          url: browserSafeDirectUrl(r.url),
           ...(upgraded
             ? {
-                url: upgraded.url,
+                url: browserSafeDirectUrl(upgraded.url),
                 type: "direct" as const,
                 original_url: url,
                 canonical_locator: url,

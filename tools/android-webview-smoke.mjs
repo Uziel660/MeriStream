@@ -444,19 +444,30 @@ try {
       const playButton = document.querySelector('button[aria-label="Reproducir"]');
       if (!playButton) return { found: true, playButton: false };
       trace.length = 0;
+      video.loop = true;
       playButton.click();
-      await new Promise((resolve) => setTimeout(resolve, 1400));
+      let playbackProgressSeconds = 0;
+      let previousTime = video.currentTime;
+      const progressSampler = setInterval(() => {
+        const currentTime = video.currentTime;
+        if (currentTime >= previousTime) playbackProgressSeconds += currentTime - previousTime;
+        previousTime = currentTime;
+      }, 250);
+      await new Promise((resolve) => setTimeout(resolve, 8000));
+      clearInterval(progressSampler);
       return {
         found: true,
         playButton: true,
         paused: video.paused,
         readyState: video.readyState,
         currentTime: video.currentTime,
+        playbackProgressSeconds: Number(playbackProgressSeconds.toFixed(2)),
+        stableObservationMs: 8000,
         systemBarTransitions: trace.slice(),
       };
     })()`, true, true);
     console.log(JSON.stringify({ action, ...result }));
-    if (!result?.found || !result.playButton || result.paused || result.systemBarTransitions?.length) {
+    if (!result?.found || !result.playButton || result.paused || result.playbackProgressSeconds < 2 || result.systemBarTransitions?.length) {
       throw new Error(`Play did not remain immersive without system bar toggles: ${JSON.stringify(result)}`);
     }
   } else if (action === 'open-player-more') {

@@ -15,6 +15,7 @@ import { api } from './api/client';
 import { normalizeText, normalizeTextStrict } from './utils/searchUtils';
 import { APP_PREFERENCES_EVENT, getAppPreferences } from './utils/appPreferences';
 import { displayEpisodeTitle } from './utils/episodeLabels';
+import { getNextEpisode } from './utils/episodeNavigation';
 import { RefreshCw, Film, Tv, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { Show, Episode } from './types';
 import { isNativeShell } from './utils/runtime';
@@ -938,6 +939,7 @@ export function App() {
         showTitle: 'Breaking Bad',
         episodeId: 'mock-ep-1',
         episodeNumber: 1,
+        seasonNumber: 1,
         episodeTitle: 'Piloto',
         isLoading: false,
         onNextEpisode: () => console.log('Next episode clicked'),
@@ -1774,6 +1776,7 @@ export function App() {
       showPoster: (currentShow && thumbBackdropUrl(currentShow)) || undefined,
       episodeId: episode.id,
       episodeNumber: episode.episode_number,
+      seasonNumber: Math.max(1, Number(episode.season_number) || 1),
       episodeTitle: resolvedTitle,
       tmdbId: currentShow?.tmdb_id ?? null,
       kind: currentShow?.kind || currentShow?.category || null,
@@ -2819,22 +2822,19 @@ export function App() {
             const showId = playingStreamData.showId;
             const currentEpisodeId = playingStreamData.episodeId;
             const currentEpNum = Number(playingStreamData.episodeNumber) || 1;
+            const currentSeasonNum = Math.max(1, Number(playingStreamData.seasonNumber) || 1);
             const nextEpNum = currentEpNum + 1;
+            const currentEpisode = {
+              id: String(currentEpisodeId || ''),
+              episode_number: currentEpNum,
+              season_number: currentSeasonNum,
+            };
 
             let currentShow = shows.find((show) => show.id === showId)
               || serverSearchResults.find((show) => show.id === showId);
 
-            let episodes: Episode[] = [...(currentShow?.episodes || [])]
-              .filter((ep) => Number.isFinite(Number(ep.episode_number)))
-              .sort((a, b) => Number(a.episode_number) - Number(b.episode_number));
-
-            let nextEpisode: Episode | undefined;
-            if (episodes.length > 0) {
-              const currentIdx = episodes.findIndex((ep) => ep.id === currentEpisodeId || ep.episode_number === currentEpNum);
-              if (currentIdx >= 0 && currentIdx + 1 < episodes.length) {
-                nextEpisode = episodes[currentIdx + 1];
-              }
-            }
+            let episodes: Episode[] = [...(currentShow?.episodes || [])];
+            let nextEpisode = getNextEpisode(episodes, currentEpisode);
 
             // Si los episodios no están en memoria local, resolverlos desde el backend
             if (!nextEpisode) {
@@ -2849,15 +2849,8 @@ export function App() {
                   if (publicRes.ok) detail = await publicRes.json();
                 }
                 if (Array.isArray(detail?.episodes) && detail.episodes.length > 0) {
-                  episodes = [...detail.episodes]
-                    .filter((ep: any) => Number.isFinite(Number(ep.episode_number)))
-                    .sort((a: any, b: any) => Number(a.episode_number) - Number(b.episode_number));
-                  const currentIdx = episodes.findIndex((ep) => ep.id === currentEpisodeId || ep.episode_number === currentEpNum);
-                  if (currentIdx >= 0 && currentIdx + 1 < episodes.length) {
-                    nextEpisode = episodes[currentIdx + 1];
-                  } else {
-                    nextEpisode = episodes.find((ep) => ep.episode_number === nextEpNum);
-                  }
+                  episodes = detail.episodes;
+                  nextEpisode = getNextEpisode(episodes, currentEpisode);
                 }
               } catch (e) {
                 console.warn('Error resolviendo siguiente episodio desde API:', e);
@@ -2867,10 +2860,11 @@ export function App() {
             // Fallback canónico por número de episodio
             if (!nextEpisode) {
               nextEpisode = {
-                id: `${showId}-s1-e${nextEpNum}`,
+                id: `${showId}-s${currentSeasonNum}-e${nextEpNum}`,
                 show_id: showId,
                 title: `Episodio ${nextEpNum}`,
                 episode_number: nextEpNum,
+                season_number: currentSeasonNum,
                 created_at: new Date().toISOString(),
               };
             }

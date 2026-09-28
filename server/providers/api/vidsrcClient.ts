@@ -234,7 +234,7 @@ function encodeNxshaData(value: Record<string, unknown>): string {
   const enriched = {
     ...value,
     _req_ts: Date.now(),
-    _req_salt: Math.random().toString(36).substring(2, 12),
+    _req_salt: randomBytes(5).toString("hex"),
   };
   const salt = randomBytes(8);
   const { key, iv } = deriveOpenSslKey(NXSHA_DATA_KEY, salt, 32, 16);

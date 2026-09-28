@@ -54,7 +54,10 @@ function json(route, body, status = 200) {
 }
 
 async function installMocks(page) {
-  await page.route('**/api/v1/catalog/public?**', (route) => json(route, {
+  // Match both the no-query bootstrap request and the paginated variant. The
+  // previous `?**` glob missed the initial request, leaving the player audit
+  // with an empty catalog even though the rest of the app was healthy.
+  await page.route(/\/api\/v1\/catalog\/public(?:\?.*)?$/, (route) => json(route, {
     shows: [catalogItem], total: 1, page: 1, pageSize: 1, totalPages: 1, source: 'tmdb',
   }));
   await page.route(/\/api\/v1\/catalog\/public\/(movie|series|anime)\/(\d+)(?:\?.*)?$/, (route) => json(route, {

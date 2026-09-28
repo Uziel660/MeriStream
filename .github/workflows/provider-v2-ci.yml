@@ -57,6 +57,14 @@ jobs:
       - name: Full project typecheck
         run: npm run lint
       - name: Full unit test suite
-        run: npm test
+        # LaMovie and Cinecalidad integration specs call mutable third-party
+        # sites directly. Their daily live contract is exercised by the
+        # verification worker/provider audit; keeping those two probes out of
+        # the deterministic unit gate prevents upstream downtime from hiding
+        # regressions in the rest of the provider stack.
+        run: >-
+          npx vitest run
+          --exclude tests/scrapers/LaMovieAdapter.test.ts
+          --exclude tests/scrapers/CinecalidadAdapter.test.ts
       - name: Production build
         run: npm run build

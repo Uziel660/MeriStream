@@ -19,6 +19,13 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   /** Hosts de descarga directa (no exponen stream embebido): no intentar resolver */
   private static readonly DOWNLOAD_HOSTS = ["1fichier.com", "megaup.net"];
 
+  /** Keep catalog locators canonical: omit empty query values from the SPA. */
+  private static buildModernLocator(prefix: string, slug: string | number, tmdbId: string | number, code?: string | null): string {
+    const params = new URLSearchParams({ tmdb_id: String(tmdbId) });
+    if (String(code || "").trim()) params.set("code", String(code).trim());
+    return `https://lamovie.org/${prefix}/${encodeURIComponent(String(slug))}/?${params.toString()}`;
+  }
+
   private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
     /cfglobalcdn\.com/i,
     /yourupload\.com/i,
@@ -154,7 +161,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       if (modernItems.length > 0) {
         return modernItems.filter((item) => item?.tmdb_id && item?.title).map((item) => ({
           title: String(item.title).trim(),
-          url: `https://lamovie.org/${fichaPrefix}/${item.slug || item.tmdb_id}/?tmdb_id=${encodeURIComponent(item.tmdb_id)}&code=${encodeURIComponent(item.code || "")}`,
+          url: LaMovieAdapter.buildModernLocator(fichaPrefix, item.slug || item.tmdb_id, item.tmdb_id, item.code),
           image_url: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
           kind: contentType,
           year: Number.isFinite(Number(item.year)) ? Number(item.year) : null,

@@ -37,7 +37,7 @@ async function cleanupLandingPages() {
     } else if (link.url.includes("tioanime.com/anime/")) {
       const slug = link.url.split("/anime/")[1]?.split(/[\/?#]/)[0];
       if (slug) newUrl = `https://tioanime.com/ver/${slug}-${epNum}`;
-    } else if (link.url.includes("animeflv.net/anime/") || link.url.includes("animeflv.or.at/anime/")) {
+    } else if (link.url.includes("animeflv.net/anime/") || link.url.includes("animeflv.ar/anime/") || link.url.includes("animeflv.or.at/anime/")) {
       const slug = link.url.split("/anime/")[1]?.split(/[\/?#]/)[0];
       if (slug) newUrl = `https://www3.animeflv.net/ver/${slug}-${epNum}`;
     }

@@ -156,8 +156,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
-    hosts: ["animeflv.or.at"],
-    notes: "animeflv.net y animeflv.to no superaron la sonda de catálogo y quedan fuera de la rotación automática; se conserva el mirror .or.at verificado.",
+    hosts: ["animeflv.ar", "animeflv.or.at"],
+    notes: "El mirror .ar usa el tema AnimeStream con episodios /{slug}-episodio-{n}-sub-espanol/ y Zilla como embed; .or.at se conserva como mirror legacy verificado. animeflv.net/.to no superaron la sonda.",
   },
   jkanime: {
     id: "jkanime",
@@ -395,6 +395,7 @@ const SITE_ALIASES: Record<string, string> = {
   "animeflv.net": "animeflv",
   "animeflv.to": "animeflv",
   "animeflv.or.at": "animeflv",
+  "animeflv.ar": "animeflv",
   "animeflv.or.am": "animeflv",
   "jkanime.net": "jkanime",
   "cinecalidad.am": "cinecalidad",

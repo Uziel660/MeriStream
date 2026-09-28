@@ -66,7 +66,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "AnimeFLV Catálogo (Anime Español)",
     category: "anime",
     description: "Directorio vivo de animes con temporadas completas y servidores multi-fuente.",
-    example_url: "https://animeflv.or.at/anime/",
+    example_url: "https://animeflv.ar/anime/",
     icon: "Tv",
   },
   {

@@ -53,7 +53,7 @@ export const PROVIDER_INGESTION_TARGETS: ProviderIngestionTarget[] = [
  */
 export const LEGACY_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "animeav1", targetUrl: "https://animeav1.com/catalogo", name: "AnimeAV1 (legacy)" },
-  { providerId: "animeflv", targetUrl: "https://animeflv.or.at/anime/", name: "AnimeFLV (legacy)" },
+  { providerId: "animeflv", targetUrl: "https://animeflv.ar/anime/", name: "AnimeFLV (legacy)" },
   { providerId: "jkanime", targetUrl: "https://jkanime.net/directorio/", name: "JKAnime (legacy)" },
   { providerId: "hianimes", targetUrl: "https://hianimes.se/filter?type=All&page=1", name: "HiAnimes (legacy; descubridor de Zoko)" },
   { providerId: "lamovie", targetUrl: "https://lamovie.org/peliculas", name: "LaMovie (legacy)" },

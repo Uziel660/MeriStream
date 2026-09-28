@@ -72,6 +72,8 @@ const EXCLUDED_SITES = new Set<string>();
 const SEARCH_ADAPTERS: Record<string, string> = {
   animeflv: "animeflv",
   "animeflv.net": "animeflv",
+  "animeflv.ar": "animeflv",
+  "animeflv.or.at": "animeflv",
   jkanime: "animeflv",
   tioanime: "tioanime",
   "tioanime.com": "tioanime",

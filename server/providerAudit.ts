@@ -50,7 +50,7 @@ export interface ProviderAuditSummary {
 }
 
 const CORE_TARGETS: ProviderAuditTarget[] = [
-  ["animeflv", "https://animeflv.or.at/anime/"],
+  ["animeflv", "https://animeflv.ar/anime/"],
   ["jkanime", "https://jkanime.net/buscar/one-piece/"],
   ["tioanime", "https://tioanime.com/directorio"],
   ["latanime", "https://latanime.org/animes"],

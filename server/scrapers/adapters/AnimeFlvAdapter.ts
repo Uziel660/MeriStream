@@ -81,7 +81,7 @@ const isDeadOrBlocked = (url: string) =>
 export class AnimeFlvAdapter extends BaseScraperAdapter {
   readonly id = "animeflv";
   readonly name = "AnimeFLV / Anime Streaming";
-  readonly supportedDomains = ["animeflv.net", "animeflv.or.at", "animeflv.or.am", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
+  readonly supportedDomains = ["animeflv.net", "animeflv.ar", "animeflv.or.at", "animeflv.or.am", "animeflv.me", "animeflv.ac", "animeflv.to", "jkanime.net"];
 
   /** Tope de páginas del AJAX de episodios de jkanime; se detiene antes en last_page. */
   private static readonly JK_PAGES = 1000;
@@ -938,7 +938,10 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     if (extractedEpisodes.length === 0) {
-      $("ul.episodes-list li a, .ListCaps a, ul.ListCaps li a, .capitulos-list a, .episode-list a").each((idx, el) => {
+      // The current AnimeStream/WordPress theme uses `.eplister`; older
+      // AnimeFLV mirrors use the legacy list selectors below. Keep both so a
+      // domain move does not collapse a complete series into one landing URL.
+      $(".eplister li a, ul.episodes-list li a, .ListCaps a, ul.ListCaps li a, .capitulos-list a, .episode-list a").each((idx, el) => {
         const rawText = $(el).text().trim() || $(el).attr("title") || `Episodio ${idx + 1}`;
         let href = $(el).attr("href") || "";
         if (href && !href.startsWith("http")) {
@@ -1056,7 +1059,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       year: enriched.year || 0,
       status: enriched.status || "Finalizado",
       genres: enriched.genres || ["Anime"],
-      episodes: [{ number: 1, title: "Episodio 1", url: `https://www3.animeflv.net/browse?q=${encodeURIComponent(cleaned)}` }],
+      episodes: [{ number: 1, title: "Episodio 1", url: `https://animeflv.ar/?s=${encodeURIComponent(cleaned)}` }],
       catalog_items: [],
     };
   }

@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 const PROVIDER_CONFIGS: Record<string, { showSources: string[]; sourceSites: string[] }> = {
   animeflv: {
     showSources: ['animeflv', 'ww3'],
-    sourceSites: ['www3.animeflv.net', 'animeflv', 'animeflv.net', 'animeflv.or.at'],
+    sourceSites: ['www3.animeflv.net', 'animeflv', 'animeflv.net', 'animeflv.ar', 'animeflv.or.at'],
   },
   jkanime: {
     showSources: ['jkanime'],

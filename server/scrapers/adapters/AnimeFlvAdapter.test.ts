@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as cheerio from "cheerio";
 import { AnimeFlvAdapter } from "./AnimeFlvAdapter";
 
 describe("AnimeFlvAdapter · fallback JKanime", () => {
@@ -31,5 +32,21 @@ describe("AnimeFlvAdapter · fallback JKanime", () => {
       title: "Yozakura-san Chi no Daisakusen",
       url: "https://jkanime.net/yozakura-san-chi-no-daisakusen-2nd-season/",
     });
+  });
+
+  it("extrae episodios y el embed Zilla del tema AnimeStream de animeflv.ar", () => {
+    const adapter: any = new AnimeFlvAdapter();
+    const html = `<h1 class="anime-title">Aishiteru Game wo Owarasetai</h1>
+      <div class="eplister"><ul>
+        <li><a href="https://animeflv.ar/aishiteru-game-wo-owarasetai-episodio-2-sub-espanol/"><div class="epl-num">2</div><div class="epl-title">Episodio 2 Sub Español</div></a></li>
+        <li><a href="https://animeflv.ar/aishiteru-game-wo-owarasetai-episodio-1-sub-espanol/"><div class="epl-num">1</div><div class="epl-title">Episodio 1 Sub Español</div></a></li>
+      </ul></div>`;
+    const episodes = adapter.extractAnimeflvEpisodes(cheerio.load(html), html, new URL("https://animeflv.ar/anime/aishiteru-game-wo-owarasetai/"));
+    expect(episodes).toHaveLength(2);
+    expect(episodes.map((episode: any) => episode.number)).toEqual([2, 1]);
+
+    const episodeHtml = `<div id="pembed"><iframe src="https://player.zilla-networks.com/play/example"></iframe></div>`;
+    const streams = adapter.extractAnimeflvStreams(cheerio.load(episodeHtml), episodeHtml, "https://animeflv.ar/aishiteru-game-wo-owarasetai-episodio-1-sub-espanol/");
+    expect(streams).toEqual(["https://player.zilla-networks.com/play/example"]);
   });
 });

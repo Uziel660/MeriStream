@@ -147,7 +147,7 @@ export interface VerificationStatus {
 // ── Defaults y persistencia ──────────────────────────────────────
 
 export const DEFAULT_CATALOG_URLS: Record<string, string> = {
-  animeflv: "https://animeflv.or.at/anime/",
+  animeflv: "https://animeflv.ar/anime/",
   tioanime: "https://tioanime.com/directorio",
   latanime: "https://latanime.org/animes",
   cinecalidad: "https://www.cinecalidad.am/",

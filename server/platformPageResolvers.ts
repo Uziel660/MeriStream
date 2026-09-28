@@ -121,7 +121,7 @@ export function isAnimeFlvPageUrl(rawUrl: string | URL): boolean {
   try {
     const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
     const host = url.hostname.toLowerCase();
-    return /(?:^|\.)animeflv\.(?:net|or\.at|me|to|ac|or\.am)$/i.test(host);
+    return /(?:^|\.)animeflv\.(?:net|ar|or\.at|me|to|ac|or\.am)$/i.test(host);
   } catch {
     return false;
   }

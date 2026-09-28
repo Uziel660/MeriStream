@@ -55,6 +55,14 @@ export interface GatewayFallbackCandidate {
 const SPANISH_LOCAL = new Set([
   "cinecalidad", "gnula", "latanime", "tioanime", "doramasflix", "doramasia",
 ]);
+// Directos históricos que parecen HLS válidos, pero cuyo reproductor ya fue
+// retirado por el adaptador TioPlus. El master puede responder 200 mientras
+// todas sus variantes apuntan a CDNs NXDOMAIN (muletten/valybay), por lo que
+// solo la sonda del master no basta para considerarlos reproducibles.
+const RETIRED_DIRECT_HOSTS = [
+  /turboviplay\.com/i,
+  /turbosplayer\.com/i,
+];
 const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_MS || 120_000));
 // Cuando ya existe una fuente local recuperable, un API externo lento no debe
 // bloquear la primera interacción. Sin fallback local esperamos al API completo
@@ -83,6 +91,9 @@ async function keepPlayableDirectSources(sources: GatewaySource[]): Promise<Gate
   }
 
   const checked = await Promise.all([...unique.values()].map(async (source) => {
+    if (normalizeProviderId(source.provider) === "tioplus" && RETIRED_DIRECT_HOSTS.some((pattern) => pattern.test(source.url))) {
+      return null;
+    }
     const cached = directProbeCache.get(source.url);
     if (cached && cached.expires > Date.now()) {
       return cached.ok ? { ...source, sourceStatus: "media_checked" } : null;

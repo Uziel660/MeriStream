@@ -5,6 +5,13 @@ import { EmbedResolvers } from "../../resolvers";
 import { VimeosResolver } from "../vimeosResolver";
 import { MediaValidator } from "../../validator";
 import { familyKeyOfStreamUrl } from "../../utils/streamSorter";
+import {
+  canonicalCinecalidadUrl,
+  lookupCinecalidadEpisode,
+  lookupCinecalidadItem,
+  parseCinecalidadLocator,
+  type CinecalidadApiItem,
+} from "../cinecalidadApi";
 
 const BASE_URL = "https://www.cinecalidad.am";
 
@@ -463,6 +470,22 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
 
     const path = new URL(cleanInput).pathname.toLowerCase();
 
+    // La app actual de Cinecalidad es una SPA. El HTML de sus rutas solo
+    // contiene #root, por lo que la identidad y el reproductor deben salir de
+    // su API; nunca intentamos reconstruirlos desde el slug recibido.
+    const currentLocator = parseCinecalidadLocator(cleanInput);
+    if (currentLocator && explicitType !== "catalog") {
+      const lookup = currentLocator.season !== undefined && currentLocator.episode !== undefined
+        ? await lookupCinecalidadEpisode(currentLocator.kind, currentLocator.tmdbId, currentLocator.season, currentLocator.episode)
+        : await lookupCinecalidadItem(currentLocator.kind, currentLocator.tmdbId);
+      if (lookup.item) return this.analysisFromApiItem(lookup.item, cleanInput, explicitType);
+      if (!lookup.failed) {
+        return this.emptyCurrentApiResult(this.kindFromUrl(cleanInput), cleanInput);
+      }
+      // En un fallo transitorio de la API dejamos que el flujo HTML histórico
+      // intente recuperar la ficha, sin inventar un TMDB id a partir del slug.
+    }
+
     // Modo catálogo: Home, paginación (/page/N/) o petición explícita
     const isCatalog =
       explicitType === "catalog" || path === "/" || path === "" || /^\/page\/\d+/.test(path);
@@ -575,6 +598,32 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     title?: string;
   }> {
     const cleanUrl = targetUrl.trim();
+
+    const currentLocator = parseCinecalidadLocator(cleanUrl);
+    if (currentLocator) {
+      const lookup = currentLocator.season !== undefined && currentLocator.episode !== undefined
+        ? await lookupCinecalidadEpisode(currentLocator.kind, currentLocator.tmdbId, currentLocator.season, currentLocator.episode)
+        : await lookupCinecalidadItem(currentLocator.kind, currentLocator.tmdbId);
+      const item = lookup.item;
+      const fileCode = String(item?.code || "").trim();
+      if (!item || !fileCode) return { stream_url: "", all_available_streams: [], title: item?.title };
+
+      // El player de la SPA se forma con el code devuelto por la API. La URL
+      // de la ficha nunca es un stream y no se debe ofrecer como fallback.
+      const playerUrl = `https://vimeos.net/embed-${encodeURIComponent(fileCode)}.html`;
+      try {
+        const resolved = await EmbedResolvers.resolve(playerUrl);
+        if (resolved) return { stream_url: resolved, all_available_streams: [resolved], title: item.title };
+      } catch {}
+      return { stream_url: playerUrl, all_available_streams: [playerUrl], title: item.title };
+    }
+
+    // Las rutas antiguas no contienen un identificador estable. No se deben
+    // raspar como si el HTML 200 de la SPA confirmara que existe una película.
+    if (/\/ver-(?:pelicula|serie|el-episodio)\//i.test(new URL(cleanUrl).pathname)) {
+      return { stream_url: "", all_available_streams: [] };
+    }
+
     const html = await this.fetchHtml(cleanUrl, 12000);
     if (!html) {
       return { stream_url: "", all_available_streams: [] };
@@ -716,7 +765,72 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
   }
 
   private kindFromUrl(url: string): ContentKind {
-    return /\/ver-(?:serie|el-episodio)\//i.test(url) ? "series" : "movie";
+    if (/\/anime\//i.test(url)) return "anime";
+    return /\/(?:ver-)?(?:serie|el-episodio)\//i.test(url) ? "series" : "movie";
+  }
+
+  private async analysisFromApiItem(
+    item: CinecalidadApiItem,
+    url: string,
+    explicitType?: "auto" | "catalog" | "detail" | "stream",
+  ): Promise<UniversalAnalysisResult> {
+    const contentType = this.kindFromUrl(url);
+    let detectedStreams: string[] | undefined;
+    if (!explicitType || explicitType === "auto" || explicitType === "stream") {
+      detectedStreams = (await this.extractStream(url)).all_available_streams;
+    }
+    const yearText = item.release_date || item.first_air_date || "";
+    const year = Number(item.year || yearText.slice(0, 4)) || 0;
+    const genres = Array.isArray(item.genres)
+      ? item.genres.map((genre) => typeof genre === "string" ? genre : String(genre?.name || "")).filter(Boolean)
+      : [];
+    return {
+      page_type: "detail",
+      content_type: contentType,
+      title: item.title,
+      original_title: typeof item.original_title === "string" ? item.original_title : undefined,
+      tmdb_id: Number(item.tmdb_id ?? item.id) || undefined,
+      description: String(item.overview || ""),
+      poster_url: item.poster_path ? String(item.poster_path) : null,
+      banner_url: item.backdrop_path ? String(item.backdrop_path) : null,
+      rating: Number(item.vote_average || 0),
+      year,
+      status: "Publicado",
+      genres,
+      source_domain: "cinecalidad.am",
+      detected_streams: detectedStreams,
+      episodes: [],
+      catalog_items: [],
+      raw_metadata: {
+        og: {
+          title: item.title,
+          description: String(item.overview || ""),
+          image: String(item.poster_path || ""),
+          canonical_url: parseCinecalidadLocator(url)?.season !== undefined
+            ? url
+            : (canonicalCinecalidadUrl(item) || url),
+        },
+      },
+    };
+  }
+
+  private emptyCurrentApiResult(contentType: ContentKind, url: string): UniversalAnalysisResult {
+    return {
+      page_type: "detail",
+      content_type: contentType,
+      title: "Contenido Cinecalidad",
+      description: "La ficha ya no existe en el catálogo actual de Cinecalidad",
+      poster_url: null,
+      banner_url: null,
+      rating: 0,
+      year: 0,
+      status: "No disponible",
+      genres: [],
+      source_domain: "cinecalidad.am",
+      episodes: [],
+      catalog_items: [],
+      raw_metadata: { og: { canonical_url: url } },
+    };
   }
 
   private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
@@ -751,7 +865,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
   }
 
   private titleFromUrl(url: string): string {
-    const match = url.match(/\/ver-(?:pelicula|serie|el-episodio)\/([^/]+)/);
+    const match = url.match(/\/(?:ver-(?:pelicula|serie|el-episodio)|pelicula|serie|anime)\/([^/]+)(?:\/[^/]+)?/i);
     if (!match) return "Contenido Cinecalidad";
     return match[1]
       .replace(/-\d+x\d+\/?$/, "")

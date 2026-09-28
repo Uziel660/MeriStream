@@ -21,6 +21,7 @@ import { hasSignedQuery } from "./resolutionMetadata";
 import { getPublicCatalogDetail } from "./publicCatalog";
 import { subtitleGateway } from "./subtitles";
 import type { SubtitleCandidate } from "./subtitles/types";
+import { canonicalCinecalidadEpisodeUrl, canonicalCinecalidadUrl, lookupCinecalidadItem } from "./scrapers/cinecalidadApi";
 
 export type GatewayKind = DirectMediaKind;
 
@@ -297,6 +298,21 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
   });
   if (episodes.length === 0) return { direct: [], fallbackCandidates };
 
+  // Las filas históricas de Cinecalidad contienen slugs libres y, en muchos
+  // casos, errores tipográficos. La SPA actual solo reconoce el par
+  // (kind, TMDB id), así que resolvemos una vez por solicitud y reutilizamos la
+  // ruta canónica para todos los enlaces de ese episodio.
+  const hasCinecalidadLink = episodes.some((episode) => episode.links.some((link) => normalizeProviderId(link.source_site) === "cinecalidad"));
+  const cinecalidadLookup = hasCinecalidadLink
+    ? await lookupCinecalidadItem(req.kind, req.tmdbId)
+    : null;
+  const cinecalidadCanonical = cinecalidadLookup?.item
+    ? req.kind === "movie"
+      ? canonicalCinecalidadUrl(cinecalidadLookup.item)
+      : canonicalCinecalidadEpisodeUrl(cinecalidadLookup.item, req.season || 1, req.episode || 1)
+    : null;
+  const cinecalidadConfirmedMissing = Boolean(cinecalidadLookup && !cinecalidadLookup.failed && !cinecalidadLookup.item);
+
   const direct: GatewaySource[] = [];
   const seen = new Set<string>();
   for (const episode of episodes) {
@@ -312,12 +328,22 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     // but they must not leak into the normal gateway response. TioAnime is the
     // only legacy exception and is handled below as ZokoAnime fallback.
     if (!isProviderAllowedInMainPath(provider, req.kind)) continue;
+    // Un 404 confirmado en la API actual significa que el antiguo registro ya
+    // no corresponde a una ficha real. Ocultarlo evita presentar una SPA 200
+    // como si fuera una película reproducible.
+    if (provider === "cinecalidad" && cinecalidadConfirmedMissing) continue;
     // Some crawls persisted both the provider's canonical page and an older
     // embed from that same provider. The page is the refreshable identity and
     // can generate a fresh server; keeping the stale embed ahead of it causes
     // needless failures (especially after Vimeos/VOE rotations).
     if (String(link.link_type).toLowerCase() === "embed" && canonicalPageProviders.has(provider)) continue;
-    const linkKey = `${provider}|${link.url}`;
+    const effectiveUrl = provider === "cinecalidad" && cinecalidadCanonical && String(link.link_type).toLowerCase() !== "embed"
+      ? cinecalidadCanonical
+      : link.url;
+    const effectiveCanonicalLocator = provider === "cinecalidad" && cinecalidadCanonical && String(link.link_type).toLowerCase() !== "embed"
+      ? cinecalidadCanonical
+      : (link.canonical_locator || link.url);
+    const linkKey = `${provider}|${effectiveUrl}`;
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
     const providerGroup = SPANISH_LOCAL.has(provider) ? "spanish-local" as const : "database" as const;
@@ -338,13 +364,13 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     // Older hydration runs could persist VidSrc's signed CDN URL as a direct
     // source. Never return that stale URL ahead of its renewable embed page;
     // use the canonical locator when available and discard it otherwise.
-    if (hasSignedQuery(link.url)) {
+    if (hasSignedQuery(effectiveUrl)) {
       if (stableLocator && /^https?:\/\//i.test(stableLocator)) {
         fallbackCandidates.push({
           provider,
           providerGroup,
-          url: stableLocator,
-          canonicalLocator: stableLocator,
+          url: effectiveCanonicalLocator || stableLocator,
+          canonicalLocator: effectiveCanonicalLocator || stableLocator,
           type: "page",
           audioLanguage,
           subtitleLanguage,
@@ -355,20 +381,20 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
       }
       continue;
     }
-    const streamType = inferStreamType(link.url, link.link_type);
+    const streamType = inferStreamType(effectiveUrl, link.link_type);
 
     if (streamType && provider !== "tioanime") {
       direct.push({
         provider,
         providerGroup,
-        url: link.url,
+        url: effectiveUrl,
         streamType,
         audioLanguage,
         subtitleLanguage,
         subtitles,
         score: score + (providerGroup === "spanish-local" ? 25 : 0),
         sourceStatus: link.source_status,
-        canonicalLocator: link.canonical_locator,
+        canonicalLocator: effectiveCanonicalLocator,
       });
       continue;
     }
@@ -376,8 +402,8 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     fallbackCandidates.push({
       provider,
       providerGroup,
-      url: link.url,
-      canonicalLocator: link.canonical_locator || link.url,
+      url: effectiveUrl,
+      canonicalLocator: effectiveCanonicalLocator,
       type: String(link.link_type).toLowerCase() === "embed" ? "embed" : "page",
       audioLanguage,
       subtitleLanguage,

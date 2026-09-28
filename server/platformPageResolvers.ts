@@ -451,6 +451,15 @@ export async function resolvePlatformPage(
         ]);
         streamUrl = extracted.stream_url || "";
         availableStreams = extracted.all_available_streams || [];
+      } else if (isCinecalidadPageUrl(cleanUrl)) {
+        const { CinecalidadAdapter } = await import("./scrapers/adapters/CinecalidadAdapter");
+        const adapter = new CinecalidadAdapter();
+        const extracted = await Promise.race([
+          adapter.extractStream(cleanUrl),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
+        ]);
+        streamUrl = extracted.stream_url || "";
+        availableStreams = extracted.all_available_streams || [];
       } else if (isTioAnimePageUrl(cleanUrl)) {
         const { TioAnimeAdapter } = await import("./scrapers/adapters/TioAnimeAdapter");
         const adapter = new TioAnimeAdapter();

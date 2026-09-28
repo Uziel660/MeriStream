@@ -5,8 +5,8 @@ import { playableUrl } from "./types";
 import { normalizeLanguageCode } from "../../utils/languageDetector";
 
 const DEFAULT_DOMAINS = [
-  "https://vidsrc.me",
   "https://vidsrc.sbs",
+  "https://vidsrc.me",
   "https://vidsrc.ir",
   "https://vidsrc2.ru",
   "https://vidsrcme.ru",
@@ -20,6 +20,7 @@ const DEFAULT_DOMAINS = [
 
 const DEFAULT_TIMEOUT_MS = 6500;
 const MIRROR_BATCH_SIZE = 4;
+const MIRROR_ATTEMPT_TIMEOUT_MS = Math.max(4_000, Number(process.env.VIDSRC_MIRROR_ATTEMPT_TIMEOUT_MS || 10_000));
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const NXSHA_API_ORIGIN = "https://web.nxsha.app";
@@ -28,6 +29,16 @@ const NXSHA_API_ORIGIN = "https://web.nxsha.app";
 const NXSHA_DATA_KEY = "S8x!Jk4ZP1uG8$my";
 
 type FetchLike = typeof fetch;
+
+function withAttemptTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("vidsrc_mirror_timeout")), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
 
 export type VidSrcResolutionStatus =
   | "direct"
@@ -984,7 +995,7 @@ export async function resolveVidSrcEmbed(
 }
 
 export class VidSrcClient implements DirectStreamProvider {
-  readonly id = "vidsrc";
+  readonly id: string;
   // Anime titles are TMDB TV works from the gateway's point of view. Keeping
   // this in the direct provider means a public TMDB anime card can resolve
   // without importing a local scraper row first.
@@ -996,9 +1007,11 @@ export class VidSrcClient implements DirectStreamProvider {
   constructor(
     origins = normalizeOrigins(process.env.VIDSRC_ORIGINS),
     fetcher: FetchLike = fetch,
+    providerId = "vidsrc",
   ) {
     this.origins = origins;
     this.fetcher = fetcher;
+    this.id = providerId;
   }
 
   async resolve(req: ProviderRequest): Promise<PlayableSource[]> {
@@ -1040,10 +1053,13 @@ export class VidSrcClient implements DirectStreamProvider {
     for (let offset = 0; offset < this.origins.length; offset += MIRROR_BATCH_SIZE) {
       const batch = this.origins.slice(offset, offset + MIRROR_BATCH_SIZE);
       const attempts = batch.map(async (origin) => {
-        const result = await resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher, {
-          preferredAudio: req.preferredAudio,
-          preferredSubtitles: req.preferredSubtitles,
-        });
+        const result = await withAttemptTimeout(
+          resolveVidSrcEmbed(buildEmbedUrl(origin, req), this.fetcher, {
+            preferredAudio: req.preferredAudio,
+            preferredSubtitles: req.preferredSubtitles,
+          }),
+          MIRROR_ATTEMPT_TIMEOUT_MS,
+        );
         let directHost: string | null = null;
         if (result.hlsUrl) {
           try { directHost = new URL(result.hlsUrl).hostname; } catch { /* malformed result */ }
@@ -1089,6 +1105,34 @@ export class VidSrcClient implements DirectStreamProvider {
         if (directHosts.size === 1) break;
       }
 
+    }
+
+    // Anime mirrors occasionally rotate the terminal CDN between the initial
+    // player request and the segment probe. A single bounded retry against the
+    // preferred SBS mirror prevents a transient token race from removing
+    // VidSrc entirely from the anime fallback list.
+    if (req.kind === "anime") {
+      const retryOrigin = this.origins.find((origin) => /vidsrc\.sbs/i.test(origin)) || this.origins[0];
+      if (retryOrigin) {
+        try {
+          const result = await withAttemptTimeout(
+            resolveVidSrcEmbed(buildEmbedUrl(retryOrigin, req), this.fetcher, {
+              preferredAudio: req.preferredAudio,
+              preferredSubtitles: req.preferredSubtitles,
+            }),
+            MIRROR_ATTEMPT_TIMEOUT_MS,
+          );
+          if (result.status === "direct" && result.hlsUrl
+            && isVidSrcLanguageCompatible(result.detectedLanguage, req.originalLanguage, req.preferredAudio, result.audioTracks)
+            && await isVidSrcHlsUsable(result.hlsUrl, result.requiredHeaders, this.fetcher)) {
+            const source = toPlayableSource(result);
+            if (source) return [source];
+          }
+        } catch {
+          // The normal mirror result remains authoritative when the retry also
+          // fails; callers will expose the stable locator as a fallback.
+        }
+      }
     }
     return [];
   }

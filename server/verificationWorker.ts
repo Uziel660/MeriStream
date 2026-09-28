@@ -1040,11 +1040,17 @@ async function processCatalogItem( // NOSONAR
 
 async function auditSourcesAndQueueMirrors(): Promise<void> {
   try {
-    // Rotate a bounded batch every day. Ten thousand links completes a full
-    // pass over the current catalog in weeks while keeping the request pool
-    // capped so Oracle and the upstream sites are not flooded.
-    const dailyAuditLimit = 10_000;
-    const audit = await auditSourceLinks({ limit: dailyAuditLimit, concurrency: 32 });
+    // Rotate a bounded batch every day. The default is high enough to finish
+    // a large catalog in a practical window while the concurrency cap keeps
+    // Oracle and upstream sites from being flooded. Operators can tune it
+    // without a code change via MERISTREAM_DAILY_SOURCE_AUDIT_LIMIT.
+    const configuredDailyLimit = Number(process.env.MERISTREAM_DAILY_SOURCE_AUDIT_LIMIT);
+    const dailyAuditLimit = Number.isFinite(configuredDailyLimit)
+      ? Math.min(50_000, Math.max(1_000, Math.round(configuredDailyLimit)))
+      : 25_000;
+    // Deep resolver checks are more expensive than a page GET; keep the
+    // network pool bounded so one provider cannot starve catalog syncing.
+    const audit = await auditSourceLinks({ limit: dailyAuditLimit, concurrency: 16, resolveEmbeds: true });
     let recoveryJobId: string | null = null;
     if (audit.failed > 0) {
       try {
@@ -1088,7 +1094,9 @@ async function auditSourcesAndQueueMirrors(): Promise<void> {
   // repara únicamente cuando hay una coincidencia exacta y del mismo host;
   // los casos ambiguos se dejan como alerta administrativa, nunca se adivinan.
   try {
-    lastSlugRepair = await repairFailedSourceSlugs({ limit: 200, concurrency: 2 });
+    // Repair the full bounded batch each day so a provider-wide slug change
+    // converges quickly; ambiguous matches still become admin reports.
+    lastSlugRepair = await repairFailedSourceSlugs({ limit: 500, concurrency: 4 });
     if (lastSlugRepair.repaired || lastSlugRepair.manual_review || lastSlugRepair.errors) {
       log("info", `[Reparación de slugs] ${lastSlugRepair.repaired} reparados, ${lastSlugRepair.manual_review} manuales, ${lastSlugRepair.errors} errores.`);
     }

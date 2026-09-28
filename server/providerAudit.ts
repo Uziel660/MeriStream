@@ -3,6 +3,8 @@ import { upsertAutomatedCatalogReport, resolveAutomatedCatalogReports } from "./
 import { dedupeCatalogItems } from "./catalogIntegrity";
 import { isCatalogNavigationLocator } from "./sourceLinkAudit";
 import { normalizeTitleKey, isPlausibleTitle } from "./utils/titleNormalizer";
+import { auditDirectProviders, type DirectProviderAuditSummary } from "./directProviderAudit";
+import { getProviderPolicy } from "./providers/providerPolicy";
 import type { ContentKind, ExtractedCatalogItem, UniversalAnalysisResult } from "./types";
 
 /** A bounded, read-only conformance check for one public provider catalog. */
@@ -11,6 +13,7 @@ export interface ProviderAuditTarget {
   url: string;
   label?: string;
   mode?: "catalog" | "detail";
+  mirror?: boolean;
 }
 
 export interface ProviderAuditEntry {
@@ -27,6 +30,12 @@ export interface ProviderAuditEntry {
   error?: string;
   duration_ms: number;
   candidates_checked?: number;
+  audit_kind?: "catalog" | "direct_api";
+  lifecycle?: string;
+  configured?: boolean;
+  checked_kinds?: string[];
+  failed_kinds?: string[];
+  persistence_error?: string;
 }
 
 export interface ProviderAuditSummary {
@@ -37,6 +46,7 @@ export interface ProviderAuditSummary {
   failed: number;
   manual_review: number;
   entries: ProviderAuditEntry[];
+  direct_api?: DirectProviderAuditSummary;
 }
 
 const CORE_TARGETS: ProviderAuditTarget[] = [
@@ -114,6 +124,57 @@ function targetFromPreset(preset: typeof PRESET_SOURCES[number]): ProviderAuditT
   return { provider: id || preset.id, url: preset.example_url, label: preset.name };
 }
 
+function targetHost(url: string): string | null {
+  try { return new URL(url).hostname.replace(/^www\./i, "").toLowerCase(); }
+  catch { return null; }
+}
+
+function policyForTarget(provider: string) {
+  const exact = getProviderPolicy(provider);
+  if (exact) return exact;
+  const parts = provider.toLowerCase().split("-");
+  for (let end = parts.length - 1; end > 0; end -= 1) {
+    const candidate = getProviderPolicy(parts.slice(0, end).join("-"));
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * Expand a catalog target to policy-declared page mirrors. Streaming/CDN
+ * hosts are intentionally excluded unless their label identifies the same
+ * provider; this prevents vimeos/goodstream/sprintcdn from being mistaken for
+ * catalog mirrors while still checking variants such as gnula.life and
+ * animeflv.to. Each mirror keeps the original path so a failed host is
+ * reported and can be replaced without changing the canonical locator.
+ */
+function expandCatalogMirrors(targets: ProviderAuditTarget[]): ProviderAuditTarget[] {
+  const expanded = [...targets];
+  for (const target of targets) {
+    const policy = policyForTarget(target.provider);
+    const sourceHost = targetHost(target.url);
+    if (!policy?.hosts?.length || !sourceHost) continue;
+    const sourceLabel = sourceHost.split(".")[0];
+    const providerLabel = target.provider.toLowerCase().split("-")[0];
+    for (const rawHost of policy.hosts) {
+      const host = String(rawHost || "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
+      if (!host || host === sourceHost) continue;
+      const label = host.split(".")[0];
+      const isProviderMirror = label.includes(providerLabel) || label.includes(sourceLabel) || sourceLabel.includes(label);
+      if (!isProviderMirror) continue;
+      let url: string;
+      try {
+        const parsed = new URL(target.url);
+        parsed.hostname = host;
+        url = parsed.toString();
+      } catch { continue; }
+      if (targets.some((candidate) => pair(candidate.url) === pair(url)) || expanded.some((candidate) => pair(candidate.url) === pair(url))) continue;
+      expanded.push({ ...target, provider: `${target.provider}-mirror-${label}`, url, mirror: true, label: `${target.label || target.provider} mirror ${host}` });
+    }
+  }
+  return expanded;
+}
+
 /** Returns every maintained and legacy adapter target, deduplicated by URL. */
 export function getProviderAuditTargets(): ProviderAuditTarget[] {
   const byUrl = new Map<string, ProviderAuditTarget>();
@@ -122,7 +183,7 @@ export function getProviderAuditTargets(): ProviderAuditTarget[] {
     const target = targetFromPreset(preset);
     if (target && !byUrl.has(pair(target.url))) byUrl.set(pair(target.url), target);
   }
-  return [...byUrl.values()];
+  return expandCatalogMirrors([...byUrl.values()]);
 }
 
 async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry> {
@@ -239,6 +300,11 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
       episodes: entry.episodes,
       streams: entry.streams,
       candidates_checked: entry.candidates_checked,
+      audit_kind: entry.audit_kind || "catalog",
+      lifecycle: entry.lifecycle,
+      configured: entry.configured,
+      checked_kinds: entry.checked_kinds,
+      failed_kinds: entry.failed_kinds,
       anomalies: entry.anomalies,
       checked_at: new Date().toISOString(),
     }),
@@ -272,7 +338,34 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
   await upsertAutomatedCatalogReport({ ...base, reportType });
 }
 
-export async function auditProviders(options: { targets?: ProviderAuditTarget[]; concurrency?: number; limit?: number } = {}): Promise<ProviderAuditSummary> {
+function directEntryToProviderEntry(entry: import("./directProviderAudit").DirectProviderAuditEntry): ProviderAuditEntry {
+  return {
+    provider: entry.provider,
+    url: `direct-provider://${entry.provider}`,
+    adapter_id: entry.registered ? entry.provider : null,
+    ok: entry.ok,
+    catalog_items: 0,
+    detail_title: null,
+    episodes: 0,
+    streams: entry.playable_sources,
+    checked_detail: false,
+    anomalies: entry.anomalies,
+    duration_ms: entry.duration_ms,
+    candidates_checked: entry.checked_kinds.length,
+    audit_kind: "direct_api",
+    lifecycle: entry.lifecycle,
+    configured: entry.configured,
+    checked_kinds: entry.checked_kinds,
+    failed_kinds: entry.failed_kinds,
+  };
+}
+
+export async function auditProviders(options: {
+  targets?: ProviderAuditTarget[];
+  concurrency?: number;
+  limit?: number;
+  includeDirect?: boolean;
+} = {}): Promise<ProviderAuditSummary> {
   const started = Date.now();
   const targets = (options.targets || getProviderAuditTargets()).slice(0, Math.min(100, Math.max(1, Number(options.limit) || 100)));
   const concurrency = Math.min(8, Math.max(1, Math.round(Number(options.concurrency) || DEFAULT_CONCURRENCY)));
@@ -284,10 +377,27 @@ export async function auditProviders(options: { targets?: ProviderAuditTarget[];
       if (index >= targets.length) return;
       const entry = await auditOne(targets[index]);
       entries[index] = entry;
-      try { await persistEntry(entry); } catch (error: any) { entry.anomalies.push(`report_persist_${String(error?.message || error).slice(0, 100)}`); }
+      try { await persistEntry(entry); } catch (error: any) {
+        // A local read-only audit must remain useful when Prisma is not
+        // connected. Keep the transport result authoritative and expose the
+        // report-write problem separately instead of turning a healthy
+        // provider into a false playback failure.
+        entry.persistence_error = String(error?.message || error).slice(0, 160);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, targets.length || 1) }, () => worker()));
+  let directApi: DirectProviderAuditSummary | undefined;
+  if (options.includeDirect !== false) {
+    directApi = await auditDirectProviders({ concurrency: Math.min(4, concurrency) });
+    const directEntries = directApi.entries.map(directEntryToProviderEntry);
+    await Promise.all(directEntries.map(async (entry) => {
+      try { await persistEntry(entry); } catch (error: any) {
+        entry.persistence_error = String(error?.message || error).slice(0, 160);
+      }
+    }));
+    entries.push(...directEntries);
+  }
   const healthy = entries.filter((entry) => entry?.ok).length;
   const failed = entries.length - healthy;
   const manualReview = entries.filter((entry) => entry?.anomalies.some((value) => /locator|slug|mismatch|invalid/i.test(value))).length;
@@ -299,6 +409,7 @@ export async function auditProviders(options: { targets?: ProviderAuditTarget[];
     failed,
     manual_review: manualReview,
     entries,
+    ...(directApi ? { direct_api: directApi } : {}),
   };
 }
 

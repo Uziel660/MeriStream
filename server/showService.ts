@@ -1192,6 +1192,7 @@ export async function filterShowsToMainPath(shows: any[]): Promise<any[]> {
             audio_language: true,
             subtitle_language: true,
             main_path_override: true,
+            source_status: true,
           },
         },
       },

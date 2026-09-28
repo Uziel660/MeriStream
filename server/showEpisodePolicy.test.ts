@@ -62,6 +62,15 @@ describe("show episode main-path presentation", () => {
     expect(links.map((link) => link.source_site)).toEqual(["cinecalidad", "gnula"]);
   });
 
+  it("removes links marked failed so the next healthy provider can win", () => {
+    const links = filterMainPathLinks([
+      { url: "https://gnula.life/ver/obra-1", source_site: "gnula", link_type: "page", source_status: "failed" },
+      { url: "https://cinecalidad.am/ver-pelicula/obra-1", source_site: "cinecalidad", link_type: "page", source_status: "discovered" },
+    ], "movie");
+
+    expect(links.map((link) => link.source_site)).toEqual(["cinecalidad"]);
+  });
+
   it("counts only active canonical providers", () => {
     const canonical = [
       {

@@ -325,6 +325,11 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
 
     for (const link of episode.links) {
     const provider = normalizeProviderId(link.source_site);
+    // A scheduled source audit marks a locator failed after a real 4xx/5xx,
+    // resolver failure, or network timeout. Do not feed it back into the
+    // gateway on the next request; the remaining providers become the actual
+    // failover while the recovery worker repairs the row in the background.
+    if (["failed", "dead", "disabled"].includes(String(link.source_status || "").trim().toLowerCase())) continue;
     // Database rows from retired crawlers remain useful for explicit recovery,
     // but they must not leak into the normal gateway response. TioAnime is the
     // only legacy exception and is handled below as ZokoAnime fallback.

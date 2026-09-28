@@ -12,6 +12,8 @@ export interface MainPathSourceLink {
   audio_language?: string | null;
   subtitle_language?: string | null;
   subtitles?: unknown;
+  /** Health state maintained by the recurrent source audit. */
+  source_status?: string | null;
 }
 
 export interface CanonicalEpisodeForDisplay {
@@ -82,6 +84,8 @@ export function filterMainPathLinks(
 
   return input
     .filter((link) => {
+      const status = String(link.source_status || "").trim().toLowerCase();
+      if (status === "failed" || status === "dead" || status === "disabled") return false;
       const provider = providerOf(link);
       // TioAnime is a documented recovery fallback for ZokoAnime only.
       if (provider === "tioanime") return kind === "anime" && hasZoko;

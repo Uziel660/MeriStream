@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { classifySourceKind } from "./resolutionMetadata";
 import { getProviderPolicy } from "./providers/providerPolicy";
 import { isZokoAnimeUrl, resolveZokoAnime } from "./resolvers/zokoanimeResolver";
+import { providerResolverRegistry } from "./resolvers";
 
 export type SourceAuditReason =
   | "catalog_navigation_locator"
@@ -10,7 +11,8 @@ export type SourceAuditReason =
   | "invalid_url"
   | "http_4xx"
   | "http_5xx"
-  | "network_error";
+  | "network_error"
+  | "resolver_unresolved";
 
 export interface SourceAuditOptions {
   /** Maximum number of stale links inspected in one verification pass. */
@@ -18,6 +20,8 @@ export interface SourceAuditOptions {
   staleAfterMs?: number;
   concurrency?: number;
   fetch?: typeof fetch;
+  /** Deep-resolve external embeds during the scheduled production audit. */
+  resolveEmbeds?: boolean;
 }
 
 export interface SourceAuditSummary {
@@ -108,7 +112,31 @@ async function fetchPage(url: string, fetchImpl: typeof fetch): Promise<{ ok: bo
   }
 }
 
-async function auditOne(row: AuditRow, fetchImpl: typeof fetch): Promise<{ ok: boolean; reason?: SourceAuditReason }> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("resolver_timeout")), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+async function resolveEmbedLocator(locator: string): Promise<{ ok: boolean; reason?: SourceAuditReason }> {
+  try {
+    const result = await withTimeout(
+      providerResolverRegistry.resolve(locator, { timeoutMs: REQUEST_TIMEOUT_MS }),
+      REQUEST_TIMEOUT_MS + 1_000,
+    );
+    return result.resolved && /^https?:\/\//i.test(result.url)
+      ? { ok: true }
+      : { ok: false, reason: "resolver_unresolved" };
+  } catch {
+    return { ok: false, reason: "resolver_unresolved" };
+  }
+}
+
+async function auditOne(row: AuditRow, fetchImpl: typeof fetch, resolveEmbeds = false): Promise<{ ok: boolean; reason?: SourceAuditReason }> {
   if (!row.source_site) return { ok: false, reason: "invalid_url" };
   let parsed: URL;
   try { parsed = new URL(row.url); } catch { return { ok: false, reason: "invalid_url" }; }
@@ -125,6 +153,9 @@ async function auditOne(row: AuditRow, fetchImpl: typeof fetch): Promise<{ ok: b
 
   const kind = classifySourceKind(row.url);
   if (kind === "ephemeral_direct") return { ok: false, reason: "ephemeral_direct_requires_jit" };
+  if (resolveEmbeds && (row.link_type === "embed" || kind === "embed")) {
+    return resolveEmbedLocator(row.canonical_locator || row.url);
+  }
   if (row.link_type === "page" && isCatalogNavigationLocator(row.canonical_locator || row.url)) {
     return { ok: false, reason: "catalog_navigation_locator" };
   }
@@ -152,7 +183,9 @@ function addProvider(summary: SourceAuditSummary, sourceSite: string): { inspect
 
 /** Audits stale SourceLinks and persists health without deleting any catalog data. */
 export async function auditSourceLinks(options: SourceAuditOptions = {}): Promise<SourceAuditSummary> {
-  const limit = clamp(options.limit, DEFAULT_LIMIT, 1, 10_000);
+  // The scheduled worker can rotate a larger batch on Oracle; callers that
+  // run interactively still get the small DEFAULT_LIMIT unless they opt in.
+  const limit = clamp(options.limit, DEFAULT_LIMIT, 1, 50_000);
   const staleAfterMs = clamp(options.staleAfterMs, DEFAULT_STALE_AFTER_MS, 60_000, 30 * 24 * 60 * 60 * 1000);
   const concurrency = clamp(options.concurrency, DEFAULT_CONCURRENCY, 1, 32);
   const fetchImpl = options.fetch || globalThis.fetch;
@@ -174,7 +207,7 @@ export async function auditSourceLinks(options: SourceAuditOptions = {}): Promis
       const provider = addProvider(summary, row.source_site);
       provider.inspected++;
       summary.inspected++;
-      const result = await auditOne(row, fetchImpl);
+      const result = await auditOne(row, fetchImpl, options.resolveEmbeds === true);
       const checkedAt = new Date();
       if (result.ok) {
         summary.healthy++;

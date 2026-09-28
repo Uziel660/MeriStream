@@ -606,7 +606,7 @@ try {
       if (!opened) throw new Error(`Could not open More controls for ${label}`);
       await delay(120);
       const clicked = await evaluate(call, `(() => {
-        const actions = [...document.querySelectorAll('.mobile-player-more-action')];
+        const actions = [...document.querySelectorAll('.native-player-more-sheet button')];
         const target = actions.find((node) => (node.textContent || '').trim() === ${JSON.stringify(label)});
         if (!target) return { clicked: false, reason: 'action-missing', labels: actions.map((node) => (node.textContent || '').trim()) };
         target.click();

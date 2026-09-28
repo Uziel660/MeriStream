@@ -31,6 +31,8 @@ import { normalizeTitleKey, isPlausibleTitle, cleanSlugToWords } from "./utils/t
 import { isPlausibleYear } from "./metadataMerge";
 import { buildPageUrl } from "./utils/pageUrlBuilder";
 import { sanitizeCatalogLandingPages } from "./catalogIntegrity";
+import { auditSourceLinks, type SourceAuditSummary } from "./sourceLinkAudit";
+import { sourceRecoveryWorker } from "./sourceRecoveryWorker";
 import type { ContentKind, SourceLinkInput } from "./types";
 
 // ── Contrato público ─────────────────────────────────────────────
@@ -107,6 +109,7 @@ export interface VerificationReport {
     works_merged: number;
     sources_added: number;
   };
+  source_audit?: SourceAuditSummary & { recovery_job_id?: string | null };
 }
 
 export interface VerificationStatus {
@@ -148,6 +151,19 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   lamovie_movies: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
   lamovie_series: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24",
   lamovie_animes: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24",
+  // Catálogos verificados de los adaptadores activos/maintained. Los nombres
+  // son claves de plataforma, no dominios arbitrarios; así una página caída
+  // no puede entrar silenciosamente como una fuente nueva.
+  gnula_movies: "https://gnula.life/archives/movies",
+  gnula_series: "https://gnula.life/archives/series",
+  doramasyt: "https://www.doramasyt.com/doramas",
+  doramasyt_peliculas: "https://www.doramasyt.com/peliculas",
+  doramasia: "https://doramasia.com/doramas",
+  doramasia_peliculas: "https://doramasia.com/peliculas",
+  animeav1: "https://animeav1.com/catalogo",
+  veranimes: "https://wwv.veranimes.net/animes",
+  hianimes: "https://hianimes.se/filter?type=All&page=1",
+  tubepelis: "https://tubepelis.com/",
 };
 
 const CONFIG_DIR = path.join(process.cwd(), "data");
@@ -271,6 +287,8 @@ const state = {
   lastReport: null as VerificationReport | null,
   recent: [] as RecentEntry[],
 };
+
+let lastSourceAudit: VerificationReport["source_audit"];
 
 const runCounters = {
   metaTotal: 0,
@@ -999,6 +1017,37 @@ async function processCatalogItem( // NOSONAR
 // ── Fase 2: Novedades por catálogo multi-página ultra-optimizado ─
 
 
+async function auditSourcesAndQueueMirrors(): Promise<void> {
+  try {
+    const audit = await auditSourceLinks({ limit: 1000, concurrency: 8 });
+    let recoveryJobId: string | null = null;
+    if (audit.failed > 0) {
+      try {
+        const active = (await sourceRecoveryWorker.getJobs(20)).some((job) =>
+          job.status === "recovery_pending" || job.status === "recovery_running",
+        );
+        if (!active) {
+          const job = await sourceRecoveryWorker.createJob({
+            mode: "all",
+            failed_only: true,
+            limit: Math.min(5000, audit.failed),
+            name: "Recuperación automática de mirrors y enlaces fallidos",
+          });
+          recoveryJobId = job.id;
+          log("info", `[Auditoría de fuentes] ${audit.failed} anomalía(s); cola de mirrors creada (${job.total_discovered} episodios).`);
+        }
+      } catch (error: any) {
+        log("warn", `[Auditoría de fuentes] No se pudo crear la cola de mirrors: ${error?.message || error}`);
+      }
+    }
+    lastSourceAudit = { ...audit, recovery_job_id: recoveryJobId };
+    log("info", `[Auditoría de fuentes] ${audit.inspected} revisadas: ${audit.healthy} sanas, ${audit.failed} fallidas, ${audit.catalogLocators} catálogos guardados como episodios.`);
+  } catch (error: any) {
+    lastSourceAudit = undefined;
+    log("warn", `[Auditoría de fuentes] pasada omitida: ${error?.message || error}`);
+  }
+}
+
 async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOptions): Promise<void> {
   state.phase = "catalog";
   const platforms = resolveCatalogPlatforms(cfg, opts.platforms);
@@ -1167,6 +1216,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       works_merged: state.progress.works_merged || 0,
       sources_added: state.progress.sources_added || 0,
     },
+    source_audit: lastSourceAudit,
   };
 }
 
@@ -1175,6 +1225,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
 async function runPass(opts: VerificationRunOptions): Promise<void> {
   const cfg = getVerificationConfig();
   const metadataOnly = opts.mode === "metadata" || opts.mode === "identity" ? true : opts.mode === "full" ? false : cfg.metadata_only;
+  lastSourceAudit = undefined;
   try {
     // ── FASE 0: Sanear y purgar automáticamente cualquier landing page residual ──
     try {
@@ -1190,6 +1241,8 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
     } catch (e: any) {
       log("warn", `Aviso en saneamiento previo de enlaces: ${e?.message || e}`);
     }
+
+    if (!metadataOnly && !state.stopped) await auditSourcesAndQueueMirrors();
 
     // ── FASE 1: Metadatos existentes ──
     await metadataPhase(cfg, opts, "initial");

@@ -51,6 +51,8 @@ export interface SourceRecoveryStartOptions {
   name?: string;
   /** expired = historical signed links; all = every non-excluded source link. */
   mode?: "expired" | "all";
+  /** Only queue links already marked failed, so the pass searches for mirrors. */
+  failed_only?: boolean;
 }
 
 export interface SourceRecoverySummary {
@@ -83,6 +85,27 @@ const SEARCH_ADAPTERS: Record<string, string> = {
   "tubepelis.com": "tubepelis",
   tudorama: "tudorama",
   "tudorama.com": "tudorama",
+  gnula: "gnula",
+  gnulahd: "gnula",
+  "gnulahd.nu": "gnula",
+  "gnula.life": "gnula",
+  doramasflix: "doramasflix",
+  "doramasflix.io": "doramasflix",
+  doramasyt: "doramasyt",
+  "doramasyt.com": "doramasyt",
+  doramasia: "doramasia",
+  "doramasia.com": "doramasia",
+  animeav1: "animeav1",
+  "animeav1.com": "animeav1",
+  veranimes: "veranimes",
+  "veranimes.net": "veranimes",
+  hianimes: "hianimes",
+  "hianimes.se": "hianimes",
+  lamovie: "lamovie",
+  "lamovie.org": "lamovie",
+  zokoanime: "zokoanime",
+  "zokoanime.video": "zokoanime",
+  "archive-org": "archive_org",
 };
 const DEFAULT_DELAY_MS = 800;
 const MIN_DELAY_MS = 300;
@@ -328,6 +351,7 @@ export class SourceRecoveryWorker {
       url: true,
       link_type: true,
       canonical_locator: true,
+      source_status: true,
       media_episode: {
         select: {
           id: true,
@@ -338,7 +362,10 @@ export class SourceRecoveryWorker {
       },
     } as const;
     const directLinks = await prisma.sourceLink.findMany({
-      where: mode === "all" ? { link_type: { in: ["direct", "page", "embed"] } } : { link_type: "direct" },
+      where: {
+        ...(mode === "all" ? { link_type: { in: ["direct", "page", "embed"] } } : { link_type: "direct" }),
+        ...(options.failed_only ? { source_status: "failed" } : {}),
+      },
       select: linkSelect,
     });
 
@@ -363,6 +390,7 @@ export class SourceRecoveryWorker {
           source_site: link.source_site,
           link_type: link.link_type,
           canonical_locator: link.canonical_locator,
+          source_status: link.source_status,
         });
       }
       current.providers.add(provider);
@@ -383,7 +411,7 @@ export class SourceRecoveryWorker {
 
     // También repara el enlace de catálogo inválido detectado por la auditoría.
     const invalidCatalogs = await prisma.sourceLink.findMany({
-      where: { url: { contains: "/page/" } },
+      where: { url: { contains: "/page/" }, ...(options.failed_only ? { source_status: "failed" } : {}) },
       select: linkSelect,
     });
     for (const link of invalidCatalogs) {
@@ -465,7 +493,8 @@ export class SourceRecoveryWorker {
       // forma canónica puede haber quedado retirada o cambiado de contenido.
       // Se ponen primero para evitar búsquedas innecesarias y conservar la
       // identidad del proveedor cuando todavía funciona.
-      const existingCanonical = episode.links.flatMap((link: { url: string; link_type: string; canonical_locator?: string | null }) => {
+      const existingCanonical = episode.links.flatMap((link: { url: string; link_type: string; canonical_locator?: string | null; source_status?: string }) => {
+        if (options.failed_only && link.source_status === "failed") return [];
         // Una recuperación anterior puede haber conservado la identidad
         // canónica mientras `url` era un manifiesto firmado. Priorizar ese
         // localizador evita volver a enviar el token muerto al extractor.
@@ -542,6 +571,11 @@ export class SourceRecoveryWorker {
 
   private async processNext(): Promise<void> {
     if (this.activeJobId) return;
+    // Some isolated catalog/verification tests provide only the Prisma models
+    // they exercise. The production client always has CrawlTask, but the
+    // worker must remain inert when that optional model is not present.
+    const crawlTask = (prisma as any).crawlTask;
+    if (!crawlTask?.findFirst || !crawlTask?.updateMany) return;
     if (!this.startupReconciled) {
       // Un cierre del proceso puede dejar una tarea marcada como running. En
       // este proceso nuevo no existe el worker anterior que pudiera reclamarla,

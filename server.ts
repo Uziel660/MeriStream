@@ -4733,8 +4733,16 @@ async function startServer() {
       mode = body.mode;
     }
 
+    let failedOnly = false;
+    if (body.failed_only !== undefined) {
+      if (typeof body.failed_only !== "boolean") {
+        return res.status(400).json({ ok: false, detail: "failed_only debe ser boolean" });
+      }
+      failedOnly = body.failed_only;
+    }
+
     try {
-      const job = await sourceRecoveryWorker.createJob({ providers, limit, delay_ms: delayMs, name, mode });
+      const job = await sourceRecoveryWorker.createJob({ providers, limit, delay_ms: delayMs, name, mode, failed_only: failedOnly });
       return res.status(202).json({ ok: true, job });
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);

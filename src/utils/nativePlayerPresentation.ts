@@ -31,11 +31,8 @@ export function createNativePlayerPresentationController(
   let barsHidden: boolean | null = null;
   let orientationLocked = false;
   let transitions = Promise.resolve();
-
-  const enqueue = (transition: () => void | Promise<void>) => {
-    transitions = transitions.then(transition).catch(() => undefined);
-    return transitions;
-  };
+  let isReconciling = false;
+  let desiredVersion = 0;
 
   const sync = () => {
     const shouldHideBars = isOpen && isFullscreen && !isOverlayVisible;
@@ -48,14 +45,40 @@ export function createNativePlayerPresentationController(
       shouldLockOrientation,
     });
 
-    if (barsHidden !== shouldHideBars) {
-      barsHidden = shouldHideBars;
-      void enqueue(() => port.setSystemBarsHidden(shouldHideBars));
-    }
+    desiredVersion += 1;
+    if (!isReconciling) {
+      isReconciling = true;
+      transitions = transitions.then(async () => {
+        try {
+          while (true) {
+            const version = desiredVersion;
+            const nextBarsHidden = isOpen && isFullscreen && !isOverlayVisible;
+            if (barsHidden !== nextBarsHidden) {
+              barsHidden = nextBarsHidden;
+              try {
+                await port.setSystemBarsHidden(nextBarsHidden);
+              } catch {
+                // Keep the last requested state; callers can retry on the next state change.
+              }
+            }
 
-    if (orientationLocked !== shouldLockOrientation) {
-      orientationLocked = shouldLockOrientation;
-      void enqueue(() => shouldLockOrientation ? port.lockLandscape() : port.unlockOrientation());
+            const nextOrientationLocked = isOpen && isFullscreen;
+            if (orientationLocked !== nextOrientationLocked) {
+              orientationLocked = nextOrientationLocked;
+              try {
+                if (nextOrientationLocked) await port.lockLandscape();
+                else await port.unlockOrientation();
+              } catch {
+                // Keep the last requested state; callers can retry on the next state change.
+              }
+            }
+
+            if (version === desiredVersion) return;
+          }
+        } finally {
+          isReconciling = false;
+        }
+      }).catch(() => undefined);
     }
 
     return transitions;

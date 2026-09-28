@@ -132,6 +132,44 @@ describe('native player presentation lifecycle', () => {
     ]);
   });
 
+  it('drops stale native presentation transitions while a slow plugin call is pending', async () => {
+    const systemBarTransitions: boolean[] = [];
+    let releaseFirstTransition: (() => void) | undefined;
+    const firstTransitionPending = new Promise<void>((resolve) => {
+      releaseFirstTransition = resolve;
+    });
+    const setSystemBarsHidden = vi.fn(async (hidden: boolean) => {
+      systemBarTransitions.push(hidden);
+      if (systemBarTransitions.length === 1) await firstTransitionPending;
+    });
+    const lockLandscape = vi.fn(async () => {});
+    const unlockOrientation = vi.fn(async () => {});
+    const player = createNativePlayerPresentationController({
+      setSystemBarsHidden,
+      lockLandscape,
+      unlockOrientation,
+      onFullscreenChange: vi.fn(),
+    });
+
+    const opened = player.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(systemBarTransitions).toEqual([true]);
+
+    void player.setOverlayVisible(true);
+    void player.setOverlayVisible(false);
+    void player.leaveFullscreen();
+    void player.setOverlayVisible(false);
+    const reentered = player.enterFullscreen();
+
+    releaseFirstTransition?.();
+    await Promise.all([opened, reentered]);
+
+    expect(systemBarTransitions).toEqual([true]);
+    expect(lockLandscape).toHaveBeenCalledOnce();
+    expect(unlockOrientation).not.toHaveBeenCalled();
+  });
+
   it('closes idempotently after fullscreen was already left', async () => {
     const setSystemBarsHidden = vi.fn(async (_hidden: boolean) => {});
     const lockLandscape = vi.fn(async () => {});

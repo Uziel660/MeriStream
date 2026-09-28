@@ -41,17 +41,44 @@ export class FlixQuestClient implements DirectStreamProvider {
       ? `watch-movie?tmdbId=${req.tmdbId}&proxied=false`
       : `watch-tv?tmdbId=${req.tmdbId}&season=${req.season || 1}&episode=${req.episode || 1}&proxied=false`;
 
+    const v2Path = req.kind === "movie" ? "stream-movie" : "stream-tv";
+    const v2Query = new URLSearchParams({
+      tmdbId: String(req.tmdbId),
+      full: "true",
+      noProxy: "true",
+    });
+    if (req.kind !== "movie") {
+      v2Query.set("season", String(req.season || 1));
+      v2Query.set("episode", String(req.episode || 1));
+    }
+
     const results = await Promise.allSettled(
       this.providerIds.map(async (providerId) => {
-        const body = await fetchJson(`${this.baseUrl}/${encodeURIComponent(providerId)}/${path}`);
-        if (!body) return [] as PlayableSource[];
-        const inheritedSubs = normalizeSubtitles(body?.subtitles || body?.tracks);
-        return collectCandidates(body)
-          .map((raw) => directFromUnknown(raw, `flixquest:${providerId}`, {
-            subtitles: inheritedSubs,
-            canonicalLocator: `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`,
-          }))
-          .filter((source): source is PlayableSource => Boolean(source));
+        const stableLocator = `tmdb:${req.tmdbId}:${req.season || 1}:${req.episode || 1}`;
+        const parse = (body: any): PlayableSource[] => {
+          if (!body) return [];
+          const inheritedSubs = normalizeSubtitles(body?.subtitles || body?.tracks);
+          return collectCandidates(body)
+            .map((raw) => directFromUnknown(raw, `flixquest:${providerId}`, {
+              subtitles: inheritedSubs,
+              // Both the old and v2 APIs may return proxy URLs with an
+              // expiry token. Keep the TMDB identity as the locator so the
+              // source is refreshed JIT instead of persisting that token.
+              canonicalLocator: stableLocator,
+            }))
+            .filter((source): source is PlayableSource => Boolean(source));
+        };
+
+        const legacy = parse(await fetchJson(`${this.baseUrl}/${encodeURIComponent(providerId)}/${path}`));
+        if (legacy.length > 0) return legacy;
+
+        // FlixQuest's current public contract moved under /api/v2 and returns
+        // {links:[...]}. Keep the old route first for self-hosts that still
+        // expose v1, then fall back to the documented v2 route without
+        // making callers change their provider configuration.
+        v2Query.set("provider", providerId);
+        const v2Base = this.baseUrl.endsWith("/api/v2") ? this.baseUrl : `${this.baseUrl}/api/v2`;
+        return parse(await fetchJson(`${v2Base}/${v2Path}?${v2Query.toString()}`));
       }),
     );
 

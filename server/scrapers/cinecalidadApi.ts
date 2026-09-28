@@ -39,6 +39,13 @@ export interface CinecalidadLookup {
   failed: boolean;
 }
 
+export interface CinecalidadApiPage {
+  items: CinecalidadApiItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 const POSITIVE_TTL_MS = 10 * 60 * 1000;
 const NEGATIVE_TTL_MS = 2 * 60 * 1000;
 const cache = new Map<string, { expiresAt: number; value: CinecalidadLookup }>();
@@ -168,6 +175,62 @@ async function fetchItem(kind: CinecalidadApiKind, tmdbId: number): Promise<Cine
 
   cache.set(key, { expiresAt: Date.now() + (value.failed || value.item ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS), value });
   return value;
+}
+
+async function fetchJson(path: string): Promise<any | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${CINECALIDAD_API_URL}${path}`, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "MeriStream/1.0 (+https://www.merith.me)",
+      },
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function pageFromPayload(payload: any, requestedPage: number): CinecalidadApiPage {
+  const raw = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.data?.items) ? payload.data.items : [];
+  const pagination = payload?.pagination || payload?.data?.pagination || {};
+  const page = Number(pagination.page || pagination.current_page || requestedPage) || requestedPage;
+  const total = Number(payload?.total ?? payload?.data?.total ?? pagination.total) || raw.length;
+  const totalPages = Number(pagination.total_pages || pagination.totalPages || Math.ceil(total / Math.max(1, raw.length))) || 1;
+  return {
+    items: raw.map((item: any) => itemFromPayload(item)).filter((item: CinecalidadApiItem | null): item is CinecalidadApiItem => Boolean(item)),
+    total,
+    page,
+    totalPages,
+  };
+}
+
+/** Current Cinecalidad SPA catalog endpoint. */
+export async function listCinecalidadItems(kind: string, page = 1, limit = 24): Promise<CinecalidadApiPage> {
+  const apiKind = toCinecalidadApiKind(kind);
+  const payload = await fetchJson(`/v1/items?kind=${encodeURIComponent(apiKind)}&page=${Math.max(1, Math.trunc(page))}&limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`);
+  return pageFromPayload(payload, Math.max(1, Math.trunc(page)));
+}
+
+/** Search endpoint used by Cinecalidad's current web application. */
+export async function searchCinecalidadItems(query: string): Promise<CinecalidadApiItem[]> {
+  const value = String(query || "").trim();
+  if (!value) return [];
+  const payload = await fetchJson(`/v1/search?q=${encodeURIComponent(value)}`);
+  const items = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.data?.items) ? payload.data.items : [];
+  return items.map((item: any) => itemFromPayload(item)).filter((item: CinecalidadApiItem | null): item is CinecalidadApiItem => Boolean(item));
+}
+
+export async function listCinecalidadSeasonEpisodes(kind: string, tmdbId: number, season: number): Promise<Array<Record<string, any>>> {
+  const apiKind = toCinecalidadApiKind(kind);
+  const payload = await fetchJson(`/v1/items/${apiKind}/${encodeURIComponent(String(tmdbId))}/seasons/${Math.max(0, Math.trunc(season))}`);
+  return Array.isArray(payload?.season?.episodes) ? payload.season.episodes : [];
 }
 
 async function fetchEpisode(kind: CinecalidadApiKind, tmdbId: number, season: number, episode: number): Promise<CinecalidadLookup> {

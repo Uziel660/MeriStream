@@ -1025,7 +1025,10 @@ async function processCatalogItem( // NOSONAR
 
 async function auditSourcesAndQueueMirrors(): Promise<void> {
   try {
-    const audit = await auditSourceLinks({ limit: 1000, concurrency: 8 });
+    // Rotate a large bounded batch every day. 5k links keeps the Oracle CPU
+    // predictable while bringing the ~770k-link catalog back into a full
+    // health cycle instead of leaving stale links unexamined for months.
+    const audit = await auditSourceLinks({ limit: 5000, concurrency: 12 });
     let recoveryJobId: string | null = null;
     if (audit.failed > 0) {
       try {

@@ -11,6 +11,10 @@ import {
   lookupCinecalidadItem,
   parseCinecalidadLocator,
   type CinecalidadApiItem,
+  listCinecalidadItems,
+  listCinecalidadSeasonEpisodes,
+  searchCinecalidadItems,
+  canonicalCinecalidadEpisodeUrl,
 } from "../cinecalidadApi";
 
 const BASE_URL = "https://www.cinecalidad.am";
@@ -53,6 +57,8 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
    * Búsqueda de películas y series (?s=query). Usa la misma estructura de cards del Home.
    */
   public async search(query: string): Promise<ExtractedCatalogItem[]> {
+    const apiItems = await searchCinecalidadItems(query);
+    if (apiItems.length > 0) return apiItems.map((item) => this.catalogItemFromApi(item));
     const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(query.trim())}`;
     const html = await this.fetchHtml(searchUrl, 10000);
     if (!html) return [];
@@ -488,8 +494,30 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
 
     // Modo catálogo: Home, paginación (/page/N/) o petición explícita
     const isCatalog =
-      explicitType === "catalog" || path === "/" || path === "" || /^\/page\/\d+/.test(path);
+      explicitType === "catalog" || path === "/" || path === "" || /^\/page\/\d+/.test(path) || path === "/peliculas" || path === "/series" || path === "/animes";
     if (isCatalog) {
+      const parsedUrl = new URL(cleanInput);
+      const page = Number(path.match(/^\/page\/(\d+)/)?.[1] || parsedUrl.searchParams.get("page") || 1) || 1;
+      const catalogKind = path === "/series" ? "series" : path === "/animes" ? "anime" : "movie";
+      const apiPage = await listCinecalidadItems(catalogKind, page, 24);
+      if (apiPage.items.length > 0) {
+        return {
+          page_type: "catalog",
+          content_type: catalogKind === "anime" ? "anime" : catalogKind === "series" ? "series" : "movie",
+          title: "Catálogo de Películas y Series - Cinecalidad",
+          description: `Catálogo actual de Cinecalidad (${apiPage.total} títulos disponibles en la API)`,
+          poster_url: null,
+          banner_url: null,
+          rating: 0,
+          year: 0,
+          status: "Publicado",
+          genres: [],
+          source_domain: "cinecalidad.am",
+          episodes: [],
+          catalog_items: apiPage.items.map((item) => this.catalogItemFromApi(item)),
+          next_page_url: apiPage.page < apiPage.totalPages ? `${BASE_URL}/page/${apiPage.page + 1}/` : null,
+        };
+      }
       // Fetch de la URL REAL recibida (con su página); fallback al home.
       let html = await this.fetchHtml(cleanInput, 10000);
       if (!html && path !== "/" && path !== "") {
@@ -775,6 +803,40 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     explicitType?: "auto" | "catalog" | "detail" | "stream",
   ): Promise<UniversalAnalysisResult> {
     const contentType = this.kindFromUrl(url);
+    const locator = parseCinecalidadLocator(url);
+    const episodes: ExtractedEpisode[] = [];
+    if (contentType !== "movie" && !locator?.season && !locator?.episode) {
+      const tmdbId = Number(item.tmdb_id ?? item.id);
+      const availableSeasons = Math.min(20, Math.max(0, Number((item as any).available_seasons) || Number((item as any).number_of_seasons) || 0));
+      for (let season = 1; season <= availableSeasons; season += 1) {
+        const rows = await listCinecalidadSeasonEpisodes(contentType, tmdbId, season);
+        for (const row of rows) {
+          const number = Number(row?.episode);
+          const code = typeof row?.code === "string" ? row.code.trim() : "";
+          if (!Number.isInteger(number) || number <= 0 || row?.playable === false || !code) continue;
+          const episodeUrl = canonicalCinecalidadEpisodeUrl(item, season, number);
+          if (!episodeUrl) continue;
+          episodes.push({
+            number,
+            season,
+            title: String(row?.title || `Episodio ${number}`),
+            url: episodeUrl,
+            source_type: "cinecalidad",
+            sources: [{ url: `https://vimeos.net/embed-${encodeURIComponent(code)}.html`, source_site: "cinecalidad", link_type: "embed", host: "vimeos.net" }],
+          });
+        }
+      }
+    }
+    if (contentType === "movie" && !locator?.season && !locator?.episode) {
+      const code = typeof (item as any).code === "string" ? String((item as any).code).trim() : "";
+      episodes.push({
+        number: 1,
+        title: item.title || "Película",
+        url,
+        source_type: "cinecalidad",
+        sources: code ? [{ url: `https://vimeos.net/embed-${encodeURIComponent(code)}.html`, source_site: "cinecalidad", link_type: "embed", host: "vimeos.net" }] : [],
+      });
+    }
     let detectedStreams: string[] | undefined;
     if (!explicitType || explicitType === "auto" || explicitType === "stream") {
       detectedStreams = (await this.extractStream(url)).all_available_streams;
@@ -799,7 +861,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       genres,
       source_domain: "cinecalidad.am",
       detected_streams: detectedStreams,
-      episodes: [],
+      episodes: episodes.sort((a, b) => (a.season || 1) - (b.season || 1) || a.number - b.number),
       catalog_items: [],
       raw_metadata: {
         og: {
@@ -831,6 +893,29 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       catalog_items: [],
       raw_metadata: { og: { canonical_url: url } },
     };
+  }
+
+  private catalogItemFromApi(item: CinecalidadApiItem): ExtractedCatalogItem {
+    const kind = this.kindFromApiKind(String(item.kind || "movie"));
+    const route = kind === "movie" ? "pelicula" : kind === "anime" ? "anime" : "serie";
+    return {
+      title: item.title,
+      url: canonicalCinecalidadUrl(item) || `${BASE_URL}/${route}/${item.tmdb_id}`,
+      image_url: item.poster_path
+        ? (String(item.poster_path).startsWith("http") ? String(item.poster_path) : `https://image.tmdb.org/t/p/w500${item.poster_path}`)
+        : null,
+      kind,
+      year: Number(item.year || String(item.release_date || item.first_air_date || "").slice(0, 4)) || null,
+      rating: Number.isFinite(Number(item.vote_average)) ? Number(item.vote_average) : null,
+      genres: Array.isArray(item.genres)
+        ? item.genres.map((genre: any) => typeof genre === "string" ? genre : String(genre?.title || genre?.name || "")).filter(Boolean)
+        : undefined,
+    };
+  }
+
+  private kindFromApiKind(value: string): ContentKind {
+    const kind = value.toLowerCase();
+    return kind === "anime" ? "anime" : kind === "tvshow" || kind === "series" ? "series" : "movie";
   }
 
   private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [

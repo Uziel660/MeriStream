@@ -159,6 +159,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       "article.anime",
       "article",
       ".anime-card",
+      ".anime__item",
       ".item",
       ".film",
       ".card",
@@ -208,6 +209,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         (classifiedType === "collection" ||
           (catalogItems.length >= 3 && extractedEpisodes.length === 0) ||
           urlOrQuery.includes("/page/") ||
+          urlObj.pathname.toLowerCase().startsWith("/buscar/") ||
           urlOrQuery.includes("?page=")));
 
     const pageType: UniversalAnalysisResult["page_type"] = isCatalog ? "catalog" : "detail";
@@ -976,6 +978,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     }
 
     const img = $(card).find("img.anime-image, img").first();
+    const backgroundImage = ($(card).find("[data-setbg]").first().attr("data-setbg") || "").trim();
     let imgUrl: string | null = null;
     if (img.length > 0) {
       const imgSrc =
@@ -985,6 +988,7 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
         img.attr("data-original") ||
         img.attr("srcset") ||
         img.attr("src") ||
+        backgroundImage ||
         "";
       if (imgSrc) {
         const firstSrc = imgSrc.split(/\s+/)[0];
@@ -994,6 +998,8 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
           imgUrl = firstSrc.startsWith("//") ? `https:${firstSrc}` : firstSrc;
         }
       }
+    } else if (backgroundImage) {
+      try { imgUrl = new URL(backgroundImage, baseUrl).toString(); } catch { imgUrl = backgroundImage; }
     }
 
     let cardTitle = "";

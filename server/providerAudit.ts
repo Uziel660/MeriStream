@@ -26,6 +26,7 @@ export interface ProviderAuditEntry {
   anomalies: string[];
   error?: string;
   duration_ms: number;
+  candidates_checked?: number;
 }
 
 export interface ProviderAuditSummary {
@@ -40,7 +41,7 @@ export interface ProviderAuditSummary {
 
 const CORE_TARGETS: ProviderAuditTarget[] = [
   ["animeflv", "https://animeflv.or.at/anime/"],
-  ["jkanime", "https://jkanime.net/directorio/"],
+  ["jkanime", "https://jkanime.net/buscar/one-piece/"],
   ["tioanime", "https://tioanime.com/directorio"],
   ["latanime", "https://latanime.org/animes"],
   ["cinecalidad", "https://www.cinecalidad.am/"],
@@ -95,7 +96,6 @@ function detailSources(detail: UniversalAnalysisResult | null, streamResult?: { 
   const values: string[] = [];
   for (const value of detail?.detected_streams || []) if (typeof value === "string") values.push(value);
   for (const episode of detail?.episodes || []) {
-    if (episode.url) values.push(episode.url);
     for (const source of episode.sources || []) if (source?.url) values.push(source.url);
   }
   if (streamResult?.stream_url) values.push(streamResult.stream_url);
@@ -135,35 +135,51 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
       ? [{ title: catalog.title, url: target.url, kind: catalog.content_type } as ExtractedCatalogItem]
       : dedupeCatalogItems(catalog.catalog_items || []).filter((candidate) => isPlausibleTitle(candidate.title));
     if (items.length === 0) throw new Error("catalog_empty_or_unreadable");
-    item = items[0];
-    // Do not use isInvalidCatalogSource here: it intentionally treats broad
-    // /anime/<slug> and /serie/<slug> paths as landing pages for database
-    // sanitation, while an adapter may validly expose that path as a detail
-    // page. The detail contract below is the authoritative check.
-    if (requestedMode === "catalog" && isCatalogNavigationLocator(item.url)) anomalies.push("catalog_locator_returned_as_item");
-    if (requestedMode === "detail") detail = catalog;
-    if (!/^https?:\/\//i.test(item.url)) anomalies.push("catalog_item_invalid_url");
-    if (!isPlausibleTitle(item.title)) anomalies.push("catalog_item_invalid_title");
-
-    detail ||= await withTimeout(analyzeUniversalUrl(item.url, "detail", adapterId));
-    if (!detail.title || !isPlausibleTitle(detail.title)) anomalies.push("detail_missing_title");
-    if (detail.page_type === "catalog") anomalies.push("detail_resolved_to_catalog");
-    if (normalizeTitleKey(detail.title) && normalizeTitleKey(item.title) &&
-      !normalizeTitleKey(detail.title).includes(normalizeTitleKey(item.title)) &&
-      !normalizeTitleKey(item.title).includes(normalizeTitleKey(detail.title))) {
-      anomalies.push("detail_title_mismatch");
-    }
-    const kind = inferKind(target.provider, item);
-    if ((kind === "series" || kind === "anime") && detail.episodes.length === 0) anomalies.push("detail_without_episodes");
-    const episodeUrl = detail.episodes[0]?.url || (kind === "movie" ? item.url : "");
-    if (episodeUrl) {
+    // A catalog can begin with a future title (no links yet) or a movie whose
+    // provider has not uploaded the first server. Probe a bounded sample and
+    // select the first genuinely playable contract instead of declaring the
+    // entire provider dead from one unlucky card.
+    const candidates = requestedMode === "detail" ? [items[0]] : items.slice(0, 6);
+    let checkedCandidates = 0;
+    let best: { item: ExtractedCatalogItem; detail: UniversalAnalysisResult; streamResult: { stream_url?: string; all_available_streams?: string[] } | null; anomalies: string[]; streams: string[]; score: number } | null = null;
+    for (const candidate of candidates) {
+      checkedCandidates += 1;
+      const candidateAnomalies: string[] = [];
+      if (requestedMode === "catalog" && isCatalogNavigationLocator(candidate.url)) candidateAnomalies.push("catalog_locator_returned_as_item");
+      if (!/^https?:\/\//i.test(candidate.url)) candidateAnomalies.push("catalog_item_invalid_url");
+      if (!isPlausibleTitle(candidate.title)) candidateAnomalies.push("catalog_item_invalid_title");
+      let candidateDetail: UniversalAnalysisResult;
       try {
-        streamResult = await withTimeout(extractStreamFromUrl(episodeUrl, adapterId));
+        candidateDetail = requestedMode === "detail" ? catalog : await withTimeout(analyzeUniversalUrl(candidate.url, "detail", adapterId));
       } catch (error: any) {
-        anomalies.push(`stream_extraction_${String(error?.message || error).slice(0, 120)}`);
+        candidateAnomalies.push(`detail_fetch_${String(error?.message || error).slice(0, 120)}`);
+        continue;
       }
+      if (!candidateDetail.title || !isPlausibleTitle(candidateDetail.title)) candidateAnomalies.push("detail_missing_title");
+      if (candidateDetail.page_type === "catalog") candidateAnomalies.push("detail_resolved_to_catalog");
+      if (normalizeTitleKey(candidateDetail.title) && normalizeTitleKey(candidate.title) &&
+        !normalizeTitleKey(candidateDetail.title).includes(normalizeTitleKey(candidate.title)) &&
+        !normalizeTitleKey(candidate.title).includes(normalizeTitleKey(candidateDetail.title))) candidateAnomalies.push("detail_title_mismatch");
+      const kind = inferKind(target.provider, candidate);
+      if ((kind === "series" || kind === "anime") && candidateDetail.episodes.length === 0) candidateAnomalies.push("detail_without_episodes");
+      let candidateStream: { stream_url?: string; all_available_streams?: string[] } | null = null;
+      const episodeUrl = candidateDetail.episodes[0]?.url || (kind === "movie" ? candidate.url : "");
+      if (episodeUrl) {
+        try { candidateStream = await withTimeout(extractStreamFromUrl(episodeUrl, adapterId)); }
+        catch (error: any) { candidateAnomalies.push(`stream_extraction_${String(error?.message || error).slice(0, 120)}`); }
+      }
+      const candidateStreams = detailSources(candidateDetail, candidateStream);
+      if (candidateStreams.length === 0) candidateAnomalies.push("no_playable_source");
+      const score = (candidateStreams.length > 0 ? 100000 : 0) + candidateDetail.episodes.length * 100 - candidateAnomalies.length;
+      if (!best || score > best.score) best = { item: candidate, detail: candidateDetail, streamResult: candidateStream, anomalies: candidateAnomalies, streams: candidateStreams, score };
+      if (candidateStreams.length > 0 && candidateDetail.episodes.length > 0) break;
     }
-    const streams = detailSources(detail, streamResult);
+    if (!best) throw new Error("detail_empty_or_unreadable");
+    item = best.item;
+    detail = best.detail;
+    streamResult = best.streamResult;
+    anomalies.push(...best.anomalies);
+    const streams = best.streams;
     if (streams.length === 0) anomalies.push("no_playable_source");
     const manual = anomalies.some((value) => /locator|slug|invalid/i.test(value));
     const hardFailure = anomalies.includes("no_playable_source") || anomalies.includes("detail_without_episodes") || manual;
@@ -179,6 +195,7 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
       checked_detail: true,
       anomalies,
       duration_ms: Date.now() - started,
+      candidates_checked: checkedCandidates,
     };
   } catch (error: any) {
     const message = String(error?.message || error || "provider_audit_failed").slice(0, 240);
@@ -195,6 +212,7 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
       anomalies: [message],
       error: message,
       duration_ms: Date.now() - started,
+      candidates_checked: 0,
     };
   }
 }
@@ -211,6 +229,7 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
       detail_title: entry.detail_title,
       episodes: entry.episodes,
       streams: entry.streams,
+      candidates_checked: entry.candidates_checked,
       anomalies: entry.anomalies,
       checked_at: new Date().toISOString(),
     }),
@@ -228,10 +247,13 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
       resolveAutomatedCatalogReports({ reportType: "provider_no_playable_source", sourceProvider: entry.provider, sourceUrl: entry.url }),
       resolveAutomatedCatalogReports({ reportType: "provider_metadata_mismatch", sourceProvider: entry.provider, sourceUrl: entry.url }),
       resolveAutomatedCatalogReports({ reportType: "provider_slug_changed", sourceProvider: entry.provider, sourceUrl: entry.url }),
+      resolveAutomatedCatalogReports({ reportType: "provider_mirror_failed", sourceProvider: entry.provider, sourceUrl: entry.url }),
     ]);
     return;
   }
-  const reportType = entry.anomalies.some((value) => /mismatch/i.test(value))
+  const reportType = /FETCH_FAILED|timeout_|mirror|gnulahd\.nu/i.test(entry.anomalies.join(" "))
+    ? "provider_mirror_failed"
+    : entry.anomalies.some((value) => /mismatch/i.test(value))
     ? "provider_metadata_mismatch"
     : entry.anomalies.some((value) => /locator|slug|invalid/i.test(value))
     ? "provider_slug_changed"

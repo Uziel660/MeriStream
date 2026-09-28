@@ -203,6 +203,18 @@ adb shell input keyevent 4
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-more-closed
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs exercise-player-more-actions
 
+# Verify Share opens Android's real system chooser from the player overflow.
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-share
+sleep 1
+share_activity="$(adb shell dumpsys activity activities | tr -d '\r' | grep -Ei 'ChooserActivity|ResolverActivity|ResolverListActivity' || true)"
+echo "Android share chooser: ${share_activity:-not found}"
+if [[ -z "$share_activity" ]]; then
+  echo "Player Share did not open the Android system chooser" >&2
+  exit 1
+fi
+adb shell input keyevent 4
+DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs assert-player-share-dismissed
+
 DEVTOOLS_PORT=9222 node tools/android-webview-smoke.mjs open-player-report
 if [[ "$MODE" == "low-end" ]]; then
   sleep 2

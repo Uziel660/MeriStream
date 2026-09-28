@@ -774,6 +774,31 @@ try {
       stillPlaying: !afterFullscreenRestore.paused,
     }));
     if (afterFullscreenRestore.paused) throw new Error('More actions unexpectedly paused playback');
+  } else if (action === 'open-player-share') {
+    const result = await evaluate(call, `(async () => {
+      const more = document.querySelector('button[aria-label="Más controles"]');
+      if (!more) return { clicked: false, reason: 'more-button-missing' };
+      more.click();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const share = [...document.querySelectorAll('.native-player-more-sheet button')]
+        .find((button) => (button.textContent || '').trim() === 'Compartir');
+      if (!share) return { clicked: false, reason: 'share-action-missing' };
+      share.click();
+      return { clicked: true, player: Boolean(document.querySelector('[data-player-root]')) };
+    })()`, true, true);
+    if (!result?.clicked || !result.player) {
+      throw new Error(`Player Share action was not dispatched from More: ${JSON.stringify(result)}`);
+    }
+    console.log(JSON.stringify({ action, ...result }));
+  } else if (action === 'assert-player-share-dismissed') {
+    await delay(300);
+    const state = await evaluate(call, `({
+      player: Boolean(document.querySelector('[data-player-root]')),
+      more: Boolean(document.querySelector('.native-player-more-sheet')),
+      route: location.pathname + location.search,
+    })`);
+    console.log(JSON.stringify({ action, state }));
+    if (!state.player || state.more) throw new Error(`Share dismissal did not return to the player: ${JSON.stringify(state)}`);
   } else if (action === 'open-player-report') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

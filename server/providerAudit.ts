@@ -129,6 +129,26 @@ function targetHost(url: string): string | null {
   catch { return null; }
 }
 
+/**
+ * Some catalogs show a translated display title while their detail route keeps
+ * the original-language slug (for example `Insustituible` → `/irreplaceable`).
+ * The page is internally consistent when that route slug matches the detail
+ * title, so this is a localization variant rather than a wrong-work link.
+ */
+export function isLocalizedTitleVariant(candidateTitle: string, detailTitle: string, url: string): boolean {
+  const candidateKey = normalizeTitleKey(candidateTitle);
+  const detailKey = normalizeTitleKey(detailTitle);
+  if (!candidateKey || !detailKey || candidateKey === detailKey) return false;
+  try {
+    const pathParts = new URL(url).pathname.split("/").filter(Boolean);
+    const rawSlug = pathParts[pathParts.length - 1]?.replace(/\.(?:html?|php)$/i, "") || "";
+    const slugKey = normalizeTitleKey(rawSlug.replace(/[-_]+/g, " "));
+    return Boolean(slugKey && (slugKey === detailKey || slugKey === candidateKey));
+  } catch {
+    return false;
+  }
+}
+
 function policyForTarget(provider: string) {
   const exact = getProviderPolicy(provider);
   if (exact) return exact;
@@ -231,7 +251,13 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
       if (candidateDetail.page_type === "catalog") candidateAnomalies.push("detail_resolved_to_catalog");
       if (normalizeTitleKey(candidateDetail.title) && normalizeTitleKey(candidate.title) &&
         !normalizeTitleKey(candidateDetail.title).includes(normalizeTitleKey(candidate.title)) &&
-        !normalizeTitleKey(candidate.title).includes(normalizeTitleKey(candidateDetail.title))) candidateAnomalies.push("detail_title_mismatch");
+        !normalizeTitleKey(candidate.title).includes(normalizeTitleKey(candidateDetail.title))) {
+        candidateAnomalies.push(
+          isLocalizedTitleVariant(candidate.title, candidateDetail.title, candidate.url)
+            ? "localized_title_variant"
+            : "detail_title_mismatch",
+        );
+      }
       const kind = inferKind(target.provider, candidate);
       if ((kind === "series" || kind === "anime") && candidateDetail.episodes.length === 0) candidateAnomalies.push("detail_without_episodes");
       let candidateStream: { stream_url?: string; all_available_streams?: string[] } | null = null;

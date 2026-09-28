@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getProviderAuditTargets } from "./providerAudit";
+import { getProviderAuditTargets, isLocalizedTitleVariant } from "./providerAudit";
 import { scraperManager } from "./universalScraper";
 
 describe("provider conformance targets", () => {
@@ -29,6 +29,19 @@ describe("provider conformance targets", () => {
       ));
 
     expect(uncovered).toEqual([]);
+  });
+
+  it("recognizes translated catalog labels when the detail slug is consistent", () => {
+    expect(isLocalizedTitleVariant(
+      "Insustituible",
+      "Irreplaceable",
+      "https://doramasflix.io/doramas/irreplaceable",
+    )).toBe(true);
+    expect(isLocalizedTitleVariant(
+      "Insustituible",
+      "Another Work",
+      "https://doramasflix.io/doramas/irreplaceable",
+    )).toBe(false);
   });
 });
 

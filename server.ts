@@ -3995,6 +3995,16 @@ async function startServer() {
       }
 
       const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
+      // En DoramasYT Mega es el candidato más estable en Oracle: Pixeldrain
+      // puede devolver 500 para archivos concretos aunque su URL sea válida.
+      // Mantenerlo como fallback, pero intentar Mega primero.
+      if (/doramasyt\.com/i.test(url)) {
+        rankedBase.sort((a, b) => {
+          const aMega = /\/api\/v1\/stream\/mega|mega\.(?:nz|io|co\.nz)/i.test(a.url) ? 0 : 1;
+          const bMega = /\/api\/v1\/stream\/mega|mega\.(?:nz|io|co\.nz)/i.test(b.url) ? 0 : 1;
+          return aMega - bMega || a.tier - b.tier;
+        });
+      }
       const sourceSite = siteFromDomain(hostOfStreamUrl(url)) || undefined;
       // Pixeldrain's API file response is a valid MP4 for server-side range
       // checks but is blocked by Chromium's ORB when the player requests it

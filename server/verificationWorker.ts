@@ -51,6 +51,12 @@ export interface VerificationConfig {
   sync_known_episodes: boolean;
   /** Páginas a recorrer por plataforma (0 = sin límite / hasta agotar catálogo). Default: 0. */
   catalog_pages_per_platform?: number;
+  /**
+   * Límite para la pasada automática diaria. Mantiene el descubrimiento de
+   * estrenos en las primeras páginas sin convertir el timer en un crawler de
+   * horas; una pasada manual puede seguir usando catalog_pages_per_platform=0.
+   */
+  scheduled_catalog_pages_per_platform?: number;
 }
 
 export interface VerificationRunOptions {
@@ -197,6 +203,7 @@ function defaultConfig(): VerificationConfig {
     metadata_only: false,
     sync_known_episodes: true,
     catalog_pages_per_platform: 0, // 0 = sin límite / hasta agotar
+    scheduled_catalog_pages_per_platform: 5,
   };
 }
 
@@ -223,6 +230,9 @@ function loadConfigFromDisk(): VerificationConfig {
     if (typeof raw?.sync_known_episodes === "boolean") base.sync_known_episodes = raw.sync_known_episodes;
     if (raw?.catalog_pages_per_platform !== undefined && Number.isFinite(Number(raw.catalog_pages_per_platform))) {
       base.catalog_pages_per_platform = Math.max(0, Math.round(Number(raw.catalog_pages_per_platform)));
+    }
+    if (raw?.scheduled_catalog_pages_per_platform !== undefined && Number.isFinite(Number(raw.scheduled_catalog_pages_per_platform))) {
+      base.scheduled_catalog_pages_per_platform = Math.max(1, Math.round(Number(raw.scheduled_catalog_pages_per_platform)));
     }
   } catch (e) {
     console.error("[verificationWorker] config corrupta, usando defaults:", e);
@@ -426,6 +436,11 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
       next.catalog_pages_per_platform = Math.max(0, Math.round(Number(patch.catalog_pages_per_platform)));
     }
   }
+  if (patch.scheduled_catalog_pages_per_platform !== undefined) {
+    if (Number.isFinite(Number(patch.scheduled_catalog_pages_per_platform))) {
+      next.scheduled_catalog_pages_per_platform = Math.max(1, Math.round(Number(patch.scheduled_catalog_pages_per_platform)));
+    }
+  }
 
   if (next.scope_mode === "platforms" && next.platforms.length === 0) {
     throw new Error("'platforms' requiere al menos una plataforma cuando scope_mode es 'platforms'");
@@ -437,7 +452,7 @@ export async function updateVerificationConfig(patch: Partial<VerificationConfig
   state.config = next;
   persistConfig(next);
   scheduleTimer();
-  log("info", `Config actualizada (enabled=${next.enabled}, intervalo=${next.interval_minutes}min, scope=${next.scope_mode}, paginación=${next.catalog_pages_per_platform === 0 ? "sin límite" : next.catalog_pages_per_platform}).`);
+  log("info", `Config actualizada (enabled=${next.enabled}, intervalo=${next.interval_minutes}min, scope=${next.scope_mode}, paginación=${next.catalog_pages_per_platform === 0 ? "sin límite" : next.catalog_pages_per_platform}, timer=${next.scheduled_catalog_pages_per_platform ?? 5}).`);
   return getVerificationConfig();
 }
 
@@ -1089,7 +1104,9 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
   // 0 o no configurado = Sin límite / hasta agotar catálogo (fusible de seguridad en 5000 páginas)
   const configuredPages = opts.pages_per_platform !== undefined // NOSONAR
     ? opts.pages_per_platform // NOSONAR
-    : (cfg.catalog_pages_per_platform !== undefined ? cfg.catalog_pages_per_platform : 0); // NOSONAR
+    : opts.trigger === "timer"
+      ? (cfg.scheduled_catalog_pages_per_platform ?? 5)
+      : (cfg.catalog_pages_per_platform !== undefined ? cfg.catalog_pages_per_platform : 0); // NOSONAR
   const maxPages = configuredPages > 0 ? configuredPages : 5000;
   const isUnlimited = configuredPages === 0; // NOSONAR
 

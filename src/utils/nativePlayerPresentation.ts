@@ -3,6 +3,15 @@ export interface NativePlayerPresentationPort {
   lockLandscape: () => void | Promise<void>;
   unlockOrientation: () => void | Promise<void>;
   onFullscreenChange?: (fullscreen: boolean) => void;
+  onStateChange?: (state: NativePlayerPresentationState) => void;
+}
+
+export interface NativePlayerPresentationState {
+  isOpen: boolean;
+  isFullscreen: boolean;
+  isOverlayVisible: boolean;
+  shouldHideBars: boolean;
+  shouldLockOrientation: boolean;
 }
 
 export interface NativePlayerPresentationController {
@@ -30,12 +39,20 @@ export function createNativePlayerPresentationController(
 
   const sync = () => {
     const shouldHideBars = isOpen && isFullscreen && !isOverlayVisible;
+    const shouldLockOrientation = isOpen && isFullscreen;
+    port.onStateChange?.({
+      isOpen,
+      isFullscreen,
+      isOverlayVisible,
+      shouldHideBars,
+      shouldLockOrientation,
+    });
+
     if (barsHidden !== shouldHideBars) {
       barsHidden = shouldHideBars;
       void enqueue(() => port.setSystemBarsHidden(shouldHideBars));
     }
 
-    const shouldLockOrientation = isOpen && isFullscreen;
     if (orientationLocked !== shouldLockOrientation) {
       orientationLocked = shouldLockOrientation;
       void enqueue(() => shouldLockOrientation ? port.lockLandscape() : port.unlockOrientation());

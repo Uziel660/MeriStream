@@ -298,11 +298,17 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const nativePresentationRef = useRef<ReturnType<typeof createNativePlayerPresentationController> | null>(null);
   if (nativePresentationRef.current === null) {
+    const presentationTrace = typeof window !== 'undefined'
+      ? (window as any).__meristreamNativePlayerPresentationTrace
+      : null;
     nativePresentationRef.current = createNativePlayerPresentationController({
       setSystemBarsHidden: nativeSetImmersive,
       lockLandscape: nativeLockLandscape,
       unlockOrientation: nativeUnlockOrientation,
       onFullscreenChange: setIsFullscreen,
+      onStateChange: Array.isArray(presentationTrace)
+        ? (state) => presentationTrace.push({ ...state, at: Date.now() })
+        : undefined,
     });
   }
   const nativePlayerOverlayRef = useRef(false);

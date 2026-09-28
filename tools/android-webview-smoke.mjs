@@ -419,7 +419,7 @@ try {
     if (visible) throw new Error('Android Back did not close Watch Party join sheet');
   } else if (action === 'open-player') {
     await call('Page.addScriptToEvaluateOnNewDocument', {
-      source: 'window.__meristreamNativeSystemBarTransitions = [];',
+      source: 'window.__meristreamNativeSystemBarTransitions = []; window.__meristreamNativePlayerPresentationTrace = [];',
     });
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);
@@ -730,17 +730,24 @@ try {
       systemBarTransitions: Array.isArray(window.__meristreamNativeSystemBarTransitions)
         ? window.__meristreamNativeSystemBarTransitions.slice()
         : null,
+      presentationTrace: Array.isArray(window.__meristreamNativePlayerPresentationTrace)
+        ? window.__meristreamNativePlayerPresentationTrace.slice()
+        : null,
     }))()`);
     if (afterFullscreenRestore.paused || !afterFullscreenRestore.systemBarTransitions?.includes(true)) {
       throw new Error(`The player did not restore immersive fullscreen during playback: ${JSON.stringify(afterFullscreenRestore)}`);
     }
     await delay(650);
-    const stableFullscreenTransitions = await evaluate(call, `(() => {
+    const stableFullscreenState = await evaluate(call, `(() => {
       const trace = window.__meristreamNativeSystemBarTransitions;
-      return Array.isArray(trace) ? trace.slice() : null;
+      const presentationTrace = window.__meristreamNativePlayerPresentationTrace;
+      return {
+        systemBarTransitions: Array.isArray(trace) ? trace.slice() : null,
+        presentationTrace: Array.isArray(presentationTrace) ? presentationTrace.slice() : null,
+      };
     })()`);
-    if (JSON.stringify(stableFullscreenTransitions) !== JSON.stringify(afterFullscreenRestore.systemBarTransitions)) {
-      throw new Error(`System bars changed again after fullscreen was restored: ${JSON.stringify({ afterFullscreenRestore, stableFullscreenTransitions })}`);
+    if (JSON.stringify(stableFullscreenState.systemBarTransitions) !== JSON.stringify(afterFullscreenRestore.systemBarTransitions)) {
+      throw new Error(`System bars changed again after fullscreen was restored: ${JSON.stringify({ afterFullscreenRestore, stableFullscreenState })}`);
     }
 
     console.log(JSON.stringify({
@@ -752,6 +759,7 @@ try {
       playbackRateAndRestored: [afterSpeed.playbackRate, afterSpeedRestore.playbackRate],
       lockAndUnlocked: [unlockVisible, afterUnlock.unlockVisible],
       fullscreenTransitions: [afterFullscreenExit, afterFullscreenRestore.systemBarTransitions],
+      fullscreenPresentationStates: stableFullscreenState.presentationTrace,
       stillPlaying: !afterFullscreenRestore.paused,
     }));
     if (afterFullscreenRestore.paused) throw new Error('More actions unexpectedly paused playback');

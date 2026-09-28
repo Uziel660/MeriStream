@@ -1726,8 +1726,8 @@ export function App() {
       const seenUrls = new Set<string>();
       for (const candidate of [
         ...gatewayRanked,
-        ...gatewayFallbacks,
         ...(Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : []),
+        ...gatewayFallbacks,
       ]) {
         if (!candidate?.url || seenUrls.has(candidate.url)) continue;
         seenUrls.add(candidate.url);

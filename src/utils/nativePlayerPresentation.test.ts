@@ -170,6 +170,42 @@ describe('native player presentation lifecycle', () => {
     expect(unlockOrientation).not.toHaveBeenCalled();
   });
 
+  it('hides system bars immediately when fullscreen returns during a slow orientation unlock', async () => {
+    const systemBarTransitions: boolean[] = [];
+    let releaseUnlock: (() => void) | undefined;
+    let notifyUnlockStarted: (() => void) | undefined;
+    const unlockStarted = new Promise<void>((resolve) => {
+      notifyUnlockStarted = resolve;
+    });
+    const unlockPending = new Promise<void>((resolve) => {
+      releaseUnlock = resolve;
+    });
+    const player = createNativePlayerPresentationController({
+      setSystemBarsHidden: vi.fn(async (hidden: boolean) => {
+        systemBarTransitions.push(hidden);
+      }),
+      lockLandscape: vi.fn(async () => {}),
+      unlockOrientation: vi.fn(async () => {
+        notifyUnlockStarted?.();
+        await unlockPending;
+      }),
+    });
+
+    await player.open();
+    const leavingFullscreen = player.leaveFullscreen();
+    await unlockStarted;
+
+    const reenteringFullscreen = player.enterFullscreen();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const immersiveRestoreWasNotBlockedByOrientation = systemBarTransitions[2] === true;
+
+    releaseUnlock?.();
+    await Promise.all([leavingFullscreen, reenteringFullscreen]);
+
+    expect(immersiveRestoreWasNotBlockedByOrientation).toBe(true);
+    expect(systemBarTransitions).toEqual([true, false, true]);
+  });
+
   it('closes idempotently after fullscreen was already left', async () => {
     const setSystemBarsHidden = vi.fn(async (_hidden: boolean) => {});
     const lockLandscape = vi.fn(async () => {});

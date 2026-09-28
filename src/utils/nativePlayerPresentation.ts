@@ -30,8 +30,10 @@ export function createNativePlayerPresentationController(
   let isOverlayVisible = false;
   let barsHidden: boolean | null = null;
   let orientationLocked = false;
-  let transitions = Promise.resolve();
-  let isReconciling = false;
+  let barsTransitions = Promise.resolve();
+  let orientationTransitions = Promise.resolve();
+  let isReconcilingBars = false;
+  let isReconcilingOrientation = false;
   let desiredVersion = 0;
 
   const sync = () => {
@@ -46,9 +48,9 @@ export function createNativePlayerPresentationController(
     });
 
     desiredVersion += 1;
-    if (!isReconciling) {
-      isReconciling = true;
-      transitions = transitions.then(async () => {
+    if (!isReconcilingBars) {
+      isReconcilingBars = true;
+      barsTransitions = barsTransitions.then(async () => {
         try {
           while (true) {
             const version = desiredVersion;
@@ -62,6 +64,20 @@ export function createNativePlayerPresentationController(
               }
             }
 
+            if (version === desiredVersion) return;
+          }
+        } finally {
+          isReconcilingBars = false;
+        }
+      }).catch(() => undefined);
+    }
+
+    if (!isReconcilingOrientation) {
+      isReconcilingOrientation = true;
+      orientationTransitions = orientationTransitions.then(async () => {
+        try {
+          while (true) {
+            const version = desiredVersion;
             const nextOrientationLocked = isOpen && isFullscreen;
             if (orientationLocked !== nextOrientationLocked) {
               orientationLocked = nextOrientationLocked;
@@ -76,12 +92,15 @@ export function createNativePlayerPresentationController(
             if (version === desiredVersion) return;
           }
         } finally {
-          isReconciling = false;
+          isReconcilingOrientation = false;
         }
       }).catch(() => undefined);
     }
 
-    return transitions;
+    // System-bar changes must not wait for orientation operations: on low-end
+    // Android devices an unlock can take long enough to leave the bars visible
+    // after the player has already re-entered fullscreen.
+    return Promise.all([barsTransitions, orientationTransitions]).then(() => undefined);
   };
 
   const setFullscreen = (fullscreen: boolean) => {

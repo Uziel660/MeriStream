@@ -42,4 +42,31 @@ describe("LaMovieAdapter verified WordPress mirrors", () => {
     ]);
     expect(streams.all_available_streams.some((url) => /[?&](token|expires|sig)=/i.test(url))).toBe(false);
   });
+
+  it("resolves a modern anime episode through the stable playback API when no code is present", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/v1/playback/anime/136342?season=1&episode=1")) {
+        return response(JSON.stringify({
+          embeds: [
+            { url: "https://vimeos.net/embed-anime-episode.html", lang: "Latino" },
+            { url: "https://goodstream.one/embed-anime-episode.html", lang: "Latino" },
+          ],
+        }));
+      }
+      return response("", 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new LaMovieAdapter();
+    const streams = await adapter.extractStream(
+      "https://lamovie.org/episodio/disney-twisted-wonderland-la-serie-temporada-1-episodio-1/?tmdb_id=136342&season=1&episode=1",
+    );
+
+    expect(streams.all_available_streams).toEqual([
+      "https://vimeos.net/embed-anime-episode.html",
+      "https://goodstream.one/embed-anime-episode.html",
+    ]);
+    expect(streams.all_available_streams.some((url) => /[?&](token|expires|sig)=/i.test(url))).toBe(false);
+  });
 });

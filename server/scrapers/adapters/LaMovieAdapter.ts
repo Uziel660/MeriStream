@@ -293,6 +293,33 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     }
   }
 
+  /**
+   * The SPA's item/season payloads intentionally expose metadata only. The
+   * playable embeds live behind the playback endpoint and must be requested
+   * for the exact TMDB item/episode at playback time. Keeping this lookup here
+   * prevents an anime or a newer title without a legacy mirror from being
+   * reported as a dead page, while still avoiding persistence of signed media
+   * URLs returned by the embed resolvers.
+   */
+  private async fetchModernPlayback(
+    tmdbId: number,
+    contentType: ContentKind,
+    season?: number,
+    episode?: number,
+  ): Promise<string[]> {
+    const modernKind = contentType === "movie" ? "movie" : contentType === "anime" ? "anime" : "tvshow";
+    const query = new URLSearchParams();
+    if (contentType !== "movie" && Number.isInteger(season) && Number(season) > 0) query.set("season", String(season));
+    if (contentType !== "movie" && Number.isInteger(episode) && Number(episode) > 0) query.set("episode", String(episode));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const payload = await this.fetchModernJson(`/v1/playback/${modernKind}/${tmdbId}${suffix}`);
+    const embeds = Array.isArray(payload?.embeds) ? payload.embeds : [];
+    return embeds
+      .map((entry: any) => typeof entry?.url === "string" ? entry.url.trim() : "")
+      .filter((url: string) => LaMovieAdapter.isPlayableSourceUrl(url))
+      .filter((url: string, index: number, values: string[]) => values.indexOf(url) === index);
+  }
+
   private async modernDetail(url: string, contentType: ContentKind, tmdbId: number, code: string | null, slug: string): Promise<UniversalAnalysisResult | null> {
     const modernKind = contentType === "movie" ? "movie" : contentType === "series" ? "tvshow" : "anime";
     const payload = await this.fetchModernJson(`/v1/items/${modernKind}/${tmdbId}`);
@@ -802,11 +829,6 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     try {
       const parsed = new URL(cleanUrl);
       const code = parsed.searchParams.get("code")?.trim();
-      if (code) {
-        const embed = `https://vimeos.net/embed-${code}.html`;
-        return { stream_url: embed, all_available_streams: [embed] };
-      }
-
       // The modern TMDB catalogue can legitimately omit `code` when its
       // provider record is stale. Recover the same title from a live Dooplay
       // mirror and resolve its servers JIT instead of persisting a guessed URL.
@@ -817,6 +839,32 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         const isModernEpisode = parsed.pathname.includes("/episodio/");
         const hintedType: ContentKind | null = parsed.pathname.includes("/series/") ? "series" : parsed.pathname.includes("/animes/") ? "anime" : isModernEpisode ? null : "movie";
         const kindCandidates = hintedType === "movie" ? ["movie"] : hintedType === "series" ? ["tvshow"] : hintedType === "anime" ? ["anime", "tvshow"] : ["tvshow", "anime", "movie"];
+
+        // Prefer the provider's stable playback locator. It returns embed
+        // pages (not expiring CDN URLs), and it is the only path available for
+        // current anime cards whose season payload has no legacy `code`.
+        for (const kind of kindCandidates) {
+          const contentType: ContentKind = kind === "movie" ? "movie" : kind === "anime" ? "anime" : "series";
+          const modernEmbeds = await this.fetchModernPlayback(
+            tmdbId,
+            contentType,
+            Number.isInteger(seasonNumber) && seasonNumber > 0 ? seasonNumber : undefined,
+            Number.isInteger(episodeNumber) && episodeNumber > 0 ? episodeNumber : undefined,
+          );
+          if (modernEmbeds.length > 0) {
+            const withCode = code ? [`https://vimeos.net/embed-${code}.html`, ...modernEmbeds] : modernEmbeds;
+            const streams = withCode.filter((url, index, values) => values.indexOf(url) === index);
+            return { stream_url: streams[0], all_available_streams: streams };
+          }
+        }
+
+        // A code-only locator is still a valid fallback for old rows. It is
+        // stable and the Vimeos resolver renews the actual media JIT.
+        if (code) {
+          const embed = `https://vimeos.net/embed-${code}.html`;
+          return { stream_url: embed, all_available_streams: [embed] };
+        }
+
         for (const kind of kindCandidates) {
           const contentType: ContentKind = kind === "movie" ? "movie" : kind === "anime" ? "anime" : "series";
           const payload = await this.fetchModernJson(`/v1/items/${kind}/${tmdbId}`);

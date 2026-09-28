@@ -69,6 +69,32 @@ export function canonicalUrlOf(server: ScoredServer | null | undefined): string 
 }
 
 /**
+ * Las listas HLS/DASH dependen de muchos segmentos y pueden seguir vivas
+ * durante horas. Un proxy simple conserva el token firmado inicial; una
+ * sesión opaca permite al backend renovar el origen cuando ese token cambia.
+ */
+export function isSegmentedMediaUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const value = String(url).toLowerCase();
+  return /\.m3u8(?:[?#]|$)/i.test(value)
+    || value.includes('/m3u8/')
+    || value.includes('hls-vod')
+    || /\.mpd(?:[?#]|$)/i.test(value);
+}
+
+/**
+ * Decide si una fuente debe nacer dentro de una sesión renovable. Solo aplica
+ * a medios segmentados con un localizador estable; los MP4 directos y las
+ * fuentes sin receta de renovación conservan el camino directo existente.
+ */
+export function shouldUseRenewableSession(server: ScoredServer | null | undefined): boolean {
+  if (!server || server.isEmbed || server.notPlayable || isExpiredWithoutLocator(server)) return false;
+  const stableLocator = server.canonical_locator || server.original_url;
+  if (server.is_refreshable !== true || !stableLocator || stableLocator === server.url) return false;
+  return isSegmentedMediaUrl(server.url);
+}
+
+/**
  * Comprueba si una fuente expiró sin tener un origen o localizador renovable.
  * Regla 1: expired_without_locator jamás entra en trying_direct ni requesting_proxy.
  */
@@ -318,6 +344,9 @@ export function nextDeliveryIntent(
   if (server.isEmbed) return 'skip';
   if (server.requiredHeaders && Object.keys(server.requiredHeaders).length > 0) {
     return canEscalateToProxy(server) ? 'proxy' : 'skip';
+  }
+  if (shouldUseRenewableSession(server)) {
+    return canEscalateToProxy(server) ? 'proxy' : 'direct';
   }
   if (server.delivery_mode === 'proxy_required' || capability === 'proxy_required') {
     if (canEscalateToProxy(server)) {

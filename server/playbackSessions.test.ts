@@ -63,6 +63,18 @@ describe("PlaybackSessionStore", () => {
     expect(refreshed[1]?.generation).toBe("g2");
   });
 
+  it("renews when a CDN signals an expired resource with 404/410", async () => {
+    let calls = 0;
+    const store = new PlaybackSessionStore({
+      resolver: async (original) => meta(original, `https://cdn.example/${++calls}.m3u8`, 9_999, `g${calls}`),
+      now: () => 100,
+    });
+    const session = await store.create("https://embed.example/expired-resource");
+    const refreshed = await store.refreshForUpstreamStatus(session.id, 404);
+    expect(refreshed?.generation).toBe("g2");
+    expect(await store.refreshForUpstreamStatus(session.id, 418)).toBeUndefined();
+  });
+
   it("rebuilds a root-relative resource against the refreshed upstream base", async () => {
     let calls = 0;
     const store = new PlaybackSessionStore({ resolver: async (original) => meta(original, `https://cdn.example/v${++calls}/master.m3u8`, 9_999, `g${calls}`), now: () => 100 });

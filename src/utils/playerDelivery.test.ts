@@ -13,6 +13,8 @@ import {
   shouldProxyForCast,
   isExpiredWithoutLocator,
   isNativeMediaUrl,
+  isSegmentedMediaUrl,
+  shouldUseRenewableSession,
   isUnresolvedCanonical,
   isRealPlayableEmbed,
   prioritizeDirectCandidates,
@@ -90,6 +92,26 @@ describe('playerDelivery — 8 pruebas obligatorias', () => {
     expect(shouldProxyForCast(server, server.url)).toBe(true);
     expect(shouldProxyForCast(server, '/api/v1/playback/session/master.m3u8')).toBe(false);
     expect(shouldProxyForCast({ ...server, is_proxyable: false }, server.url)).toBe(false);
+  });
+
+  it('usa una sesión renovable para HLS/DASH con localizador estable', () => {
+    const renewableHls = makeServer({
+      is_refreshable: true,
+      canonical_locator: 'https://embed.example/watch/1',
+      delivery_mode: 'direct_trial',
+    });
+    expect(isSegmentedMediaUrl(renewableHls.url)).toBe(true);
+    expect(shouldUseRenewableSession(renewableHls)).toBe(true);
+    expect(nextDeliveryIntent(renewableHls, 'direct_ok')).toBe('proxy');
+
+    expect(shouldUseRenewableSession({
+      ...renewableHls,
+      url: 'https://cdn.example/video.mp4?token=1',
+    })).toBe(false);
+    expect(shouldUseRenewableSession({
+      ...renewableHls,
+      canonical_locator: undefined,
+    })).toBe(false);
   });
 
   it('3. Renovable programa renovación', () => {

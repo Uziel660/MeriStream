@@ -180,9 +180,14 @@ export class PlaybackSessionStore {
     return work;
   }
 
-  /** Retry trigger for proxies after the upstream rejects an expired token. */
+  /**
+   * Retry trigger for proxies after an upstream CDN rejects a stale token or
+   * temporarily drops a signed resource. Some providers use 404/410 instead
+   * of 401/403 once the token is no longer valid, and a few return a gateway
+   * error during rotation.
+   */
   async refreshForUpstreamStatus(id: string, status: number): Promise<ResolvedStreamMeta | undefined> {
-    if (status !== 401 && status !== 403) return undefined;
+    if (![401, 403, 404, 410, 429, 500, 502, 503, 504].includes(status)) return undefined;
     const session = this.require(id);
     if (!session.current.is_refreshable || !session.current.canonical_locator) return undefined;
     return this.refresh(id, true);
@@ -481,12 +486,25 @@ export function createPlaybackSessionHandlers(
         : "";
       let resourcePath = resourcePathRaw;
       try { resourcePath = decodeURIComponent(resourcePathRaw); } catch { /* keep raw */ }
-      const url = root
-        ? (await store.upstream(sessionId)).url
-        : store.resourceUrl(sessionId, resourceId, resourcePath || undefined);
-      if (!url) { res.sendStatus(404); return; }
       const session = store.get(sessionId);
       if (!session) { res.sendStatus(404); return; }
+      // Refresh renewable sessions proactively before resolving a child
+      // resource. Without this, the browser can keep requesting segments from
+      // the previous signed CDN URL until the provider returns 401/403 (or a
+      // less consistent 404), which looks like a mid-playback fatal error.
+      let current: ResolvedStreamMeta = session.current;
+      try {
+        current = await store.upstream(sessionId);
+      } catch (error) {
+        // A non-renewable session should still relay its current resource and
+        // expose the upstream status naturally. Root manifests preserve the
+        // existing error behavior because there is no usable URL to serve.
+        if (root) throw error;
+      }
+      const url = root
+        ? current.url
+        : store.resourceUrl(sessionId, resourceId, resourcePath || undefined);
+      if (!url) { res.sendStatus(404); return; }
       const fetchUpstream = async (target: string) => {
         const range = req.header("range");
         const merged = buildPlaybackHeaders(

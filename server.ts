@@ -4048,7 +4048,7 @@ async function startServer() {
         } catch {}
       }
 
-      const rankedBase = rankStreams(candidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
+      const rankedBase = rankStreams(validatedCandidatesToRank, getServerPriorities(siteFromDomain(hostOfStreamUrl(url))));
       // En DoramasYT Mega es el candidato más estable en Oracle: Pixeldrain
       // puede devolver 500 para archivos concretos aunque su URL sea válida.
       // Mantenerlo como fallback, pero intentar Mega primero.

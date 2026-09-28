@@ -63,6 +63,7 @@ const CORE_TARGETS: ProviderAuditTarget[] = [
   ["gnula-movies", "https://gnula.life/archives/movies"],
   ["gnula-series", "https://gnula.life/archives/series"],
   ["animeav1", "https://animeav1.com/catalogo"],
+  ["zokoanime", "https://zokoanime.video/stream/mal/32281/1/sub", "detail"],
   ["hianimes", "https://hianimes.se/filter?type=All&page=1"],
   ["veranimes", "https://wwv.veranimes.net/animes"],
   ["tubepelis", "https://tubepelis.com/"],

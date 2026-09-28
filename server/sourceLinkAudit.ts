@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { classifySourceKind } from "./resolutionMetadata";
 import { getProviderPolicy } from "./providers/providerPolicy";
+import { isZokoAnimeUrl, resolveZokoAnime } from "./resolvers/zokoanimeResolver";
 
 export type SourceAuditReason =
   | "catalog_navigation_locator"
@@ -112,6 +113,15 @@ async function auditOne(row: AuditRow, fetchImpl: typeof fetch): Promise<{ ok: b
   let parsed: URL;
   try { parsed = new URL(row.url); } catch { return { ok: false, reason: "invalid_url" }; }
   if (!/^https?:$/.test(parsed.protocol)) return { ok: false, reason: "invalid_url" };
+
+  // ZokoAnime pages are protected from plain server fetches. Validate the
+  // canonical locator through its JIT resolver so a working MegaPlay mirror
+  // is considered healthy while the short-lived CDN URL is never persisted.
+  const zokoLocator = row.canonical_locator || row.url;
+  if (isZokoAnimeUrl(zokoLocator) && /\/stream\//i.test(zokoLocator)) {
+    const resolution = await resolveZokoAnime(zokoLocator, { fetch: fetchImpl });
+    return resolution.url ? { ok: true } : { ok: false, reason: "network_error" };
+  }
 
   const kind = classifySourceKind(row.url);
   if (kind === "ephemeral_direct") return { ok: false, reason: "ephemeral_direct_requires_jit" };

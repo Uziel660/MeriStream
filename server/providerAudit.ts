@@ -76,7 +76,7 @@ const DEFAULT_CONCURRENCY = 3;
 // A provider catalog can put premieres without uploaded episodes first. Keep
 // the conformance check bounded, but sample enough cards to find a genuinely
 // playable contract before reporting the provider as unavailable.
-const MAX_CATALOG_CONTRACT_CANDIDATES = 24;
+const MAX_CATALOG_CONTRACT_CANDIDATES = 12;
 
 function withTimeout<T>(promise: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {

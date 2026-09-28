@@ -1980,6 +1980,17 @@ async function startServer() {
     res.status(databaseReady ? 200 : 503).json({ status, service: "MeriStream API" });
   });
 
+  // Build marker used by deployment smoke checks. It contains no secrets and
+  // lets support distinguish a healthy old container from the requested
+  // release after an Oracle restart.
+  app.get("/api/v1/version", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      service: "MeriStream API",
+      build_sha: process.env.MERISTREAM_BUILD_SHA || "unknown",
+    });
+  });
+
   // Genres cache (TTL 1 hour)
   let cachedGenres: any = null;
   let genresCacheExpiry = 0;

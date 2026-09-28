@@ -33,6 +33,7 @@ jobs:
             git fetch --prune origin main
             git checkout -B main origin/main
             git reset --hard origin/main
+            export MERISTREAM_BUILD_SHA="$(git rev-parse HEAD)"
             docker compose up -d --build --remove-orphans
             for attempt in $(seq 1 60); do
               if curl --fail --silent --show-error http://127.0.0.1:3010/health >/tmp/meristream-health.json; then
@@ -45,6 +46,8 @@ jobs:
               sleep 5
             done
             test "$(cat /tmp/meristream-health.json)" != ""
+            version="$(curl --fail --silent --show-error http://127.0.0.1:3010/api/v1/version)"
+            printf '%s' "$version" | grep -q "$MERISTREAM_BUILD_SHA"
             adapters="$(curl --fail --silent --show-error http://127.0.0.1:3010/api/v1/scraper/adapters)"
             printf '%s' "$adapters" | grep -q 'lamovie.online'
             docker compose ps

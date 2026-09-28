@@ -37,13 +37,15 @@ video/720p.m3u8`, "https://cdn.example/master.m3u8");
     ]);
   });
 
-  it("decodes the encrypted subtitle catalog used by the multilang player", () => {
+  it("keeps decoding VidSrc's legacy OpenSSL Salted__ subtitle catalog", () => {
     const payload = decodeVidSrcTrackPayload("U2FsdGVkX18xMjM0NTY3OJy3tOUvu4m1oDeVObaBMeaAwYe06qS0FV8VCTR6H3FKQXDxgSwQ471mLwBZY-NIjtJrEwNKy1wpH2IeZleanwO5cS_xbZD1P6U5oR3P1dUbNTSdgGmlbcDZrPJYalY8WUJIOMxDDE6PlODj8rEE5Vpb8Z1RJtI-ZNMYFA1LYLNW7-oFhD64dPhpkT_8jpw9s2Q1ILWP8sA9aZ4SUkOthSk");
 
+    expect(payload).not.toBeNull();
     expect(payload?.subtitles).toEqual([
       expect.objectContaining({ title: "Español", language: "es", uri: "https://subs.example/fight.srt" }),
     ]);
     expect(payload?._req_ts).toBeUndefined();
+    expect(payload?._req_salt).toBeUndefined();
   });
 
   it("attaches audio and subtitle tracks to a direct VidSrc result", async () => {

@@ -211,7 +211,9 @@ function deriveOpenSslKey(password: string, salt: Buffer, keyLength: number, ivL
   const chunks: Buffer[] = [];
   let previous = Buffer.alloc(0);
   while (Buffer.concat(chunks).length < keyLength + ivLength) {
-    previous = createHash("md5")
+    // VidSrc's legacy OpenSSL `Salted__` format requires EVP_BytesToKey with MD5.
+    // This is compatibility key derivation for a public provider payload, not password hashing or integrity protection.
+    previous = createHash("md5") // NOSONAR
       .update(Buffer.concat([previous, Buffer.from(password, "utf8"), salt]))
       .digest();
     chunks.push(previous);

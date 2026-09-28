@@ -4052,6 +4052,11 @@ async function startServer() {
                 }),
           }))
           .sort((a, b) => {
+            if (/doramasyt\.com/i.test(url)) {
+              const aMega = /\/api\/v1\/stream\/mega|mega\.(?:nz|io|co\.nz)/i.test(a.url) ? 0 : 1;
+              const bMega = /\/api\/v1\/stream\/mega|mega\.(?:nz|io|co\.nz)/i.test(b.url) ? 0 : 1;
+              if (aMega !== bMega) return aMega - bMega;
+            }
             const aDirect = a.type === "direct" || isDirectMedia(a.url);
             const bDirect = b.type === "direct" || isDirectMedia(b.url);
             if (aDirect && !bDirect) return -1;

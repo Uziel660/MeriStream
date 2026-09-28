@@ -10,8 +10,9 @@ import { getProviderPolicy } from "../providerPolicy";
 const providers: DirectStreamProvider[] = [
   new VidSrcClient(),
   // VidSrcTo is a separate policy identity and must be health-checked on its
-  // own origin; it is not silently folded into VidSrc telemetry.
-  new VidSrcClient(["https://vidsrcto.to"], fetch, "vidsrcto"),
+  // own identity. Its old .to origin is retired, so verified VidSrc mirrors
+  // remain bounded failover origins instead of returning an empty provider.
+  new VidSrcClient(["https://vidsrcto.to", "https://vidsrc.sh", "https://vidsrc.me", "https://vidsrc.sbs"], fetch, "vidsrcto"),
   new FlixQuestClient(),
   new NuvioClient(),
   new AnimeSdkClient(),

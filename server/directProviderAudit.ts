@@ -39,7 +39,10 @@ const PROBE_REQUESTS: Record<DirectMediaKind, ProviderRequest> = {
   },
 };
 
-const PROBE_TIMEOUT_MS = 16_000;
+// VidSrc's anime compatibility path may need to try several mirrors and then
+// repeat the TV-shaped request. A 16s cutoff produced false negatives during
+// token rotation, so keep the health probe bounded but configurable at 30s.
+const PROBE_TIMEOUT_MS = Math.max(16_000, Number(process.env.DIRECT_PROVIDER_AUDIT_TIMEOUT_MS || 30_000));
 const MEDIA_TIMEOUT_MS = 6_000;
 
 export interface DirectProviderAuditEntry {

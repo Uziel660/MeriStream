@@ -132,8 +132,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     subtitleLanguages: ["en", "es"],
     discovery: "direct_api",
     resolver: "vidsrcto",
-    hosts: ["vidsrcto.to"],
-    notes: "El host público no resuelve actualmente; queda fuera del camino principal y se conserva solo para reactivación explícita si vuelve a publicar el API.",
+    hosts: ["vidsrcto.to", "vidsrc.sh", "vidsrc.me", "vidsrc.sbs"],
+    notes: "El host público .to está caído; se conservan vidsrc.sh, vidsrc.me y vidsrc.sbs como mirrors de failover verificados para la identidad legacy.",
   },
   animeav1: {
     id: "animeav1",

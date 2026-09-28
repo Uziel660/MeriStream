@@ -21,6 +21,24 @@ export const ZOKO_REQUIRED_HEADERS = {
 
 type FetchLike = typeof fetch;
 
+async function fetchWithAttemptTimeout(
+  fetchImpl: FetchLike,
+  input: string,
+  init: RequestInit,
+  options: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1_000, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+  const onAbort = () => controller.abort();
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 function mirrorOrigin(host: string): string {
   return `https://${host}/`;
 }
@@ -180,10 +198,6 @@ export async function resolveZokoAnime(
   if (!cleanUrl || !isZokoAnimeUrl(cleanUrl)) return fail();
 
   const fetchImpl = options.fetch || globalThis.fetch;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(1_000, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
-  const onAbort = () => controller.abort();
-  options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const mirrors = [ZOKO_HOST, MEGAPLAY_HOST];
     for (const host of mirrors) {
@@ -197,7 +211,7 @@ export async function resolveZokoAnime(
       };
       let response: Response;
       try {
-        response = await fetchImpl(locator, { signal: controller.signal, headers });
+        response = await fetchWithAttemptTimeout(fetchImpl, locator, { headers }, options);
       } catch {
         continue;
       }
@@ -230,15 +244,14 @@ export async function resolveZokoAnime(
       if (!fileId) continue;
       let sourceResponse: Response;
       try {
-        sourceResponse = await fetchImpl(`${origin}stream/getSources?id=${encodeURIComponent(fileId)}`, {
-          signal: controller.signal,
+        sourceResponse = await fetchWithAttemptTimeout(fetchImpl, `${origin}stream/getSources?id=${encodeURIComponent(fileId)}`, {
           headers: {
             ...headers,
             Accept: "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
             Referer: locator,
           },
-        });
+        }, options);
       } catch {
         continue;
       }
@@ -266,8 +279,5 @@ export async function resolveZokoAnime(
     return fail();
   } catch {
     return fail();
-  } finally {
-    clearTimeout(timeout);
-    options.signal?.removeEventListener("abort", onAbort);
   }
 }

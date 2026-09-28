@@ -6,7 +6,7 @@ vi.mock("anime-sdk", () => {
   }
 
   class FakeProvider {
-    readonly id: string;
+    id: string;
 
     constructor(_http: unknown) {
       this.id = this.constructor.name.replace("Fake", "").toLowerCase();

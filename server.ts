@@ -3249,7 +3249,14 @@ async function startServer() {
         }
         if (/^\/api\/v1\//i.test(meta.url)) return true;
         if (!isNativeExternalUrl(meta.url)) return false;
-        const health = await probeStream(meta.url, { playerReferer: rawUrl });
+        const health = await probeStream(meta.url, {
+          // A resolver can move a canonical locator to a mirror. Reuse the
+          // resolver's delivery headers while probing the JIT media URL; the
+          // original locator is only a fallback for providers without a
+          // required referer/profile.
+          playerReferer: meta.requiredHeaders?.Referer || rawUrl,
+          ...(meta.requiredHeaders ? { requiredHeaders: meta.requiredHeaders } : {}),
+        });
         return health.ok;
       };
       const respondWithValidated = async (meta: ResolvedStreamMeta, strategy: string) => {

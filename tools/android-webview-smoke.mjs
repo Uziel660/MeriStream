@@ -597,17 +597,21 @@ try {
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
   } else if (action === 'exercise-player-more-actions') {
     const clickAction = async (label) => {
-      const clicked = await evaluate(call, `(async () => {
+      const opened = await evaluate(call, `(() => {
         const more = document.querySelector('button[aria-label="Más controles"]');
-        if (!more) return { clicked: false, reason: 'more-button-missing' };
+        if (!more) return false;
         more.click();
-        await new Promise((resolve) => setTimeout(resolve, 120));
+        return true;
+      })()`);
+      if (!opened) throw new Error(`Could not open More controls for ${label}`);
+      await delay(120);
+      const clicked = await evaluate(call, `(() => {
         const actions = [...document.querySelectorAll('.mobile-player-more-action')];
         const target = actions.find((node) => (node.textContent || '').trim() === ${JSON.stringify(label)});
         if (!target) return { clicked: false, reason: 'action-missing', labels: actions.map((node) => (node.textContent || '').trim()) };
         target.click();
         return { clicked: true, label: ${JSON.stringify(label)} };
-      })()`, true, true);
+      })()`, true);
       if (!clicked?.clicked) throw new Error(`Could not run More action ${label}: ${JSON.stringify(clicked)}`);
       await delay(180);
       return evaluate(call, `(() => {
@@ -623,17 +627,25 @@ try {
       })()`);
     };
 
-    const initial = await evaluate(call, `(async () => {
+    const prepared = await evaluate(call, `(() => {
       const video = document.querySelector('[data-player-root] video');
+      if (!video) return false;
       if (video && Number.isFinite(video.duration) && video.duration > 2) {
         video.currentTime = Math.min(0.5, video.duration / 4);
         if (video.paused) {
-          try { await video.play(); } catch (error) {}
+          const play = document.querySelector('button[aria-label="Reproducir"]');
+          if (!play) return false;
+          play.click();
         }
-        await new Promise((resolve) => setTimeout(resolve, 300));
       }
+      return true;
+    })()`, true);
+    if (!prepared) throw new Error('Could not prepare playback for More action checks');
+    await delay(300);
+    const initial = await evaluate(call, `(() => {
+      const video = document.querySelector('[data-player-root] video');
       return video ? { currentTime: video.currentTime, duration: video.duration, muted: video.muted } : null;
-    })()`, true, true);
+    })()`);
     if (!initial || !Number.isFinite(initial.duration) || initial.duration <= 0) {
       throw new Error(`Player duration was not ready for More action checks: ${JSON.stringify(initial)}`);
     }

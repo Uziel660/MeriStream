@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { BaseScraperAdapter } from "../BaseAdapter";
 import { UniversalAnalysisResult, ContentKind, ExtractedEpisode, ExtractedCatalogItem } from "../../types";
 import { EmbedResolvers, isSupportedServer } from "../../resolvers";
+import { firstFulfilled } from "../../utils/promiseUtils";
 
 const BASE_URL = "https://latanime.org";
 
@@ -466,7 +467,7 @@ export class LatAnimeAdapter extends BaseScraperAdapter {
       }
     });
     const liveDirectCache = new Map<string, boolean>();
-    const firstLiveDirect = Promise.any(resolutionPromises.map(async (resolution) => {
+    const firstLiveDirect = firstFulfilled(resolutionPromises.map(async (resolution) => {
       const { iframeUrl, resolved } = await resolution;
       if (!this.isDirectMedia(resolved) || isDeadOrBlocked(resolved)) throw new Error("not_direct");
       const live = await this.isLiveMedia(resolved);

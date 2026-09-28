@@ -748,7 +748,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
       for (const t of timers) clearTimeout(t);
       for (const c of controllers) try { c.abort(); } catch {}
     }
-    const hexInHtml = html.match(/[a-f0-9]{40,64}/gi) || [];
+    const hexInHtml: string[] = html.match(/[a-f0-9]{40,64}/gi) || [];
     const known = KNOWN_NEXT_ACTION_IDS.find((candidate) => hexInHtml.includes(candidate));
     return known || NEXT_ACTION_ID;
   }

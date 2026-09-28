@@ -28,6 +28,32 @@ export interface PlatformPageResolveOptions {
 
 const defaultDeliveryPlanner = new DeliveryPlanner();
 
+async function extractGenericPageStreams(url: string): Promise<{ stream_url: string; all_available_streams: string[] }> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "User-Agent": "MeriStream-generic-resolver/1.0",
+      },
+    });
+    if (!response.ok) return { stream_url: "", all_available_streams: [] };
+    const html = await response.text();
+    const raw = html.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    const candidates = [...new Set(raw.filter((candidate) =>
+      /\.(?:m3u8|mp4|mpd|webm|mkv)(?:[?#]|$)/i.test(candidate) ||
+      /(?:iframe|embed|player|stream|video)/i.test(candidate),
+    ))].slice(0, 12);
+    const resolved = await Promise.all(candidates.map(async (candidate) => {
+      const meta = await EmbedResolvers.resolveWithMeta(candidate).catch(() => null);
+      return meta?.resolved && meta.url ? meta.url : candidate;
+    }));
+    const streams = [...new Set(resolved.filter(Boolean))];
+    return { stream_url: streams[0] || "", all_available_streams: streams };
+  } catch {
+    return { stream_url: "", all_available_streams: [] };
+  }
+}
+
 /**
  * A MEGA embed is only a locator. The internal relay is advertised as a
  * playable direct URL only after MEGA returns file metadata. Without this
@@ -470,9 +496,8 @@ export async function resolvePlatformPage(
         streamUrl = extracted.stream_url || "";
         availableStreams = extracted.all_available_streams || [];
       } else {
-        const { extractStreamsFromUrl } = await import("./scrapers/commonScraperUtils");
         const extracted = await Promise.race([
-          extractStreamsFromUrl(cleanUrl),
+          extractGenericPageStreams(cleanUrl),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
         ]);
         streamUrl = extracted.stream_url || "";

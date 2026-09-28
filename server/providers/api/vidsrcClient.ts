@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import type { AudioTrack, DirectStreamProvider, PlayableSource, ProviderRequest, SubtitleTrack } from "./types";
 import { playableUrl } from "./types";
 import { normalizeLanguageCode } from "../../utils/languageDetector";
+import { firstFulfilled } from "../../utils/promiseUtils";
 
 const DEFAULT_DOMAINS = [
   "https://vidsrc.sbs",
@@ -653,11 +654,15 @@ async function resolveNxshaMultiLang(
       const sourceData = typeof sourcePayload?._hash === "string" ? decodeVidSrcTrackPayload(sourcePayload._hash) : null;
       const candidates = Array.isArray(sourceData?.sources)
         ? sourceData.sources
-          .map((source: any) => ({
-            playable: playableUrl(source?.url, source?.type),
-            label: String(source?.label || source?.quality || "").trim(),
-          }))
-          .filter((candidate: any) => candidate.playable?.streamType === "hls")
+          .map((source: any) => {
+            const playable = playableUrl(source?.url, source?.type);
+            if (!playable || playable.streamType !== "hls") return null;
+            return {
+              playable: { url: playable.url, streamType: "hls" as const },
+              label: String(source?.label || source?.quality || "").trim(),
+            };
+          })
+          .filter((candidate): candidate is { playable: { url: string; streamType: "hls" }; label: string } => Boolean(candidate))
         : [];
       candidates.sort((left: any, right: any) => {
         const leftLang = detectNxshaLanguage(left.label || "");
@@ -693,7 +698,7 @@ async function resolveNxshaMultiLang(
       }
       // An exact match is already the best possible outcome. Stop querying
       // later scrapers, keeping the preference-aware path bounded in latency.
-      if (bestCandidate?.score >= 1000) break;
+      if (bestCandidate && bestCandidate.score >= 1000) break;
     }
 
     if (bestCandidate) {
@@ -967,7 +972,7 @@ export async function resolveVidSrcEmbed(
     // player behind all remaining servers even after one was ready).
     let hlsUrl: string;
     try {
-      hlsUrl = await Promise.any(serverHashes.map(resolveServerHash));
+      hlsUrl = await firstFulfilled(serverHashes.map(resolveServerHash));
     } catch {
       return { status: "embed_only", embedUrl, playerOrigin, reason: "no_native_hls_from_servers" };
     }
@@ -1083,7 +1088,7 @@ export class VidSrcClient implements DirectStreamProvider {
       // source by several seconds. Remaining attempts continue in the
       // background and are intentionally not part of the critical path.
       try {
-        const first = await Promise.any(attempts.map(async (attempt) => {
+        const first = await firstFulfilled(attempts.map(async (attempt) => {
           const { source } = await attempt;
           if (!source) throw new Error("vidsrc_candidate_rejected");
           return source;

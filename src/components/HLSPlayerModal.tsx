@@ -79,6 +79,7 @@ import {
   serversStableSignature,
   updateRenewedServer,
   nextDeliveryIntent,
+  selectInitialPlaybackUrl,
   shouldScheduleRenewal,
   canEscalateToProxy,
   shouldProxyForCast,
@@ -1665,7 +1666,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       currentProv,
       activeServer?.requiredHeaders?.Referer || canonicalUrlOf(activeServer),
     );
-    const usingBrowserProxy = browserUrl !== url;
+    let usingBrowserProxy = false;
 
     const markNativePlaybackStarted = () => {
       if (directWatchdogRef.current) clearTimeout(directWatchdogRef.current);
@@ -2010,11 +2011,6 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       return;
     }
     const capability = getDeliveryCapability(url, activeServer?.provider);
-    // Todo stream externo usa el proxy anti-CORS; las rutas internas de
-    // MeriStream se conservan para no crear una segunda sesión de resolución.
-    let finalUrl = browserUrl;
-
-    // Hacia el proxy SOLO si una marca previa o la resolución lo exige
     const intent = nextDeliveryIntent(activeServer, capability);
     const canonicalUrl = canonicalUrlOf(activeServer) || url;
 
@@ -2027,6 +2023,9 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       }
       return;
     }
+
+    let finalUrl = selectInitialPlaybackUrl(intent, url, browserUrl);
+    usingBrowserProxy = intent === 'proxy';
 
     if (intent === 'proxy') {
       // Regla 3 & 7: no repetir proxy si ya se intentó o si no es proxyable

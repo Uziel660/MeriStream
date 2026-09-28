@@ -74,7 +74,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "JKAnime Catálogo (Anime)",
     category: "anime",
     description: "Directorio completo de JKanime con temporadas y servidores multi-fuente.",
-    example_url: "https://jkanime.net/directorio/",
+    example_url: "https://jkanime.net/buscar/one-piece/",
     icon: "Tv",
   },
   {
@@ -82,7 +82,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "GNULA HD Películas",
     category: "movies",
     description: "Catálogo completo de películas GNULA HD con resolución JIT de sus páginas canónicas.",
-    example_url: "https://ww3.gnulahd.nu/ver/peliculas/?page=1&__epix=1",
+    example_url: "https://gnula.life/archives/movies",
     icon: "Film",
   },
   {
@@ -90,16 +90,8 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "GNULA HD Series",
     category: "series",
     description: "Catálogo completo de series GNULA HD con temporadas y episodios multi-fuente.",
-    example_url: "https://ww3.gnulahd.nu/ver/series/?page=1&__epix=1",
+    example_url: "https://gnula.life/archives/series",
     icon: "Layers",
-  },
-  {
-    id: "anime-gnula",
-    name: "GNULA HD Anime",
-    category: "anime",
-    description: "Catálogo completo de anime GNULA HD con resolución JIT del reproductor embebido.",
-    example_url: "https://ww3.gnulahd.nu/ver/anime/?page=1&__epix=1",
-    icon: "Tv",
   },
   {
     id: "anime-hianimes",

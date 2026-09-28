@@ -180,9 +180,13 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
     streamResult = best.streamResult;
     anomalies.push(...best.anomalies);
     const streams = best.streams;
+    const requiresPlayableSource = target.provider !== "tvmaze";
     if (streams.length === 0) anomalies.push("no_playable_source");
     const manual = anomalies.some((value) => /locator|slug|invalid/i.test(value));
-    const hardFailure = anomalies.includes("no_playable_source") || anomalies.includes("detail_without_episodes") || manual;
+    // TVMaze is deliberately a metadata-only target. Its detail/episode
+    // contract is useful for cross-checking identity, but it must not be
+    // reported as a broken video provider when it exposes no streams.
+    const hardFailure = (requiresPlayableSource && anomalies.includes("no_playable_source")) || anomalies.includes("detail_without_episodes") || manual;
     return {
       provider: target.provider,
       url: target.url,

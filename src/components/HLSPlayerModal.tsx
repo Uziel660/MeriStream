@@ -556,6 +556,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
         castUrl,
         props.title || media?.title || '',
         activeServer.provider || 'Servidor',
+        activeServer.requiredHeaders?.Referer || canonicalUrlOf(activeServer),
       );
       if (castUrl.startsWith('/') && typeof window !== 'undefined') {
         castUrl = new URL(castUrl, window.location.origin).toString();
@@ -895,6 +896,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
                 res.url,
                 props.title || media?.title || '',
                 activeServer.provider || 'Servidor',
+                res.requiredHeaders?.Referer || res.canonical_locator || activeServer.canonical_locator,
               ));
               if (currentPos > 0) videoRef.current!.currentTime = currentPos;
               if (wasPlaying) videoRef.current!.play().catch(() => {});
@@ -1532,7 +1534,12 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
 
     const currentTitle = props.title || media?.title || '';
     const currentProv = activeServer?.provider || 'Servidor';
-    const browserUrl = proxiedStreamUrl(url, currentTitle, currentProv);
+    const browserUrl = proxiedStreamUrl(
+      url,
+      currentTitle,
+      currentProv,
+      activeServer?.requiredHeaders?.Referer || canonicalUrlOf(activeServer),
+    );
     const usingBrowserProxy = browserUrl !== url;
 
     const markNativePlaybackStarted = () => {

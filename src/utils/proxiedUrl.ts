@@ -27,11 +27,17 @@ function isLocalUrl(url: string): boolean {
  * del túnel de Cloudflare — con URLs absolutas, un dispositivo remoto
  * resolvería 127.0.0.1 contra sí mismo y los streams morirían.
  */
-export function proxiedStreamUrl(url: string, title?: string, provider?: string): string {
+export function proxiedStreamUrl(
+  url: string,
+  title?: string,
+  provider?: string,
+  referer?: string,
+): string {
   if (!url || isLocalUrl(url)) return url;
   const titleParam = title ? `&title=${encodeURIComponent(title)}` : '';
   const provParam = provider ? `&provider=${encodeURIComponent(provider)}` : '';
-  return `/api/v1/proxy/stream?url=${encodeURIComponent(url)}${titleParam}${provParam}`;
+  const refererParam = referer ? `&referer=${encodeURIComponent(referer)}` : '';
+  return `/api/v1/proxy/stream?url=${encodeURIComponent(url)}${titleParam}${provParam}${refererParam}`;
 }
 
 /** Lightweight image proxy - no DNS lookup, no stealth client, just fetch + stream */

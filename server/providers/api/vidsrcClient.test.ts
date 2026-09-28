@@ -15,6 +15,10 @@ describe("VidSrc native resolver", () => {
     expect(detectNxshaLanguage("AwsPly-[Multi-Lang] - 1080P")).toBe("multi");
   });
 
+  it("reads language tags from both bracket styles and ignores empty or unfinished tags", () => {
+    expect(detectNxshaLanguages("[English] (Japanese) [] ( ) [Korean")).toEqual(["en", "ja", "ko"]);
+  });
+
   it("rejects a labelled source from a different work language unless the manifest has an expected dub", () => {
     expect(isVidSrcLanguageCompatible("ko", "en", ["en"], [])).toBe(false);
     expect(isVidSrcLanguageCompatible("ko", "en", ["en"], [

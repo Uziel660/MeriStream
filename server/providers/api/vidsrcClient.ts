@@ -57,21 +57,26 @@ type VidSrcMediaRef = {
 };
 
 
-function extractNxshaLabelTags(label: string): string[] {
+function extractDelimitedTags(label: string, open: string, close: string): string[] {
   const tags: string[] = [];
-  const bracketMatches = label.match(/\[([^\]]+)\]/g);
-  if (bracketMatches) {
-    for (const match of bracketMatches) {
-      tags.push(match.replace(/^\[/, "").replace(/\]$/, "").trim());
-    }
-  }
-  const parenMatches = label.match(/\(([^)]+)\)/g);
-  if (parenMatches) {
-    for (const match of parenMatches) {
-      tags.push(match.replace(/^\(/, "").replace(/\)$/, "").trim());
-    }
+  let cursor = 0;
+  while (cursor < label.length) {
+    const start = label.indexOf(open, cursor);
+    if (start < 0) break;
+    const end = label.indexOf(close, start + open.length);
+    if (end < 0) break;
+    const value = label.slice(start + open.length, end).trim();
+    if (value) tags.push(value);
+    cursor = end + close.length;
   }
   return tags;
+}
+
+function extractNxshaLabelTags(label: string): string[] {
+  return [
+    ...extractDelimitedTags(label, "[", "]"),
+    ...extractDelimitedTags(label, "(", ")"),
+  ];
 }
 
 const NXSHA_LANGUAGE_PATTERNS: Array<[RegExp, string]> = [

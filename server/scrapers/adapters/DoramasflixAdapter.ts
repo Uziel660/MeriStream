@@ -638,9 +638,9 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
    */
   private extractEpisodeId(html: string, targetUrl?: string): string | null {
     const normalized = html
-      .replace(/\\+u0022/gi, '"')
-      .replace(/\\+"/g, '"')
-      .replace(/\\+/g, '');
+      .replaceAll("\\u0022", '"')
+      .replaceAll("\\\"", '"')
+      .replaceAll("\\", "");
 
     const slug = targetUrl ? (() => {
       try { return new URL(targetUrl).pathname.split("/").filter(Boolean).pop() || ""; } catch { return ""; }

@@ -260,7 +260,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (!process.env.VITEST && process.argv.some((arg) => arg.endsWith("repair-doramasyt-tmdb.ts"))) {
+if (!process.env.VITEST && (process.argv.some((arg) => arg.endsWith("repair-doramasyt-tmdb.ts")) || process.argv.includes("--run"))) {
   main().catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -108,7 +108,7 @@ export async function repairFailedSourceSlugs(options: { limit?: number; concurr
   const concurrency = Math.min(6, Math.max(1, Math.round(Number(options.concurrency) || 2)));
   const rows = await prisma.sourceLink.findMany({
     where: { source_status: "failed" },
-    orderBy: [{ last_checked: "asc" }, { updated_at: "asc" }],
+    orderBy: { last_checked: "asc" },
     take: limit,
     select: {
       id: true,

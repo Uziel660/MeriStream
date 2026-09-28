@@ -1040,10 +1040,11 @@ async function processCatalogItem( // NOSONAR
 
 async function auditSourcesAndQueueMirrors(): Promise<void> {
   try {
-    // Rotate a large bounded batch every day. 5k links keeps the Oracle CPU
-    // predictable while bringing the ~770k-link catalog back into a full
-    // health cycle instead of leaving stale links unexamined for months.
-    const audit = await auditSourceLinks({ limit: 5000, concurrency: 32 });
+    // Rotate a bounded batch every day. Ten thousand links completes a full
+    // pass over the current catalog in weeks while keeping the request pool
+    // capped so Oracle and the upstream sites are not flooded.
+    const dailyAuditLimit = 10_000;
+    const audit = await auditSourceLinks({ limit: dailyAuditLimit, concurrency: 32 });
     let recoveryJobId: string | null = null;
     if (audit.failed > 0) {
       try {
@@ -1054,7 +1055,7 @@ async function auditSourcesAndQueueMirrors(): Promise<void> {
           const job = await sourceRecoveryWorker.createJob({
             mode: "all",
             failed_only: true,
-            limit: Math.min(5000, audit.failed),
+            limit: Math.min(dailyAuditLimit, audit.failed),
             name: "Recuperación automática de mirrors y enlaces fallidos",
           });
           recoveryJobId = job.id;

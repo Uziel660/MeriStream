@@ -29,7 +29,7 @@ interface Row {
   original_title: string | null;
   year: number | null;
   kind: string;
-  episodes: Array<{ links: Array<{ url: string }> }>;
+  episodes: Array<{ id: string; season_number: number; links: Array<{ url: string }> }>;
 }
 
 interface Result {
@@ -73,6 +73,10 @@ function normalizeKey(value: string): string {
     .trim();
 }
 
+function compactKey(value: unknown): string {
+  return normalizeKey(String(value || "")).replace(/\s+/g, "");
+}
+
 function variantKey(rawUrl: string): string {
   try {
     const parsed = new URL(rawUrl);
@@ -111,9 +115,7 @@ function sourceAliases(row: Row): string[] {
   // DoramasYT publishes each season as a separate fiche ("The Penthouse 2",
   // "Alchemy of Souls 1", "XO, Kitty S3"). TMDB keeps those seasons under
   // the parent TV identity, so query the parent title too.
-  add(row.title
-    .replace(/\b(?:latino|castellano|sub[-_ ]?espanol|subtitulado)\b/gi, " ")
-    .replace(/\s+(?:s\.?\s*\d+|season\s*\d+|temporada\s*\d+|[12])\s*$/i, " "));
+  add(seasonParentTitle(row));
   add(row.original_title);
   for (const episode of row.episodes || []) {
     for (const link of episode.links || []) {
@@ -128,14 +130,50 @@ function sourceAliases(row: Row): string[] {
   return values.slice(0, 6);
 }
 
-function hasSeasonMarker(row: Row): boolean {
-  return /(?:\bS\.?\s*\d+\b|\bseason\s*\d+\b|\btemporada\s*\d+\b|\s[12]\s*$)/i.test(row.title);
+function seasonParentTitle(row: Pick<Row, "title" | "kind">): string {
+  if (String(row.kind).toLowerCase() !== "series") return "";
+  return String(row.title || "")
+    .replace(/\b(?:latino|castellano|sub[-_ ]?espanol|subtitulado)\b/gi, " ")
+    .replace(/\s+(?:s\.?\s*\d+|season\s*\d+|temporada\s*\d+|\d{1,2})\s*$/i, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function safeResolution(resolution: TmdbIdentityResolution | null): boolean {
+function hasSeasonMarker(row: Row): boolean {
+  return seasonNumberFromTitle(row) !== null;
+}
+
+function seasonNumberFromTitle(row: Pick<Row, "title" | "kind">): number | null {
+  if (String(row.kind).toLowerCase() !== "series") return null;
+  const cleaned = String(row.title || "")
+    .replace(/\b(?:latino|castellano|sub[-_ ]?espanol|subtitulado)\b/gi, " ")
+    .replace(/[()\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const explicit = cleaned.match(/(?:\bS\.?\s*|\bseason\s*|\btemporada\s*)(\d{1,2})\s*$/i);
+  if (explicit) return Number(explicit[1]);
+  // DoramasYT also uses a bare trailing number for season fiches (for example
+  // "The Penthouse 2" and "Alchemy of Souls 1"). Restrict this heuristic to
+  // 1..20 so years and numeric titles such as "The 100" are not rewritten.
+  const bare = cleaned.match(/\s(\d{1,2})\s*$/);
+  if (bare) {
+    const value = Number(bare[1]);
+    if (value >= 1 && value <= 20) return value;
+  }
+  return null;
+}
+
+function safeResolution(resolution: TmdbIdentityResolution | null, row?: Pick<Row, "title" | "kind">): boolean {
   if (!resolution || resolution.confidence === "low") return false;
   if (resolution.reasons.includes("year_mismatch") || resolution.reasons.includes("wrong_media_type")) return false;
   if (resolution.confidence === "high" && resolution.score >= 0.84) return true;
+  // A season fiche is intentionally searched without its season year. When
+  // TMDB returns one unique exact TV identity for the parent title, that is a
+  // safe match even though the title score is 0.72.
+  if (row && seasonNumberFromTitle(row) !== null
+    && resolution.mediaType === "tv"
+    && resolution.reasons.includes("exact_title")
+    && resolution.reasons.includes("unique_exact_title")) return true;
   // TMDB sometimes stores the premiere one year away from the provider's
   // catalog year. An exact title plus that near-year signal is still safer
   // than leaving a known work unlinked.
@@ -198,7 +236,7 @@ async function main(): Promise<void> {
     // compatible kind and year so this remains deterministic.
     const missingItems = await prisma.mediaItem.findMany({
       where: { tmdb_id: null, episodes: { some: { links: { some: { source_site: "doramasyt" } } } } },
-      select: { id: true, normalized_title: true, base_normalized_title: true, kind: true, year: true },
+      select: { id: true, title: true, normalized_title: true, base_normalized_title: true, kind: true, year: true },
     });
     const linkedItems = await prisma.mediaItem.findMany({
       where: { tmdb_id: { not: null } },
@@ -210,6 +248,7 @@ async function main(): Promise<void> {
     });
     for (const item of missingItems) {
       if (inherited.has(item.id)) continue;
+      const parentTitle = seasonParentTitle(item as Row);
       const candidates = [
         ...linkedItems
           .filter((candidate) => candidate.kind === item.kind)
@@ -222,6 +261,14 @@ async function main(): Promise<void> {
       ];
       const ids = [...new Set(candidates.map((candidate) => candidate.tmdb_id).filter((value): value is number => Number.isInteger(value)))];
       if (ids.length === 1) inherited.set(item.id, ids[0]);
+      if (ids.length !== 1 && parentTitle) {
+        const parentCandidates = [
+          ...linkedItems.filter((candidate) => candidate.kind === item.kind && compactKey(candidate.normalized_title) === compactKey(parentTitle)),
+          ...linkedShows.filter((candidate) => (candidate.category === item.kind || ((item.kind === "series" || item.kind === "anime") && ["series", "anime"].includes(candidate.category))) && compactKey(candidate.normalized_title) === compactKey(parentTitle)),
+        ];
+        const parentIds = [...new Set(parentCandidates.map((candidate) => candidate.tmdb_id).filter((value): value is number => Number.isInteger(value)))];
+        if (parentIds.length === 1) inherited.set(item.id, parentIds[0]);
+      }
     }
 
     const rows = await prisma.mediaItem.findMany({
@@ -239,7 +286,11 @@ async function main(): Promise<void> {
         year: true,
         kind: true,
         episodes: {
-          select: { links: { where: { source_site: "doramasyt" }, select: { url: true } } },
+          select: {
+            id: true,
+            season_number: true,
+            links: { where: { source_site: "doramasyt" }, select: { url: true } },
+          },
         },
       },
     }) as Row[];
@@ -250,10 +301,33 @@ async function main(): Promise<void> {
         const row = rows[cursor++];
         try {
           const inheritedId = inherited.get(row.id);
+          const seasonNumber = seasonNumberFromTitle(row);
+          const applyIdentity = async (tmdbId: number): Promise<number> => {
+            if (!options.apply) return 0;
+            const updated = await prisma.mediaItem.updateMany({ where: { id: row.id, tmdb_id: null }, data: { tmdb_id: tmdbId } });
+            if (updated.count > 0 && seasonNumber !== null) {
+              // Some fiches were merged with another source before DoramasYT
+              // was imported, leaving non-Doramas episodes in season 1 and
+              // the Doramas episodes already in their real season. Move only
+              // the DoramasYT episodes and skip a number that already exists
+              // in the target season to preserve the unique DB key.
+              const sourceEpisodes = await prisma.mediaEpisode.findMany({
+                where: { media_item_id: row.id, links: { some: { source_site: "doramasyt" } } },
+                select: { id: true, season_number: true, episode_number: true },
+              });
+              const targetEpisodeNumbers = new Set(sourceEpisodes
+                .filter((episode) => Number(episode.season_number) === seasonNumber)
+                .map((episode) => Number(episode.episode_number)));
+              for (const episode of sourceEpisodes) {
+                if (Number(episode.season_number) === seasonNumber || targetEpisodeNumbers.has(Number(episode.episode_number))) continue;
+                await prisma.mediaEpisode.update({ where: { id: episode.id }, data: { season_number: seasonNumber } });
+              }
+            }
+            return updated.count;
+          };
           if (inheritedId) {
             if (options.apply) {
-              const update = await prisma.mediaItem.updateMany({ where: { id: row.id, tmdb_id: null }, data: { tmdb_id: inheritedId } });
-              if (update.count > 0) applied++;
+              applied += await applyIdentity(inheritedId);
             }
             variantLinks++;
             results.push({ id: row.id, title: row.title, year: row.year, kind: row.kind, tmdb_id: inheritedId, confidence: "high", score: 1, matched_alias: null, reasons: ["unique_episode_variant"], action: options.apply ? "variant" : "would_apply" });
@@ -268,12 +342,11 @@ async function main(): Promise<void> {
             year: hasSeasonMarker(row) ? null : validYear(row.year),
             kind: kindForTmdb(row.kind),
           });
-          const safe = safeResolution(resolution);
+          const safe = safeResolution(resolution, row);
           if (safe) {
             high++;
             if (options.apply) {
-              const update = await prisma.mediaItem.updateMany({ where: { id: row.id, tmdb_id: null }, data: { tmdb_id: resolution!.tmdbId } });
-              if (update.count > 0) applied++;
+              applied += await applyIdentity(resolution!.tmdbId);
             }
             results.push({ id: row.id, title: row.title, year: row.year, kind: row.kind, tmdb_id: resolution!.tmdbId, confidence: resolution!.confidence, score: resolution!.score, matched_alias: resolution!.matchedAlias, reasons: resolution!.reasons, action: options.apply ? "applied" : "would_apply" });
           } else if (resolution) {
@@ -320,4 +393,4 @@ if (!process.env.VITEST && (process.argv.some((arg) => arg.endsWith("repair-dora
   });
 }
 
-export { normalizeKey, safeResolution, sourceAliases, variantKey };
+export { normalizeKey, safeResolution, seasonNumberFromTitle, sourceAliases, variantKey };

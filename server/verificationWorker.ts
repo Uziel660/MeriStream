@@ -1202,8 +1202,12 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
         if (s.base_normalized_title) knownMap.set(s.base_normalized_title, s);
       }
 
-      // ── PROCESAMIENTO CONCURRENTE POR CHUNKS (10 simultáneos) ──
-      const CHUNK_SIZE = 10;
+      // ── PROCESAMIENTO CONCURRENTE POR CHUNKS (20 simultáneos) ──
+      // This phase is network-bound (each known work performs a JIT
+      // detail/episode request). Keep the batch bounded so providers still
+      // see controlled bursts while the complete catalog finishes faster on
+      // the Oracle instance's available CPU/RAM headroom.
+      const CHUNK_SIZE = 20;
       for (let i = 0; i < items.length; i += CHUNK_SIZE) {
         if (state.stopped) return;
         while (state.paused && !state.stopped) {

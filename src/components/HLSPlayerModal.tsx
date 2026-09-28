@@ -1418,17 +1418,16 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       jitInFlightRef.current.clear();
     }
 
-    const targetSrv = servers[targetIndex];
-    const isTargetPlayable = Boolean(
-      targetSrv && !targetSrv.isEmbed && !isUnresolvedCanonical(targetSrv.url) && !targetSrv.notPlayable
-    );
-
     lastAttachmentKey.current = '';
     setActiveServerIndex(targetIndex);
 
-    if (isTargetPlayable && targetSrv?.url) {
-      attachSource(targetSrv.url);
-    }
+    // No adjuntar la fuente aquí: `activeServer` y `activeServerIndex` todavía
+    // pertenecen al render anterior dentro de esta misma llamada. Hacerlo
+    // aquí podía iniciar una sesión proxy con el servidor viejo justo antes
+    // de que React aplicara el nuevo índice, y esa sesión podía ganar la
+    // carrera y dejar el reproductor en la fuente anterior. El efecto de
+    // conexión observa el nuevo servidor después del commit y monta solo esa
+    // fuente; para candidatos JIT, el efecto de resolución hace lo propio.
   };
 
   const serverMatchesPartyMedia = useCallback((server: ScoredServer, remote: WatchPartyMedia) => {

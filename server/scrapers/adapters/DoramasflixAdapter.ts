@@ -23,6 +23,54 @@ const NEXT_ACTION_ID = KNOWN_NEXT_ACTION_IDS[0];
 const NEXT_ACTION_FALLBACK = KNOWN_NEXT_ACTION_IDS[1];
 const externalIdResolver = new ExternalIdResolver();
 
+type GraphqlCatalogKind = "movie" | "variety" | "dorama";
+
+const MOVIE_CATALOG_QUERY = `query PaginationMovie($sort: SortMovie, $limit: Int, $filter: FilterMoviesInput, $page: Int, $excludedLabelSlugs: [String!]) {
+  paginationMovie(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
+    items { _id name name_es slug poster_path poster backdrop_path backdrop release_date }
+  }
+}`;
+
+const DORAMA_CATALOG_QUERY = `query PaginationDorama($sort: SortDorama, $limit: Int, $filter: FilterDoramasInput, $page: Int, $excludedLabelSlugs: [String!]) {
+  paginationDorama(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
+    items { _id name name_es slug isTVShow poster_path poster backdrop_path backdrop first_air_date }
+  }
+}`;
+
+function graphqlCatalogKind(url: string): GraphqlCatalogKind {
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    if (path.includes("/peliculas")) return "movie";
+    if (path.includes("/variedades")) return "variety";
+  } catch {
+    return "dorama";
+  }
+  return "dorama";
+}
+
+function graphqlCatalogFilter(kind: GraphqlCatalogKind): Record<string, boolean> {
+  if (kind === "movie") return {};
+  return { isTVShow: kind === "variety" };
+}
+
+function catalogPathPrefix(kind: GraphqlCatalogKind): string {
+  if (kind === "movie") return "/peliculas/";
+  if (kind === "variety") return "/variedades/";
+  return "/doramas/";
+}
+
+function graphqlCatalogItems(response: unknown, kind: GraphqlCatalogKind): unknown[] {
+  if (!response || typeof response !== "object") return [];
+  const data = (response as {
+    data?: {
+      paginationMovie?: { items?: unknown[] };
+      paginationDorama?: { items?: unknown[] };
+    };
+  }).data;
+  const items = kind === "movie" ? data?.paginationMovie?.items : data?.paginationDorama?.items;
+  return Array.isArray(items) ? items : [];
+}
+
 type DoramasflixMirror = {
   baseUrl: string;
   graphqlUrl: string;
@@ -199,58 +247,49 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
   }
 
   private async extractCatalogFromGraphql(url: string): Promise<ExtractedCatalogItem[]> {
+    const kind = graphqlCatalogKind(url);
     const page = this.catalogPageNumber(url);
-    const path = (() => {
-      try { return new URL(url).pathname.toLowerCase(); } catch { return ""; }
-    })();
-    const isMovie = path.includes("/peliculas");
-    const isVariety = path.includes("/variedades");
-    const query = isMovie
-      ? `query PaginationMovie($sort: SortMovie, $limit: Int, $filter: FilterMoviesInput, $page: Int, $excludedLabelSlugs: [String!]) {
-          paginationMovie(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
-            items { _id name name_es slug poster_path poster backdrop_path backdrop release_date }
-          }
-        }`
-      : `query PaginationDorama($sort: SortDorama, $limit: Int, $filter: FilterDoramasInput, $page: Int, $excludedLabelSlugs: [String!]) {
-          paginationDorama(sort: $sort, limit: $limit, filter: $filter, page: $page, excludedLabelSlugs: $excludedLabelSlugs) {
-            items { _id name name_es slug isTVShow poster_path poster backdrop_path backdrop first_air_date }
-          }
-        }`;
     // FilterMoviesInput no incluye isTVShow; los filtros de películas van
     // vacíos. Doramas sí diferencia telenovelas de programas con isTVShow.
-    const filter = isMovie ? {} : isVariety ? { isTVShow: true } : { isTVShow: false };
+    const filter = graphqlCatalogFilter(kind);
+    const query = kind === "movie" ? MOVIE_CATALOG_QUERY : DORAMA_CATALOG_QUERY;
     const variables = { sort: "_ID_DESC", limit: CATALOG_PAGE_SIZE, filter, page, excludedLabelSlugs: null };
     const response = await this.fetchGraphql(query, variables, url);
-    if (!response || typeof response !== "object") return [];
-
-    const container = isMovie
-      ? (response as { data?: { paginationMovie?: { items?: unknown[] } } }).data?.paginationMovie
-      : (response as { data?: { paginationDorama?: { items?: unknown[] } } }).data?.paginationDorama;
-    const rawItems = container?.items;
-    if (!Array.isArray(rawItems)) return [];
-
-    const prefix = isMovie ? "/peliculas/" : isVariety ? "/variedades/" : "/doramas/";
+    const rawItems = graphqlCatalogItems(response, kind);
     const result: ExtractedCatalogItem[] = [];
     const seen = new Set<string>();
     for (const raw of rawItems) {
-      if (!raw || typeof raw !== "object") continue;
-      const item = raw as Record<string, unknown>;
-      const slug = typeof item.slug === "string" ? item.slug.trim() : "";
-      if (!slug || seen.has(slug)) continue;
-      seen.add(slug);
-      const title = this.firstString(item.name_es, item.name, slug);
-      const poster = this.firstString(item.poster, item.poster_path);
-      const backdrop = this.firstString(item.backdrop, item.backdrop_path);
-      const year = this.yearFromValue(item.release_date ?? item.first_air_date);
-      result.push({
-        title,
-        url: `${BASE_URL}${prefix}${encodeURIComponent(slug)}`,
-        image_url: poster || backdrop ? this.resolveRelativeUrl(poster || backdrop, BASE_URL) : null,
-        kind: isMovie ? "movie" : "series",
-        year,
-      });
+      const catalogItem = this.mapGraphqlCatalogItem(raw, kind);
+      if (!catalogItem || seen.has(catalogItem.slug)) continue;
+      seen.add(catalogItem.slug);
+      result.push(catalogItem.item);
     }
     return result;
+  }
+
+  private mapGraphqlCatalogItem(
+    raw: unknown,
+    kind: GraphqlCatalogKind,
+  ): { slug: string; item: ExtractedCatalogItem } | null {
+    if (!raw || typeof raw !== "object") return null;
+    const item = raw as Record<string, unknown>;
+    const slug = typeof item.slug === "string" ? item.slug.trim() : "";
+    if (!slug) return null;
+
+    const title = this.firstString(item.name_es, item.name, slug);
+    const poster = this.firstString(item.poster, item.poster_path);
+    const backdrop = this.firstString(item.backdrop, item.backdrop_path);
+    const image = poster || backdrop;
+    return {
+      slug,
+      item: {
+        title,
+        url: `${BASE_URL}${catalogPathPrefix(kind)}${encodeURIComponent(slug)}`,
+        image_url: image ? this.resolveRelativeUrl(image, BASE_URL) : null,
+        kind: kind === "movie" ? "movie" : "series",
+        year: this.yearFromValue(item.release_date ?? item.first_air_date),
+      },
+    };
   }
 
   private async fetchGraphql(query: string, variables: Record<string, unknown>, referer: string, endpoint?: string): Promise<unknown | null> {

@@ -61,4 +61,31 @@ describe("DoramasflixAdapter catalog pagination", () => {
     const result = await new DoramasflixAdapter().analyze("https://doramasflix.io/variedades?page=2", "catalog");
     expect(result.catalog_items[0]).toMatchObject({ title: "Variety", url: "https://doramasflix.io/variedades/variety-1", kind: "series" });
   });
+
+  it("ignora elementos sin slug, elimina duplicados y conserva la portada alternativa", async () => {
+    const items = [
+      { slug: " beyond evil ", name: "Beyond Evil", backdrop_path: "/backdrop.jpg", first_air_date: "2021-01-01" },
+      null,
+      { slug: "   ", name: "No slug" },
+      { slug: "beyond evil", name_es: "Duplicate" },
+    ] as unknown as Array<Record<string, unknown>>;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body || "{}")) as { variables?: { page?: number; filter?: unknown } };
+      expect(request.variables).toMatchObject({ page: 4, filter: { isTVShow: false } });
+      return graphqlResponse(items);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new DoramasflixAdapter().analyze("https://doramasflix.io/doramas?page=4", "catalog");
+
+    expect(result.catalog_items).toEqual([
+      expect.objectContaining({
+        title: "Beyond Evil",
+        url: "https://doramasflix.io/doramas/beyond%20evil",
+        image_url: "https://doramasflix.io/backdrop.jpg",
+        kind: "series",
+        year: 2021,
+      }),
+    ]);
+  });
 });

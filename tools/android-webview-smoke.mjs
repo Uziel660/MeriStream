@@ -418,19 +418,47 @@ try {
     console.log(JSON.stringify({ action, visible }));
     if (visible) throw new Error('Android Back did not close Watch Party join sheet');
   } else if (action === 'open-player') {
+    await call('Page.addScriptToEvaluateOnNewDocument', {
+      source: 'window.__meristreamNativeSystemBarTransitions = [];',
+    });
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);
     const hasPlayer = await evaluate(call, `Boolean(document.querySelector('[data-player-root]'))`);
     if (!hasPlayer) throw new Error('Android smoke player did not mount');
-    console.log(JSON.stringify({ action, hasPlayer }));
+    const initialTransitions = await evaluate(call, `window.__meristreamNativeSystemBarTransitions`);
+    if (!Array.isArray(initialTransitions) || !initialTransitions.includes(true)) {
+      throw new Error(`Native SystemBars hide was not observed during player entry: ${JSON.stringify(initialTransitions)}`);
+    }
+    console.log(JSON.stringify({ action, hasPlayer, initialTransitions }));
   } else if (action === 'play') {
     const result = await evaluate(call, `(async () => {
       const video = document.querySelector('video');
-      if (!video) return { found: false };
-      try { await video.play(); } catch (error) {}
-      return { found: true, paused: video.paused, readyState: video.readyState, currentTime: video.currentTime };
+      const trace = window.__meristreamNativeSystemBarTransitions;
+      if (!video || !Array.isArray(trace)) return { found: Boolean(video), traceReady: Array.isArray(trace) };
+      if (!video.paused) {
+        const pauseButton = document.querySelector('button[aria-label="Pausar"]');
+        if (!pauseButton) return { found: true, pauseButton: false };
+        pauseButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      const playButton = document.querySelector('button[aria-label="Reproducir"]');
+      if (!playButton) return { found: true, playButton: false };
+      trace.length = 0;
+      playButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+      return {
+        found: true,
+        playButton: true,
+        paused: video.paused,
+        readyState: video.readyState,
+        currentTime: video.currentTime,
+        systemBarTransitions: trace.slice(),
+      };
     })()`, true, true);
     console.log(JSON.stringify({ action, ...result }));
+    if (!result?.found || !result.playButton || result.paused || result.systemBarTransitions?.length) {
+      throw new Error(`Play did not remain immersive without system bar toggles: ${JSON.stringify(result)}`);
+    }
   } else if (action === 'open-player-more') {
     const openResult = await evaluate(call, `(() => {
       const button = document.querySelector('button[aria-label="Más controles"]');
@@ -559,6 +587,84 @@ try {
     console.log(JSON.stringify({ action, visible, player }));
     if (visible) throw new Error('Android Back did not close Player More controls');
     if (!player) throw new Error('Android Back closed the player instead of the top-most controls');
+  } else if (action === 'exercise-player-more-actions') {
+    const clickAction = async (label) => {
+      const clicked = await evaluate(call, `(async () => {
+        const more = document.querySelector('button[aria-label="Más controles"]');
+        if (!more) return { clicked: false, reason: 'more-button-missing' };
+        more.click();
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        const actions = [...document.querySelectorAll('.mobile-player-more-action')];
+        const target = actions.find((node) => (node.textContent || '').trim() === ${JSON.stringify(label)});
+        if (!target) return { clicked: false, reason: 'action-missing', labels: actions.map((node) => (node.textContent || '').trim()) };
+        target.click();
+        return { clicked: true, label: ${JSON.stringify(label)} };
+      })()`, true, true);
+      if (!clicked?.clicked) throw new Error(`Could not run More action ${label}: ${JSON.stringify(clicked)}`);
+      await delay(180);
+      return evaluate(call, `(() => {
+        const video = document.querySelector('[data-player-root] video');
+        return video ? {
+          currentTime: video.currentTime,
+          duration: Number.isFinite(video.duration) ? video.duration : null,
+          muted: video.muted,
+          playbackRate: video.playbackRate,
+          paused: video.paused,
+          moreOpen: Boolean(document.querySelector('.native-player-more-sheet')),
+        } : null;
+      })()`);
+    };
+
+    const initial = await evaluate(call, `(() => {
+      const video = document.querySelector('[data-player-root] video');
+      return video ? { currentTime: video.currentTime, duration: video.duration, muted: video.muted } : null;
+    })()`);
+    if (!initial || !Number.isFinite(initial.duration) || initial.duration <= 0) {
+      throw new Error(`Player duration was not ready for More action checks: ${JSON.stringify(initial)}`);
+    }
+
+    const afterForward = await clickAction('+10 s');
+    const forwardDelta = afterForward.currentTime - initial.currentTime;
+    if (forwardDelta < 8.5 || forwardDelta > 14 || afterForward.moreOpen) {
+      throw new Error(`More +10 s action did not seek and close its sheet: ${JSON.stringify({ initial, afterForward, forwardDelta })}`);
+    }
+
+    const afterBackward = await clickAction('-10 s');
+    const restoredTimeDelta = afterBackward.currentTime - initial.currentTime;
+    if (Math.abs(restoredTimeDelta) > 4 || afterBackward.moreOpen) {
+      throw new Error(`More -10 s action did not seek back and close its sheet: ${JSON.stringify({ initial, afterBackward, restoredTimeDelta })}`);
+    }
+
+    const muteLabel = initial.muted ? 'Activar audio' : 'Silenciar';
+    const afterMute = await clickAction(muteLabel);
+    if (afterMute.muted === initial.muted || afterMute.moreOpen) {
+      throw new Error(`More audio action did not toggle mute: ${JSON.stringify({ initial, afterMute })}`);
+    }
+    const restoreMuteLabel = initial.muted ? 'Silenciar' : 'Activar audio';
+    const afterMuteRestore = await clickAction(restoreMuteLabel);
+    if (afterMuteRestore.muted !== initial.muted) {
+      throw new Error(`More audio action did not restore its starting state: ${JSON.stringify({ initial, afterMuteRestore })}`);
+    }
+
+    const afterSpeed = await clickAction('1.5x');
+    if (afterSpeed.playbackRate !== 1.5 || afterSpeed.moreOpen) {
+      throw new Error(`More speed action did not apply 1.5x: ${JSON.stringify(afterSpeed)}`);
+    }
+    const afterSpeedRestore = await clickAction('1x');
+    if (afterSpeedRestore.playbackRate !== 1) {
+      throw new Error(`More speed action did not restore 1x: ${JSON.stringify(afterSpeedRestore)}`);
+    }
+
+    console.log(JSON.stringify({
+      action,
+      initial,
+      forwardDelta,
+      restoredTimeDelta,
+      mutedAndRestored: [afterMute.muted, afterMuteRestore.muted],
+      playbackRateAndRestored: [afterSpeed.playbackRate, afterSpeedRestore.playbackRate],
+      stillPlaying: !afterSpeedRestore.paused,
+    }));
+    if (afterSpeedRestore.paused) throw new Error('More actions unexpectedly paused playback');
   } else if (action === 'open-player-report') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

@@ -138,8 +138,12 @@ export async function nativeSetImmersive(hidden: boolean): Promise<void> {
   const systemBars = nativePlugin('SystemBars');
   try {
     if (hidden && typeof systemBars?.hide === 'function') {
+      const trace = (window as any).__meristreamNativeSystemBarTransitions;
+      if (Array.isArray(trace)) trace.push(true);
       await systemBars.hide();
     } else if (!hidden && typeof systemBars?.show === 'function') {
+      const trace = (window as any).__meristreamNativeSystemBarTransitions;
+      if (Array.isArray(trace)) trace.push(false);
       await systemBars.show();
       if (typeof systemBars?.setStyle === 'function') {
         await systemBars.setStyle({ style: 'DARK' });

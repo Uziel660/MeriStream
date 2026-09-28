@@ -2645,7 +2645,7 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     void nativePresentationRef.current?.leaveFullscreen();
   };
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     nativeHaptic(4);
     if (isViewerMode) {
       showViewerLockNotice('Reproducción controlada por el anfitrión');
@@ -2659,8 +2659,13 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      void enterNativeImmersive();
-      video.play().catch(() => {});
+      await enterNativeImmersive();
+      try {
+        await video.play();
+      } catch {
+        // Autoplay restrictions and source transitions are handled by the
+        // existing playback error/failover listeners.
+      }
     } else {
       video.pause();
     }

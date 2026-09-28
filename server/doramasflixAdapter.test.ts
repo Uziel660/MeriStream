@@ -88,4 +88,38 @@ describe("DoramasflixAdapter catalog pagination", () => {
       }),
     ]);
   });
+
+  it("ordena episodios GraphQL, elimina slugs duplicados y completa sus valores faltantes", async () => {
+    const episodes = [
+      { slug: "episode-2", episode_number: 2, season_number: 1, name: "Capítulo dos" },
+      { slug: "episode-1", episode_number: 1, season_number: 1, name: " " },
+      { slug: "episode-2", episode_number: 2, season_number: 1, name: "Duplicado" },
+      { slug: "special", name: "Especial" },
+      { slug: "season-2-episode-1", episode_number: 1, season_number: 2, name: "Otra temporada" },
+      { slug: "   ", episode_number: 9, season_number: 9, name: "Sin slug" },
+      null,
+    ] as unknown as Array<Record<string, unknown>>;
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { paginationEpisode: { items: episodes } } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new DoramasflixAdapter();
+    vi.spyOn(adapter as any, "fetchHtml").mockResolvedValue(`
+      <html><head><meta property="og:title" content="Serie de prueba"></head>
+      <body><h1>Serie de prueba</h1><script>window.data = {"serie_id":"1234567890abcdef12345678"};</script></body></html>
+    `);
+    vi.spyOn(adapter as any, "enrichDetailMetadata").mockResolvedValue(null);
+
+    const result = await adapter.analyze("https://doramasflix.io/doramas/serie-de-prueba", "detail");
+
+    expect(result.episodes).toEqual([
+      { number: 1, season: 1, title: "Capítulo 1", url: "https://doramasflix.io/capitulos/episode-1" },
+      { number: 1, season: 1, title: "Especial", url: "https://doramasflix.io/capitulos/special" },
+      { number: 2, season: 1, title: "Capítulo dos", url: "https://doramasflix.io/capitulos/episode-2" },
+      { number: 1, season: 2, title: "Otra temporada", url: "https://doramasflix.io/capitulos/season-2-episode-1" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

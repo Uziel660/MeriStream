@@ -71,6 +71,47 @@ function graphqlCatalogItems(response: unknown, kind: GraphqlCatalogKind): unkno
   return Array.isArray(items) ? items : [];
 }
 
+function graphqlSeriesId(html: string): string | null {
+  const unescaped = html.replace(/\\u0022/g, '"').replace(/\\"/g, '"');
+  const patterns = [
+    /"serie_id"\s*:\s*"([a-f0-9]{24})"/i,
+    /"dorama_id"\s*:\s*"([a-f0-9]{24})"/i,
+    /\\"id\\"\s*:\s*\\"([a-f0-9]{24})\\"/i,
+  ];
+  for (const pattern of patterns) {
+    const match = unescaped.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function mapGraphqlEpisodes(rawItems: unknown[]): ExtractedEpisode[] {
+  const episodes: ExtractedEpisode[] = [];
+  const seen = new Set<string>();
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const slug = typeof item.slug === "string" ? item.slug.trim() : "";
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+
+    const rawEpisodeNumber = Number(item.episode_number);
+    const rawSeasonNumber = Number(item.season_number);
+    const number = Number.isFinite(rawEpisodeNumber) && rawEpisodeNumber > 0 ? Math.trunc(rawEpisodeNumber) : 1;
+    const season = Number.isFinite(rawSeasonNumber) && rawSeasonNumber > 0 ? Math.trunc(rawSeasonNumber) : 1;
+    const title = typeof item.name === "string" && item.name.trim().length > 0
+      ? item.name.trim()
+      : `Capítulo ${rawEpisodeNumber || 1}`;
+    episodes.push({
+      number,
+      season,
+      title,
+      url: `${BASE_URL}/capitulos/${encodeURIComponent(slug)}`,
+    });
+  }
+  return episodes.sort((left, right) => (left.season || 1) - (right.season || 1) || left.number - right.number);
+}
+
 type DoramasflixMirror = {
   baseUrl: string;
   graphqlUrl: string;
@@ -355,11 +396,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
   }
 
   private async extractAllEpisodesFromGraphql(html: string, referer: string): Promise<ExtractedEpisode[]> {
-    const unescaped = html.replace(/\\u0022/g, '"').replace(/\\"/g, '"');
-    const serieMatch = unescaped.match(/"serie_id"\s*:\s*"([a-f0-9]{24})"/i) ||
-                       unescaped.match(/"dorama_id"\s*:\s*"([a-f0-9]{24})"/i) ||
-                       unescaped.match(/\"id\"\s*:\s*\"([a-f0-9]{24})\"/i);
-    const serieId = serieMatch ? serieMatch[1] : null;
+    const serieId = graphqlSeriesId(html);
     if (!serieId) return [];
 
     const query = `
@@ -395,30 +432,7 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
     const rawItems = container?.items;
     if (!Array.isArray(rawItems) || rawItems.length === 0) return [];
 
-    const episodes: ExtractedEpisode[] = [];
-    const seen = new Set<string>();
-
-    for (const raw of rawItems) {
-      if (!raw || typeof raw !== "object") continue;
-      const item = raw as Record<string, unknown>;
-      const slug = typeof item.slug === "string" ? item.slug.trim() : "";
-      if (!slug || seen.has(slug)) continue;
-      seen.add(slug);
-
-      const episodeNumber = Number(item.episode_number);
-      const seasonNumber = Number(item.season_number);
-      const name = typeof item.name === "string" && item.name.trim().length > 0 ? item.name.trim() : `Capítulo ${episodeNumber || 1}`;
-      const url = `${BASE_URL}/capitulos/${encodeURIComponent(slug)}`;
-
-      episodes.push({
-        number: Number.isFinite(episodeNumber) && episodeNumber > 0 ? Math.trunc(episodeNumber) : 1,
-        ...(Number.isFinite(seasonNumber) && seasonNumber > 0 ? { season: Math.trunc(seasonNumber) } : { season: 1 }),
-        title: name,
-        url,
-      });
-    }
-
-    return episodes.sort((a, b) => (a.season || 1) - (b.season || 1) || a.number - b.number);
+    return mapGraphqlEpisodes(rawItems);
   }
 
   /**

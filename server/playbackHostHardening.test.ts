@@ -53,4 +53,18 @@ describe("special-host playback hardening", () => {
     expect(result.headers.Referer).toBe("https://required.example/");
     expect(result.headers.Authorization).toBe("Bearer test");
   });
+
+  it("uses the VidSrc player Referer and CORS metadata for HLS segments", () => {
+    const result = buildPlaybackHeaders(
+      "https://xenialxenogenesis.website/pl/example/master.m3u8",
+      "https://vidsrc.me/embed/tv/99489/1/1",
+      {
+        Referer: "https://cloudorchestranova.com/embed/player/tv/99489/1/1?vs=token",
+        "Sec-Fetch-Dest": "iframe",
+      },
+    );
+    expect(result.headers.Referer).toContain("cloudorchestranova.com/embed/player");
+    expect(result.headers["Sec-Fetch-Mode"]).toBe("cors");
+    expect(result.headers["Sec-Fetch-Dest"]).toBe("empty");
+  });
 });

@@ -23,6 +23,8 @@ export interface HostProfile {
   referer?: string;
   userAgent?: string;
   extraHeaders?: Record<string, string>;
+  /** Keep a provider resolver's dynamic Referer when the relay passes it in. */
+  preferResolverReferer?: boolean;
   /** Cliente HTTP estándar usado para todas las entregas salientes. */
   client?: "undici";
   /**
@@ -176,9 +178,20 @@ export const HOST_PROFILES: HostProfile[] = [
   {
     // Vidsrc rotates CDN hostnames. These hosts are reliable enough to probe
     // server-side but should still be relayed for mobile playback consistency.
+    // The resolver's iframe Referer is signed into the player chain; replaying
+    // the page locator as Referer may work for the master but Cloudflare can
+    // block the first media segment. HLS resources are CORS fetches, not
+    // iframes, so use the resource fetch metadata here.
     match: ["antediluvianalgorithm.website", "xenialxenogenesis.website"],
     refererMode: "passthrough",
     userAgent: CHROME_124_UA,
+    preferResolverReferer: true,
+    extraHeaders: {
+      Accept: "*/*",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
+    },
     client: "undici",
   },
   {
@@ -284,6 +297,9 @@ export function buildPlaybackHeaders(
   const headers: Record<string, string> = explicit
     ? { ...resolverHeaders, ...profiled.headers }
     : { ...profiled.headers, ...resolverHeaders };
+  if (explicit && profiled.profile.preferResolverReferer && resolverHeaders.Referer) {
+    headers.Referer = resolverHeaders.Referer;
+  }
   if (explicit && profiled.profile.refererMode === "none") {
     delete headers.Referer;
     delete headers.referer;

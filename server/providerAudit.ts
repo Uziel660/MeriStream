@@ -67,9 +67,9 @@ const CORE_TARGETS: ProviderAuditTarget[] = [
   ["doramasyt-movies", "https://www.doramasyt.com/peliculas"],
   ["tudorama", "https://tudorama.com/genero/series/"],
   ["tudorama-movies", "https://tudorama.com/genero/peliculas/"],
-  ["lamovie-movies", "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24"],
-  ["lamovie-series", "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24"],
-  ["lamovie-anime", "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24"],
+  ["lamovie-movies", "https://lamovie.org/peliculas/"],
+  ["lamovie-series", "https://lamovie.org/series/"],
+  ["lamovie-anime", "https://lamovie.org/animes/"],
   ["gnula-movies", "https://gnula.life/archives/movies"],
   ["gnula-series", "https://gnula.life/archives/series"],
   ["animeav1", "https://animeav1.com/catalogo"],
@@ -156,6 +156,12 @@ function expandCatalogMirrors(targets: ProviderAuditTarget[]): ProviderAuditTarg
     if (!policy?.hosts?.length || !sourceHost) continue;
     const sourceLabel = sourceHost.split(".")[0];
     const providerLabel = target.provider.toLowerCase().split("-")[0];
+    const targetKind = /\/(?:series|tvshows)\b/i.test(target.url)
+      ? "series"
+      : /\/(?:animes|anime)\b/i.test(target.url)
+        ? "anime"
+        : "movie";
+    if (policy.mirrorContentKinds?.length && !policy.mirrorContentKinds.includes(targetKind as any)) continue;
     for (const rawHost of policy.hosts) {
       const host = String(rawHost || "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
       if (!host || host === sourceHost) continue;

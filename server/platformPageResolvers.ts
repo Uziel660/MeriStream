@@ -76,13 +76,13 @@ async function defaultMegaHealthCheck(url: string): Promise<boolean> {
 }
 
 /**
- * Detecta si la URL corresponde a una página canónica de LaMovie (lamovie.org, lamovie.to, lamovie.ws).
+ * Detecta si la URL corresponde a una página canónica de LaMovie o uno de sus mirrors verificados.
  */
 export function isLaMoviePageUrl(rawUrl: string | URL): boolean {
   try {
     const url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
     const host = url.hostname.toLowerCase();
-    return /(?:^|\.)lamovie\.(?:org|to|ws)$/i.test(host);
+    return /(?:^|\.)lamovie\.(?:org|to|ws|online|cc)$/i.test(host);
   } catch {
     return false;
   }

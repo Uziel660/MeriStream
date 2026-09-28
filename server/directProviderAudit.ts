@@ -140,7 +140,16 @@ async function auditRuntimeProvider(provider: DirectStreamProvider): Promise<Dir
   for (const kind of checkedKinds) {
     const request = PROBE_REQUESTS[kind];
     try {
-      const sources = candidatesWithPlayableMedia(await withTimeout(provider.resolve(request), PROBE_TIMEOUT_MS));
+      let sources: PlayableSource[] = [];
+      // Public mirrors can rotate an upstream token between the embed request
+      // and its manifest. Give a transient empty response one bounded retry so
+      // the daily health report does not disable a provider that is actually
+      // healthy (anime endpoints are especially prone to this).
+      for (let attempt = 0; attempt < 2 && sources.length === 0; attempt++) {
+        const resolved = candidatesWithPlayableMedia(await withTimeout(provider.resolve(request), PROBE_TIMEOUT_MS));
+        sources = resolved;
+        if (sources.length === 0 && attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       if (sources.length === 0) {
         failedKinds.push(kind);
         anomalies.push(`${kind}_no_playable_source`);

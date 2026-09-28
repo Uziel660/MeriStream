@@ -57,6 +57,8 @@ export interface VerificationConfig {
    * horas; una pasada manual puede seguir usando catalog_pages_per_platform=0.
    */
   scheduled_catalog_pages_per_platform?: number;
+  /** Página inicial por plataforma para que las pasadas del timer roten por todo el catálogo. */
+  scheduled_catalog_page_offsets?: Record<string, number>;
 }
 
 export interface VerificationRunOptions {
@@ -158,9 +160,9 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   doramasflix_variedades: "https://doramasflix.io/variedades",
   tudorama: "https://tudorama.com/genero/series/",
   tudorama_peliculas: "https://tudorama.com/genero/peliculas/",
-  lamovie_movies: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
-  lamovie_series: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24",
-  lamovie_animes: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24",
+  lamovie_movies: "https://lamovie.org/peliculas/",
+  lamovie_series: "https://lamovie.org/series/",
+  lamovie_animes: "https://lamovie.org/animes/",
   // Catálogos verificados de los adaptadores activos/maintained. Los nombres
   // son claves de plataforma, no dominios arbitrarios; así una página caída
   // no puede entrar silenciosamente como una fuente nueva.
@@ -204,6 +206,7 @@ function defaultConfig(): VerificationConfig {
     sync_known_episodes: true,
     catalog_pages_per_platform: 0, // 0 = sin límite / hasta agotar
     scheduled_catalog_pages_per_platform: 5,
+    scheduled_catalog_page_offsets: {},
   };
 }
 
@@ -233,6 +236,13 @@ function loadConfigFromDisk(): VerificationConfig {
     }
     if (raw?.scheduled_catalog_pages_per_platform !== undefined && Number.isFinite(Number(raw.scheduled_catalog_pages_per_platform))) {
       base.scheduled_catalog_pages_per_platform = Math.max(1, Math.round(Number(raw.scheduled_catalog_pages_per_platform)));
+    }
+    if (raw?.scheduled_catalog_page_offsets && typeof raw.scheduled_catalog_page_offsets === "object") {
+      base.scheduled_catalog_page_offsets = Object.fromEntries(
+        Object.entries(raw.scheduled_catalog_page_offsets)
+          .map(([key, value]) => [cleanPlatform(key), Math.max(1, Math.round(Number(value)))])
+          .filter(([key, value]) => Boolean(key) && Number.isFinite(value)),
+      );
     }
   } catch (e) {
     console.error("[verificationWorker] config corrupta, usando defaults:", e);
@@ -1118,6 +1128,7 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       : (cfg.catalog_pages_per_platform !== undefined ? cfg.catalog_pages_per_platform : 0); // NOSONAR
   const maxPages = configuredPages > 0 ? configuredPages : 5000;
   const isUnlimited = configuredPages === 0; // NOSONAR
+  const rotatingTimer = opts.trigger === "timer" && opts.pages_per_platform === undefined && configuredPages > 0;
 
   log(
     "info",
@@ -1155,8 +1166,15 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
     checked.push(platform);
 
     let consecutiveEmptyPages = 0;
+    const configuredStart = rotatingTimer
+      ? Math.max(1, Math.round(Number(cfg.scheduled_catalog_page_offsets?.[platform]) || 1))
+      : 1;
+    const firstPage = configuredStart;
+    const lastPage = rotatingTimer ? firstPage + maxPages - 1 : maxPages;
+    let nextScheduledPage = firstPage;
+    let reachedEnd = false;
 
-    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+    for (let pageNum = firstPage; pageNum <= lastPage; pageNum++) {
       if (state.stopped) return;
       while (state.paused && !state.stopped) {
         await sleep(400);
@@ -1181,16 +1199,18 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
 
       if (!items || items.length === 0) {
         consecutiveEmptyPages++;
-        if (pageNum > 1) {
+        if (pageNum > firstPage) {
           log("info", `[${platform}] Fin del catálogo alcanzado en página ${pageNum}.`);
+          reachedEnd = true;
           break;
         }
         continue;
       }
 
       // En página > 1, si todos los items ya fueron analizados en esta pasada, el catálogo ya converge
-      if (pageNum > 1 && items.every((it) => it.url && analyzedUrls.has(it.url))) {
+      if (firstPage === 1 && pageNum > firstPage && items.every((it) => it.url && analyzedUrls.has(it.url))) {
         log("info", `[${platform}] Página ${pageNum} sin items nuevos, catálogo al día. Pasando a siguiente plataforma.`);
+        reachedEnd = true;
         break;
       }
 
@@ -1246,6 +1266,15 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
           chunk.map((item) => processCatalogItem(item, platform, knownMap, analyzedUrls, stats))
         );
       }
+      nextScheduledPage = pageNum + 1;
+    }
+
+    if (rotatingTimer) {
+      if (reachedEnd || nextScheduledPage > lastPage) nextScheduledPage = reachedEnd ? 1 : nextScheduledPage;
+      cfg.scheduled_catalog_page_offsets = { ...(cfg.scheduled_catalog_page_offsets || {}), [platform]: nextScheduledPage };
+      state.config.scheduled_catalog_page_offsets = { ...(state.config.scheduled_catalog_page_offsets || {}), [platform]: nextScheduledPage };
+      try { persistConfig(state.config); } catch (error: any) { log("warn", `[${platform}] No se pudo guardar cursor de catálogo: ${error?.message || error}`); }
+      log("info", `[${platform}] Cursor recurrente avanzado a página ${nextScheduledPage}.`);
     }
   }
 

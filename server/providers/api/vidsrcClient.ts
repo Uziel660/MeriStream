@@ -1137,6 +1137,17 @@ export class VidSrcClient implements DirectStreamProvider {
           // The normal mirror result remains authoritative when the retry also
           // fails; callers will expose the stable locator as a fallback.
         }
+
+      // VidSrc models anime as a TMDB TV item. Some mirrors reject the
+      // caller's `anime` label even though the identical `/embed/tv/...`
+      // locator is playable. Reuse the already-tested series path as a
+      // bounded compatibility fallback; no signed URL is persisted.
+      try {
+        const seriesSources = await this.resolve({ ...req, kind: "series" });
+        if (seriesSources.length > 0) return seriesSources;
+      } catch {
+        // Keep the provider unavailable when both representations fail.
+      }
       }
     }
     return [];

@@ -18,6 +18,15 @@ import {
 } from "../cinecalidadApi";
 
 const BASE_URL = "https://www.cinecalidad.am";
+// The current .am site is a metadata SPA. These legacy mirrors still expose
+// the WordPress cards and the stable server identifiers used by the original
+// player. They are consulted only as a read-through fallback; no signed CDN
+// URL is ever persisted.
+const LEGACY_MIRRORS = [
+  "https://www.cinecalidad.my",
+  "https://www.cinecalidad.ro",
+  "https://www.cinecalidad.fun",
+] as const;
 
 /**
  * Adaptador para cinecalidad.am (y espejos .mx/.im)
@@ -46,7 +55,11 @@ const BASE_URL = "https://www.cinecalidad.am";
 export class CinecalidadAdapter extends BaseScraperAdapter {
   readonly id = "cinecalidad";
   readonly name = "Cinecalidad";
-  readonly supportedDomains = ["cinecalidad.am", "www.cinecalidad.am", "cinecalidad.mx", "cinecalidad.im"];
+  readonly supportedDomains = [
+    "cinecalidad.am", "www.cinecalidad.am", "cinecalidad.mx", "cinecalidad.im",
+    "cinecalidad.my", "www.cinecalidad.my", "cinecalidad.re", "www.cinecalidad.re",
+    "cinecalidad.ro", "www.cinecalidad.ro", "cinecalidad.fun", "www.cinecalidad.fun",
+  ];
 
   canHandle(url: string): boolean {
     const lower = url.toLowerCase();
@@ -70,7 +83,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
    * Imagen: prioriza data-src (TMDb) sobre src (placeholder base64).
    * Excluye las tarjetas publicitarias (enlaces con ancla #hash o dominios externos).
    */
-  public extractCatalogItems(html: string): ExtractedCatalogItem[] {
+  public extractCatalogItems(html: string, baseUrl = BASE_URL): ExtractedCatalogItem[] {
     const $ = cheerio.load(html);
     const items: ExtractedCatalogItem[] = [];
     const seen = new Set<string>();
@@ -84,7 +97,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
         : $el.find('a[href*="/ver-pelicula/"], a[href*="/ver-serie/"], a[href*="/pelicula/"], a[href*="/serie/"]').first();
       const href = ($link.attr("href") || "").trim();
       if (!href) return;
-      const url = this.resolveRelativeUrl(href, BASE_URL);
+      const url = this.resolveRelativeUrl(href, baseUrl);
       if (!url || seen.has(url) || !isFicha(url)) return;
       seen.add(url);
 
@@ -96,7 +109,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
         : /^https?:\/\//i.test(src)
           ? src
           : "";
-      const image_url = rawImg ? this.resolveRelativeUrl(rawImg, BASE_URL) : null;
+      const image_url = rawImg ? this.resolveRelativeUrl(rawImg, baseUrl) : null;
 
       const title =
         $el.find(".in_title").first().text().trim() ||
@@ -448,6 +461,66 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     return out;
   }
 
+  /**
+   * The maintained mirrors still publish the server ids as data attributes
+   * instead of materialized URLs. Only stable player locators are admitted;
+   * download/redirect buttons and the historically unreliable Voe/Filemoon
+   * hosts are deliberately ignored.
+   */
+  private extractLegacyServerEmbeds(html: string): string[] {
+    const $ = cheerio.load(html);
+    const out: string[] = [];
+    $("a[service][data]").each((_, el) => {
+      const service = String($(el).attr("service") || "").trim().toLowerCase();
+      const data = String($(el).attr("data") || "").trim();
+      if (!data || /trailer|turbobit|1fichier|bittorrent|download|filemoon|voe/i.test(service)) return;
+      let url = "";
+      if (service === "onlinemega" || service === "mega") url = `https://mega.nz/embed/${data}`;
+      else if (service === "onlinedoodstream" || service === "doodstream") url = `https://doodstream.com/e/${data}`;
+      else if (service === "onlinenet" || service === "netu") url = `https://www.zarato.top/watch_video.php?v=${encodeURIComponent(data)}`;
+      if (url && !this.isJunkUrl(url) && !out.includes(url)) out.push(url);
+    });
+    return out;
+  }
+
+  private titleKey(value: string): string {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\b(19|20)\d{2}\b/g, "")
+      .replace(/[^a-z0-9]+/g, "")
+      .trim();
+  }
+
+  /** Find the same title on a legacy mirror so the current SPA can keep using
+   * the provider's stable page URL while obtaining its real server buttons. */
+  private async findLegacyMirrorDetail(item: CinecalidadApiItem): Promise<string | null> {
+    const queries = [item.title, typeof item.original_title === "string" ? item.original_title : ""]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const wanted = this.titleKey(item.title);
+    const year = Number(item.year || String(item.release_date || item.first_air_date || "").slice(0, 4)) || 0;
+    for (const mirror of LEGACY_MIRRORS) {
+      for (const query of queries) {
+        try {
+          const html = await this.fetchHtml(`${mirror}/?s=${encodeURIComponent(query)}`, 9000);
+          if (!html) continue;
+          const candidates = this.extractCatalogItems(html, mirror);
+          const exact = candidates.find((candidate) => {
+            const candidateKey = this.titleKey(candidate.title);
+            if (!candidateKey || !wanted || !(candidateKey === wanted || candidateKey.includes(wanted) || wanted.includes(candidateKey))) return false;
+            return !year || !candidate.year || candidate.year === year;
+          });
+          if (exact?.url) return exact.url;
+        } catch {
+          // Try the next mirror/query; mirrors are independently disposable.
+        }
+      }
+    }
+    return null;
+  }
+
   public async analyze(
     input: string,
     explicitType?: "auto" | "catalog" | "detail" | "stream"
@@ -474,13 +547,15 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
       };
     }
 
-    const path = new URL(cleanInput).pathname.toLowerCase();
+    const parsedInput = new URL(cleanInput);
+    const path = parsedInput.pathname.toLowerCase();
+    const isCurrentSpa = /(?:^|\.)cinecalidad\.am$/i.test(parsedInput.hostname);
 
     // La app actual de Cinecalidad es una SPA. El HTML de sus rutas solo
     // contiene #root, por lo que la identidad y el reproductor deben salir de
     // su API; nunca intentamos reconstruirlos desde el slug recibido.
     const currentLocator = parseCinecalidadLocator(cleanInput);
-    if (currentLocator && explicitType !== "catalog") {
+    if (isCurrentSpa && currentLocator && explicitType !== "catalog") {
       const lookup = currentLocator.season !== undefined && currentLocator.episode !== undefined
         ? await lookupCinecalidadEpisode(currentLocator.kind, currentLocator.tmdbId, currentLocator.season, currentLocator.episode)
         : await lookupCinecalidadItem(currentLocator.kind, currentLocator.tmdbId);
@@ -496,11 +571,11 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const isCatalog =
       explicitType === "catalog" || path === "/" || path === "" || /^\/page\/\d+/.test(path) || path === "/peliculas" || path === "/series" || path === "/animes";
     if (isCatalog) {
-      const parsedUrl = new URL(cleanInput);
+      const parsedUrl = parsedInput;
       const page = Number(path.match(/^\/page\/(\d+)/)?.[1] || parsedUrl.searchParams.get("page") || 1) || 1;
       const catalogKind = path === "/series" ? "series" : path === "/animes" ? "anime" : "movie";
-      const apiPage = await listCinecalidadItems(catalogKind, page, 24);
-      if (apiPage.items.length > 0) {
+      const apiPage = isCurrentSpa ? await listCinecalidadItems(catalogKind, page, 24) : { items: [], total: 0, page, totalPages: 1 };
+      if (isCurrentSpa && apiPage.items.length > 0) {
         return {
           page_type: "catalog",
           content_type: catalogKind === "anime" ? "anime" : catalogKind === "series" ? "series" : "movie",
@@ -524,7 +599,7 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
         html = await this.fetchHtml(`${BASE_URL}/`, 10000);
       }
       if (!html) throw new Error(`FETCH_FAILED: ${cleanInput}`);
-      const catalogItems = this.extractCatalogItems(html);
+      const catalogItems = this.extractCatalogItems(html, parsedUrl.origin);
       return {
         page_type: "catalog",
         content_type: "movie",
@@ -634,7 +709,18 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
         : await lookupCinecalidadItem(currentLocator.kind, currentLocator.tmdbId);
       const item = lookup.item;
       const fileCode = String(item?.code || "").trim();
-      if (!item || !fileCode) return { stream_url: "", all_available_streams: [], title: item?.title };
+      if (!item) return { stream_url: "", all_available_streams: [], title: undefined };
+      if (!fileCode) {
+        // The SPA currently advertises many records as `playable` while
+        // omitting the player code. Read through the verified WordPress
+        // mirrors, whose server ids are still present in the detail HTML.
+        const legacyUrl = await this.findLegacyMirrorDetail(item);
+        if (legacyUrl && legacyUrl !== cleanUrl) {
+          const legacy = await this.extractStream(legacyUrl);
+          if (legacy.all_available_streams.length > 0) return { ...legacy, title: item.title };
+        }
+        return { stream_url: "", all_available_streams: [], title: item.title };
+      }
 
       // El player de la SPA se forma con el code devuelto por la API. La URL
       // de la ficha nunca es un stream y no se debe ofrecer como fallback.
@@ -664,10 +750,11 @@ export class CinecalidadAdapter extends BaseScraperAdapter {
     const dooplayEmbeds = await this.extractDooplayServerEmbeds(cleanUrl, html);
     const iframeEmbeds = this.extractIframeEmbeds(html, cleanUrl);
     const serverUrls = this.extractKnownServerUrls(html);
+    const legacyServerEmbeds = this.extractLegacyServerEmbeds(html);
     const playerOptions = this.extractPlayerOptions(html, cleanUrl);
 
     const rawCandidates: string[] = [];
-    [...hashLinks, ...dooplayEmbeds, ...iframeEmbeds, ...serverUrls, ...playerOptions]
+    [...hashLinks, ...dooplayEmbeds, ...iframeEmbeds, ...serverUrls, ...legacyServerEmbeds, ...playerOptions]
       .filter((u) => u && /^https?:\/\//i.test(u) && !this.isJunkUrl(u))
       .forEach((u) => {
         if (!rawCandidates.includes(u)) rawCandidates.push(u);

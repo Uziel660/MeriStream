@@ -44,12 +44,14 @@ describe("ScraperManager (Hybrid Strategy Pattern)", () => {
   });
 
 
-  it("resolves LaMovieAdapter for lamovie.org URLs", () => {
+  it("resolves LaMovieAdapter for the modern site and verified mirrors", () => {
     const adapter1 = manager.getAdapter("https://lamovie.org/peliculas?page=2");
     expect(adapter1.id).toBe("lamovie");
 
     const adapter2 = manager.getAdapter("https://lamovie.org/series/ally-mcbeal-1997/");
     expect(adapter2.id).toBe("lamovie");
+
+    expect(manager.getAdapter("https://lamovie.online/peliculas/yo-soy-bolt/").id).toBe("lamovie");
   });
 
   it("resolves TioAnimeAdapter for tioanime.com URLs", () => {

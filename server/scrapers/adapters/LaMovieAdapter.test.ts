@@ -1,26 +1,45 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { LaMovieAdapter } from "./LaMovieAdapter";
 
-describe("LaMovieAdapter · API moderna", () => {
-  it("lee tarjetas, episodios y código JIT desde tmdb.allcalidad.re", async () => {
-    const adapter: any = new LaMovieAdapter();
-    vi.spyOn(adapter, "fetchHtml").mockImplementation(async (url: string) => {
-      if (url.includes("/v1/items?kind=tvshow")) return JSON.stringify({ items: [{ tmdb_id: 287620, title: "Stuart", slug: "stuart", code: "showcode", year: 2026, poster_path: "/poster.jpg", genres: [] }] });
-      if (url.endsWith("/v1/items/tvshow/287620")) return JSON.stringify({ item: { tmdb_id: 287620, title: "Stuart", slug: "stuart", code: "showcode", year: 2026, available_seasons: 1, genres: [], overview: "" } });
-      if (url.endsWith("/v1/items/tvshow/287620/seasons/1")) return JSON.stringify({ season: { episodes: [{ episode: 1, title: "Piloto", playable: true, code: "epcode" }] } });
-      return null;
+function response(body: string, status = 200): any {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => body,
+    json: async () => JSON.parse(body),
+    body: { cancel: async () => undefined },
+  };
+}
+
+describe("LaMovieAdapter verified WordPress mirrors", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the mirror catalog and resolves Dooplay player servers without persisting signed media", async () => {
+    const detail = `<!doctype html><link rel="shortlink" href="https://lamovie.online/?p=42"><a data-post="42" data-nume="1" data-type="movie"></a><a data-post="42" data-nume="2" data-type="movie"></a>`;
+    const catalog = `<article class="dpu-archive-item"><a href="https://lamovie.online/peliculas/yo-soy-bolt/" title="Yo soy Bolt"><img src="/poster.jpg" alt="Yo soy Bolt"></a></article>`;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        const body = String(init.body || "");
+        const nume = new URLSearchParams(body).get("nume");
+        return response(JSON.stringify({ embed_url: nume === "1" ? "https://cdn.example/bolt-1.mp4" : "https://cdn.example/bolt-2.mp4" }));
+      }
+      if (url.includes("/peliculas/yo-soy-bolt/")) return response(detail);
+      if (url.includes("/peliculas")) return response(catalog);
+      return response("", 404);
     });
+    vi.stubGlobal("fetch", fetchMock);
 
-    const catalog = await adapter.analyze("https://lamovie.org/series", "catalog");
-    expect(catalog.catalog_items[0]).toMatchObject({ title: "Stuart", kind: "series" });
+    const adapter = new LaMovieAdapter();
+    const listing = await adapter.analyze("https://lamovie.online/peliculas/", "catalog");
+    expect(listing.catalog_items).toHaveLength(1);
+    expect(listing.catalog_items[0].url).toBe("https://lamovie.online/peliculas/yo-soy-bolt/");
 
-    const detail = await adapter.analyze(catalog.catalog_items[0].url, "detail");
-    expect(detail.tmdb_id).toBe(287620);
-    expect(detail.episodes[0]).toMatchObject({ number: 1, season: 1 });
-    expect(detail.episodes[0].sources[0].url).toBe("https://vimeos.net/embed-epcode.html");
-
-    const stream = await adapter.extractStream(detail.episodes[0].url);
-    expect(stream.all_available_streams).toEqual(["https://vimeos.net/embed-epcode.html"]);
+    const streams = await adapter.extractStream("https://lamovie.online/peliculas/yo-soy-bolt/");
+    expect(streams.all_available_streams).toEqual([
+      "https://cdn.example/bolt-1.mp4",
+      "https://cdn.example/bolt-2.mp4",
+    ]);
+    expect(streams.all_available_streams.some((url) => /[?&](token|expires|sig)=/i.test(url))).toBe(false);
   });
 });
-

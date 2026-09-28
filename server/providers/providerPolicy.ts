@@ -16,6 +16,8 @@ export interface ProviderPolicy {
   discovery?: "catalog" | "page" | "direct_api" | "metadata";
   resolver?: string;
   hosts?: string[];
+  /** Optional content buckets supported by the declared catalog mirrors. */
+  mirrorContentKinds?: ContentKind[];
   fallbackProvider?: string;
   notes?: string;
 }
@@ -122,7 +124,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
   vidsrcto: {
     id: "vidsrcto",
     role: "secondary",
-    lifecycle: "active",
+    lifecycle: "legacy",
     priority: 20,
     defaultRating: 7.2,
     contentKinds: ["movie", "series", "anime"],
@@ -131,6 +133,7 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     discovery: "direct_api",
     resolver: "vidsrcto",
     hosts: ["vidsrcto.to"],
+    notes: "El host público no resuelve actualmente; queda fuera del camino principal y se conserva solo para reactivación explícita si vuelve a publicar el API.",
   },
   animeav1: {
     id: "animeav1",
@@ -153,7 +156,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["anime"],
     audioLanguages: ["ja", "es"],
     subtitleLanguages: ["es", "es-419"],
-    hosts: ["animeflv.or.at", "animeflv.net", "animeflv.to"],
+    hosts: ["animeflv.or.at"],
+    notes: "animeflv.net y animeflv.to no superaron la sonda de catálogo y quedan fuera de la rotación automática; se conserva el mirror .or.at verificado.",
   },
   jkanime: {
     id: "jkanime",
@@ -178,9 +182,9 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     subtitleLanguages: ["es", "en"],
     discovery: "page",
     resolver: "cinecalidad",
-    hosts: ["cinecalidad.am", "vimeos.zip", "goodstream.one"],
+    hosts: ["cinecalidad.am", "cinecalidad.my", "cinecalidad.ro", "cinecalidad.fun", "cinecalidad.re", "vimeos.zip", "goodstream.one"],
     fallbackProvider: "gnula",
-    notes: "Sonda pública 2026-09-07: Vimeos HLS directo confirmado; Goodstream apareció como alternativa, con 403 intermitente.",
+    notes: "La SPA .am se usa como identidad; .my/.ro/.fun son mirrors WordPress verificados para recuperar server ids cuando la SPA omite el code. No se persisten URLs CDN firmadas.",
   },
   lamovie: {
     id: "lamovie",
@@ -191,7 +195,9 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     contentKinds: ["movie", "series", "anime"],
     audioLanguages: ["es", "en", "ja"],
     subtitleLanguages: ["es", "en"],
-    hosts: ["lamovie.org"],
+    hosts: ["lamovie.org", "lamovie.online"],
+    mirrorContentKinds: ["movie", "series"],
+    notes: "El catálogo moderno conserva locators TMDB; lamovie.online es el mirror WordPress verificado con API Dooplay JIT. No se persisten URLs firmadas ni enlaces de descarga.",
   },
   gnula: {
     id: "gnula",
@@ -204,8 +210,8 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     subtitleLanguages: ["es", "en"],
     discovery: "page",
     resolver: "gnula",
-    hosts: ["gnulahd.nu", "gnula.life"],
-    notes: "Proveedor prioritario del catálogo. Se aceptan solo gnulahd.nu y gnula.life tras validar catálogo, ficha, TMDB, idiomas y locators JIT; otros clones quedan fuera hasta pasar la misma batería.",
+    hosts: ["gnula.life"],
+    notes: "Proveedor prioritario del catálogo. gnulahd.nu no superó la sonda de catálogo y queda fuera de la rotación automática; gnula.life permanece como mirror verificado.",
   },
   "archive-org": {
     id: "archive-org",
@@ -392,7 +398,12 @@ const SITE_ALIASES: Record<string, string> = {
   "animeflv.or.am": "animeflv",
   "jkanime.net": "jkanime",
   "cinecalidad.am": "cinecalidad",
+  "cinecalidad.my": "cinecalidad",
+  "cinecalidad.re": "cinecalidad",
+  "cinecalidad.ro": "cinecalidad",
+  "cinecalidad.fun": "cinecalidad",
   "lamovie.org": "lamovie",
+  "lamovie.online": "lamovie",
   "gnulahd.nu": "gnula",
   "gnula.life": "gnula",
   "hianimes.se": "hianimes",

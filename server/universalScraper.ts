@@ -106,7 +106,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "LaMovie Catálogo (Películas Latino)",
     category: "movies",
     description: "Catálogo paginado vía API wp-api/v1; fichas con embeds multi-servidor.",
-    example_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=movies&postsPerPage=24",
+    example_url: "https://lamovie.org/peliculas/",
     icon: "Film",
   },
   {
@@ -114,7 +114,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "LaMovie Series (TV)",
     category: "series",
     description: "1,089 series de TV vía API wp-api/v1 (postType=tvshows); items con póster/géneros/imdb.",
-    example_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=tvshows&postsPerPage=24",
+    example_url: "https://lamovie.org/series/",
     icon: "Layers",
   },
   {
@@ -122,7 +122,7 @@ export const PRESET_SOURCES: ScraperPreset[] = [
     name: "LaMovie Animes",
     category: "anime",
     description: "970 animes vía API wp-api/v1 (postType=animes); items con póster/géneros/imdb.",
-    example_url: "https://lamovie.org/wp-api/v1/listing/movies?page=1&postType=animes&postsPerPage=24",
+    example_url: "https://lamovie.org/animes/",
     icon: "Tv",
   },
   {

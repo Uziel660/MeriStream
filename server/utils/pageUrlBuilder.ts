@@ -146,6 +146,9 @@ export function buildPageUrl(baseUrl: string, pageNumber: number): string {
       url.searchParams.set("page", String(pageNumber));
       return url.toString();
     }
+    if (/(^|\.)lamovie\.(?:org|online|cc)$/.test(host) && /\/(?:peliculas|series|animes)$/.test(path)) {
+      return `${origin}${path}/page/${pageNumber}/`;
+    }
     if (/(^|\.)animeflv\.net$/.test(host)) {
       return `${origin}${path || "/browse"}?page=${pageNumber}`;
     }

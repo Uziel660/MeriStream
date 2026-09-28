@@ -11,7 +11,8 @@ describe("provider conformance targets", () => {
     expect(targets.some((target) => target.provider === "gnula-movies")).toBe(true);
     expect(targets.some((target) => target.provider === "doramasyt")).toBe(true);
     expect(targets.some((target) => target.provider === "tioplus")).toBe(true);
-    expect(targets.some((target) => target.mirror && /gnulahd\.nu/i.test(target.url))).toBe(true);
+    expect(targets.some((target) => target.mirror && /gnulahd\.nu/i.test(target.url))).toBe(false);
+    expect(targets.some((target) => target.mirror && /lamovie\.online/i.test(target.url))).toBe(true);
     expect(targets.some((target) => target.mirror && /doramasflix\.com/i.test(target.url))).toBe(true);
     expect(targets.some((target) => /^open-|direct/i.test(target.provider))).toBe(false);
   });

@@ -13,8 +13,15 @@ import { familyKeyOfStreamUrl } from "../../utils/streamSorter";
 export class LaMovieAdapter extends BaseScraperAdapter {
   readonly id = "lamovie";
   readonly name = "LaMovie (Películas, Series, Animes)";
-  readonly supportedDomains = ["lamovie.org", "lamovie.to", "lamovie.ws"];
+  readonly supportedDomains = [
+    "lamovie.org", "lamovie.to", "lamovie.ws",
+    "lamovie.online", "www.lamovie.online",
+  ];
   private static readonly MODERN_API = "https://tmdb.allcalidad.re";
+  /** WordPress mirrors that still expose the catalogue and Dooplay player API. */
+  private static readonly LEGACY_MIRRORS = [
+    "https://lamovie.online",
+  ] as const;
 
   /** Hosts de descarga directa (no exponen stream embebido): no intentar resolver */
   private static readonly DOWNLOAD_HOSTS = ["1fichier.com", "megaup.net"];
@@ -24,6 +31,30 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const params = new URLSearchParams({ tmdb_id: String(tmdbId) });
     if (String(code || "").trim()) params.set("code", String(code).trim());
     return `https://lamovie.org/${prefix}/${encodeURIComponent(String(slug))}/?${params.toString()}`;
+  }
+
+  private static originOf(url: string, fallback = "https://lamovie.org"): string {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private static isLegacyOrigin(origin: string): boolean {
+    const normalized = origin.replace("://www.", "://");
+    return LaMovieAdapter.LEGACY_MIRRORS.some((mirror) => mirror === origin || mirror === normalized);
+  }
+
+  private static titleKey(value: string): string {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\b(19|20)\d{2}\b/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
   }
 
   private static readonly DEAD_OR_BLOCKED_HOST_PATTERNS = [
@@ -64,6 +95,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       "ok.ru", "uqload.", "luluvdo.", "vidmoly.", "upstream.", "streamlare.",
       "fastre.", "gamovideo.", "netu.", "waaw.", "streamdav.", "streamhub.",
       "fembed.", "embedsito.", "zilla-networks.com", "vimeo.com",
+      "2embed.", "moviesapi.", "vidsrc.",
     ];
     if (KNOWN_EMBED_HOSTS.some((h) => lower.includes(h))) return true;
 
@@ -91,7 +123,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
    * Extrae el catálogo desde los sitemaps XML oficiales
    * Ejemplo: https://lamovie.org/wp-sitemap-posts-movies-1.xml
    */
-  private async extractCatalogFromSitemap(contentType: ContentKind, page: number = 1): Promise<ExtractedCatalogItem[]> {
+  private async extractCatalogFromSitemap(contentType: ContentKind, page: number = 1, sourceOrigin = "https://lamovie.org"): Promise<ExtractedCatalogItem[]> {
     const sitemapMap: Record<ContentKind, string> = {
       movie: "movies",
       series: "tvshows",
@@ -101,7 +133,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     };
 
     const sitemapType = sitemapMap[contentType] || "movies";
-    const sitemapUrl = `https://lamovie.org/wp-sitemap-posts-${sitemapType}-${page}.xml`;
+    const sitemapUrl = `${sourceOrigin}/wp-sitemap-posts-${sitemapType}-${page}.xml`;
 
     const xml = await this.fetchHtml(sitemapUrl, 10000);
     if (!xml) return [];
@@ -146,9 +178,55 @@ export class LaMovieAdapter extends BaseScraperAdapter {
    * Cada post trae overview/genres/imdb_rating/images → items PRE-ENRIQUECIDOS.
    * NO usar postType=series/tv/anime: devuelven ~69k episodios sueltos mezclados.
    */
-  private async extractCatalogFromListingApi(contentType: ContentKind, page: number = 1): Promise<ExtractedCatalogItem[]> {
+  private async extractLegacyCatalogFromHtml(contentType: ContentKind, page: number, sourceOrigin: string, pathHint: string): Promise<ExtractedCatalogItem[]> {
+    const section = contentType === "series" ? "series" : contentType === "anime" ? "animes" : "peliculas";
+    const pagePath = page > 1 ? `/${section}/page/${page}/` : (pathHint === "/" || !pathHint ? `/${section}/` : pathHint);
+    const html = await this.fetchHtml(`${sourceOrigin}${pagePath}`, 10000);
+    if (!html) return [];
+
+    const $ = cheerio.load(html);
+    const items: ExtractedCatalogItem[] = [];
+    const seen = new Set<string>();
+    $(`a[href*='/${section}/']`).each((_, el) => {
+      const href = $(el).attr("href");
+      if (!href) return;
+      const fullUrl = this.resolveRelativeUrl(href, `${sourceOrigin}${pagePath}`);
+      let parsed: URL;
+      try { parsed = new URL(fullUrl); } catch { return; }
+      if (parsed.searchParams.has("action") || /wp-login|sign-in/i.test(parsed.href)) return;
+      const slug = parsed.pathname.match(new RegExp(`/${section}/([^/]+)/?$`, "i"))?.[1];
+      if (!slug || ["page", "feed", "category"].includes(slug.toLowerCase())) return;
+      const canonical = `${parsed.origin}/${section}/${slug}/`;
+      if (seen.has(canonical)) return;
+      const card = $(el).closest("article, .dpu-archive-item, .item");
+      if (card.length === 0 && $(el).find("img").length === 0) return;
+      const title = String($(el).attr("title") || card.find(".dpu-archive-c-title, .title, h2, h3").first().text() || $(el).find("img").attr("alt") || $(el).text() || slug)
+        .replace(/\s+/g, " ").trim();
+      if (!title || title.length < 2) return;
+      const image = card.find("img").first().attr("src") || $(el).find("img").first().attr("src") || null;
+      const yearText = card.find(".dpu-card-year-badge, .year").first().text() || "";
+      const yearMatch = yearText.match(/\b(19|20)\d{2}\b/);
+      const ratingText = card.find("[title*='IMDb'], .rating, .dpu-card-rating-premium").first().text() || "";
+      const ratingMatch = ratingText.match(/\d+(?:\.\d+)?/);
+      seen.add(canonical);
+      items.push({
+        title,
+        url: canonical,
+        image_url: image ? this.resolveRelativeUrl(image, `${sourceOrigin}${pagePath}`) : null,
+        kind: contentType,
+        year: yearMatch ? Number(yearMatch[0]) : null,
+        rating: ratingMatch ? Number(ratingMatch[0]) : null,
+      });
+    });
+    return items;
+  }
+
+  private async extractCatalogFromListingApi(contentType: ContentKind, page: number = 1, sourceOrigin = "https://lamovie.org", pathHint = ""): Promise<ExtractedCatalogItem[]> {
     const postType = contentType === "series" ? "tvshows" : contentType === "anime" ? "animes" : "movies";
     const fichaPrefix = postType === "movies" ? "peliculas" : postType === "tvshows" ? "series" : "animes";
+    if (LaMovieAdapter.isLegacyOrigin(sourceOrigin)) {
+      return this.extractLegacyCatalogFromHtml(contentType, page, sourceOrigin, pathHint);
+    }
     // La SPA actual publica su catálogo en el API TMDB interno. Sus tarjetas
     // traen el tmdb_id y el `code` estable del reproductor; conservar ambos en
     // el locator permite resolver el stream JIT sin guardar una URL firmada.
@@ -172,7 +250,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     } catch {
       // Older WordPress API remains the fallback below.
     }
-    const apiUrl = `https://lamovie.org/wp-api/v1/listing/movies?page=${page}&postType=${postType}&postsPerPage=24`;
+    const apiUrl = `${sourceOrigin}/wp-api/v1/listing/movies?page=${page}&postType=${postType}&postsPerPage=24`;
     const raw = await this.fetchHtml(apiUrl, 10000);
     if (!raw) return [];
     try {
@@ -190,7 +268,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         }
         items.push({
           title: String(p.title).trim(),
-          url: `https://lamovie.org/${fichaPrefix}/${p.slug}/`,
+          url: `${sourceOrigin}/${fichaPrefix}/${p.slug}/`,
           image_url: image,
           kind: contentType,
           year: Number.isFinite(yearRaw) ? yearRaw : null,
@@ -231,7 +309,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         for (const episode of seasonEpisodes) {
           const episodeNumber = Number(episode?.episode) || episodes.length + 1;
           const episodeCode = typeof episode?.code === "string" ? episode.code : "";
-          const episodeUrl = `https://lamovie.org/episodio/${slug}-temporada-${season}-episodio-${episodeNumber}/?tmdb_id=${encodeURIComponent(tmdbId)}&season=${season}&episode=${episodeNumber}&code=${encodeURIComponent(episodeCode)}`;
+          const episodeUrl = `${LaMovieAdapter.originOf(url)}/episodio/${slug}-temporada-${season}-episodio-${episodeNumber}/?tmdb_id=${encodeURIComponent(tmdbId)}&season=${season}&episode=${episodeNumber}${episodeCode ? `&code=${encodeURIComponent(episodeCode)}` : ""}`;
           episodes.push({
             number: episodeNumber,
             season,
@@ -301,6 +379,22 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   private extractEpisodes(html: string, baseUrl: string): ExtractedEpisode[] {
     const $ = cheerio.load(html);
     const episodes: ExtractedEpisode[] = [];
+
+    // Newer Dooplay templates render episode cards without anchor tags. The
+    // data-episode ID is the stable key accepted by dpu_get_episode_player.
+    $(".dpu-episode-card[data-episode]").each((i, el) => {
+      const episodeId = $(el).attr("data-episode");
+      const season = Number($(el).attr("data-season-number")) || 1;
+      const number = Number($(el).attr("data-episode-number")) || i + 1;
+      if (!episodeId) return;
+      const url = new URL(baseUrl);
+      url.searchParams.set("season", String(season));
+      url.searchParams.set("episode", String(number));
+      url.searchParams.set("episode_id", episodeId);
+      const title = $(el).find(".dpu-ep-title, h3").first().text().trim() || `Episodio ${number}`;
+      episodes.push({ number, season, title, url: url.toString(), server_name: "LaMovie" });
+    });
+    if (episodes.length > 0) return episodes;
 
     // Buscar enlaces de episodios
     const episodeLinks = $("a[href*='/episodio/'], a[href*='/temporada/']");
@@ -394,7 +488,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         episodes.push({
           number: n,
           title: `T${s.season}:E${e}`,
-          url: `https://lamovie.org/episodio/${baseSlug}-temporada-${s.season}-episodio-${e}/`,
+          url: `${LaMovieAdapter.originOf(cleanUrl)}/episodio/${baseSlug}-temporada-${s.season}-episodio-${e}/`,
         });
       }
     }
@@ -410,7 +504,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       const info = this.getSlugAndPostType(url);
       if (!info) return null;
 
-      const apiUrl = `https://lamovie.org/wp-api/v1/single/${info.postType}?slug=${encodeURIComponent(info.slug)}&postType=${info.postType}`;
+      const apiUrl = `${LaMovieAdapter.originOf(url)}/wp-api/v1/single/${info.postType}?slug=${encodeURIComponent(info.slug)}&postType=${info.postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
       if (!raw) return null;
 
@@ -441,7 +535,8 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       if (!info) return null;
 
       const { slug, postType } = info;
-      const apiUrl = `https://lamovie.org/wp-api/v1/single/${postType}?slug=${encodeURIComponent(slug)}&postType=${postType}`;
+      const origin = LaMovieAdapter.originOf(url);
+      const apiUrl = `${origin}/wp-api/v1/single/${postType}?slug=${encodeURIComponent(slug)}&postType=${postType}`;
       const raw = await this.fetchHtml(apiUrl, 8000);
       if (!raw) return null;
 
@@ -449,13 +544,16 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       const data = json?.data;
       if (!data) return null;
 
-      const uploadsBase = "https://lamovie.org/wp-content/uploads";
+      const uploadsBase = `${origin}/wp-content/uploads`;
       const absImage = (p?: string) =>
         p ? (p.startsWith("http") ? p : `${uploadsBase}${p.startsWith("/") ? "" : "/"}${p}`) : undefined;
 
       // Título limpio sin el año entre paréntesis
       const rawTitle: string = (data.title || "").trim();
-      const cleanTitle = rawTitle.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+      const cleanTitle = rawTitle
+        .replace(/\s*\(\d{4}\)\s*$/, "")
+        .replace(/\s*(?:\||-)\s*LaMovie\s*$/i, "")
+        .trim();
 
       let year: number | undefined;
       if (data.release_date) {
@@ -526,7 +624,9 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     const originalTitleFromOg = ogTitle.match(/Pelicula\s+(.+?)\s*\(\d{4}\)/i)?.[1];
     const original_title = api?.original_title || originalTitleFromOg || undefined;
 
-    const title = api?.title || (ogTitle.replace(/\s*\(\d{4}\)\s*/, " ").replace(/\s*\|\s*LaMovie\s*$/i, "").trim()) || h1Title || "Contenido LaMovie";
+    const title = (api?.title || (ogTitle.replace(/\s*\(\d{4}\)\s*/, " ").trim()) || h1Title || "Contenido LaMovie")
+      .replace(/\s*(?:\||-)\s*LaMovie\s*$/i, "")
+      .trim();
 
     // Descripción
     const ogDesc = api?.description ||
@@ -600,6 +700,94 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     }
   }
 
+  /** Dooplay's current legacy mirrors use a small POST endpoint per server. */
+  private async fetchLegacyPlayerEmbed(origin: string, postId: string, nume: string, type: string): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7500);
+      const body = new URLSearchParams({ action: "doo_player_ajax", post: postId, nume, type });
+      const response = await fetch(`${origin}/wp-admin/admin-ajax.php`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          ...COMMON_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+          Referer: `${origin}/`,
+        },
+        body: body.toString(),
+      });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+      const json = await response.json().catch(() => null) as any;
+      const candidate = json?.embed_url || json?.url || json?.data?.embed_url || json?.data?.url;
+      return typeof candidate === "string" && LaMovieAdapter.isPlayableSourceUrl(candidate.trim()) ? candidate.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchLegacyEpisodePlayer(origin: string, episodeId: string): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7500);
+      const body = new URLSearchParams({ action: "dpu_get_episode_player", episode_id: episodeId });
+      const response = await fetch(`${origin}/wp-admin/admin-ajax.php`, {
+        method: "POST", signal: controller.signal,
+        headers: { ...COMMON_HEADERS, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", Referer: `${origin}/` },
+        body: body.toString(),
+      });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+      const json = await response.json().catch(() => null) as any;
+      return json?.success && typeof json?.data === "string" ? json.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async findLegacyMirrorDetail(title: string, year?: number, contentType: ContentKind = "movie"): Promise<string | null> {
+    const wanted = LaMovieAdapter.titleKey(title);
+    if (!wanted) return null;
+    const section = contentType === "series" ? "series" : contentType === "anime" ? "animes" : "peliculas";
+    // Keep the winner in primitive variables: cheerio's callback is opaque to
+    // TypeScript's control-flow analysis under the CI compiler version.
+    let bestScore = -1;
+    let bestUrl: string | null = null;
+
+    for (const origin of LaMovieAdapter.LEGACY_MIRRORS) {
+      const html = await this.fetchHtml(`${origin}/?s=${encodeURIComponent(title)}`, 9000);
+      if (!html) continue;
+      const $ = cheerio.load(html);
+      $(`a[href*='/${section}/']`).each((_, el) => {
+        const href = $(el).attr("href");
+        if (!href) return;
+        const fullUrl = this.resolveRelativeUrl(href, `${origin}/`);
+        let parsed: URL;
+        try { parsed = new URL(fullUrl); } catch { return; }
+        if (parsed.searchParams.has("action") || /wp-login|sign-in/i.test(parsed.href)) return;
+        const slug = parsed.pathname.match(new RegExp(`/${section}/([^/]+)/?$`, "i"))?.[1];
+        if (!slug) return;
+        const card = $(el).closest("article, .dpu-archive-item, .item");
+        const candidateTitle = String($(el).attr("title") || card.find(".dpu-archive-c-title, .title, h2, h3").first().text() || $(el).find("img").attr("alt") || $(el).text() || slug)
+          .replace(/\s+/g, " ").trim();
+        const candidateKey = LaMovieAdapter.titleKey(candidateTitle || slug.replace(/-/g, " "));
+        if (!candidateKey) return;
+        let score = candidateKey === wanted ? 100 : (candidateKey.includes(wanted) || wanted.includes(candidateKey) ? 65 : 0);
+        const context = card.text();
+        if (year && new RegExp(`\\b${year}\\b`).test(context)) score += 15;
+        if (score < 60) return;
+        const canonical = `${parsed.origin}/${section}/${slug}/`;
+        if (score > bestScore) {
+          bestScore = score;
+          bestUrl = canonical;
+        }
+      });
+      if (bestScore >= 115) break;
+    }
+    return bestUrl;
+  }
+
   /**
    * Extrae streams de video usando la API interna de LaMovie.
    * Cadena resiliente: Post ID del HTML (shortlink) > API interna single (`_id`) >
@@ -618,13 +806,50 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         const embed = `https://vimeos.net/embed-${code}.html`;
         return { stream_url: embed, all_available_streams: [embed] };
       }
+
+      // The modern TMDB catalogue can legitimately omit `code` when its
+      // provider record is stale. Recover the same title from a live Dooplay
+      // mirror and resolve its servers JIT instead of persisting a guessed URL.
+      const tmdbId = Number(parsed.searchParams.get("tmdb_id") || parsed.searchParams.get("tmdbId"));
+      if (Number.isInteger(tmdbId) && tmdbId > 0 && !LaMovieAdapter.isLegacyOrigin(parsed.origin)) {
+        const episodeNumber = Number(parsed.searchParams.get("episode"));
+        const seasonNumber = Number(parsed.searchParams.get("season"));
+        const isModernEpisode = parsed.pathname.includes("/episodio/");
+        const hintedType: ContentKind | null = parsed.pathname.includes("/series/") ? "series" : parsed.pathname.includes("/animes/") ? "anime" : isModernEpisode ? null : "movie";
+        const kindCandidates = hintedType === "movie" ? ["movie"] : hintedType === "series" ? ["tvshow"] : hintedType === "anime" ? ["anime", "tvshow"] : ["tvshow", "anime", "movie"];
+        for (const kind of kindCandidates) {
+          const contentType: ContentKind = kind === "movie" ? "movie" : kind === "anime" ? "anime" : "series";
+          const payload = await this.fetchModernJson(`/v1/items/${kind}/${tmdbId}`);
+          const item = payload?.item;
+          const legacy = item?.title ? await this.findLegacyMirrorDetail(String(item.title), Number(item.year) || undefined, contentType) : null;
+          if (!legacy) continue;
+
+          if (isModernEpisode && Number.isInteger(seasonNumber) && seasonNumber > 0 && Number.isInteger(episodeNumber) && episodeNumber > 0) {
+            const detail = await this.analyze(legacy, "detail");
+            const episode = detail.episodes.find((candidate) => candidate.season === seasonNumber && candidate.number === episodeNumber);
+            if (episode) {
+              const recovered = await this.extractStream(episode.url);
+              if (recovered.all_available_streams.length > 0) return recovered;
+            }
+          } else {
+            const recovered = await this.extractStream(legacy);
+            if (recovered.all_available_streams.length > 0) return recovered;
+          }
+        }
+      }
     } catch {}
 
     try {
       const html = await this.fetchHtml(cleanUrl, 10000);
+      const parsedUrl = (() => { try { return new URL(cleanUrl); } catch { return null; } })();
+      const origin = LaMovieAdapter.originOf(cleanUrl);
+      const episodeId = parsedUrl?.searchParams.get("episode_id")?.trim() || "";
+      const episodePlayerHtml = episodeId ? await this.fetchLegacyEpisodePlayer(origin, episodeId) : null;
+      const playerHtml = episodePlayerHtml || html;
 
       // Extraer Post ID: shortlink en HTML > campo `_id` de la API interna
       let postId = html ? this.extractPostId(html) : null;
+      if (episodeId) postId = episodeId;
       if (!postId) {
         postId = await this.fetchPostIdFromInternalApi(cleanUrl);
       }
@@ -632,44 +857,49 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       let embedUrls: string[] = [];
       const downloadUrls: string[] = [];
 
-      if (postId && html) {
-        // Consultar API de reproductor
-        const playerApiUrl = `https://lamovie.org/wp-api/v1/player?postId=${postId}&demo=0`;
-        const playerRes = await this.fetchHtml(playerApiUrl, 7500, {
-          Referer: cleanUrl,
-          "User-Agent": COMMON_HEADERS["User-Agent"],
+      if (postId && playerHtml) {
+        const $ = cheerio.load(playerHtml);
+        const slots = new Map<string, { nume: string; type: string }>();
+        $("[data-post][data-nume]").each((_, el) => {
+          const post = $(el).attr("data-post");
+          const nume = $(el).attr("data-nume");
+          const type = $(el).attr("data-type") || (cleanUrl.includes("/series/") ? "tvshow" : cleanUrl.includes("/animes/") ? "anime" : "movie");
+          if (post === postId && nume) slots.set(`${post}:${nume}:${type}`, { nume, type });
         });
 
-        if (playerRes) {
-          try {
-            const playerData = JSON.parse(playerRes);
-            const embeds = playerData?.data?.embeds || playerData?.embeds || [];
-            embeds.forEach((e: any) => {
-              if (e.url && typeof e.url === "string") {
-                embedUrls.push(e.url.trim());
-              }
-            });
-            const downloads = playerData?.data?.downloads || playerData?.downloads || [];
-            downloads.forEach((d: any) => {
-              if (d.url && typeof d.url === "string") {
+        // Modern lamovie.org pages use their JSON API; legacy mirrors use the
+        // Dooplay AJAX endpoint. Support both so a mirror does not get stored
+        // as a dead page merely because its player protocol differs.
+        if (slots.size > 0) {
+          const embeds = await Promise.all(Array.from(slots.values()).map((slot) => this.fetchLegacyPlayerEmbed(origin, postId!, slot.nume, slot.type)));
+          embeds.filter((value): value is string => Boolean(value)).forEach((value) => {
+            if (!embedUrls.includes(value)) embedUrls.push(value);
+          });
+        } else {
+          const playerApiUrl = `${origin}/wp-api/v1/player?postId=${postId}&demo=0`;
+          const playerRes = await this.fetchHtml(playerApiUrl, 7500, { Referer: cleanUrl, "User-Agent": COMMON_HEADERS["User-Agent"] });
+          if (playerRes) {
+            try {
+              const playerData = JSON.parse(playerRes);
+              const embeds = playerData?.data?.embeds || playerData?.embeds || [];
+              embeds.forEach((e: any) => { if (typeof e?.url === "string") embedUrls.push(e.url.trim()); });
+              const downloads = playerData?.data?.downloads || playerData?.downloads || [];
+              downloads.forEach((d: any) => {
+                if (typeof d?.url !== "string") return;
                 let u = d.url.trim();
-                if (u.includes("mega.nz")) {
-                  u = u.replace("mega.nz/file/", "mega.nz/embed/").replace("mega.nz/#!", "mega.nz/embed/#!");
-                }
-                if (/^https?:\/\//i.test(u)) {
-                  downloadUrls.push(u);
-                }
-              }
-            });
-          } catch {}
+                if (u.includes("mega.nz")) u = u.replace("mega.nz/file/", "mega.nz/embed/").replace("mega.nz/#!", "mega.nz/embed/#!");
+                if (/^https?:\/\//i.test(u)) downloadUrls.push(u);
+              });
+            } catch {}
+          }
         }
       }
 
       // Fallback: extraer embeds directamente del HTML (SPA shell o player API caída)
-      if (embedUrls.length === 0 && html) {
+      if (embedUrls.length === 0 && playerHtml) {
         try {
-          const $ = cheerio.load(html);
-          const rawEmbeds = this.extractEmbedsAndStreamsFromHtml($, html, cleanUrl);
+          const $ = cheerio.load(playerHtml);
+          const rawEmbeds = this.extractEmbedsAndStreamsFromHtml($, playerHtml, cleanUrl);
           for (const raw of rawEmbeds) {
             if (raw.includes(".m3u8") || raw.includes(".mp4")) {
               if (!embedUrls.includes(raw)) embedUrls.push(raw);
@@ -855,10 +1085,10 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     if (isCatalog) {
       // API de listado primero: trae overview/genres/imdb_rating por item
       // (imports pre-enriquecidos). Sitemap como respaldo si el API falla.
-      const fromApi = await this.extractCatalogFromListingApi(contentType, pageNum);
+      const fromApi = await this.extractCatalogFromListingApi(contentType, pageNum, urlObj.origin, path || "/");
       let catalogItems = fromApi || [];
       if (catalogItems.length === 0) {
-        catalogItems = (await this.extractCatalogFromSitemap(contentType, pageNum)) || [];
+        catalogItems = (await this.extractCatalogFromSitemap(contentType, pageNum, urlObj.origin)) || [];
       }
       // Solo es fallo de fetch (no fin de catálogo) si AMBOS endpoints fallaron.
       if (catalogItems.length === 0 && fromApi === null && explicitType === "catalog") {
@@ -876,7 +1106,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         year: 0,
         status: "Publicado",
         genres: [titleType, "Directorio"],
-        source_domain: "lamovie.org",
+        source_domain: urlObj.hostname,
         episodes: [],
         catalog_items: catalogItems,
       };
@@ -896,7 +1126,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
         year: 0,
         status: "Desconocido",
         genres: [],
-        source_domain: "lamovie.org",
+        source_domain: urlObj.hostname,
         episodes: [],
         catalog_items: [],
       };
@@ -933,7 +1163,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       status: "Publicado",
       genres: metadata.genres,
       duration: metadata.duration || null,
-      source_domain: "lamovie.org",
+      source_domain: urlObj.hostname,
       detected_streams: detectedStreams.length > 0 ? detectedStreams : undefined,
       episodes,
       catalog_items: [],

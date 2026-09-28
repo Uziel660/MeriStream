@@ -23,6 +23,7 @@ describe("Platform Page Resolvers (LaMovie, CineCalidad, TioPlus)", () => {
       expect(isLaMoviePageUrl("https://lamovie.org/peliculas/bolt/")).toBe(true);
       expect(isLaMoviePageUrl("https://lamovie.to/series/breaking-bad/")).toBe(true);
       expect(isLaMoviePageUrl("https://lamovie.ws/animes/naruto/")).toBe(true);
+      expect(isLaMoviePageUrl("https://lamovie.online/peliculas/yo-soy-bolt/")).toBe(true);
       expect(isPlatformPageUrl("https://lamovie.org/peliculas/interstellar/")).toBe(true);
     });
 

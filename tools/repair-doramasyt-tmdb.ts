@@ -123,9 +123,19 @@ function sourceAliases(row: Row): string[] {
 }
 
 function safeResolution(resolution: TmdbIdentityResolution | null): boolean {
-  if (!resolution || resolution.confidence !== "high" || resolution.score < 0.84) return false;
+  if (!resolution || resolution.confidence === "low") return false;
   if (resolution.reasons.includes("year_mismatch") || resolution.reasons.includes("wrong_media_type")) return false;
-  return true;
+  if (resolution.confidence === "high" && resolution.score >= 0.84) return true;
+  // TMDB sometimes stores the premiere one year away from the provider's
+  // catalog year. An exact title plus that near-year signal is still safer
+  // than leaving a known work unlinked.
+  if (resolution.reasons.includes("exact_title") && resolution.reasons.includes("near_year")) return true;
+  // Localized titles such as "Cisne rojo (Red Swan)" can contain the TMDB
+  // name while sharing the exact year. Keep this automatic only with a strong
+  // score and never for a token-only or weak-title match.
+  if (resolution.reasons.includes("contained_title") && resolution.reasons.includes("exact_year") && resolution.score >= 0.70) return true;
+  if (resolution.reasons.includes("strong_token_overlap") && resolution.reasons.includes("exact_year") && resolution.score >= 0.72) return true;
+  return false;
 }
 
 async function main(): Promise<void> {
@@ -171,6 +181,37 @@ async function main(): Promise<void> {
       for (const item of bucket) {
         if (item.tmdb_id == null && item.kind === target.kind) inherited.set(item.id, tmdbId);
       }
+    }
+
+    // A DoramasYT fiche can also be an exact title duplicate of a previously
+    // imported Show/MediaItem from another source. Require a unique TMDB ID,
+    // compatible kind and year so this remains deterministic.
+    const missingItems = await prisma.mediaItem.findMany({
+      where: { tmdb_id: null, episodes: { some: { links: { some: { source_site: "doramasyt" } } } } },
+      select: { id: true, normalized_title: true, base_normalized_title: true, kind: true, year: true },
+    });
+    const linkedItems = await prisma.mediaItem.findMany({
+      where: { tmdb_id: { not: null } },
+      select: { normalized_title: true, base_normalized_title: true, kind: true, year: true, tmdb_id: true },
+    });
+    const linkedShows = await prisma.show.findMany({
+      where: { tmdb_id: { not: null } },
+      select: { normalized_title: true, base_normalized_title: true, category: true, year: true, tmdb_id: true },
+    });
+    for (const item of missingItems) {
+      if (inherited.has(item.id)) continue;
+      const candidates = [
+        ...linkedItems
+          .filter((candidate) => candidate.kind === item.kind)
+          .filter((candidate) => candidate.normalized_title === item.normalized_title || Boolean(item.base_normalized_title && candidate.base_normalized_title === item.base_normalized_title))
+          .filter((candidate) => !item.year || !candidate.year || Math.abs(item.year - candidate.year) <= 1),
+        ...linkedShows
+          .filter((candidate) => candidate.category === item.kind || ((item.kind === "series" || item.kind === "anime") && ["series", "anime"].includes(candidate.category)))
+          .filter((candidate) => candidate.normalized_title === item.normalized_title || Boolean(item.base_normalized_title && candidate.base_normalized_title === item.base_normalized_title))
+          .filter((candidate) => !item.year || !candidate.year || Math.abs(item.year - candidate.year) <= 1),
+      ];
+      const ids = [...new Set(candidates.map((candidate) => candidate.tmdb_id).filter((value): value is number => Number.isInteger(value)))];
+      if (ids.length === 1) inherited.set(item.id, ids[0]);
     }
 
     const rows = await prisma.mediaItem.findMany({

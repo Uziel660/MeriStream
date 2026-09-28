@@ -266,7 +266,10 @@ export const PROVIDER_POLICIES: Record<string, ProviderPolicy> = {
     id: "doramasyt",
     role: "primary",
     lifecycle: "active",
-    priority: 14,
+    // Doramasflix publica con frecuencia Streamtape, que devuelve 403 desde
+    // Oracle. DoramasYT se probó con Mega/Pixeldrain y debe ser el primer
+    // intento, conservando Doramasflix como fallback del mismo episodio.
+    priority: 11,
     defaultRating: 7.8,
     contentKinds: ["movie", "series"],
     audioLanguages: ["ko", "es"],

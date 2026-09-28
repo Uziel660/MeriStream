@@ -6,7 +6,7 @@ import {
   normalizeProviderId,
   renditionPreferenceScore,
 } from "./providers/providerPolicy";
-import { getHostHealth, isHostBlacklisted } from "./scrapers/hostHealth";
+import { getHostHealth, isHostBlacklisted, probeStream } from "./scrapers/hostHealth";
 import { getDoramasflixHealth } from "./scrapers/adapters/DoramasflixAdapter";
 import { isBlacklistedHost } from "./utils/streamSorter";
 import { getDirectStreamProviders } from "./providers/api";
@@ -60,11 +60,51 @@ const CACHE_TTL_MS = Math.max(5_000, Number(process.env.PROVIDER_GATEWAY_CACHE_M
 // bloquear la primera interacción. Sin fallback local esperamos al API completo
 // para no convertir la única posibilidad de reproducción en un falso vacío.
 const PRIMARY_API_BUDGET_MS = 1_200;
+// A direct-looking URL is not evidence that the media exists. Keep this probe
+// short and cache it briefly: the resolver already does the expensive JIT work
+// for canonical pages, while this guard only removes stale/empty manifests from
+// the direct list shown to the player.
+const DIRECT_PROBE_TIMEOUT_MS = Math.max(1_000, Number(process.env.PROVIDER_DIRECT_PROBE_TIMEOUT_MS || 4_000));
+const DIRECT_PROBE_CACHE_MS = Math.max(5_000, Number(process.env.PROVIDER_DIRECT_PROBE_CACHE_MS || 45_000));
+const directProbeCache = new Map<string, { expires: number; ok: boolean }>();
 const cache = new Map<string, {
   expires: number;
   sources: GatewaySource[];
   fallbackCandidates: GatewayFallbackCandidate[];
 }>();
+
+async function keepPlayableDirectSources(sources: GatewaySource[]): Promise<GatewaySource[]> {
+  if (sources.length === 0) return sources;
+
+  const unique = new Map<string, GatewaySource>();
+  for (const source of sources) {
+    const key = `${source.provider}|${source.url}`;
+    if (!unique.has(key)) unique.set(key, source);
+  }
+
+  const checked = await Promise.all([...unique.values()].map(async (source) => {
+    const cached = directProbeCache.get(source.url);
+    if (cached && cached.expires > Date.now()) {
+      return cached.ok ? { ...source, sourceStatus: "media_checked" } : null;
+    }
+
+    let ok = false;
+    try {
+      const result = await probeStream(source.url, {
+        timeoutMs: DIRECT_PROBE_TIMEOUT_MS,
+        playerReferer: source.requiredHeaders?.Referer || source.canonicalLocator || undefined,
+        requiredHeaders: source.requiredHeaders,
+      });
+      ok = result.ok;
+    } catch {
+      ok = false;
+    }
+    directProbeCache.set(source.url, { expires: Date.now() + DIRECT_PROBE_CACHE_MS, ok });
+    return ok ? { ...source, sourceStatus: "media_checked" } : null;
+  }));
+
+  return checked.filter((source): source is GatewaySource => Boolean(source));
+}
 
 function subtitleProviderForUrl(rawUrl: string): string | null {
   try {
@@ -166,13 +206,14 @@ async function resolvePrimaryApis(req: GatewayRequest): Promise<GatewaySource[]>
   const settled = await Promise.allSettled(providers.map((provider) => provider.resolve(context)));
   const direct = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
 
-  return direct.filter((source) => !isHostBlacklisted(source.url)).map((source) => ({
+  const normalized = direct.filter((source) => !isHostBlacklisted(source.url)).map((source) => ({
     ...source,
     audioLanguage: normalizeLanguageTag(source.audioLanguage),
     subtitleLanguage: normalizeLanguageTag(source.subtitleLanguage),
     subtitles: normalizeSubtitleTracks(source.subtitles),
     score: scoreSource(req, source),
   }));
+  return keepPlayableDirectSources(normalized);
 }
 
 async function sourcesFromDatabase(req: GatewayRequest): Promise<{
@@ -335,7 +376,7 @@ async function sourcesFromDatabase(req: GatewayRequest): Promise<{
     });
     }
   }
-  return { direct, fallbackCandidates };
+  return { direct: await keepPlayableDirectSources(direct), fallbackCandidates };
 }
 
 function dedupeAndRank(sources: GatewaySource[], req: GatewayRequest): GatewaySource[] {
@@ -473,7 +514,7 @@ async function persistApiSources(
         subtitle_language: source.subtitleLanguage,
         subtitles: source.subtitles as any,
         canonical_locator: source.canonicalLocator || null,
-        source_status: "discovered",
+        source_status: source.sourceStatus || "discovered",
         extraction_method: signed ? "canonical_locator_jit" : "direct_api_jit",
         resolver_version: "gateway-v2-direct",
       },
@@ -482,7 +523,7 @@ async function persistApiSources(
         subtitle_language: source.subtitleLanguage,
         subtitles: source.subtitles as any,
         canonical_locator: source.canonicalLocator || undefined,
-        source_status: "discovered",
+        source_status: source.sourceStatus || "discovered",
       },
     });
     saved += 1;

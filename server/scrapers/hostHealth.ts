@@ -5,7 +5,7 @@
 // circuit is opened only after consecutive failures. Authentication failures
 // are token/URL scoped and never blacklist the whole host.
 
-import { buildProxyHeaders } from "../hostProfiles";
+import { buildPlaybackHeaders } from "../hostProfiles";
 
 export type ProbeState = "unknown" | "checking" | "online" | "degraded" | "offline";
 
@@ -28,6 +28,8 @@ export interface ProbeOptions {
   timeoutMs?: number;
   /** Referer del sitio fuente; lo usan los perfiles con refererMode "passthrough". */
   playerReferer?: string;
+  /** Cabeceras entregadas por el resolutor para una URL firmada (p. ej. VidSrc). */
+  requiredHeaders?: Record<string, string>;
   /** Inyección para tests y runtimes que proporcionan un cliente HTTP propio. */
   fetch?: typeof fetch;
 }
@@ -361,7 +363,7 @@ function isPlayableDashManifest(prefix: string): boolean {
 
 async function probeUncached(url: string, opts: ProbeOptions): Promise<ProbeResult> {
   const startedAt = Date.now();
-  const { headers, profile } = buildProxyHeaders(url, opts.playerReferer);
+  const { headers, profile } = buildPlaybackHeaders(url, opts.playerReferer, opts.requiredHeaders);
   const timeoutMs = adaptiveTimeout(url, opts, profile.connectTimeoutMs);
   const fetchImpl = opts.fetch ?? globalThis.fetch;
   const isHls = /\.m3u8(?:\?|$)/i.test(url) || /\/m3u8\//i.test(url) || /hls-vod/i.test(url);

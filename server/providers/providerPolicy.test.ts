@@ -45,6 +45,7 @@ describe("provider policy v2", () => {
     expect(getProviderPolicy("latanime.org")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("zokoanime.video")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("doramasflix.io")).toMatchObject({ role: "primary", lifecycle: "active", fallbackProvider: "vidsrc" });
+    expect(getProviderPriority("doramasyt")).toBeLessThan(getProviderPriority("doramasflix"));
     expect(getProviderPolicy("tioanime")).toMatchObject({ role: "primary", lifecycle: "active" });
     expect(getProviderPolicy("tioplus")).toMatchObject({ role: "secondary", lifecycle: "active", resolver: "tioplus" });
     expect(getProviderPolicy("flixquest")).toMatchObject({ role: "fallback", lifecycle: "legacy" });

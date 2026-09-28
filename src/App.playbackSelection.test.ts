@@ -58,14 +58,15 @@ describe('App playback selection helpers', () => {
     ]);
   });
 
-  it('maps direct gateway streams and fallbacks while keeping first URL occurrence and ordering', () => {
+  it('prefers legacy direct streams over gateway embeds and keeps the first URL occurrence', () => {
     const direct = toGatewayRankedStreams([
       { provider: 'cdn', url: 'https://www.cdn.example/master.m3u8', canonicalLocator: 'https://source.example/watch/1', requiredHeaders: { Referer: 'https://source.example' } },
     ], () => null);
     const fallback = toGatewayFallbacks([
       { provider: 'embed', url: 'https://embed.example/watch/1', type: 'embed' },
     ], direct.length, () => null);
-    const merged = mergeRankedStreams(direct, fallback, [{ url: direct[0].url, provider: 'duplicate' }]);
+    const legacy = [{ url: 'https://legacy.example/master.m3u8', type: 'direct', provider: 'legacy' }];
+    const merged = mergeRankedStreams(direct, legacy, fallback, [{ url: direct[0].url, provider: 'duplicate' }]);
 
     expect(direct[0]).toMatchObject({
       host: 'cdn.example',
@@ -75,7 +76,7 @@ describe('App playback selection helpers', () => {
       tier: 0,
     });
     expect(fallback[0]).toMatchObject({ type: 'embed', tier: 1, delivery_mode: 'embed' });
-    expect(merged.map((item) => item.url)).toEqual([direct[0].url, fallback[0].url]);
+    expect(merged.map((item) => item.url)).toEqual([direct[0].url, legacy[0].url, fallback[0].url]);
   });
 
   it('recognizes virtual episodes from public catalog ids only', () => {

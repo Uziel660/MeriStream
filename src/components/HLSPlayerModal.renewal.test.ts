@@ -94,7 +94,10 @@ describe('renewPlayerServer', () => {
 
     expect(api.resolveEmbed).toHaveBeenCalledWith('https://embed.example/watch/1');
     expect(updated[0]).toMatchObject({ url: 'https://cdn.example/renewed.m3u8?token=new', generation: 'generation-2' });
-    expect(hls.loadSource).toHaveBeenCalledWith('https://cdn.example/renewed.m3u8?token=new');
+    const renewedSource = new URL(String(hls.loadSource.mock.calls[0][0]), 'https://meristream.example');
+    expect(renewedSource.pathname).toBe('/api/v1/proxy/stream');
+    expect(renewedSource.searchParams.get('url')).toBe('https://cdn.example/renewed.m3u8?token=new');
+    expect(renewedSource.searchParams.get('referer')).toBe('https://embed.example/watch/1');
     expect(video.currentTime).toBe(42);
     expect(video.play).toHaveBeenCalledOnce();
   });

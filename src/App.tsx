@@ -1815,7 +1815,7 @@ export function App() {
       const fallbackSources = Array.isArray(gatewayData?.fallbackCandidates) ? gatewayData.fallbackCandidates : [];
       const gatewayFallbacks = toGatewayFallbacks(fallbackSources, gatewayRanked.length, mapInternalSubtitleTrack);
       const legacyRanked = Array.isArray(legacyData?.ranked_streams) ? legacyData.ranked_streams : [];
-      const mergedRanked = mergeRankedStreams(gatewayRanked, gatewayFallbacks, legacyRanked);
+      const mergedRanked = mergeRankedStreams(gatewayRanked, legacyRanked, gatewayFallbacks);
       const mergedStreams = mergedRanked.map((candidate) => candidate.url);
       const primaryStream = mergedStreams[0] || legacyData?.stream_url || '';
 

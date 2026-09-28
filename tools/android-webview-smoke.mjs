@@ -682,6 +682,58 @@ try {
       throw new Error(`More speed action did not restore 1x: ${JSON.stringify(afterSpeedRestore)}`);
     }
 
+    const afterLock = await clickAction('Bloquear');
+    const unlockVisible = await evaluate(call, `Boolean(document.querySelector('button[aria-label="Desbloquear pantalla"]'))`);
+    if (!unlockVisible || afterLock.paused || afterLock.moreOpen) {
+      throw new Error(`More lock action did not lock the controls while playback continued: ${JSON.stringify({ afterLock, unlockVisible })}`);
+    }
+    const unlocked = await evaluate(call, `(() => {
+      const button = document.querySelector('button[aria-label="Desbloquear pantalla"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`, true);
+    if (!unlocked) throw new Error('The player lock could not be released from its unlock control');
+    await delay(180);
+    const afterUnlock = await evaluate(call, `(() => ({
+      unlockVisible: Boolean(document.querySelector('button[aria-label="Desbloquear pantalla"]')),
+      paused: document.querySelector('[data-player-root] video')?.paused ?? true,
+    }))()`);
+    if (afterUnlock.unlockVisible || afterUnlock.paused) {
+      throw new Error(`Unlocking did not restore controls while playback continued: ${JSON.stringify(afterUnlock)}`);
+    }
+
+    const afterFullscreenExit = await clickAction('Pantalla');
+    if (afterFullscreenExit.paused || afterFullscreenExit.moreOpen) {
+      throw new Error(`More fullscreen action interrupted playback or left its sheet open: ${JSON.stringify(afterFullscreenExit)}`);
+    }
+    await delay(220);
+    const reenterButton = await evaluate(call, `(() => {
+      const trace = window.__meristreamNativeSystemBarTransitions;
+      if (!Array.isArray(trace)) return false;
+      trace.length = 0;
+      const button = document.querySelector('[data-player-controls] button[title="Pantalla completa (F)"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`, true);
+    if (!reenterButton) throw new Error('The player fullscreen control was not available after leaving immersive mode');
+    await delay(350);
+    const afterFullscreenRestore = await evaluate(call, `(() => ({
+      paused: document.querySelector('[data-player-root] video')?.paused ?? true,
+      systemBarTransitions: Array.isArray(window.__meristreamNativeSystemBarTransitions)
+        ? window.__meristreamNativeSystemBarTransitions.slice()
+        : null,
+    }))()`);
+    if (afterFullscreenRestore.paused || !afterFullscreenRestore.systemBarTransitions?.includes(true)) {
+      throw new Error(`The player did not restore immersive fullscreen during playback: ${JSON.stringify(afterFullscreenRestore)}`);
+    }
+    await delay(650);
+    const stableFullscreenTransitions = await evaluate(call, `window.__meristreamNativeSystemBarTransitions?.slice() || null`);
+    if (JSON.stringify(stableFullscreenTransitions) !== JSON.stringify(afterFullscreenRestore.systemBarTransitions)) {
+      throw new Error(`System bars changed again after fullscreen was restored: ${JSON.stringify({ afterFullscreenRestore, stableFullscreenTransitions })}`);
+    }
+
     console.log(JSON.stringify({
       action,
       initial,
@@ -689,9 +741,11 @@ try {
       restoredTimeDelta,
       mutedAndRestored: [afterMute.muted, afterMuteRestore.muted],
       playbackRateAndRestored: [afterSpeed.playbackRate, afterSpeedRestore.playbackRate],
-      stillPlaying: !afterSpeedRestore.paused,
+      lockAndUnlocked: [unlockVisible, afterUnlock.unlockVisible],
+      fullscreenTransitions: [afterFullscreenExit, afterFullscreenRestore.systemBarTransitions],
+      stillPlaying: !afterFullscreenRestore.paused,
     }));
-    if (afterSpeedRestore.paused) throw new Error('More actions unexpectedly paused playback');
+    if (afterFullscreenRestore.paused) throw new Error('More actions unexpectedly paused playback');
   } else if (action === 'open-player-report') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

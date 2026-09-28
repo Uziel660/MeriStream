@@ -33,6 +33,8 @@ import { buildPageUrl } from "./utils/pageUrlBuilder";
 import { sanitizeCatalogLandingPages } from "./catalogIntegrity";
 import { auditSourceLinks, type SourceAuditSummary } from "./sourceLinkAudit";
 import { sourceRecoveryWorker } from "./sourceRecoveryWorker";
+import { auditProviders, type ProviderAuditSummary } from "./providerAudit";
+import { repairFailedSourceSlugs, type SlugRepairSummary } from "./sourceSlugRepair";
 import type { ContentKind, SourceLinkInput } from "./types";
 
 // ── Contrato público ─────────────────────────────────────────────
@@ -110,6 +112,8 @@ export interface VerificationReport {
     sources_added: number;
   };
   source_audit?: SourceAuditSummary & { recovery_job_id?: string | null };
+  provider_audit?: ProviderAuditSummary;
+  slug_repair?: SlugRepairSummary;
 }
 
 export interface VerificationStatus {
@@ -289,6 +293,8 @@ const state = {
 };
 
 let lastSourceAudit: VerificationReport["source_audit"];
+let lastProviderAudit: ProviderAuditSummary | undefined;
+let lastSlugRepair: SlugRepairSummary | undefined;
 
 const runCounters = {
   metaTotal: 0,
@@ -1046,6 +1052,31 @@ async function auditSourcesAndQueueMirrors(): Promise<void> {
     lastSourceAudit = undefined;
     log("warn", `[Auditoría de fuentes] pasada omitida: ${error?.message || error}`);
   }
+
+  // La comprobación por enlace no detecta por sí sola que un proveedor haya
+  // cambiado su estructura. Esta segunda pasada prueba el contrato real de
+  // cada adapter: catálogo -> ficha -> episodio/stream. Es acotada (una ficha
+  // por proveedor) y corre en el mismo proceso diario para no abrir otra cola.
+  try {
+    lastProviderAudit = await auditProviders({ concurrency: 3, limit: 100 });
+    log("info", `[Auditoría de proveedores] ${lastProviderAudit.inspected} adaptadores: ${lastProviderAudit.healthy} sanos, ${lastProviderAudit.failed} con incidencias, ${lastProviderAudit.manual_review} requieren revisión.`);
+  } catch (error: any) {
+    lastProviderAudit = undefined;
+    log("warn", `[Auditoría de proveedores] pasada omitida: ${error?.message || error}`);
+  }
+
+  // Sólo consulta enlaces ya marcados como fallidos. Un cambio de slug se
+  // repara únicamente cuando hay una coincidencia exacta y del mismo host;
+  // los casos ambiguos se dejan como alerta administrativa, nunca se adivinan.
+  try {
+    lastSlugRepair = await repairFailedSourceSlugs({ limit: 200, concurrency: 2 });
+    if (lastSlugRepair.repaired || lastSlugRepair.manual_review || lastSlugRepair.errors) {
+      log("info", `[Reparación de slugs] ${lastSlugRepair.repaired} reparados, ${lastSlugRepair.manual_review} manuales, ${lastSlugRepair.errors} errores.`);
+    }
+  } catch (error: any) {
+    lastSlugRepair = undefined;
+    log("warn", `[Reparación de slugs] pasada omitida: ${error?.message || error}`);
+  }
 }
 
 async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOptions): Promise<void> {
@@ -1217,6 +1248,8 @@ async function catalogPhase(cfg: VerificationConfig, opts: VerificationRunOption
       sources_added: state.progress.sources_added || 0,
     },
     source_audit: lastSourceAudit,
+    provider_audit: lastProviderAudit,
+    slug_repair: lastSlugRepair,
   };
 }
 
@@ -1226,6 +1259,8 @@ async function runPass(opts: VerificationRunOptions): Promise<void> {
   const cfg = getVerificationConfig();
   const metadataOnly = opts.mode === "metadata" || opts.mode === "identity" ? true : opts.mode === "full" ? false : cfg.metadata_only;
   lastSourceAudit = undefined;
+  lastProviderAudit = undefined;
+  lastSlugRepair = undefined;
   try {
     // ── FASE 0: Sanear y purgar automáticamente cualquier landing page residual ──
     try {

@@ -44,7 +44,14 @@ function formatDate(value: string) {
 }
 
 function reportLabel(value: string) {
-  return REPORT_OPTIONS.find((option) => option.value === value)?.label || value;
+  const automatedLabels: Record<string, string> = {
+    provider_catalog_failure: "Proveedor: catálogo no disponible",
+    provider_slug_changed: "Proveedor: slug o estructura cambiada",
+    provider_no_playable_source: "Proveedor: sin fuente reproducible",
+    provider_metadata_mismatch: "Proveedor: metadatos inconsistentes",
+    provider_mirror_failed: "Proveedor: mirror fallido",
+  };
+  return automatedLabels[value] || REPORT_OPTIONS.find((option) => option.value === value)?.label || value;
 }
 
 export default function AdminReports({ onEditShow }: { onEditShow: (show: any) => void }) {

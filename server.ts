@@ -4014,6 +4014,7 @@ async function startServer() {
       // on the full path below so their delivery contract is preserved.
       const fastDirect = extracted.stream_url && isDirectMedia(extracted.stream_url)
         && !isSourcePage(extracted.stream_url)
+        && !isDeadHost(extracted.stream_url)
         && !/vimeos\.[a-z]+|p\d+\.vimeos\.zip|zokoanime\.video\/stream\//i.test(extracted.stream_url)
         ? extracted.stream_url
         : "";

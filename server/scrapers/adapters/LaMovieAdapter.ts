@@ -14,6 +14,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   readonly id = "lamovie";
   readonly name = "LaMovie (Películas, Series, Animes)";
   readonly supportedDomains = ["lamovie.org", "lamovie.to", "lamovie.ws"];
+  private static readonly MODERN_API = "https://tmdb.allcalidad.re";
 
   /** Hosts de descarga directa (no exponen stream embebido): no intentar resolver */
   private static readonly DOWNLOAD_HOSTS = ["1fichier.com", "megaup.net"];
@@ -50,7 +51,7 @@ export class LaMovieAdapter extends BaseScraperAdapter {
 
     // Hosts de embed de streaming conocidos (embed reproducible tal cual)
     const KNOWN_EMBED_HOSTS = [
-      "goodstream.", "vidhide", "streamwish.", "hlswish.", "streamhide.",
+      "goodstream.", "vidhide", "streamwish.", "hlswish.", "streamhide.", "vimeos.",
       "filemoon.", "mp4upload.com", "mega.nz/embed", "voe.", "byselapuix.com",
       "mixdrop.", "dood.", "doodstream.", "streamtape.", "yourupload.com",
       "ok.ru", "uqload.", "luluvdo.", "vidmoly.", "upstream.", "streamlare.",
@@ -141,6 +142,29 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   private async extractCatalogFromListingApi(contentType: ContentKind, page: number = 1): Promise<ExtractedCatalogItem[]> {
     const postType = contentType === "series" ? "tvshows" : contentType === "anime" ? "animes" : "movies";
     const fichaPrefix = postType === "movies" ? "peliculas" : postType === "tvshows" ? "series" : "animes";
+    // La SPA actual publica su catálogo en el API TMDB interno. Sus tarjetas
+    // traen el tmdb_id y el `code` estable del reproductor; conservar ambos en
+    // el locator permite resolver el stream JIT sin guardar una URL firmada.
+    try {
+      const modernKind = contentType === "movie" ? "movie" : contentType === "series" ? "tvshow" : "anime";
+      const modernUrl = `${LaMovieAdapter.MODERN_API}/v1/items?kind=${modernKind}&page=${page}&limit=24`;
+      const modernRaw = await this.fetchHtml(modernUrl, 10000);
+      const modern = modernRaw ? JSON.parse(modernRaw) : null;
+      const modernItems: any[] = Array.isArray(modern?.items) ? modern.items : [];
+      if (modernItems.length > 0) {
+        return modernItems.filter((item) => item?.tmdb_id && item?.title).map((item) => ({
+          title: String(item.title).trim(),
+          url: `https://lamovie.org/${fichaPrefix}/${item.slug || item.tmdb_id}/?tmdb_id=${encodeURIComponent(item.tmdb_id)}&code=${encodeURIComponent(item.code || "")}`,
+          image_url: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+          kind: contentType,
+          year: Number.isFinite(Number(item.year)) ? Number(item.year) : null,
+          rating: Number.isFinite(Number(item.vote_average)) ? Number(item.vote_average) : null,
+          genres: Array.isArray(item.genres) ? item.genres.map((genre: any) => String(genre?.title || genre?.name || "")).filter(Boolean) : undefined,
+        }));
+      }
+    } catch {
+      // Older WordPress API remains the fallback below.
+    }
     const apiUrl = `https://lamovie.org/wp-api/v1/listing/movies?page=${page}&postType=${postType}&postsPerPage=24`;
     const raw = await this.fetchHtml(apiUrl, 10000);
     if (!raw) return [];
@@ -173,6 +197,75 @@ export class LaMovieAdapter extends BaseScraperAdapter {
     } catch {
       return [];
     }
+  }
+
+  private async fetchModernJson(pathname: string): Promise<any | null> {
+    try {
+      const raw = await this.fetchHtml(`${LaMovieAdapter.MODERN_API}${pathname}`, 10000);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async modernDetail(url: string, contentType: ContentKind, tmdbId: number, code: string | null, slug: string): Promise<UniversalAnalysisResult | null> {
+    const modernKind = contentType === "movie" ? "movie" : contentType === "series" ? "tvshow" : "anime";
+    const payload = await this.fetchModernJson(`/v1/items/${modernKind}/${tmdbId}`);
+    const item = payload?.item;
+    if (!item) return null;
+    const image = (value: unknown, size = "w500") => typeof value === "string" && value ? (value.startsWith("http") ? value : `https://image.tmdb.org/t/p/${size}${value}`) : null;
+    const genres = Array.isArray(item.genres) ? item.genres.map((genre: any) => String(genre?.title || genre?.name || "")).filter(Boolean) : [];
+    const episodes: ExtractedEpisode[] = [];
+    const availableSeasons = Math.min(20, Math.max(0, Number(item.available_seasons) || 0));
+    if (contentType !== "movie") {
+      for (let season = 1; season <= availableSeasons; season++) {
+        const seasonPayload = await this.fetchModernJson(`/v1/items/${modernKind}/${tmdbId}/seasons/${season}`);
+        const seasonEpisodes: any[] = Array.isArray(seasonPayload?.season?.episodes) ? seasonPayload.season.episodes : [];
+        for (const episode of seasonEpisodes) {
+          const episodeNumber = Number(episode?.episode) || episodes.length + 1;
+          const episodeCode = typeof episode?.code === "string" ? episode.code : "";
+          const episodeUrl = `https://lamovie.org/episodio/${slug}-temporada-${season}-episodio-${episodeNumber}/?tmdb_id=${encodeURIComponent(tmdbId)}&season=${season}&episode=${episodeNumber}&code=${encodeURIComponent(episodeCode)}`;
+          episodes.push({
+            number: episodeNumber,
+            season,
+            title: String(episode?.title || `Episodio ${episodeNumber}`),
+            url: episodeUrl,
+            source_type: episode?.playable && episodeCode ? "vimeos" : "page",
+            sources: episodeCode ? [{ url: `https://vimeos.net/embed-${episodeCode}.html`, source_site: "lamovie", link_type: "embed", host: "vimeos.net" }] : [],
+          });
+        }
+      }
+    }
+    const movieCode = code || (typeof item.code === "string" ? item.code : "");
+    if (contentType === "movie") {
+      episodes.push({
+        number: 1,
+        title: String(item.title || "Película Completa"),
+        url,
+        source_type: movieCode ? "vimeos" : "page",
+        sources: movieCode ? [{ url: `https://vimeos.net/embed-${movieCode}.html`, source_site: "lamovie", link_type: "embed", host: "vimeos.net" }] : [],
+      });
+    }
+    return {
+      page_type: "detail",
+      content_type: contentType,
+      title: String(item.title || "Contenido LaMovie"),
+      original_title: item.original_title || null,
+      tmdb_id: Number(item.tmdb_id) || tmdbId,
+      imdb_id: item.imdb_id || null,
+      description: String(item.overview || ""),
+      poster_url: image(item.poster_path),
+      banner_url: image(item.backdrop_path, "original"),
+      rating: Number(item.vote_average) || 0,
+      year: Number(item.year) || 0,
+      status: String(item.status || "Publicado"),
+      genres,
+      duration: item.runtime ? `${item.runtime} min` : null,
+      source_domain: "lamovie.org",
+      detected_streams: movieCode ? [`https://vimeos.net/embed-${movieCode}.html`] : [],
+      episodes,
+      catalog_items: [],
+    };
   }
 
   /**
@@ -508,6 +601,18 @@ export class LaMovieAdapter extends BaseScraperAdapter {
   public async extractStream(targetUrl: string): Promise<{ stream_url: string; all_available_streams: string[]; title?: string }> {
     const cleanUrl = targetUrl.trim();
 
+    // The current SPA exposes a stable content code and builds this provider
+    // embed at playback time. Never persist the signed media URL produced by
+    // the embed itself.
+    try {
+      const parsed = new URL(cleanUrl);
+      const code = parsed.searchParams.get("code")?.trim();
+      if (code) {
+        const embed = `https://vimeos.net/embed-${code}.html`;
+        return { stream_url: embed, all_available_streams: [embed] };
+      }
+    } catch {}
+
     try {
       const html = await this.fetchHtml(cleanUrl, 10000);
 
@@ -717,6 +822,12 @@ export class LaMovieAdapter extends BaseScraperAdapter {
       const isSeries = path.includes("/series") || path.includes("/tvshows");
       const isAnime = path.includes("/animes") || path.includes("/anime");
       contentType = isSeries ? "series" : isAnime ? "anime" : "movie";
+    }
+
+    const modernTmdbId = Number(urlObj.searchParams.get("tmdb_id") || urlObj.searchParams.get("tmdbId"));
+    if (Number.isInteger(modernTmdbId) && modernTmdbId > 0 && explicitType !== "catalog") {
+      const modern = await this.modernDetail(cleanUrl, contentType, modernTmdbId, urlObj.searchParams.get("code"), urlObj.pathname.split("/").filter(Boolean).pop() || "lamovie");
+      if (modern) return modern;
     }
 
     // Extraer número de página si existe (ej. ?page=2 o /page/2)

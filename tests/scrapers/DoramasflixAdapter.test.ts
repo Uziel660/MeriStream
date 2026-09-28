@@ -115,6 +115,36 @@ describe("DoramasflixAdapter", () => {
     });
   });
 
+  describe("descubrimiento de Next-Action en chunks", () => {
+    it("continúa escaneando después de chunks válidos sin referencia", async () => {
+      const local = new DoramasflixAdapter();
+      const actionId = "a".repeat(40);
+      const chunkUrls = Array.from(
+        { length: 9 },
+        (_, index) => `/_next/static/chunks/${index}.js`,
+      );
+      const html = chunkUrls.map((url) => `<script src="${url}"></script>`).join("\n");
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        return {
+          ok: !url.endsWith("/0.js"),
+          text: async () => url.endsWith("/8.js")
+            ? `createServerReference("${actionId}",{}); getEpisodeLinks`
+            : "window.chunkReady = true;",
+        } as Response;
+      });
+
+      try {
+        await expect(
+          (local as any).discoverNextActionId(html, "https://doramasflix.io/"),
+        ).resolves.toBe(actionId);
+        expect(fetchSpy).toHaveBeenCalledTimes(9);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+  });
+
   describe("extractStream con mocks (no devuelve URL de página ni embed sin resolver)", () => {
     let fetchSpy: any;
     let resolveSpy: any;

@@ -780,12 +780,12 @@ export class DoramasflixAdapter extends BaseScraperAdapter {
           try {
             const full = new URL(c, baseUrl).href;
             const res = await fetch(full, { signal: controller.signal, headers: COMMON_HEADERS });
-            if (!res.ok) return null;
+            if (!res.ok) continue;
             const text = await res.text();
             const reference = text.match(/createServerReference\(\s*["']([a-f0-9]{40,64})["'][\s\S]{0,1200}?getEpisodeLinks/i);
-            return reference?.[1] || null;
+            if (reference?.[1]) return reference[1];
           } catch {
-            return null;
+            // A broken asset should not prevent searching the remaining chunks.
           } finally {
             clearTimeout(timer);
           }

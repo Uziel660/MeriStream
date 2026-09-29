@@ -149,7 +149,7 @@ npm run bootstrap
 npm run ingest:all
 ```
 
-`npm run bootstrap` prepara catálogo persistente cuando se necesita una base inicial. `npm run ingest:all` encola la ingestión de los targets activos definidos en el registro actual.
+`npm run bootstrap` prepara catálogo persistente cuando se necesita una base inicial. `npm run ingest:all` encola los targets activos y legacy para que la importación completa también cubra las fuentes de recuperación; usa `npm run ingest:all -- --active-only` para limitar una pasada a los proveedores activos.
 
 ## API principal
 

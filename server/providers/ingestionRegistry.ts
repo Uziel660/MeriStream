@@ -62,14 +62,24 @@ export const LEGACY_INGESTION_TARGETS: ProviderIngestionTarget[] = [
   { providerId: "tubepelis", targetUrl: "https://tubepelis.com/peliculas", name: "TubePelis (legacy)" },
 ];
 
-export function getEnabledIngestionTargets(): ProviderIngestionTarget[] {
-  return PROVIDER_INGESTION_TARGETS
+export function getEnabledIngestionTargets(options: { includeLegacy?: boolean } = {}): ProviderIngestionTarget[] {
+  const candidates = options.includeLegacy
+    ? [...PROVIDER_INGESTION_TARGETS, ...LEGACY_INGESTION_TARGETS]
+    : PROVIDER_INGESTION_TARGETS;
+  const seen = new Set<string>();
+  return candidates
     .filter((target) => target.enabled !== false)
     .filter((target) => {
       const policy = getProviderPolicy(target.providerId);
       return Boolean(policy)
         && policy?.role !== "metadata"
-        && (policy?.lifecycle === "active" || policy?.lifecycle === "maintained");
+        && (options.includeLegacy || policy?.lifecycle === "active" || policy?.lifecycle === "maintained");
+    })
+    .filter((target) => {
+      const key = target.targetUrl.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
     })
     .sort((a, b) => {
       const pa = getProviderPolicy(a.providerId)?.priority ?? 100;

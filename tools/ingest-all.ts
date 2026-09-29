@@ -9,6 +9,7 @@ const args = new Set(process.argv.slice(2));
 const dry = args.has("--dry");
 const refresh = args.has("--refresh");
 const fast = args.has("--fast");
+const activeOnly = args.has("--active-only");
 const providerArgIndex = process.argv.indexOf("--providers");
 const selectedProviders = providerArgIndex >= 0
   ? new Set(String(process.argv[providerArgIndex + 1] || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean))
@@ -19,7 +20,10 @@ const settings = fast
   : { delay: 750, maxJobs: 4 };
 
 async function main() {
-  const allTargets = getEnabledIngestionTargets();
+  // Full imports include legacy roots by default so the catalog and recovery
+  // index do not silently omit providers that are hidden from normal ranking.
+  // Use --active-only for a short primary-source refresh.
+  const allTargets = getEnabledIngestionTargets({ includeLegacy: !activeOnly });
   const targets = selectedProviders
     ? allTargets.filter((target) => selectedProviders.has(target.providerId))
     : allTargets;
@@ -28,7 +32,7 @@ async function main() {
   console.log(`\n[MeriStream] ingest:all`);
   console.log(`Providers/targets: ${targets.length}`);
   if (selectedProviders) console.log(`Filtro de providers: ${[...selectedProviders].join(", ")}`);
-  console.log(`Modo: ${fast ? "FAST" : "SAFE"}${refresh ? " + REFRESH" : ""}${dry ? " + DRY" : ""}`);
+  console.log(`Modo: ${fast ? "FAST" : "SAFE"}${refresh ? " + REFRESH" : ""}${dry ? " + DRY" : ""}${activeOnly ? " + ACTIVE-ONLY" : " + LEGACY"}`);
 
   if (!dry) {
     await prisma.workerSettingsStore.upsert({

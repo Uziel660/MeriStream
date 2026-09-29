@@ -85,4 +85,13 @@ describe("provider policy v2", () => {
     expect(ids).toEqual(["cinecalidad", "latanime", "tioanime", "gnula", "gnula", "gnula", "doramasflix", "doramasflix", "doramasflix", "doramasia", "doramasia", "tudorama", "tudorama", "tudorama", "tudorama", "tudorama", "tioplus", "tioplus", "tioplus", "tioplus", "archive-org"]);
     expect(ids).not.toContain("lamovie");
   });
+
+  it("can include legacy catalog roots for the complete import and recovery pass", () => {
+    const ids = getEnabledIngestionTargets({ includeLegacy: true }).map((target) => target.providerId);
+    expect(ids).toContain("animeflv");
+    expect(ids).toContain("jkanime");
+    expect(ids).toContain("hianimes");
+    expect(ids).toContain("tubepelis");
+    expect(ids.filter((id) => id === "tioanime")).toHaveLength(1);
+  });
 });

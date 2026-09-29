@@ -20,13 +20,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Detect reachable Oracle SSH port
+        id: ssh_preflight
+        env:
+          TARGET_HOST: ${{ secrets.SERVER_HOST }}
+          CONFIGURED_PORT: ${{ inputs.ssh_port || secrets.SERVER_PORT || '22' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          import socket
+
+          host = os.environ["TARGET_HOST"].strip()
+          configured = os.environ.get("CONFIGURED_PORT", "22").strip() or "22"
+          candidates = []
+          for raw in [configured, "22", "2222", "2022", "2200", "8022", "22222"]:
+              try:
+                  port = int(raw)
+              except ValueError:
+                  continue
+              if 1 <= port <= 65535 and port not in candidates:
+                  candidates.append(port)
+
+          for port in candidates:
+              try:
+                  with socket.create_connection((host, port), timeout=5):
+                      with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                          output.write(f"port={port}\n")
+                      print("SSH endpoint reachable on a configured candidate port.")
+                      raise SystemExit(0)
+              except (OSError, ValueError):
+                  continue
+
+          raise SystemExit("No reachable SSH port found among the configured/common Oracle candidates.")
+          PY
       - name: Update Oracle and restart Compose
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASS }}
-          port: ${{ inputs.ssh_port || secrets.SERVER_PORT || '22' }}
+          port: ${{ steps.ssh_preflight.outputs.port }}
           command_timeout: 40m
           script_stop: true
           script: |

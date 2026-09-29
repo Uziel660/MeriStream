@@ -26,7 +26,7 @@ The minimum values are the PostgreSQL credentials and the four application secre
 
 `POSTGRES_PASSWORD` is interpolated into that URL, so use a URL-safe password (letters, numbers, `_`, and `-`) or provide a separately encoded deployment configuration. `ALLOWED_ORIGINS` should contain the browser origins that will call the API. Set `ENFORCE_HTTPS=true` only when the deployment is behind an HTTPS reverse proxy or tunnel that sends `X-Forwarded-Proto`.
 
-The production deployment workflow uses `SERVER_HOST`, `SERVER_USER` and `SERVER_PASS` GitHub secrets. SSH defaults to port `22`; set an optional `SERVER_PORT` secret or provide `ssh_port` when starting the workflow manually if the Oracle instance uses another port. The workflow checks the build SHA and the adapter registry after Compose restarts.
+The production deployment workflow uses `SERVER_HOST`, `SERVER_USER` and `SERVER_PASS` GitHub secrets. SSH defaults to port `22`; set an optional `SERVER_PORT` secret or provide `ssh_port` when starting the workflow manually if the Oracle instance uses another port. Before authentication, the workflow probes the configured port and a small set of common Oracle SSH ports, then uses the first reachable one. The workflow checks the build SHA and the adapter registry after Compose restarts.
 
 After a successful deployment, the workflow installs `meristream-compose.service` when systemd is available. It starts the Compose stack after Docker and network initialization, so a reboot of the Oracle VM brings the database and API back without a manual command. The Compose services also keep `restart: unless-stopped` as a second recovery layer.
 

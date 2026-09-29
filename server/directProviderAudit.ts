@@ -103,6 +103,13 @@ function candidatesWithPlayableMedia(values: PlayableSource[]): PlayableSource[]
   return values.filter((source) => /^https?:\/\//i.test(source.url) && ["hls", "dash", "mp4"].includes(source.streamType));
 }
 
+function compatibleAnimeProbe(providerId: string, kind: DirectMediaKind): boolean {
+  // VidSrc explicitly maps its anime path to the TMDB TV route when an anime
+  // mirror rejects the `anime` label. Probe that same compatibility path so a
+  // transient anime-only mirror failure does not mark the whole provider dead.
+  return kind === "anime" && (providerId === "vidsrc" || providerId === "vidsrcto");
+}
+
 async function probeCandidate(source: PlayableSource): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -160,22 +167,37 @@ async function auditRuntimeProvider(provider: DirectStreamProvider): Promise<Dir
     const request = PROBE_REQUESTS[kind];
     try {
       let sources: PlayableSource[] = [];
+      let usedCompatibilityProbe = false;
+      const probeRequests = compatibleAnimeProbe(provider.id, kind)
+        ? [request, { ...request, kind: "series" as const }]
+        : [request];
       // Public mirrors can rotate an upstream token between the embed request
       // and its manifest. Give a transient empty response one bounded retry so
       // the daily health report does not disable a provider that is actually
       // healthy (anime endpoints are especially prone to this).
-      for (let attempt = 0; attempt < RESOLVE_ATTEMPTS && sources.length === 0; attempt++) {
-        const resolved = candidatesWithPlayableMedia(await withTimeout(provider.resolve(request), PROBE_TIMEOUT_MS));
-        sources = resolved;
-        if (sources.length === 0 && attempt < RESOLVE_ATTEMPTS - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      for (let requestIndex = 0; requestIndex < probeRequests.length && sources.length === 0; requestIndex++) {
+        const probeRequest = probeRequests[requestIndex];
+        for (let attempt = 0; attempt < RESOLVE_ATTEMPTS && sources.length === 0; attempt++) {
+          try {
+            const resolved = candidatesWithPlayableMedia(await withTimeout(provider.resolve(probeRequest), PROBE_TIMEOUT_MS));
+            sources = resolved;
+          } catch {
+            // A compatibility request may still succeed on the next route;
+            // keep the last bounded attempt's failure out of the final report
+            // when a playable source is found there.
+          }
+          if (sources.length === 0 && attempt < RESOLVE_ATTEMPTS - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+          }
         }
+        usedCompatibilityProbe = requestIndex > 0 && sources.length > 0;
       }
       if (sources.length === 0) {
         failedKinds.push(kind);
         anomalies.push(`${kind}_no_playable_source`);
         continue;
       }
+      if (usedCompatibilityProbe) anomalies.push(`${kind}_via_series_compatibility`);
       let kindHealthy = false;
       for (const source of sources.slice(0, 3)) {
         sampleUrls.push(source.canonicalLocator || source.url);

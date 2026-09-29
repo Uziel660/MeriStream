@@ -25,4 +25,16 @@ describe("NuvioClient", () => {
     expect(sources[0]?.canonicalLocator).toBe("tmdb:550:1:1");
     expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("https://mirror.example/stream/movie/"))).toBe(true);
   });
+
+  it("does not contact the retired public instance when no API is configured", async () => {
+    vi.stubEnv("NUVIO_STREAMS_URL", "");
+    vi.stubEnv("NUVIO_STREAMS_URLS", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sources = await new NuvioClient().resolve({ tmdbId: 550, kind: "movie" });
+
+    expect(sources).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

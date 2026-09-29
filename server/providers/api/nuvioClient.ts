@@ -7,7 +7,7 @@ export class NuvioClient implements DirectStreamProvider {
 
   private readonly baseUrls: string[];
 
-  constructor(baseUrl = process.env.NUVIO_STREAMS_URLS || process.env.NUVIO_STREAMS_URL || "https://nuviostreams.hayd.uk") {
+  constructor(baseUrl = process.env.NUVIO_STREAMS_URLS || process.env.NUVIO_STREAMS_URL || "") {
     this.baseUrls = baseUrl
       .split(/[;,]/)
       .map((value) => value.trim().replace(/\/$/, ""))

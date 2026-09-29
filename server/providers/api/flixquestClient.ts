@@ -24,7 +24,7 @@ export class FlixQuestClient implements DirectStreamProvider {
   private readonly providerIds: string[];
 
   constructor(
-    baseUrl = process.env.FLIXQUEST_API_URLS || process.env.FLIXQUEST_API_URL || "https://flixquest-api.vercel.app",
+    baseUrl = process.env.FLIXQUEST_API_URLS || process.env.FLIXQUEST_API_URL || "",
     providerIds = (process.env.FLIXQUEST_PROVIDER_IDS || "showbox")
       .split(",")
       .map((value) => value.trim())

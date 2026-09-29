@@ -95,6 +95,30 @@ export interface VerificationProgress {
   errors: number;
 }
 
+export interface ProviderAuditEntry {
+  provider: string;
+  url: string;
+  ok: boolean;
+  anomalies: string[];
+  streams: number;
+  episodes: number;
+  audit_kind?: "catalog" | "direct_api" | string;
+  lifecycle?: string;
+  configured?: boolean;
+  failed_kinds?: string[];
+  persistence_error?: string;
+}
+
+export interface ProviderAuditSummary {
+  generated_at: string;
+  duration_ms: number;
+  inspected: number;
+  healthy: number;
+  failed: number;
+  manual_review: number;
+  entries: ProviderAuditEntry[];
+}
+
 export interface VerificationReport {
   started_at: string;
   finished_at: string;
@@ -114,6 +138,8 @@ export interface VerificationReport {
     merged_by_dedup: number;
     errors: string[];
   };
+  provider_audit?: ProviderAuditSummary;
+  slug_repair?: { repaired: number; manual_review: number; errors: number; [key: string]: unknown };
 }
 
 export interface VerificationStatus {

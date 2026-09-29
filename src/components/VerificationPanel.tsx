@@ -361,6 +361,11 @@ const VerificationPanel: React.FC = () => {
   const mergedWorks = progress.works_merged ?? 0;
   const sourcesAdded = progress.sources_added ?? 0;
   const recent = status?.recent || [];
+  const providerAudit = report?.provider_audit;
+  const providerIssues = useMemo(
+    () => (providerAudit?.entries || []).filter((entry) => !entry.ok || entry.anomalies.length > 0 || entry.persistence_error),
+    [providerAudit?.entries],
+  );
   const minInterval = intervalUnit === 1 ? 5 : 1;
 
   const configSummary = useMemo(() => {
@@ -991,6 +996,46 @@ const VerificationPanel: React.FC = () => {
           {(report.catalog_phase?.errors?.length || 0) > 0 && (
             <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/5 p-2 text-[11px] text-red-300">
               {report.catalog_phase?.errors.slice(0, 3).join(" · ")}
+            </div>
+          )}
+        </section>
+      )}
+
+      {providerAudit && (
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-xs font-bold text-white">Auditoría de proveedores</h4>
+              <p className="mt-1 text-[10px] text-zinc-500">Incluye adaptadores visibles, mirrors y proveedores directos legacy.</p>
+            </div>
+            <span className="text-[10px] text-zinc-500">{formatDuration(providerAudit.duration_ms)}</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            <Metric label="Revisados" value={providerAudit.inspected} icon={<Layers size={11} />} />
+            <Metric label="Sanos" value={providerAudit.healthy} icon={<CheckCircle2 size={11} />} />
+            <Metric label="Incidencias" value={providerAudit.failed} icon={<AlertTriangle size={11} />} />
+            <Metric label="Revisión manual" value={providerAudit.manual_review} icon={<Wrench size={11} />} />
+          </div>
+          {providerIssues.length === 0 ? (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-[11px] text-emerald-200">
+              <CheckCircle2 size={14} /> No hay anomalías en la última pasada de proveedores.
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {providerIssues.slice(0, 20).map((entry) => {
+                const reason = entry.anomalies.length > 0 ? entry.anomalies.join(" · ") : entry.persistence_error;
+                return (
+                  <div key={`${entry.audit_kind || "catalog"}:${entry.provider}:${entry.url}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-amber-100">{entry.provider}</span>
+                      <span className="text-[10px] text-zinc-500">{entry.audit_kind === "direct_api" ? "directo" : "catálogo"}{entry.lifecycle ? ` · ${entry.lifecycle}` : ""}</span>
+                    </div>
+                    <div className="mt-1 text-[10px] text-amber-200">{reason || "Revisar proveedor"}</div>
+                    {entry.configured === false && <div className="mt-1 text-[10px] text-zinc-400">Endpoint no configurado; requiere una URL verificada o resolución manual.</div>}
+                  </div>
+                );
+              })}
+              {providerIssues.length > 20 && <div className="text-[10px] text-zinc-500">Se muestran 20 de {providerIssues.length}; el resto queda persistido en Reportes.</div>}
             </div>
           )}
         </section>

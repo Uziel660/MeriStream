@@ -1,5 +1,5 @@
 import { BaseScraperAdapter, COMMON_HEADERS } from "../BaseAdapter";
-import { UniversalAnalysisResult } from "../../types";
+import { UniversalAnalysisResult, ExtractedCatalogItem } from "../../types";
 import { cleanQueryTitle } from "../../metadataEngine";
 
 /**

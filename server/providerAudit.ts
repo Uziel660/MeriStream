@@ -83,6 +83,10 @@ const CORE_TARGETS: ProviderAuditTarget[] = [
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const DEFAULT_CONCURRENCY = 3;
+// Public catalogs can occasionally spend a whole request window behind a
+// transient Cloudflare/host connection. Retry only transport-shaped failures
+// so a genuine slug or contract regression is still reported immediately.
+const DEFAULT_AUDIT_ATTEMPTS = 2;
 // A provider catalog can put premieres without uploaded episodes first. Keep
 // the conformance check bounded, but sample enough cards to find a genuinely
 // playable contract before reporting the provider as unavailable.
@@ -93,6 +97,26 @@ function withTimeout<T>(promise: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T
     const timer = setTimeout(() => reject(new Error(`timeout_${ms}ms`)), ms);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+}
+
+function auditAttempts(): number {
+  const configured = Number(process.env.PROVIDER_AUDIT_ATTEMPTS || DEFAULT_AUDIT_ATTEMPTS);
+  return Math.min(3, Math.max(1, Number.isFinite(configured) ? Math.round(configured) : DEFAULT_AUDIT_ATTEMPTS));
+}
+
+function isTransientAuditEntry(entry: ProviderAuditEntry): boolean {
+  const text = [...entry.anomalies, entry.error || ""].join(" ");
+  return /timeout_|FETCH_FAILED|fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|502|503|504|429/i.test(text);
+}
+
+async function auditOneWithRetry(target: ProviderAuditTarget): Promise<ProviderAuditEntry> {
+  const attempts = auditAttempts();
+  let entry = await auditOne(target);
+  for (let attempt = 2; attempt <= attempts && !entry.ok && isTransientAuditEntry(entry); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 350 * (attempt - 1)));
+    entry = await auditOne(target);
+  }
+  return entry;
 }
 
 function pair(value: string): string {
@@ -262,7 +286,13 @@ async function auditOne(target: ProviderAuditTarget): Promise<ProviderAuditEntry
       if ((kind === "series" || kind === "anime") && candidateDetail.episodes.length === 0) candidateAnomalies.push("detail_without_episodes");
       let candidateStream: { stream_url?: string; all_available_streams?: string[] } | null = null;
       const episodeUrl = candidateDetail.episodes[0]?.url || (kind === "movie" ? candidate.url : "");
-      if (episodeUrl) {
+      // Adapters such as ZokoAnime already resolve the first episode while
+      // producing `detected_streams`. Re-running the same JIT request here
+      // doubles latency and turns a healthy provider into a timeout during a
+      // short-lived upstream stall. Episode page locators still go through
+      // the extractor when no validated media was returned by analysis.
+      const hasValidatedDetectedStream = (candidateDetail.detected_streams || []).some((value) => typeof value === "string" && /^https?:\/\//i.test(value));
+      if (episodeUrl && !hasValidatedDetectedStream) {
         try { candidateStream = await withTimeout(extractStreamFromUrl(episodeUrl, adapterId)); }
         catch (error: any) { candidateAnomalies.push(`stream_extraction_${String(error?.message || error).slice(0, 120)}`); }
       }
@@ -407,7 +437,7 @@ export async function auditProviders(options: {
     while (true) {
       const index = cursor++;
       if (index >= targets.length) return;
-      const entry = await auditOne(targets[index]);
+      const entry = await auditOneWithRetry(targets[index]);
       entries[index] = entry;
       try { await persistEntry(entry); } catch (error: any) {
         // A local read-only audit must remain useful when Prisma is not

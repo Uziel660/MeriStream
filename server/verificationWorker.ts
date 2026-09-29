@@ -173,9 +173,15 @@ export const DEFAULT_CATALOG_URLS: Record<string, string> = {
   doramasia: "https://doramasia.com/doramas",
   doramasia_peliculas: "https://doramasia.com/peliculas",
   animeav1: "https://animeav1.com/catalogo",
-  veranimes: "https://wwv.veranimes.net/animes",
+  // Legacy catalogs stay in the recurrent verifier even though they are not
+  // admitted to normal provider ranking. This keeps episode discovery and
+  // source health current for recovery and for administrators who still use
+  // those providers explicitly.
+  jkanime: "https://jkanime.net/directorio/",
   hianimes: "https://hianimes.se/filter?type=All&page=1",
-  tubepelis: "https://tubepelis.com/",
+  veranimes: "https://wwv.veranimes.net/animes",
+  tubepelis: "https://tubepelis.com/peliculas",
+  "archive-org": "https://archive.org/details/movies",
 };
 
 const CONFIG_DIR = path.join(process.cwd(), "data");
@@ -188,9 +194,9 @@ const SUPPORTED_CATEGORIES = ["anime", "movie", "movies", "series"] as const;
 
 /** Plataformas típicas por categoría (scope_mode="category", fase novedades). */
 const CATEGORY_PLATFORM_MAP: Record<string, string[]> = {
-  anime: ["animeflv", "tioanime", "latanime", "lamovie_animes", "tioplus_animes"],
-  movie: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
-  movies: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas"],
+  anime: ["animeflv", "tioanime", "latanime", "lamovie_animes", "tioplus_animes", "animeav1", "jkanime", "hianimes", "veranimes"],
+  movie: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas", "tubepelis", "archive-org"],
+  movies: ["cinecalidad", "tioplus", "lamovie_movies", "doramasflix_peliculas", "tubepelis", "archive-org"],
   series: ["lamovie_series", "doramasflix", "doramasflix_variedades", "tioplus_series", "tioplus_doramas"],
 };
 

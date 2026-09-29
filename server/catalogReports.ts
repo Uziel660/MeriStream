@@ -17,6 +17,7 @@ export const CATALOG_REPORT_TYPES = [
   "provider_no_playable_source",
   "provider_metadata_mismatch",
   "provider_mirror_failed",
+  "provider_not_configured",
   "other",
 ] as const;
 

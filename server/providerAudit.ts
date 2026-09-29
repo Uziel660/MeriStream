@@ -385,10 +385,13 @@ async function persistEntry(entry: ProviderAuditEntry): Promise<void> {
       resolveAutomatedCatalogReports({ reportType: "provider_metadata_mismatch", sourceProvider: entry.provider, sourceUrl: entry.url }),
       resolveAutomatedCatalogReports({ reportType: "provider_slug_changed", sourceProvider: entry.provider, sourceUrl: entry.url }),
       resolveAutomatedCatalogReports({ reportType: "provider_mirror_failed", sourceProvider: entry.provider, sourceUrl: entry.url }),
+      resolveAutomatedCatalogReports({ reportType: "provider_not_configured", sourceProvider: entry.provider, sourceUrl: entry.url }),
     ]);
     return;
   }
-  const reportType = /FETCH_FAILED|timeout_|mirror|gnulahd\.nu/i.test(entry.anomalies.join(" "))
+  const reportType = entry.anomalies.some((value) => /not_configured|no_runtime_client|disabled_by_config/i.test(value))
+    ? "provider_not_configured"
+    : /FETCH_FAILED|timeout_|mirror|gnulahd\.nu/i.test(entry.anomalies.join(" "))
     ? "provider_mirror_failed"
     : entry.anomalies.some((value) => /mismatch/i.test(value))
     ? "provider_metadata_mismatch"
@@ -439,12 +442,16 @@ export async function auditProviders(options: {
       if (index >= targets.length) return;
       const entry = await auditOneWithRetry(targets[index]);
       entries[index] = entry;
-      try { await persistEntry(entry); } catch (error: any) {
-        // A local read-only audit must remain useful when Prisma is not
-        // connected. Keep the transport result authoritative and expose the
-        // report-write problem separately instead of turning a healthy
-        // provider into a false playback failure.
-        entry.persistence_error = String(error?.message || error).slice(0, 160);
+      if (!String(process.env.DATABASE_URL || "").trim()) {
+        entry.persistence_error = "DATABASE_URL_not_configured";
+      } else {
+        try { await persistEntry(entry); } catch (error: any) {
+          // A local read-only audit must remain useful when Prisma is not
+          // connected. Keep the transport result authoritative and expose the
+          // report-write problem separately instead of turning a healthy
+          // provider into a false playback failure.
+          entry.persistence_error = String(error?.message || error).slice(0, 160);
+        }
       }
     }
   };
@@ -454,8 +461,12 @@ export async function auditProviders(options: {
     directApi = await auditDirectProviders({ concurrency: Math.min(4, concurrency) });
     const directEntries = directApi.entries.map(directEntryToProviderEntry);
     await Promise.all(directEntries.map(async (entry) => {
-      try { await persistEntry(entry); } catch (error: any) {
-        entry.persistence_error = String(error?.message || error).slice(0, 160);
+      if (!String(process.env.DATABASE_URL || "").trim()) {
+        entry.persistence_error = "DATABASE_URL_not_configured";
+      } else {
+        try { await persistEntry(entry); } catch (error: any) {
+          entry.persistence_error = String(error?.message || error).slice(0, 160);
+        }
       }
     }));
     entries.push(...directEntries);

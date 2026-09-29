@@ -50,6 +50,7 @@ function reportLabel(value: string) {
     provider_no_playable_source: "Proveedor: sin fuente reproducible",
     provider_metadata_mismatch: "Proveedor: metadatos inconsistentes",
     provider_mirror_failed: "Proveedor: mirror fallido",
+    provider_not_configured: "Proveedor: endpoint no configurado",
   };
   return automatedLabels[value] || REPORT_OPTIONS.find((option) => option.value === value)?.label || value;
 }

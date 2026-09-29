@@ -2,13 +2,12 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { parseTitleQuery } from "./metadataEngine";
 import "dotenv/config";
 
-if (!process.env.DATABASE_URL) {
+if (!process.env.DATABASE_URL && (process.env.CI || process.env.NODE_ENV === "test")) {
   // CI y las pruebas usan el PostgreSQL efímero configurado por sus workflows.
-  if (process.env.CI || process.env.NODE_ENV === "test") {
-    process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/meristream_test?schema=public";
-  } else {
-    process.env.DATABASE_URL = "file:./dev.db";
-  }
+  // El esquema de Prisma es PostgreSQL; no debemos fabricar una URL SQLite
+  // en desarrollo porque convierte cualquier auditoría en un error de
+  // validación antes de que pueda informar el estado real del proveedor.
+  process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/meristream_test?schema=public";
 }
 
 const prisma = new PrismaClient();

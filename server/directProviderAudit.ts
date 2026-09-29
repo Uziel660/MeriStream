@@ -44,6 +44,7 @@ const PROBE_REQUESTS: Record<DirectMediaKind, ProviderRequest> = {
 // token rotation, so keep the health probe bounded but configurable at 30s.
 const PROBE_TIMEOUT_MS = Math.max(16_000, Number(process.env.DIRECT_PROVIDER_AUDIT_TIMEOUT_MS || 30_000));
 const MEDIA_TIMEOUT_MS = 6_000;
+const RESOLVE_ATTEMPTS = Math.min(3, Math.max(2, Math.round(Number(process.env.DIRECT_PROVIDER_AUDIT_ATTEMPTS || 3))));
 
 export interface DirectProviderAuditEntry {
   provider: string;
@@ -103,16 +104,21 @@ function candidatesWithPlayableMedia(values: PlayableSource[]): PlayableSource[]
 }
 
 async function probeCandidate(source: PlayableSource): Promise<boolean> {
-  try {
-    const result = await probeStream(source.url, {
-      timeoutMs: MEDIA_TIMEOUT_MS,
-      playerReferer: source.requiredHeaders?.Referer || source.canonicalLocator || undefined,
-      requiredHeaders: source.requiredHeaders,
-    });
-    return result.ok;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await probeStream(source.url, {
+        timeoutMs: MEDIA_TIMEOUT_MS,
+        playerReferer: source.requiredHeaders?.Referer || source.canonicalLocator || undefined,
+        requiredHeaders: source.requiredHeaders,
+      });
+      if (result.ok) return true;
+    } catch {
+      // A signed manifest/CDN edge can rotate between two requests. Retry the
+      // same JIT locator once before marking the provider unhealthy.
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 250));
   }
+  return false;
 }
 
 async function auditRuntimeProvider(provider: DirectStreamProvider): Promise<DirectProviderAuditEntry> {
@@ -158,10 +164,12 @@ async function auditRuntimeProvider(provider: DirectStreamProvider): Promise<Dir
       // and its manifest. Give a transient empty response one bounded retry so
       // the daily health report does not disable a provider that is actually
       // healthy (anime endpoints are especially prone to this).
-      for (let attempt = 0; attempt < 2 && sources.length === 0; attempt++) {
+      for (let attempt = 0; attempt < RESOLVE_ATTEMPTS && sources.length === 0; attempt++) {
         const resolved = candidatesWithPlayableMedia(await withTimeout(provider.resolve(request), PROBE_TIMEOUT_MS));
         sources = resolved;
-        if (sources.length === 0 && attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300));
+        if (sources.length === 0 && attempt < RESOLVE_ATTEMPTS - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        }
       }
       if (sources.length === 0) {
         failedKinds.push(kind);

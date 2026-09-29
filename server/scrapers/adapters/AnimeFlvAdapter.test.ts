@@ -34,6 +34,23 @@ describe("AnimeFlvAdapter · fallback JKanime", () => {
     });
   });
 
+  it("lee el payload JSON del directorio actual de JKanime", () => {
+    const adapter: any = new AnimeFlvAdapter();
+    const html = `
+      <script>
+        var animes = {"data":[
+          {"title":"One Piece","url":"https:\\/\\/jkanime.net\\/one-piece\\/","image":"https:\\/\\/cdn.example\\/one.jpg"},
+          {"title":"Naruto","url":"https:\\/\\/jkanime.net\\/naruto\\/","image":"https:\\/\\/cdn.example\\/naruto.jpg"}
+        ],"last_page":2};
+        var mode = 1;
+      </script>`;
+
+    expect(adapter.extractJkanimeCatalogItems(html)).toEqual([
+      expect.objectContaining({ title: "One Piece", url: "https://jkanime.net/one-piece/", kind: "anime" }),
+      expect.objectContaining({ title: "Naruto", url: "https://jkanime.net/naruto/", kind: "anime" }),
+    ]);
+  });
+
   it("extrae episodios y el embed Zilla del tema AnimeStream de animeflv.ar", () => {
     const adapter: any = new AnimeFlvAdapter();
     const html = `<h1 class="anime-title">Aishiteru Game wo Owarasetai</h1>

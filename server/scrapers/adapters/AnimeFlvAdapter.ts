@@ -153,6 +153,19 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
     const catalogItems: ExtractedCatalogItem[] = [];
     const seenUrls = new Set<string>();
 
+    // JKanime renders the directory from a JSON payload (`var animes = …`)
+    // instead of server-side cards. Parse that payload before falling back to
+    // the shared card selectors so pagination remains useful to the recurrent
+    // verifier even when the site changes its presentation mode.
+    if (isJkanime) {
+      for (const item of this.extractJkanimeCatalogItems(html, urlObj.origin)) {
+        if (!seenUrls.has(item.url)) {
+          seenUrls.add(item.url);
+          catalogItems.push(item);
+        }
+      }
+    }
+
     const cardSelectors = [
       "ul.ListAnimes > li",
       "ul.ListAnimes li",
@@ -340,6 +353,40 @@ export class AnimeFlvAdapter extends BaseScraperAdapter {
       stream_url: finalStreams[0] || "",
       all_available_streams: finalStreams,
     };
+  }
+
+  /** Extracts the JSON directory payload used by the current JKanime UI. */
+  extractJkanimeCatalogItems(html: string, origin = "https://jkanime.net"): ExtractedCatalogItem[] {
+    const match = html.match(/var\s+animes\s*=\s*(\{[\s\S]*?\});\s*var\s+mode\b/i);
+    if (!match) return [];
+    try {
+      const payload = JSON.parse(match[1]) as { data?: Array<Record<string, unknown>> };
+      if (!Array.isArray(payload.data)) return [];
+      const items: ExtractedCatalogItem[] = [];
+      for (const raw of payload.data) {
+        const title = String(raw.title || raw.short_title || "").trim();
+        const href = String(raw.url || "").trim();
+        if (!title || !href) continue;
+        let url: string;
+        try { url = new URL(href, origin).toString(); } catch { continue; }
+        if (!/^https?:\/\/jkanime\.net\//i.test(url)) continue;
+        const imageRaw = String(raw.image || "").trim();
+        let image_url: string | null = null;
+        if (imageRaw) {
+          try { image_url = new URL(imageRaw, origin).toString(); } catch { image_url = null; }
+        }
+        items.push({
+          title,
+          url,
+          image_url,
+          kind: "anime",
+          year: Number.isFinite(Number(raw.year)) ? Number(raw.year) : null,
+        });
+      }
+      return items;
+    } catch {
+      return [];
+    }
   }
 
   /**

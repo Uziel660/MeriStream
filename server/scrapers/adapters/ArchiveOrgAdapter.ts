@@ -71,6 +71,65 @@ export class ArchiveOrgAdapter extends BaseScraperAdapter {
     return url.toLowerCase().includes("archive.org/details/");
   }
 
+  private isCatalogUrl(input: string): boolean {
+    try {
+      const path = new URL(input).pathname.replace(/\/+$/, "").toLowerCase();
+      return /^\/details\/(?:movies|feature[_-]?films?)$/.test(path);
+    } catch {
+      return false;
+    }
+  }
+
+  private async analyzeCatalog(input: string): Promise<UniversalAnalysisResult> {
+    const parsed = new URL(input);
+    const page = Math.max(1, Number(parsed.searchParams.get("page") || "1") || 1);
+    const query = "collection:feature_films AND mediatype:movies";
+    const api = new URL("https://archive.org/advancedsearch.php");
+    api.searchParams.set("q", query);
+    api.searchParams.append("fl[]", "identifier");
+    api.searchParams.append("fl[]", "title");
+    api.searchParams.append("fl[]", "year");
+    api.searchParams.set("rows", "50");
+    api.searchParams.set("page", String(page));
+    api.searchParams.set("output", "json");
+
+    const response = await fetch(api.toString(), { headers: COMMON_HEADERS });
+    if (!response.ok) throw new Error(`FETCH_FAILED: ${api.toString()}`);
+    const payload = await response.json() as { response?: { docs?: Array<Record<string, unknown>> } };
+    const docs = Array.isArray(payload.response?.docs) ? payload.response!.docs! : [];
+    const catalog_items: ExtractedCatalogItem[] = [];
+    for (const doc of docs) {
+      const identifier = String(doc.identifier || "").trim();
+      const title = String(doc.title || identifier.replace(/[-_]+/g, " ")).trim();
+      if (!identifier || !title) continue;
+      const year = Number(doc.year);
+      catalog_items.push({
+        title,
+        url: `https://archive.org/details/${encodeURIComponent(identifier)}`,
+        image_url: `https://archive.org/services/img/${encodeURIComponent(identifier)}`,
+        kind: "open_archive",
+        year: Number.isFinite(year) && year > 0 ? year : null,
+      });
+    }
+
+    return {
+      page_type: "catalog",
+      content_type: "open_archive",
+      title: "Internet Archive · películas de dominio público",
+      description: `Catálogo de películas de libre acceso (página ${page}).`,
+      poster_url: catalog_items[0]?.image_url || null,
+      banner_url: catalog_items[0]?.image_url || null,
+      rating: 0,
+      year: 0,
+      status: "Catálogo",
+      genres: ["Dominio Público", "Cine Clásico"],
+      source_domain: "archive.org",
+      detected_streams: [],
+      episodes: [],
+      catalog_items,
+    };
+  }
+
   /**
    * Defecto #23: valida por HEAD que una URL inventada realmente exista antes de
    * guardarla como fuente. Los ítems oscurecidos/borrados devuelven 403/404.
@@ -94,6 +153,7 @@ export class ArchiveOrgAdapter extends BaseScraperAdapter {
 
   async analyze(input: string): Promise<UniversalAnalysisResult> {
     const archiveUrl = input.trim();
+    if (this.isCatalogUrl(archiveUrl)) return this.analyzeCatalog(archiveUrl);
     const match = archiveUrl.match(/archive\.org\/details\/([^/?#]+)/);
     const identifier = match ? match[1] : "";
 

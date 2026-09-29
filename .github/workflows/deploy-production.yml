@@ -41,6 +41,15 @@ jobs:
             git reset --hard origin/main
             export MERISTREAM_BUILD_SHA="$(git rev-parse HEAD)"
             docker compose up -d --build --remove-orphans
+            if command -v systemctl >/dev/null 2>&1; then
+              if [ "$(id -u)" -eq 0 ]; then
+                bash tools/install-meristream-systemd.sh /opt/meristream
+              elif sudo -n true >/dev/null 2>&1; then
+                sudo bash tools/install-meristream-systemd.sh /opt/meristream
+              else
+                echo "systemd disponible, pero el usuario no puede instalar la unidad; Compose conservará restart: unless-stopped"
+              fi
+            fi
             for attempt in $(seq 1 60); do
               if curl --fail --silent --show-error http://127.0.0.1:3010/health >/tmp/meristream-health.json; then
                 break

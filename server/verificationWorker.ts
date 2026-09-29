@@ -670,8 +670,21 @@ async function showsLinkedToPlatforms(platforms: string[]): Promise<string[]> {
   const clean = platforms.map(cleanPlatform).filter(Boolean);
   if (clean.length === 0) return [];
 
+  // Catalog keys may carry a content bucket suffix (for example
+  // `tioplus_series` or `lamovie_movies`), while persisted SourceLinks keep
+  // the canonical provider id/host (`tioplus.app`, `lamovie.org`). Include
+  // both forms so scoped metadata repair does not silently skip those works.
+  const providerTerms = new Set<string>();
+  for (const platform of clean) {
+    providerTerms.add(platform);
+    const base = platform
+      .replace(/[-_](?:movies?|series|animes?|doramas|peliculas)$/i, "")
+      .trim();
+    if (base) providerTerms.add(base);
+  }
+
   const links = await prisma.sourceLink.findMany({
-    where: { OR: clean.map((p) => ({ source_site: { contains: p } })) },
+    where: { OR: [...providerTerms].map((p) => ({ source_site: { contains: p } })) },
     select: {
       media_episode: {
         select: { media_item: { select: { normalized_title: true, base_normalized_title: true } } },

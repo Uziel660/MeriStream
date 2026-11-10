@@ -5,6 +5,8 @@ import { MediaValidator } from "../../server/validator";
 import type { ExtractedCatalogItem, UniversalAnalysisResult } from "../../server/types";
 
 const TEST_TIMEOUT = 240000;
+// Live checks can be challenged or time out from hosted CI; run with LIVE_SCRAPER_E2E=1.
+const itLive = process.env.LIVE_SCRAPER_E2E === "1" ? it : it.skip;
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -100,6 +102,7 @@ let detailUrl = "";
 
 describe("TioPlusAdapter (tioplus.app)", () => {
   beforeAll(async () => {
+    if (process.env.LIVE_SCRAPER_E2E !== "1") return;
     searchResults = await adapter.search("supergirl");
     const serie = searchResults.find((r) => r.url.includes("/serie/")) || searchResults[0];
     if (serie) {
@@ -121,7 +124,7 @@ describe("TioPlusAdapter (tioplus.app)", () => {
     }
   );
 
-  it(
+  itLive(
     "search('supergirl') devuelve >= 1 resultado con title y url",
     () => {
       expect(searchResults.length).toBeGreaterThanOrEqual(1);
@@ -132,7 +135,7 @@ describe("TioPlusAdapter (tioplus.app)", () => {
     }
   );
 
-  it(
+  itLive(
     "analyze(detalle): page_type=detail, poster, descripción y episodios",
     () => {
       expect(analysis).not.toBeNull();
@@ -144,7 +147,7 @@ describe("TioPlusAdapter (tioplus.app)", () => {
     }
   );
 
-  it(
+  itLive(
     "extractStream(ep1): >= 1 stream (embed o directo)",
     () => {
       expect(streamResult).not.toBeNull();
@@ -158,7 +161,7 @@ describe("TioPlusAdapter (tioplus.app)", () => {
     }
   );
 
-  it(
+  itLive(
     "anti-403: los streams responden (embed conocido con 403 tolerable si hay alternativas)",
     async () => {
       expect(streamResult).not.toBeNull();

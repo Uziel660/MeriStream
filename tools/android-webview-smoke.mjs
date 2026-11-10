@@ -464,10 +464,14 @@ try {
         playbackProgressSeconds: Number(playbackProgressSeconds.toFixed(2)),
         stableObservationMs: 8000,
         systemBarTransitions: trace.slice(),
+        controlsHidden: Boolean(
+          document.querySelector('[data-player-topbar]')?.classList.contains('opacity-0')
+          && document.querySelector('[data-player-controls]')?.classList.contains('opacity-0')
+        ),
       };
     })()`, true, true);
     console.log(JSON.stringify({ action, ...result }));
-    if (!result?.found || !result.playButton || result.paused || result.playbackProgressSeconds < 2 || result.systemBarTransitions?.length) {
+    if (!result?.found || !result.playButton || result.paused || result.playbackProgressSeconds < 2 || result.systemBarTransitions?.length || !result.controlsHidden) {
       throw new Error(`Play did not remain immersive without system bar toggles: ${JSON.stringify(result)}`);
     }
   } else if (action === 'open-player-more') {

@@ -455,6 +455,8 @@ try {
       }, 250);
       await new Promise((resolve) => setTimeout(resolve, 8000));
       clearInterval(progressSampler);
+      const playerTopbar = document.querySelector('[data-player-topbar]');
+      const playerControls = document.querySelector('[data-player-controls]');
       return {
         found: true,
         playButton: true,
@@ -465,8 +467,10 @@ try {
         stableObservationMs: 8000,
         systemBarTransitions: trace.slice(),
         controlsHidden: Boolean(
-          document.querySelector('[data-player-topbar]')?.classList.contains('opacity-0')
-          && document.querySelector('[data-player-controls]')?.classList.contains('opacity-0')
+          playerTopbar
+          && playerControls
+          && playerTopbar.classList.contains('opacity-0')
+          && playerControls.classList.contains('opacity-0')
         ),
       };
     })()`, true, true);

@@ -419,7 +419,7 @@ try {
     if (visible) throw new Error('Android Back did not close Watch Party join sheet');
   } else if (action === 'open-player') {
     await call('Page.addScriptToEvaluateOnNewDocument', {
-      source: 'window.__meristreamNativeSystemBarTransitions = []; window.__meristreamNativePlayerPresentationTrace = [];',
+      source: 'window.__meristreamNativeSystemBarTransitions = []; window.__meristreamNativePlayerPresentationTrace = []; window.__meristreamNativeAppResumeTrace = [];',
     });
     await call('Page.navigate', { url: 'https://localhost/?test_player=1' });
     await delay(7000);
@@ -791,14 +791,27 @@ try {
     }
     console.log(JSON.stringify({ action, ...result }));
   } else if (action === 'assert-player-share-dismissed') {
-    await delay(300);
+    await delay(500);
     const state = await evaluate(call, `({
       player: Boolean(document.querySelector('[data-player-root]')),
       more: Boolean(document.querySelector('.native-player-more-sheet')),
       route: location.pathname + location.search,
+      appResumeEvents: Array.isArray(window.__meristreamNativeAppResumeTrace)
+        ? window.__meristreamNativeAppResumeTrace.length
+        : 0,
+      systemBarTransitions: Array.isArray(window.__meristreamNativeSystemBarTransitions)
+        ? window.__meristreamNativeSystemBarTransitions.slice()
+        : null,
+      presentationState: (() => {
+        const trace = window.__meristreamNativePlayerPresentationTrace;
+        return Array.isArray(trace) ? trace[trace.length - 1] : null;
+      })(),
     })`);
     console.log(JSON.stringify({ action, state }));
     if (!state.player || state.more) throw new Error(`Share dismissal did not return to the player: ${JSON.stringify(state)}`);
+    if (state.appResumeEvents < 1 || !state.presentationState?.isFullscreen || state.presentationState.isOverlayVisible || state.presentationState.shouldHideBars !== true || state.systemBarTransitions?.at(-1) !== true) {
+      throw new Error(`Returning from Android Share did not restore immersive playback: ${JSON.stringify(state)}`);
+    }
   } else if (action === 'open-player-report') {
     await evaluate(call, `(() => { const button = document.querySelector('button[aria-label="Más controles"]'); if (button) button.click(); })()`);
     await delay(200);

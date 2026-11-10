@@ -39,6 +39,45 @@ function nativePlugin(name: string): any | null {
   return (window as any).Capacitor?.Plugins?.[name] || null;
 }
 
+/** Reassert native player chrome after Android returns to this activity. */
+export function nativeOnAppResume(onResume: () => void): () => void {
+  if (!isNativeShell()) return () => undefined;
+
+  let disposed = false;
+  let appListener: { remove?: () => void | Promise<void> } | null = null;
+  let removeVisibilityFallback: (() => void) | null = null;
+  const attachVisibilityFallback = () => {
+    if (removeVisibilityFallback || typeof document === 'undefined') return;
+    const onVisibilityChange = () => {
+      if (!disposed && document.visibilityState === 'visible') onResume();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    removeVisibilityFallback = () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  };
+
+  const app = nativePlugin('App');
+  if (typeof app?.addListener === 'function') {
+    const registration = Promise.resolve().then(() => app.addListener(
+      'appStateChange',
+      (state: { isActive?: boolean }) => {
+        if (!disposed && state?.isActive) onResume();
+      },
+    ));
+    void registration.then((listener) => {
+      if (disposed) void Promise.resolve(listener?.remove?.()).catch(() => undefined);
+      else appListener = listener;
+    }).catch(attachVisibilityFallback);
+  } else {
+    attachVisibilityFallback();
+  }
+
+  return () => {
+    disposed = true;
+    removeVisibilityFallback?.();
+    if (appListener) void Promise.resolve(appListener.remove?.()).catch(() => undefined);
+  };
+}
+
 /**
  * Marks the Capacitor build before React renders so presentation CSS can use a
  * native-only surface without forking the web application. This keeps Android

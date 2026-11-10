@@ -24,6 +24,61 @@ describe('native player presentation lifecycle', () => {
     expect(onFullscreenChange.mock.calls).toEqual([[true]]);
   });
 
+  it('reasserts the current system-bar state after Android resumes without changing fullscreen', async () => {
+    const setSystemBarsHidden = vi.fn(async (_hidden: boolean) => {});
+    const lockLandscape = vi.fn(async () => {});
+    const unlockOrientation = vi.fn(async () => {});
+    const onFullscreenChange = vi.fn();
+    const player = createNativePlayerPresentationController({
+      setSystemBarsHidden,
+      lockLandscape,
+      unlockOrientation,
+      onFullscreenChange,
+    });
+
+    await player.open();
+    await player.reassertSystemBars();
+    await player.setOverlayVisible(true);
+    await player.reassertSystemBars();
+    await player.setOverlayVisible(false);
+
+    expect(setSystemBarsHidden.mock.calls).toEqual([[true], [true], [false], [false], [true]]);
+    expect(lockLandscape).toHaveBeenCalledOnce();
+    expect(unlockOrientation).not.toHaveBeenCalled();
+    expect(onFullscreenChange.mock.calls).toEqual([[true]]);
+  });
+
+  it('reasserts fullscreen after Android resumes while a native bar request is still settling', async () => {
+    const transitions: boolean[] = [];
+    let finishFirstHide: (() => void) | undefined;
+    let firstHideStarted: (() => void) | undefined;
+    const firstHideStartedSignal = new Promise<void>((resolve) => {
+      firstHideStarted = resolve;
+    });
+    const firstHidePending = new Promise<void>((resolve) => {
+      finishFirstHide = resolve;
+    });
+    const player = createNativePlayerPresentationController({
+      setSystemBarsHidden: vi.fn(async (hidden: boolean) => {
+        transitions.push(hidden);
+        if (transitions.length === 1) {
+          firstHideStarted?.();
+          await firstHidePending;
+        }
+      }),
+      lockLandscape: vi.fn(async () => {}),
+      unlockOrientation: vi.fn(async () => {}),
+    });
+
+    const opening = player.open();
+    await firstHideStartedSignal;
+    const reasserting = player.reassertSystemBars();
+    finishFirstHide?.();
+    await Promise.all([opening, reasserting]);
+
+    expect(transitions).toEqual([true, true]);
+  });
+
   it('restores system bars for an overlay, then hides them once when the overlay closes', async () => {
     const setSystemBarsHidden = vi.fn(async (_hidden: boolean) => {});
     const lockLandscape = vi.fn(async () => {});

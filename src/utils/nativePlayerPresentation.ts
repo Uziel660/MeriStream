@@ -19,6 +19,7 @@ export interface NativePlayerPresentationController {
   enterFullscreen: () => Promise<void>;
   leaveFullscreen: () => Promise<void>;
   setOverlayVisible: (visible: boolean) => Promise<void>;
+  reassertSystemBars: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -134,6 +135,12 @@ export function createNativePlayerPresentationController(
     },
     setOverlayVisible(visible: boolean) {
       isOverlayVisible = visible;
+      return sync();
+    },
+    reassertSystemBars() {
+      // Android can restore system UI after an activity switch while the
+      // controller's logical fullscreen state remains unchanged.
+      barsHidden = null;
       return sync();
     },
     close() {

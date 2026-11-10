@@ -67,6 +67,7 @@ import {
   isNativeShell,
   nativeHaptic,
   nativeLockLandscape,
+  nativeOnAppResume,
   nativeSetImmersive,
   nativeShare,
   nativeUnlockOrientation,
@@ -2655,6 +2656,15 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     return () => {
       void nativePresentationRef.current?.close();
     };
+  }, [props.isOpen, nativeShell]);
+
+  useEffect(() => {
+    if (!props.isOpen || !nativeShell) return;
+    return nativeOnAppResume(() => {
+      const resumeTrace = (window as any).__meristreamNativeAppResumeTrace;
+      if (Array.isArray(resumeTrace)) resumeTrace.push(Date.now());
+      void nativePresentationRef.current?.reassertSystemBars();
+    });
   }, [props.isOpen, nativeShell]);
 
   // Android may consume the first Back press itself while immersive system bars

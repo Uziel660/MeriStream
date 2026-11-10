@@ -480,8 +480,22 @@ try {
     }
   } else if (action === 'open-player-more') {
     const openResult = await evaluate(call, `(async () => {
+      const playerRoot = document.querySelector('[data-player-root]');
       const button = document.querySelector('button[aria-label="Más controles"]');
-      if (!button) return { opened: false, videoPlayback: null };
+      const controls = document.querySelector('[data-player-controls]');
+      const topbar = document.querySelector('[data-player-topbar]');
+      if (!button || !playerRoot) return { opened: false, controlsRevealed: false, videoPlayback: null };
+      const controlsWereHidden = Boolean(controls && controls.classList.contains('opacity-0'));
+      if (controlsWereHidden) {
+        playerRoot.dispatchEvent(new Event('touchstart', { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      const controlsRevealed = Boolean(
+        controls && topbar
+        && controls.classList.contains('opacity-100')
+        && topbar.classList.contains('opacity-100')
+      );
+      if (!controlsRevealed) return { opened: false, controlsWereHidden, controlsRevealed, videoPlayback: null };
       const video = document.querySelector('[data-player-root] video');
       if (video && Number.isFinite(video.duration) && video.duration > 2 && video.duration - video.currentTime < 2) {
         video.currentTime = Math.min(1, video.duration / 4);
@@ -498,8 +512,9 @@ try {
       }
       window.__meristreamMorePauseProbe = pauseProbe;
       button.click();
-      return { opened: true, videoPlayback };
+      return { opened: true, controlsWereHidden, controlsRevealed, videoPlayback };
     })()`, true, true);
+    if (!openResult?.controlsRevealed) throw new Error(`Player controls did not return after a touch: ${JSON.stringify(openResult)}`);
     if (!openResult?.opened) throw new Error('Player More button was not found');
     await delay(250);
     const state = await evaluate(call, `(() => {

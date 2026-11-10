@@ -969,17 +969,36 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
     setIsWatchPartyPanelOpen(true);
   }, []);
 
-  // Helper para resetear el temporizador de ocultado de controles
+  const scheduleControlsHide = useCallback(() => {
+    if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
+    hideControlsTimerRef.current = null;
+    if (!props.isOpen || !isPlaying || activeMenu !== 'none' || isScreenLocked) return;
+    hideControlsTimerRef.current = setTimeout(() => {
+      hideControlsTimerRef.current = null;
+      setControlsVisible(false);
+    }, 3200);
+  }, [props.isOpen, isPlaying, activeMenu, isScreenLocked]);
+
+  // Keep playback chrome temporary after playback starts and after user input.
   const showControlsTemporarily = useCallback(() => {
     if (isScreenLocked) return;
     setControlsVisible(true);
-    if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
-    hideControlsTimerRef.current = setTimeout(() => {
-      if (isPlaying && activeMenu === 'none') {
-        setControlsVisible(false);
-      }
-    }, 3200);
-  }, [isPlaying, activeMenu, isScreenLocked]);
+    scheduleControlsHide();
+  }, [isScreenLocked, scheduleControlsHide]);
+
+  useEffect(() => {
+    if (controlsVisible) {
+      scheduleControlsHide();
+    } else if (hideControlsTimerRef.current) {
+      clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    }
+
+    return () => {
+      if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    };
+  }, [controlsVisible, scheduleControlsHide]);
 
   const showLockWidgetTemporarily = useCallback(() => {
     setShowLockWidget(true);
@@ -1008,13 +1027,8 @@ export function HLSPlayerModal(props: HLSPlayerModalProps) {
       lockWidgetTimerRef.current = null;
     }
     setControlsVisible(true);
-    if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
-    hideControlsTimerRef.current = setTimeout(() => {
-      if (isPlaying && activeMenu === 'none') {
-        setControlsVisible(false);
-      }
-    }, 3200);
-  }, [isPlaying, activeMenu]);
+    scheduleControlsHide();
+  }, [scheduleControlsHide]);
 
   // 3. PREVENTATIVE RENEWAL LOOP
   useEffect(() => {
